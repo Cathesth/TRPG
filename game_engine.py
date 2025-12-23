@@ -1,253 +1,305 @@
-from typing import TypedDict, List, Dict, Any, Literal
-from langgraph.graph import StateGraph, END
-from llm_factory import get_player_model
-import os
+import random
 import json
+import logging
+import os
+from typing import TypedDict, List, Dict, Any, Union
+from langgraph.graph import StateGraph, END
+from llm_factory import LLMFactory
+from dotenv import load_dotenv
+
+load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 class PlayerState(TypedDict):
-    scenario: Dict
+    scenario: Dict[str, Any]
     current_scene_id: str
-    player_vars: Dict
+    player_vars: Dict[str, Any]
     history: List[str]
     last_user_choice_idx: int
+    last_user_input: str
 
-    # 내부 처리용
-    system_message: str  # 룰 엔진 결과
-    npc_output: str  # NPC 대사 (없으면 빈값)
-    narrator_output: str  # 나레이션 (검수 전)
-    critic_feedback: str  # 검수자 피드백
-    retry_count: int  # 재시도 횟수 (무한 루프 방지)
+    parsed_intent: str
+    system_message: str
+    npc_output: str
+    narrator_output: str
+    critic_feedback: str
+    retry_count: int
+    chat_log_html: str
 
 
-# 1. [Python] 룰 엔진 (계산기 - 환각 Zero)
+# Node 1: Intent Parser
+def intent_parser_node(state: PlayerState):
+    user_input = state.get('last_user_input', '').strip()
+    idx = state.get('last_user_choice_idx', -1)
+
+    if idx != -1:
+        state['parsed_intent'] = 'choice'
+        return state
+
+    scenario = state['scenario']
+    curr_scene_id = state['current_scene_id']
+    scenes = {s['scene_id']: s for s in scenario['scenes']}
+    curr_scene = scenes.get(curr_scene_id)
+
+    # 엔딩 씬인지 확인
+    endings = {e['ending_id']: e for e in scenario.get('endings', [])}
+    if curr_scene_id in endings:
+        state['parsed_intent'] = 'ending'
+        return state
+
+    if not curr_scene or not curr_scene.get('choices'):
+        state['parsed_intent'] = 'unknown'
+        return state
+
+    choices_text = "\n".join([f"{i + 1}. {c['text']}" for i, c in enumerate(curr_scene['choices'])])
+
+    prompt = f"""
+    [ROLE]
+    You are a fast intent classifier for a text RPG.
+    Analyze the USER INPUT and match it to one of the CHOICES.
+
+    [CHOICES]
+    {choices_text}
+
+    [USER INPUT]
+    "{user_input}"
+
+    [OUTPUT FORMAT]
+    Return ONLY a JSON object. No markdown.
+    Format: {{"type": "choice", "index": <number 1-based>}} OR {{"type": "chat"}}
+    """
+
+    try:
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        # [수정] 모델: TNG DeepSeek R1T2 Chimera
+        llm = LLMFactory.get_llm(api_key=api_key, model_name="openai/tngtech/deepseek-r1t2-chimera:free")
+        response = llm.invoke(prompt).content.strip()
+
+        if "```" in response:
+            response = response.split("```")[1].replace("json", "").strip()
+
+        result = json.loads(response)
+
+        if result.get('type') == 'choice':
+            state['last_user_choice_idx'] = int(result.get('index', 0)) - 1
+            state['parsed_intent'] = 'choice'
+        else:
+            state['parsed_intent'] = 'chat'
+
+    except Exception as e:
+        logger.error(f"[Parser] Error: {e}")
+        state['parsed_intent'] = 'chat'
+
+    return state
+
+
+# Node 2: Rule Engine
 def rule_node(state: PlayerState):
-    scenario = state["scenario"]
-    # ... (기존 로직과 동일: 맵핑 및 선택지 유효성 검사) ...
-    all_scenes = {s["scene_id"]: s for s in scenario["scenes"]}
-    all_endings = {e["ending_id"]: e for e in scenario["endings"]}
+    idx = state['last_user_choice_idx']
+    scenario = state['scenario']
+    curr_scene_id = state['current_scene_id']
 
-    curr_id = state["current_scene_id"]
+    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
+    all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
 
-    # 엔딩 처리
-    if curr_id in all_endings:
-        return {"system_message": "Game Over", "narrator_output": f"[ENDING] {all_endings[curr_id]['description']}"}
+    # [핵심 수정] 엔딩 도달 시 처리
+    if curr_scene_id in all_endings:
+        ending = all_endings[curr_scene_id]
+        state['parsed_intent'] = 'ending'  # 엔딩 상태 확정
+        state['system_message'] = "Game Over"
+        state['npc_output'] = ""
+        # 엔딩 메시지 (HTML 스타일 적용)
+        state['narrator_output'] = f"""
+        <div class="my-8 p-8 border-2 border-yellow-500/50 bg-gradient-to-b from-yellow-900/40 to-black rounded-xl text-center fade-in shadow-2xl relative overflow-hidden">
+            <div class="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-20"></div>
+            <h3 class="text-3xl font-black text-yellow-400 mb-4 tracking-[0.2em] uppercase drop-shadow-md">🎉 ENDING REACHED 🎉</h3>
+            <div class="w-16 h-1 bg-yellow-500 mx-auto mb-6 rounded-full"></div>
+            <div class="text-2xl font-bold text-white mb-4 drop-shadow-sm">"{ending.get('title')}"</div>
+            <p class="text-gray-200 leading-relaxed text-lg font-serif italic">
+                {ending.get('description')}
+            </p>
+            <div class="mt-8 text-xs text-yellow-600/70 font-mono border-t border-yellow-500/20 pt-4">
+                THANK YOU FOR PLAYING
+            </div>
+        </div>
+        """
+        return state
 
-    if curr_id not in all_scenes:
-        return {"system_message": "Error: Unknown Scene"}
+    curr_scene = all_scenes.get(curr_scene_id)
+    sys_msg = []
 
-    current_scene = all_scenes[curr_id]
-    choice_idx = state.get("last_user_choice_idx", -1)
+    if curr_scene and 'choices' in curr_scene and 0 <= idx < len(curr_scene['choices']):
+        choice = curr_scene['choices'][idx]
+        effects = choice.get('effects', [])
+        next_id = choice.get('next_scene_id')
 
-    if choice_idx == -1:  # 게임 시작
-        return {"system_message": "Game Started.", "retry_count": 0}
+        for eff in effects:
+            key = None
+            val = 0
+            try:
+                if isinstance(eff, dict):
+                    key = eff.get("type", "").lower()
+                    raw_val = eff.get("value", 0)
+                    try:
+                        val = int(raw_val)
+                    except:
+                        val = 0
+                elif isinstance(eff, str):
+                    parts = eff.split()
+                    if len(parts) >= 2:
+                        key = parts[0].lower()
+                        try:
+                            val = int(parts[1])
+                        except:
+                            val = 0
 
-    # 선택지 처리 (효과 적용, 이동)
-    if not current_scene.get("choices") or choice_idx >= len(current_scene["choices"]):
-        return {"system_message": "Invalid Choice"}
+                if key:
+                    old_val = state['player_vars'].get(key, 0)
+                    if key == 'hp':
+                        state['player_vars']['hp'] = max(0, old_val + val)
+                        sign = "+" if val > 0 else ""
+                        sys_msg.append(f"체력 {sign}{val} (현재: {state['player_vars']['hp']})")
+                    elif key == 'gold':
+                        state['player_vars']['gold'] = max(0, old_val + val)
+                        sign = "+" if val > 0 else ""
+                        sys_msg.append(f"골드 {sign}{val} (현재: {state['player_vars']['gold']})")
+                    elif key == 'item_get':
+                        inventory = state['player_vars'].get('inventory', [])
+                        item_name = str(eff.get('value', '')) if isinstance(eff, dict) else parts[1]
+                        if item_name:
+                            inventory.append(item_name)
+                            state['player_vars']['inventory'] = inventory
+                            sys_msg.append(f"아이템 획득: {item_name}")
+            except:
+                pass
 
-    selected_choice = current_scene["choices"][choice_idx]
+        if next_id:
+            state['current_scene_id'] = next_id
+            sys_msg.append(f"장면이 전환됩니다.")
 
-    # 효과 적용 로직 (기존과 동일)
-    new_vars = state["player_vars"].copy()
-    logs = []
-
-    if "inventory" not in new_vars: new_vars["inventory"] = []
-
-    if "effects" in selected_choice:
-        for effect in selected_choice["effects"]:
-            if not isinstance(effect, dict): continue
-            target = effect.get("target_var")
-            val = effect.get("value")
-            op = effect.get("operation")
-
-            if not target: continue
-
-            if target == "inventory":
-                if op == "add":
-                    new_vars["inventory"].append(val); logs.append(f"획득: {val}")
-                elif op == "remove" and val in new_vars["inventory"]:
-                    new_vars["inventory"].remove(val)
-            else:
-                try:
-                    int_val = int(val)
-                    if op == "add":
-                        new_vars[target] = new_vars.get(target, 0) + int_val
-                    elif op == "subtract":
-                        new_vars[target] = new_vars.get(target, 0) - int_val
-                    elif op == "set":
-                        new_vars[target] = int_val
-                    logs.append(f"{target} {op} {int_val}")
-                except:
-                    pass
-
-    next_id = selected_choice.get("next_scene_id")
-    if not next_id: next_id = curr_id  # 이동 없으면 유지
-
-    return {
-        "player_vars": new_vars,
-        "current_scene_id": next_id,
-        "system_message": f"Result: {', '.join(logs)}",
-        "retry_count": 0,  # 턴 바뀔 때 재시도 초기화
-        "npc_output": ""  # 초기화
-    }
-
-
-# 2. [LLM] NPC AI Node (전담 마크)
-def npc_node(state: PlayerState):
-    """
-    현재 씬에 NPC가 있다면, 그 중 한 명을 골라 연기시킴.
-    """
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key: return {}
-
-    scenario = state["scenario"]
-    all_scenes = {s["scene_id"]: s for s in scenario["scenes"]}
-    current_scene = all_scenes.get(state["current_scene_id"])
-
-    if not current_scene or not current_scene.get("npc_names"):
-        return {"npc_output": ""}  # NPC 없으면 패스
-
-    # 등장하는 첫 번째 NPC 로드 (심화 시 랜덤 or 대화 상대 선택 가능)
-    npc_name = current_scene["npc_names"][0]
-    npc_data = next((n for n in scenario["npcs"] if n["name"] == npc_name), None)
-
-    if not npc_data: return {"npc_output": ""}
-
-    llm = get_player_model(api_key)
-
-    prompt = f"""
-    You are '{npc_data['name']}' in a TRPG game.
-    Background: {npc_data['background']}
-    Personality: {npc_data['personality']}
-    Hostility: {npc_data['hostility']}
-
-    Current Scene: {current_scene['title']}
-    Player Status: {state['player_vars']}
-
-    Task: Say something to the player based on the current situation. 
-    Keep it short (1-2 sentences). Korean language.
-    """
-
-    res = llm.invoke(prompt)
-    return {"npc_output": f"{npc_data['name']}: \"{res.content}\""}
+    state['npc_output'] = ""
+    state['system_message'] = " ".join(sys_msg)
+    return state
 
 
-# 3. [LLM] Narrator Node (상황 묘사)
+# Node 3: Narrator
 def narrator_node(state: PlayerState):
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    llm = get_player_model(api_key)
+    # [핵심] 엔딩이거나 이미 엔딩 메시지가 있으면 건너뜀
+    if state.get('parsed_intent') == 'ending' or "ENDING REACHED" in state.get('narrator_output', ''):
+        return state
 
-    scenario = state["scenario"]
+    scenario = state['scenario']
+    curr_id = state['current_scene_id']
+    p_vars = state['player_vars']
 
-    # 씬 정보 로드
-    target_data = None
-    for s in scenario["scenes"]:
-        if s["scene_id"] == state["current_scene_id"]: target_data = s
-    if not target_data:
-        for e in scenario["endings"]:
-            if e["ending_id"] == state["current_scene_id"]: target_data = e
+    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
+    curr_scene = all_scenes.get(curr_id)
+
+    scene_title = curr_scene.get('title') if curr_scene else "Unknown Scene"
+    scene_desc = curr_scene.get('description') if curr_scene else "No description available."
+
+    npc_context = f"[NPC SPEAKING]: {state.get('npc_output')}" if state.get('npc_output') else ""
+
+    context = f"""
+    [CURRENT SCENE]: {scene_title}
+    [DESCRIPTION]: {scene_desc}
+    [PLAYER STATUS]: HP={p_vars.get('hp')}, Inventory={p_vars.get('inventory')}
+    {npc_context}
+    [LAST ACTION]: User chose choice #{state['last_user_choice_idx'] + 1} or said "{state.get('last_user_input')}"
+    """
+
+    system_prompt = f"""
+    You are the Game Master (Narrator) of a text RPG.
+    Describe the result of the player's action and the new situation.
+    - If NPC is speaking, include their reaction or dialogue naturally.
+    - Keep it immersive, within 3 sentences.
+    - Style: {scenario.get('theme', 'Dark Fantasy')}
+    - Language: Korean (한국어)
+    """
+
+    try:
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        # [수정] 모델: TNG DeepSeek R1T2 Chimera
+        llm = LLMFactory.get_llm(api_key=api_key, model_name="openai/tngtech/deepseek-r1t2-chimera:free")
+        response = llm.invoke(f"{system_prompt}\n\n{context}").content
+        state['narrator_output'] = response
+    except Exception as e:
+        logger.error(f"Narrator Error: {e}")
+        state['narrator_output'] = "..."
+
+    return state
+
+
+# Node 4: NPC Actor
+def npc_node(state: PlayerState):
+    if state.get('parsed_intent') != 'chat':
+        state['npc_output'] = ""
+        return state
+
+    scenario = state['scenario']
+    user_text = state['last_user_input']
+
+    curr_id = state['current_scene_id']
+    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
+    curr_scene = all_scenes.get(curr_id)
+
+    npc_names = curr_scene.get('npc_names', []) if curr_scene else []
+
+    if not npc_names:
+        state['npc_output'] = ""
+        return state
+
+    target_npc = npc_names[0]
 
     prompt = f"""
-    Role: TRPG Narrator.
-    Scene: {target_data.get('title')}
-    Desc: {target_data.get('description')}
-
-    System Log: {state.get('system_message')}
-    NPC Action: {state.get('npc_output')}
-
-    Task: Combine the system log, NPC action, and scene description into a cohesive narrative.
-    Language: Korean. Max 3 sentences.
+    Act as the NPC '{target_npc}'.
+    Player said: "{user_text}"
+    Respond in character. Short (1 sentence). Korean.
     """
 
-    res = llm.invoke(prompt)
-    return {"narrator_output": res.content}
+    try:
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        # [수정] 모델: TNG DeepSeek R1T2 Chimera
+        llm = LLMFactory.get_llm(api_key=api_key, model_name="openai/tngtech/deepseek-r1t2-chimera:free")
+        response = llm.invoke(prompt).content.strip()
+        state['npc_output'] = f"{response}"
+    except:
+        state['npc_output'] = ""
+
+    return state
 
 
-# 4. [LLM] Play Critic Node (플레이 검수 AI)
-def critic_node(state: PlayerState):
-    """
-    나레이터와 NPC가 헛소리(환각)를 했는지, 언어는 자연스러운지 감시
-    """
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    llm = get_player_model(api_key)
-
-    draft_text = f"{state.get('npc_output', '')}\n{state.get('narrator_output', '')}"
-
-    prompt = f"""
-    Role: Game Quality Assurance (Critic).
-    Review the following Game Output Text:
-    ---
-    {draft_text}
-    ---
-    Global Rules: {state['scenario'].get('global_rules')}
-    Player Stats: {state['player_vars']}
-
-    Checklist:
-    1. Is the language natural Korean?
-    2. Does it contradict the Player Stats? (e.g., saying 'you died' when HP > 0)
-    3. Is it consistent with the rules?
-
-    If GOOD, reply exactly: "PASS"
-    If BAD, reply with the reason (briefly).
-    """
-
-    res = llm.invoke(prompt)
-    feedback = res.content.strip()
-
-    if "PASS" in feedback.upper():
-        return {"critic_feedback": "PASS"}
-    else:
-        return {"critic_feedback": feedback, "retry_count": state["retry_count"] + 1}
-
-
-# --- 라우터 (결정권자) ---
-def critic_router(state: PlayerState) -> Literal["pass", "retry"]:
-    # 3번 이상 실패하면 그냥 포기하고 통과시킴 (무한루프 방지)
-    if state["retry_count"] >= 3:
-        return "pass"
-
-    if state["critic_feedback"] == "PASS":
-        return "pass"
-    else:
-        return "retry"
-
-
-def finalize_node(state: PlayerState):
-    """검수 통과된 텍스트를 히스토리에 확정"""
-    final_text = f"{state.get('npc_output', '')}\n{state.get('narrator_output', '')}".strip()
-    return {"history": [final_text]}
-
-
-# --- 그래프 조립 ---
+# Graph Construction
 def create_game_graph():
     workflow = StateGraph(PlayerState)
 
-    # 노드 등록
+    workflow.add_node("intent_parser", intent_parser_node)
     workflow.add_node("rule_engine", rule_node)
     workflow.add_node("npc_actor", npc_node)
     workflow.add_node("narrator", narrator_node)
-    workflow.add_node("play_critic", critic_node)
-    workflow.add_node("finalize", finalize_node)
 
-    # 흐름 연결
-    workflow.set_entry_point("rule_engine")
+    workflow.set_entry_point("intent_parser")
 
-    # 룰 -> NPC -> 나레이터 -> 비평가
-    workflow.add_edge("rule_engine", "npc_actor")
-    workflow.add_edge("npc_actor", "narrator")
-    workflow.add_edge("narrator", "play_critic")
+    def route_action(state):
+        intent = state.get('parsed_intent')
+        if intent == 'choice' or intent == 'ending':  # 엔딩도 룰 엔진으로 보냄
+            return "rule_engine"
+        else:
+            return "npc_actor"
 
-    # 비평가 -> (조건부) -> 재시도 or 완료
     workflow.add_conditional_edges(
-        "play_critic",
-        critic_router,
+        "intent_parser",
+        route_action,
         {
-            "pass": "finalize",
-            "retry": "narrator"  # 문제 있으면 나레이션 다시 생성
+            "rule_engine": "rule_engine",
+            "npc_actor": "npc_actor"
         }
     )
 
-    workflow.add_edge("finalize", END)
+    workflow.add_edge("rule_engine", "narrator")
+    workflow.add_edge("npc_actor", "narrator")
+    workflow.add_edge("narrator", END)
 
     return workflow.compile()
