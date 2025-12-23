@@ -31,7 +31,7 @@ db = {
         "dice_system": "1d20"
     },
     "state": None,
-    "game_graph": None  # 그래프 캐싱
+    "game_graph": None
 }
 
 # --- HTML 템플릿 조각 (Frontend Update용) ---
@@ -87,6 +87,10 @@ T_STATS_OOB = """
 
 @app.route('/')
 def index():
+    # [수정] 새로고침(F5) 시 상태 초기화 (메인 페이지 접속 시)
+    global db
+    db['state'] = None
+    db['game_graph'] = None
     return render_template('index.html')
 
 
@@ -98,10 +102,35 @@ def view_builder():
 @app.route('/views/player')
 def view_player():
     p_vars = {}
+    chat_log = ""
+
+    # [수정] 탭 이동 후 돌아왔을 때 상태 복구
     if db['state']:
         p_vars = db['state'].get('player_vars', {})
+        # 저장된 채팅 내역이 있으면 불러오기
+        chat_log = db['state'].get('chat_log_html', "")
 
-    return render_template('player_view.html', vars=p_vars)
+    return render_template('player_view.html', vars=p_vars, chat_log=chat_log)
+
+
+@app.route('/views/scenes')
+def view_scenes():
+    # [추가] 전체 씬 목록 보기
+    if not db['state'] or not db['state'].get('scenario'):
+        return """
+        <div class="flex-1 flex items-center justify-center h-full text-gray-500 p-8">
+            <div class="text-center">
+                <i data-lucide="alert-circle" class="w-12 h-12 mx-auto mb-4 opacity-50"></i>
+                <h3 class="text-xl font-bold mb-2">시나리오 없음</h3>
+                <p>먼저 시나리오를 생성하거나 불러와주세요.</p>
+            </div>
+            <script>lucide.createIcons();</script>
+        </div>
+        """
+
+    scenario = db['state']['scenario']
+    scenes = scenario.get('scenes', [])
+    return render_template('scenes_view.html', scenes=scenes, title=scenario.get('title', 'Unknown'))
 
 
 # [API] 저장된 시나리오 목록 조회
@@ -205,7 +234,8 @@ def load_scenario():
             "npc_output": "",
             "narrator_output": "",
             "critic_feedback": "",
-            "retry_count": 0
+            "retry_count": 0,
+            "chat_log_html": ""  # [추가] 채팅 내역 저장용
         }
 
         if scenario_json.get('scenes'):
@@ -215,8 +245,9 @@ def load_scenario():
 
         db['game_graph'] = create_game_graph()
 
-        # 로드 성공 시 모달 닫기 스크립트
-        return f'''
+        # [수정] 로드 성공 시 모달 닫기 로직 강화
+        # 단순 class 제거가 아니라, 플레이어 뷰 전체를 새로고침하거나 확실하게 닫는 스크립트 전송
+        success_msg = f'''
         <div class="bg-green-900/30 border border-green-800 text-green-400 p-4 rounded-lg flex items-center gap-3 fade-in mt-4">
             <i data-lucide="check-circle" class="w-6 h-6"></i>
             <div>
@@ -226,10 +257,24 @@ def load_scenario():
         </div>
         <script>
             lucide.createIcons();
-            const modal = document.getElementById('load-modal');
-            if(modal) modal.classList.add('hidden');
+            // 모달 닫기
+            (function(){{
+                const modal = document.getElementById('load-modal');
+                if(modal) {{
+                    modal.classList.add('hidden');
+                    // 혹시 몰라 강제 스타일 적용
+                    modal.style.display = 'none';
+                    // tailwind hidden 클래스 확실히 적용
+                    setTimeout(() => modal.classList.add('hidden'), 50);
+                }}
+            }})();
         </script>
         '''
+
+        # [추가] 로드 안내 메시지도 채팅 로그에 저장
+        db['state']['chat_log_html'] += success_msg
+
+        return success_msg
 
     except Exception as e:
         logging.error(f"로드 실패: {e}")
@@ -250,9 +295,8 @@ def init_game():
     player_hp = 20
     dice_sys = request.form.get('dice_system', '1d20')
 
-    # [수정] 사용자가 직접 입력한 씬 요구사항 수집
+    # 사용자가 직접 입력한 씬 요구사항 수집
     custom_scene_requirements = []
-    # 폼에서 넘어온 scene_req_desc 같은 값들 수집
     req_keys = ['scene_req_desc', 'scene_req_npc', 'scene_req_items', 'scene_req_branch']
     for key in req_keys:
         val = request.form.get(key)
@@ -267,7 +311,7 @@ def init_game():
         "theme": background,
         "player_hp": player_hp,
         "dice_system": dice_sys,
-        "scene_guidelines": custom_scene_requirements  # 에이전트에게 전달할 가이드라인 추가
+        "scene_guidelines": custom_scene_requirements
     }
 
     try:
@@ -305,7 +349,8 @@ def init_game():
             "npc_output": "",
             "narrator_output": "",
             "critic_feedback": "",
-            "retry_count": 0
+            "retry_count": 0,
+            "chat_log_html": ""  # [추가]
         }
 
         if scenario_json.get('scenes'):
@@ -333,7 +378,7 @@ def init_game():
         return f'<div class="text-red-500 text-xs">오류 발생: {str(e)}</div>'
 
 
-# [API] 플레이어 행동 처리
+# [API] 플레이어 행동 처리 (로직 통합 및 버그 수정)
 @app.route('/game/act', methods=['POST'])
 def game_act():
     if not db['state']:
@@ -343,62 +388,33 @@ def game_act():
     current_state = db['state']
     scenario = current_state['scenario']
 
+    # 사용자 채팅 표시
     user_html = render_template_string(T_CHAT_MSG, sender="Player", text=action_text, is_gm=False)
 
-    # 게임 시작 처리
-    if current_state['last_user_choice_idx'] == -1:
-        try:
-            if not db['game_graph']:
-                db['game_graph'] = create_game_graph()
-
-            game_app = db['game_graph']
-            final_state = game_app.invoke(current_state)
-            db['state'] = final_state
-
-            prologue = scenario.get('prologue_text', '게임이 시작되었습니다.')
-            curr_scene_id = final_state['current_scene_id']
-            all_scenes = {s["scene_id"]: s for s in scenario["scenes"]}
-            curr_scene = all_scenes.get(curr_scene_id)
-
-            full_text = f"<div class='mb-4'>{prologue}</div>"
-
-            if curr_scene:
-                full_text += f"<div class='text-xl font-bold text-indigo-300 mb-2'>{curr_scene.get('title', '')}</div>"
-                full_text += f"<div class='mb-4'>{curr_scene.get('description', '')}</div>"
-                if curr_scene.get('choices'):
-                    full_text += "<div class='mt-4 pt-4 border-t border-gray-700'>"
-                    for i, c in enumerate(curr_scene['choices']):
-                        full_text += f"<div class='text-indigo-300 mb-2'>{i + 1}. {c['text']}</div>"
-                    full_text += "</div>"
-
-            gm_html = render_template_string(T_CHAT_MSG, sender="GM", text=full_text, is_gm=True)
-            stats_html = render_template_string(T_STATS_OOB, vars=final_state['player_vars'])
-
-            return user_html + gm_html + stats_html
-
-        except Exception as e:
-            logging.error(f"게임 시작 오류: {e}")
-            import traceback
-            traceback.print_exc()
-            return user_html + f"<div class='text-red-500'>시스템 오류: {e}</div>"
-
-    # 일반 턴 처리
+    # 1. 입력값 분석 (Choice Index 계산)
     curr_scene_id = current_state['current_scene_id']
     all_scenes = {s["scene_id"]: s for s in scenario["scenes"]}
     curr_scene = all_scenes.get(curr_scene_id)
 
     choice_idx = -1
-    if curr_scene and curr_scene.get('choices'):
+
+    # "시작" 같은 명령어는 초기화(-1)로 처리, 그 외는 선택지 찾기
+    if action_text in ["시작", "start", "Start"]:
+        choice_idx = -1
+    elif curr_scene and curr_scene.get('choices'):
+        # 숫자 입력 (1, 2, 3...)
         if action_text.isdigit():
             idx = int(action_text) - 1
             if 0 <= idx < len(curr_scene['choices']):
                 choice_idx = idx
+        # 텍스트 매칭
         if choice_idx == -1:
             for i, choice in enumerate(curr_scene['choices']):
                 if action_text.lower() in choice['text'].lower():
                     choice_idx = i
                     break
 
+    # 2. 상태 업데이트
     current_state['last_user_choice_idx'] = choice_idx
 
     try:
@@ -406,27 +422,55 @@ def game_act():
             db['game_graph'] = create_game_graph()
 
         game_app = db['game_graph']
-        final_state = game_app.invoke(current_state)
-        db['state'] = final_state
 
+        # 3. AI 엔진 실행
+        final_state = game_app.invoke(current_state)
+        db['state'] = final_state  # 결과 저장
+
+        # 4. 결과 출력 구성
         npc_say = final_state.get('npc_output', '')
         narrator_say = final_state.get('narrator_output', '')
         sys_msg = final_state.get('system_message', '')
 
         full_text = ""
+
+        # (A) 게임 시작(프롤로그)인 경우
+        if "Game Started" in sys_msg or (choice_idx == -1 and "Unknown" not in sys_msg):
+            prologue = scenario.get('prologue_text', '')
+            if prologue:
+                full_text += f"<div class='mb-4 text-gray-300 italic'>[Prologue] {prologue}</div>"
+
+            # 첫 씬 설명 추가
+            if not narrator_say:
+                new_scene_id = final_state['current_scene_id']
+                new_scene_obj = all_scenes.get(new_scene_id)
+                if new_scene_obj:
+                    full_text += f"<div class='text-xl font-bold text-indigo-300 mb-2'>{new_scene_obj.get('title', '')}</div>"
+                    full_text += f"<div class='mb-4'>{new_scene_obj.get('description', '')}</div>"
+
+        # (B) 일반 진행
         if sys_msg and "Game Started" not in sys_msg and "Game Init" not in sys_msg:
             full_text += f"<div class='text-xs text-gray-500 mb-2'>[System] {sys_msg}</div>"
+
         if npc_say:
-            full_text += f"<span class='text-yellow-400 font-bold'>{npc_say}</span><br><br>"
+            full_text += f"<div class='bg-gray-800/80 p-3 rounded-lg border-l-4 border-yellow-500 mb-4'><span class='text-yellow-400 font-bold block mb-1'>NPC</span>{npc_say}</div>"
+
         if narrator_say:
             full_text += narrator_say
 
+        # 5. 다음 선택지 렌더링
         new_scene_id = final_state['current_scene_id']
         new_scene = all_scenes.get(new_scene_id)
+
         if new_scene and new_scene.get('choices'):
-            full_text += "<div class='mt-4 pt-4 border-t border-gray-700'>"
+            full_text += "<div class='mt-4 pt-4 border-t border-gray-700 space-y-2'>"
             for i, c in enumerate(new_scene['choices']):
-                full_text += f"<div class='text-indigo-300 mb-2'>{i + 1}. {c['text']}</div>"
+                full_text += f"""
+                <button onclick="submitGameAction('{i + 1}')" class="w-full text-left bg-gray-800/50 hover:bg-indigo-900/40 p-3 rounded-lg border border-gray-700 hover:border-indigo-500 transition-all group flex items-start gap-3">
+                    <span class="bg-indigo-900 text-indigo-200 text-xs font-bold px-2 py-0.5 rounded group-hover:bg-indigo-500 group-hover:text-white transition-colors">{i + 1}</span>
+                    <span class="text-indigo-200 group-hover:text-white transition-colors text-sm">{c['text']}</span>
+                </button>
+                """
             full_text += "</div>"
 
         if not full_text.strip():
@@ -435,10 +479,17 @@ def game_act():
         gm_html = render_template_string(T_CHAT_MSG, sender="GM", text=full_text, is_gm=True)
         stats_html = render_template_string(T_STATS_OOB, vars=final_state['player_vars'])
 
+        # [추가] 채팅 로그 서버 저장 (User MSG + GM MSG)
+        if 'chat_log_html' not in db['state']:
+            db['state']['chat_log_html'] = ""
+        db['state']['chat_log_html'] += user_html + gm_html
+
         return user_html + gm_html + stats_html
 
     except Exception as e:
         logging.error(f"게임 턴 처리 중 오류: {e}")
+        import traceback
+        traceback.print_exc()
         return user_html + f"<div class='text-red-500'>시스템 오류: {e}</div>"
 
 

@@ -24,14 +24,13 @@
 
         .serif-font { font-family: 'Times New Roman', serif; }
 
-        /* 로딩 인디케이터 수정: 평소에는 클릭 통과시킴 (pointer-events: none) */
+        /* 로딩 인디케이터 수정 */
         .htmx-indicator {
             display: none;
             opacity: 0;
             transition: opacity 200ms ease-in;
-            pointer-events: none; /* 중요: 클릭 방지 해제 */
+            pointer-events: none;
         }
-        /* 로딩 중일 때만 보이고 클릭 막음 */
         .htmx-request .htmx-indicator {
             display: flex;
             opacity: 1;
@@ -43,7 +42,6 @@
             pointer-events: auto;
         }
 
-        /* 채팅 로딩용 점 애니메이션 */
         .typing-dot {
             animation: typing 1.4s infinite ease-in-out both;
         }
@@ -59,11 +57,11 @@
 <body class="bg-gray-950 text-gray-200 h-screen flex overflow-hidden">
 
     <!-- 사이드바 -->
-    <div class="w-72 bg-gray-900 border-r border-gray-800 flex flex-col hidden md:flex shrink-0 z-20">
-        <div class="p-6 border-b border-gray-800">
-            <h1 class="text-xl font-black text-white tracking-wider flex items-center gap-2">
-                <i data-lucide="map" class="text-blue-500"></i>
-                TRPG BUILDER
+    <div class="w-20 hover:w-72 bg-gray-900 border-r border-gray-800 flex flex-col hidden md:flex shrink-0 z-50 transition-all duration-300 ease-in-out group overflow-hidden">
+        <div class="p-6 border-b border-gray-800 whitespace-nowrap">
+            <h1 class="text-xl font-black text-white tracking-wider flex items-center gap-3">
+                <i data-lucide="map" class="text-blue-500 w-6 h-6 shrink-0"></i>
+                <span class="opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">TRPG BUILDER</span>
             </h1>
         </div>
 
@@ -71,21 +69,30 @@
             <button hx-get="/views/builder"
                     hx-target="#main-view"
                     hx-swap="innerHTML"
-                    class="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all text-gray-400 hover:bg-gray-800 hover:text-white focus:bg-blue-900 focus:text-white group relative z-30 cursor-pointer">
-                <i data-lucide="hammer" class="group-focus:text-blue-400"></i>
-                <span class="font-medium">시나리오 빌더</span>
+                    class="w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-gray-400 hover:bg-gray-800 hover:text-white focus:bg-blue-900 focus:text-white group/btn relative z-30 cursor-pointer whitespace-nowrap">
+                <i data-lucide="hammer" class="group-focus/btn:text-blue-400 w-6 h-6 shrink-0"></i>
+                <span class="font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">시나리오 빌더</span>
             </button>
 
             <button hx-get="/views/player"
                     hx-target="#main-view"
                     hx-swap="innerHTML"
-                    class="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all text-gray-400 hover:bg-gray-800 hover:text-white focus:bg-indigo-900 focus:text-white group relative z-30 cursor-pointer">
-                <i data-lucide="gamepad-2" class="group-focus:text-indigo-400"></i>
-                <span class="font-medium">플레이어 모드</span>
+                    class="w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-gray-400 hover:bg-gray-800 hover:text-white focus:bg-indigo-900 focus:text-white group/btn relative z-30 cursor-pointer whitespace-nowrap">
+                <i data-lucide="gamepad-2" class="group-focus/btn:text-indigo-400 w-6 h-6 shrink-0"></i>
+                <span class="font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">플레이어 모드</span>
+            </button>
+
+            <!-- [추가] 씬 목록 보기 버튼 -->
+            <button hx-get="/views/scenes"
+                    hx-target="#main-view"
+                    hx-swap="innerHTML"
+                    class="w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-gray-400 hover:bg-gray-800 hover:text-white focus:bg-pink-900 focus:text-white group/btn relative z-30 cursor-pointer whitespace-nowrap">
+                <i data-lucide="layers" class="group-focus/btn:text-pink-400 w-6 h-6 shrink-0"></i>
+                <span class="font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">전체 씬 보기</span>
             </button>
         </nav>
 
-        <div class="p-4 text-xs text-gray-600 text-center border-t border-gray-800">
+        <div class="p-4 text-xs text-gray-600 text-center border-t border-gray-800 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">
             Powered by CrewAI & LangGraph
         </div>
     </div>
@@ -94,13 +101,10 @@
     <div id="main-view" class="flex-1 flex flex-col h-full relative z-10">
 
         {% if view_mode == 'player_content' %}
-            <!-- Player View Content Here -->
             {% block player_content %}{% endblock %}
         {% else %}
-            <!-- 빌더 모드 (기본값) -->
             {% block builder_content %}
             <div class="flex-1 overflow-y-auto p-8 fade-in relative z-10">
-                <!-- 전체 화면 로딩 (시나리오 생성용) - pointer-events 제어됨 -->
                 <div id="full-loading" class="htmx-indicator fixed inset-0 bg-gray-950/90 z-[100] flex flex-col items-center justify-center backdrop-blur-sm">
                     <div class="relative w-24 h-24 mb-6">
                         <div class="absolute inset-0 border-t-4 border-blue-500 border-solid rounded-full animate-spin"></div>
@@ -124,7 +128,6 @@
                           hx-indicator="#full-loading"
                           class="space-y-8 pb-12 relative z-20">
 
-                        <!-- 설정 폼들 -->
                         <div class="bg-gray-900 p-6 rounded-xl border border-gray-800 space-y-4">
                             <h3 class="text-lg font-bold text-blue-400 flex items-center gap-2">
                                 <i data-lucide="settings"></i> 기본 설정
@@ -152,7 +155,6 @@
                             </div>
                         </div>
 
-                        <!-- 룰 및 난이도 -->
                         <div class="bg-gray-900 p-6 rounded-xl border border-gray-800 space-y-4">
                             <h3 class="text-lg font-bold text-indigo-400 flex items-center gap-2">
                                 <i data-lucide="scroll"></i> 룰 & 난이도
@@ -187,7 +189,6 @@
                             </div>
                         </div>
 
-                        <!-- 씬 구성 요소 -->
                         <div class="bg-gray-900 p-6 rounded-xl border border-gray-800 space-y-4">
                             <h3 class="text-lg font-bold text-purple-400 flex items-center gap-2">
                                 <i data-lucide="clapperboard"></i> 씬(Scene) 생성 가이드라인
@@ -220,7 +221,6 @@
                             </div>
                         </div>
 
-                        <!-- 상세 컨텐츠 -->
                         <div class="bg-gray-900 p-6 rounded-xl border border-gray-800 space-y-4">
                             <h3 class="text-lg font-bold text-green-400 flex items-center gap-2">
                                 <i data-lucide="users"></i> 상세 컨텐츠 설정
