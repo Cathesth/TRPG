@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Generator
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
@@ -30,7 +30,7 @@ class OpenRouterLLM(ChatOpenAI):
 
 class LLMFactory:
     @staticmethod
-    def get_llm(model_name: str, api_key: str, temperature: float = 0.7):
+    def get_llm(model_name: str, api_key: str, temperature: float = 0.7, streaming: bool = False):
         # API Key 확인
         if not api_key:
             api_key = os.getenv("OPENROUTER_API_KEY")
@@ -46,11 +46,17 @@ class LLMFactory:
             api_key=api_key,
             model=model_name,  # 여기엔 'openai/'가 붙은 이름이 들어옴
             temperature=temperature,
+            streaming=streaming,
             default_headers={
                 "HTTP-Referer": "https://github.com/crewAIInc/crewAI",
                 "X-Title": "CrewAI TRPG"
             }
         )
+
+    @staticmethod
+    def get_streaming_llm(model_name: str = "openai/tngtech/deepseek-r1t2-chimera:free", api_key: str = None, temperature: float = 0.7):
+        """스트리밍 지원 LLM 반환"""
+        return LLMFactory.get_llm(model_name, api_key, temperature, streaming=True)
 
 
 # --- 편의 함수 ---
@@ -70,3 +76,10 @@ def get_player_model(api_key=None):
     """
     # 여기도 'openai/' 붙임
     return LLMFactory.get_llm("openai/tngtech/deepseek-r1t2-chimera:free", api_key, temperature=0.7)
+
+
+def get_streaming_model(api_key=None):
+    """
+    스트리밍용 모델 반환
+    """
+    return LLMFactory.get_streaming_llm(api_key=api_key)
