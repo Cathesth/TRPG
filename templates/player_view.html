@@ -1,57 +1,13 @@
 <div class="flex h-full fade-in relative">
 
-    <style>
-        form.htmx-request { opacity: 0.5; cursor: wait; }
-
-        /* [수정] 비활성화된 버튼 스타일 강화 */
-        button:disabled, button.disabled {
-            opacity: 0.5 !important;
-            cursor: not-allowed !important;
-            pointer-events: none !important;
-            filter: grayscale(100%);
-        }
-
-        #chat-log.processing button {
-            opacity: 0.5 !important;
-            pointer-events: none !important;
-            cursor: wait !important;
-        }
-
-        form.htmx-request input {
-            background-color: #1f2937;
-            color: #9ca3af;
-        }
-
-        /* 스트리밍 커서 애니메이션 */
-        .streaming-cursor {
-            animation: blink 1s infinite;
-            color: #818cf8;
-        }
-
-        @keyframes blink {
-            0%, 50% { opacity: 1; }
-            51%, 100% { opacity: 0; }
-        }
-
-        form.streaming {
-            opacity: 0.7;
-            cursor: wait;
-        }
-
-        form.streaming input {
-            background-color: #1f2937;
-            color: #9ca3af;
-        }
-    </style>
-
-    <!-- 시나리오 로드 모달 -->
-    <div id="load-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/90 backdrop-blur-sm" style="display: none;">
+    <!-- 시나리오 로드 모달 (기본 숨김) -->
+    <div id="load-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/90 backdrop-blur-sm">
         <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-4xl h-[80vh] flex flex-col shadow-2xl overflow-hidden m-4">
             <div class="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-800">
                 <h3 class="text-xl font-bold text-white flex items-center gap-2">
                     <i data-lucide="folder-open" class="text-yellow-500"></i> 저장된 시나리오 목록
                 </h3>
-                <button onclick="const m=document.getElementById('load-modal'); m.classList.add('hidden'); m.style.display='none';" class="text-gray-400 hover:text-white p-2 cursor-pointer">
+                <button onclick="document.getElementById('load-modal').classList.add('hidden')" class="text-gray-400 hover:text-white p-2">
                     <i data-lucide="x" class="w-6 h-6"></i>
                 </button>
             </div>
@@ -69,7 +25,7 @@
             </div>
 
             <div class="p-4 bg-gray-800 border-t border-gray-700 text-right">
-                <button onclick="const m=document.getElementById('load-modal'); m.classList.add('hidden'); m.style.display='none';" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm cursor-pointer">닫기</button>
+                <button onclick="document.getElementById('load-modal').classList.add('hidden')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm">닫기</button>
             </div>
         </div>
     </div>
@@ -77,37 +33,35 @@
     <!-- 채팅 영역 -->
     <div class="flex-1 flex flex-col relative bg-gray-950">
 
-        <!-- 상단 툴바 -->
+        <!-- 상단 툴바 (플레이어 전용) -->
         <div class="absolute top-0 left-0 right-0 z-10 p-4 flex justify-end pointer-events-none">
-            <button onclick="const m=document.getElementById('load-modal'); m.classList.remove('hidden'); m.style.display='flex'; htmx.trigger('#scenario-list-container', 'reveal')"
-                    class="pointer-events-auto bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-4 py-2 rounded-lg border border-indigo-700/50 backdrop-blur-md shadow-lg flex items-center gap-2 text-sm font-bold transition-all hover:scale-105 cursor-pointer">
+            <button onclick="document.getElementById('load-modal').classList.remove('hidden'); htmx.trigger('#scenario-list-container', 'reveal')"
+                    class="pointer-events-auto bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-4 py-2 rounded-lg border border-indigo-700/50 backdrop-blur-md shadow-lg flex items-center gap-2 text-sm font-bold transition-all hover:scale-105">
                 <i data-lucide="folder-open" class="w-4 h-4"></i>
                 시나리오 불러오기
             </button>
         </div>
 
         <div id="chat-log" class="flex-1 overflow-y-auto p-6 space-y-6 pb-24 scroll-smooth pt-16">
+            <!-- 알림 메시지 영역 (로드 성공/실패 메시지가 여기 뜸) -->
             <div id="init-result" class="mb-4"></div>
 
-            {% if chat_log %}
-                {{ chat_log | safe }}
-            {% else %}
-                <div id="intro-message" class="flex gap-4">
-                    <div class="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center shrink-0">
-                        <i data-lucide="bot" class="text-white w-4 h-4"></i>
-                    </div>
-                    <div class="flex-1">
-                        <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
-                        <div class="bg-[#1a1a1e] border border-gray-700 p-3 rounded-lg text-gray-300 text-sm leading-relaxed serif-font">
-                            시스템에 접속했습니다.
-                            <br>
-                            우측 상단의 <strong>[시나리오 불러오기]</strong> 버튼을 눌러 저장된 게임을 로드하거나, 아래 입력창에 '시작'을 입력하세요.
-                        </div>
+            <div class="flex gap-4">
+                <div class="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center shrink-0">
+                    <i data-lucide="bot" class="text-white w-4 h-4"></i>
+                </div>
+                <div class="flex-1">
+                    <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
+                    <div class="bg-[#1a1a1e] border border-gray-700 p-3 rounded-lg text-gray-300 text-sm leading-relaxed serif-font">
+                        시스템에 접속했습니다.
+                        <br>
+                        우측 상단의 <strong>[시나리오 불러오기]</strong> 버튼을 눌러 저장된 게임을 로드하거나, 아래 입력창에 '시작'을 입력하세요.
                     </div>
                 </div>
-            {% endif %}
+            </div>
 
-            <div id="ai-loading" class="htmx-indicator flex gap-4 fade-in py-2">
+            <!-- AI 답변 로딩 인디케이터 (htmx-indicator) -->
+            <div id="ai-loading" class="htmx-indicator flex gap-4 fade-in">
                 <div class="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center shrink-0">
                     <i data-lucide="bot" class="text-white w-4 h-4"></i>
                 </div>
@@ -125,17 +79,18 @@
             </div>
         </div>
 
+        <!-- 입력창 -->
         <div class="p-4 bg-gray-900 border-t border-gray-800 absolute bottom-0 w-full z-20">
             <form hx-post="/game/act"
-                  hx-target="#ai-loading"
-                  hx-swap="beforebegin"
+                  hx-target="#chat-log"
+                  hx-swap="beforeend"
                   hx-indicator="#ai-loading"
                   hx-on:htmx:before-request="this.reset()"
-                  hx-on:htmx:after-request="setTimeout(() => document.getElementById('chat-log').scrollTo({ top: document.getElementById('chat-log').scrollHeight, behavior: 'smooth' }), 100);"
+                  hx-on:htmx:after-request="document.getElementById('chat-log').scrollTo(0, document.getElementById('chat-log').scrollHeight);"
                   class="max-w-4xl mx-auto flex gap-2">
 
                 <input type="text" name="action" autofocus autocomplete="off"
-                       class="flex-1 bg-gray-800 border border-gray-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-gray-500 transition-colors"
+                       class="flex-1 bg-gray-800 border border-gray-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-gray-500"
                        placeholder="무엇을 하시겠습니까? (예: 1번 선택, 문을 연다, 시작...)">
 
                 <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-bold transition-colors">
@@ -154,7 +109,7 @@
 
         <div id="player-stats-area">
             {% if vars %}
-            <div class="bg-[#1a1a1e] rounded-lg p-4 border border-[#2d2d35] shadow-sm mb-4 fade-in">
+            <div class="bg-[#1a1a1e] rounded-lg p-4 border border-[#2d2d35] shadow-sm mb-4">
                 <div class="flex justify-between items-center mb-3">
                     <span class="text-xs font-bold text-gray-400 uppercase">Status</span>
                     <i data-lucide="activity" class="w-3 h-3 text-red-500"></i>
@@ -192,350 +147,3 @@
         </div>
     </div>
 </div>
-
-<script>
-    // 스트리밍 모드 사용 여부 (true: 스트리밍, false: 기존 방식)
-    const USE_STREAMING = true;
-
-    // 게임 종료 상태
-    let isGameEnded = false;
-
-    function submitGameAction(actionText) {
-        // 게임이 끝났으면 입력 차단
-        if (isGameEnded) {
-            console.log("게임이 종료되었습니다. 입력이 차단됩니다.");
-            return;
-        }
-
-        const form = document.querySelector('form[hx-post="/game/act"]');
-
-        if (form.classList.contains('htmx-request') || form.classList.contains('streaming')) {
-            console.log("생성 중입니다. 클릭 방지됨.");
-            return;
-        }
-
-        const input = form.querySelector('input[name="action"]');
-        input.value = actionText;
-
-        if (USE_STREAMING) {
-            submitWithStreaming(actionText);
-        } else {
-            htmx.trigger(form, 'submit');
-        }
-    }
-
-    // 입력창 비활성화 함수
-    function disableInput() {
-        isGameEnded = true;
-        const form = document.querySelector('form[hx-post="/game/act"]');
-        const input = form.querySelector('input[name="action"]');
-        const submitBtn = form.querySelector('button[type="submit"]');
-
-        input.disabled = true;
-        input.placeholder = "🎮 게임이 종료되었습니다. 위의 버튼을 눌러 새로운 모험을 시작하세요!";
-        input.classList.add('opacity-50', 'cursor-not-allowed');
-
-        if (submitBtn) {
-            submitBtn.disabled = true;
-            submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
-        }
-    }
-
-    // 스트리밍 전송 함수
-    async function submitWithStreaming(actionText) {
-        // 게임 종료 시 차단
-        if (isGameEnded) return;
-
-        const form = document.querySelector('form[hx-post="/game/act"]');
-        const chatLog = document.getElementById('chat-log');
-        const loadingIndicator = document.getElementById('ai-loading');
-        const input = form.querySelector('input[name="action"]');
-
-        // 폼 비활성화
-        form.classList.add('streaming');
-        input.readOnly = true;
-        chatLog.classList.add('processing');
-
-        // 기존 버튼들 비활성화
-        const existingButtons = chatLog.querySelectorAll('button');
-        existingButtons.forEach(btn => {
-            btn.disabled = true;
-            btn.classList.add('disabled', 'opacity-50', 'cursor-not-allowed');
-        });
-
-        // 플레이어 메시지 추가
-        const playerMsgHtml = `
-        <div class="flex gap-4 fade-in mb-4">
-            <div class="w-8 h-8 rounded-lg bg-gray-700 flex items-center justify-center shrink-0">
-                <i data-lucide="user" class="text-white w-4 h-4"></i>
-            </div>
-            <div class="flex-1">
-                <div class="text-gray-400 text-xs font-bold mb-1">Player</div>
-                <div class="bg-[#202025] border-gray-700 p-3 rounded-lg border text-gray-300 text-sm leading-relaxed">
-                    ${actionText}
-                </div>
-            </div>
-        </div>`;
-        loadingIndicator.insertAdjacentHTML('beforebegin', playerMsgHtml);
-
-        // GM 응답 컨테이너 생성
-        const gmContainer = document.createElement('div');
-        gmContainer.className = 'flex gap-4 fade-in mb-4';
-        gmContainer.innerHTML = `
-            <div class="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center shrink-0">
-                <i data-lucide="bot" class="text-white w-4 h-4"></i>
-            </div>
-            <div class="flex-1">
-                <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
-                <div id="gm-streaming-content" class="bg-[#1a1a1e] border-gray-700 p-3 rounded-lg border text-gray-300 text-sm leading-relaxed serif-font">
-                    <span class="streaming-cursor">▌</span>
-                </div>
-            </div>
-        </div>`;
-        loadingIndicator.insertAdjacentHTML('beforebegin', gmContainer.outerHTML);
-
-        const contentDiv = document.getElementById('gm-streaming-content');
-        loadingIndicator.style.display = 'flex';
-        lucide.createIcons();
-
-        try {
-            const formData = new FormData();
-            formData.append('action', actionText);
-
-            const response = await fetch('/game/act_stream', {
-                method: 'POST',
-                body: formData
-            });
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let narratorText = '';
-            let buffer = '';
-            let currentContent = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop(); // 불완전한 마지막 줄 보관
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.slice(6));
-
-                            switch (data.type) {
-                                case 'prefix':
-                                    // 프리픽스 HTML (시스템 메시지, NPC 등)
-                                    currentContent += data.content;
-                                    contentDiv.innerHTML = currentContent + '<span id="narrator-stream"></span><span class="streaming-cursor">▌</span>';
-                                    break;
-
-                                case 'token':
-                                    // 스트리밍 토큰
-                                    narratorText += data.content;
-                                    const narratorSpan = document.getElementById('narrator-stream');
-                                    if (narratorSpan) {
-                                        narratorSpan.textContent = narratorText;
-                                    } else {
-                                        currentContent += data.content;
-                                        contentDiv.innerHTML = currentContent + '<span class="streaming-cursor">▌</span>';
-                                    }
-                                    // 자동 스크롤
-                                    chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
-                                    break;
-
-                                case 'narrator':
-                                    // 전체 narrator 출력 (비스트리밍)
-                                    contentDiv.innerHTML = data.content;
-                                    break;
-
-                                case 'ending_start':
-                                    // 엔딩 시작 - 헤더 추가
-                                    currentContent = data.content;
-                                    contentDiv.innerHTML = currentContent + '<span class="streaming-cursor">▌</span>';
-                                    narratorText = '';
-                                    break;
-
-                                case 'ending_end':
-                                    // 엔딩 종료 - 푸터 및 버튼 추가
-                                    // 커서 제거하고 현재까지의 내용에 푸터 추가
-                                    const currentHtml = contentDiv.innerHTML.replace('<span class="streaming-cursor">▌</span>', '');
-                                    contentDiv.innerHTML = currentHtml + data.content;
-                                    lucide.createIcons();
-                                    break;
-
-                                case 'game_ended':
-                                    // 게임 종료 - 입력창 비활성화
-                                    disableInput();
-                                    break;
-
-                                case 'choices':
-                                    // 선택지 HTML 추가
-                                    contentDiv.innerHTML = contentDiv.innerHTML.replace('<span class="streaming-cursor">▌</span>', '') + data.content;
-                                    break;
-
-                                case 'stats':
-                                    // 스탯 업데이트
-                                    updateStats(data.content);
-                                    break;
-
-                                case 'done':
-                                    // 완료 - 커서 제거
-                                    contentDiv.innerHTML = contentDiv.innerHTML.replace('<span class="streaming-cursor">▌</span>', '');
-                                    break;
-
-                                case 'error':
-                                    contentDiv.innerHTML = `<div class="text-red-500">Error: ${data.content}</div>`;
-                                    break;
-                            }
-                        } catch (e) {
-                            console.error('Parse error:', e);
-                        }
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Streaming error:', error);
-            contentDiv.innerHTML = `<div class="text-red-500">스트리밍 오류: ${error.message}</div>`;
-        } finally {
-            loadingIndicator.style.display = 'none';
-            form.classList.remove('streaming');
-
-            // 게임이 끝나지 않았을 때만 입력 다시 활성화
-            if (!isGameEnded) {
-                input.readOnly = false;
-                input.value = '';
-                input.focus();
-            }
-
-            chatLog.classList.remove('processing');
-            lucide.createIcons();
-
-            // ID 제거 (다음 스트리밍을 위해)
-            const oldContent = document.getElementById('gm-streaming-content');
-            if (oldContent) oldContent.removeAttribute('id');
-            const oldNarrator = document.getElementById('narrator-stream');
-            if (oldNarrator) oldNarrator.removeAttribute('id');
-
-            // 최종 스크롤
-            chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
-        }
-    }
-
-    // 스탯 업데이트 함수
-    function updateStats(statsData) {
-        const statsArea = document.getElementById('player-stats-area');
-        if (!statsArea) return;
-
-        let html = `
-        <div class="bg-[#1a1a1e] rounded-lg p-4 border border-[#2d2d35] shadow-sm mb-4 fade-in">
-            <div class="flex justify-between items-center mb-3">
-                <span class="text-xs font-bold text-gray-400 uppercase">Status</span>
-                <i data-lucide="activity" class="w-3 h-3 text-red-500"></i>
-            </div>
-            <div class="text-xs text-gray-400 mb-2 font-mono">`;
-
-        for (const [k, v] of Object.entries(statsData)) {
-            if (k !== 'inventory') {
-                html += `
-                <div class="flex justify-between border-b border-gray-800 py-1">
-                    <span>${k.toUpperCase()}</span>
-                    <span class="text-white font-bold">${v}</span>
-                </div>`;
-            }
-        }
-        html += '</div>';
-
-        if (statsData.inventory && statsData.inventory.length > 0) {
-            html += `
-            <div class="border-t border-gray-700 pt-2 mt-2">
-                <div class="text-[10px] text-gray-500 mb-1">INVENTORY</div>
-                <div class="flex flex-wrap gap-1">`;
-            for (const item of statsData.inventory) {
-                html += `<span class="bg-gray-800 px-2 py-0.5 rounded text-[10px] text-indigo-300 border border-gray-700">${item}</span>`;
-            }
-            html += '</div></div>';
-        }
-        html += '</div>';
-
-        statsArea.innerHTML = html;
-        lucide.createIcons();
-    }
-
-    // 폼 submit 이벤트 가로채기 (스트리밍 모드일 때)
-    document.addEventListener('DOMContentLoaded', function() {
-        const form = document.querySelector('form[hx-post="/game/act"]');
-        if (form && USE_STREAMING) {
-            form.addEventListener('submit', function(e) {
-                e.preventDefault();
-                if (isGameEnded) return;
-                const input = form.querySelector('input[name="action"]');
-                if (input.value.trim()) {
-                    submitWithStreaming(input.value.trim());
-                }
-            });
-        }
-    });
-
-    document.body.addEventListener('htmx:beforeRequest', function(evt) {
-        if (evt.target.getAttribute('hx-post') === '/game/act') {
-            document.getElementById('chat-log').classList.add('processing');
-            const input = evt.target.querySelector('input[name="action"]');
-            if(input) input.readOnly = true;
-
-            const chatLog = document.getElementById('chat-log');
-            if (chatLog) {
-                const buttons = chatLog.querySelectorAll('button');
-                buttons.forEach(btn => {
-                    btn.disabled = true;
-                    btn.classList.add('disabled', 'opacity-50', 'cursor-not-allowed');
-                });
-            }
-        }
-    });
-
-    document.body.addEventListener('htmx:afterOnLoad', function(evt) {
-        if (evt.target.getAttribute('hx-post') === '/game/act') {
-            document.getElementById('chat-log').classList.remove('processing');
-            const input = evt.target.querySelector('input[name="action"]');
-            if(input && !isGameEnded) {
-                input.readOnly = false;
-                input.focus();
-            }
-        }
-    });
-
-    document.body.addEventListener('htmx:afterSwap', function(evt) {
-        if (evt.detail.target.id === 'init-result') {
-            const modal = document.getElementById('load-modal');
-            if (modal) {
-                modal.classList.add('hidden');
-                modal.style.display = 'none';
-            }
-
-            const errorMsgs = document.querySelectorAll('#chat-log .text-red-500');
-            errorMsgs.forEach(el => el.remove());
-
-            const intro = document.getElementById('intro-message');
-            if (intro) intro.remove();
-
-            // 새 게임 로드 시 게임 종료 상태 초기화
-            isGameEnded = false;
-            const form = document.querySelector('form[hx-post="/game/act"]');
-            const input = form.querySelector('input[name="action"]');
-            const submitBtn = form.querySelector('button[type="submit"]');
-            if (input) {
-                input.disabled = false;
-                input.placeholder = "무엇을 하시겠습니까? (예: 1번 선택, 문을 연다, 시작...)";
-                input.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-            if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-        }
-    });
-</script>

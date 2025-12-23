@@ -3,253 +3,275 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TRPG Builder & Player</title>
-    <!-- 파비콘 404 에러 방지용 -->
+    <title>TRPG Studio</title>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
-        body { font-family: 'Noto Sans KR', sans-serif; }
-        .fade-in { animation: fadeIn 0.5s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        body { font-family: 'Pretendard', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #52525b; }
 
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #1a1a1e; }
-        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        .htmx-indicator { display: none; pointer-events: none; }
+        .htmx-request .htmx-indicator { display: flex; pointer-events: auto; }
+        .htmx-request.htmx-indicator { display: flex; pointer-events: auto; }
 
-        .serif-font { font-family: 'Times New Roman', serif; }
-
-        /* 로딩 인디케이터 수정 */
-        .htmx-indicator {
-            display: none;
-            opacity: 0;
-            transition: opacity 200ms ease-in;
-            pointer-events: none;
-        }
-        .htmx-request .htmx-indicator {
-            display: flex;
-            opacity: 1;
-            pointer-events: auto;
-        }
-        .htmx-request.htmx-indicator {
-            display: flex;
-            opacity: 1;
-            pointer-events: auto;
+        .glass-panel {
+            background: rgba(28, 28, 28, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        .typing-dot {
-            animation: typing 1.4s infinite ease-in-out both;
+        /* 뤼튼 스타일 그라데이션 */
+        .brand-gradient {
+            background: linear-gradient(135deg, #6E47E6 0%, #818cf8 100%);
         }
-        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
-        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
-
-        @keyframes typing {
-            0%, 80%, 100% { transform: scale(0); }
-            40% { transform: scale(1); }
+        .text-gradient {
+            background: linear-gradient(135deg, #c084fc 0%, #818cf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            900: '#111111',
+                            800: '#1c1c1c',
+                            700: '#2c2c2c',
+                            600: '#3f3f46',
+                        },
+                        brand: {
+                            purple: '#6E47E6',
+                            light: '#9F7AEA'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
 </head>
-<body class="bg-gray-950 text-gray-200 h-screen flex overflow-hidden">
+<body class="bg-dark-900 text-gray-200 h-screen flex overflow-hidden selection:bg-brand-purple selection:text-white">
 
     <!-- 사이드바 -->
-    <div class="w-20 hover:w-72 bg-gray-900 border-r border-gray-800 flex flex-col hidden md:flex shrink-0 z-50 transition-all duration-300 ease-in-out group overflow-hidden">
-        <div class="p-6 border-b border-gray-800 whitespace-nowrap">
-            <h1 class="text-xl font-black text-white tracking-wider flex items-center gap-3">
-                <i data-lucide="map" class="text-blue-500 w-6 h-6 shrink-0"></i>
-                <span class="opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">TRPG BUILDER</span>
+    <div class="w-[260px] bg-dark-800 border-r border-white/5 flex flex-col hidden md:flex shrink-0 z-20">
+        <div class="p-6">
+            <h1 class="text-xl font-bold text-white tracking-tight flex items-center gap-2 cursor-pointer" onclick="location.href='/'">
+                <div class="w-8 h-8 brand-gradient rounded-lg flex items-center justify-center text-white shadow-lg shadow-brand-purple/20">
+                    <i data-lucide="dice-5" class="w-5 h-5 fill-current"></i>
+                </div>
+                <span>TRPG Studio</span>
             </h1>
         </div>
 
-        <nav class="flex-1 p-4 space-y-2 relative z-30">
-            <button hx-get="/views/builder"
-                    hx-target="#main-view"
-                    hx-swap="innerHTML"
-                    class="w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-gray-400 hover:bg-gray-800 hover:text-white focus:bg-blue-900 focus:text-white group/btn relative z-30 cursor-pointer whitespace-nowrap">
-                <i data-lucide="hammer" class="group-focus/btn:text-blue-400 w-6 h-6 shrink-0"></i>
-                <span class="font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">시나리오 빌더</span>
-            </button>
+        <nav class="flex-1 px-3 space-y-1">
+            <div class="text-[10px] font-semibold text-gray-500 px-3 py-2 uppercase tracking-wider">Workspace</div>
 
-            <button hx-get="/views/player"
-                    hx-target="#main-view"
-                    hx-swap="innerHTML"
-                    class="w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-gray-400 hover:bg-gray-800 hover:text-white focus:bg-indigo-900 focus:text-white group/btn relative z-30 cursor-pointer whitespace-nowrap">
-                <i data-lucide="gamepad-2" class="group-focus/btn:text-indigo-400 w-6 h-6 shrink-0"></i>
-                <span class="font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">플레이어 모드</span>
-            </button>
+            <a href="/" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/5 text-white group cursor-pointer text-sm font-medium">
+                <i data-lucide="layout-grid" class="w-5 h-5 text-brand-light"></i>
+                <span>대시보드</span>
+            </a>
 
-            <!-- [추가] 씬 목록 보기 버튼 -->
-            <button hx-get="/views/scenes"
-                    hx-target="#main-view"
-                    hx-swap="innerHTML"
-                    class="w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-gray-400 hover:bg-gray-800 hover:text-white focus:bg-pink-900 focus:text-white group/btn relative z-30 cursor-pointer whitespace-nowrap">
-                <i data-lucide="layers" class="group-focus/btn:text-pink-400 w-6 h-6 shrink-0"></i>
-                <span class="font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">전체 씬 보기</span>
+            <!-- 시나리오 빌더: 페이지 이동(href)으로 변경 -->
+            <a href="/views/builder"
+               class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
+                <i data-lucide="pen-tool" class="w-5 h-5 text-gray-500 group-hover:text-gray-300"></i>
+                <span>시나리오 빌더</span>
+            </a>
+
+            <!-- 플레이어 모드: 페이지 이동(href)으로 변경 -->
+            <a href="/views/player"
+               class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
+                <i data-lucide="gamepad-2" class="w-5 h-5 text-gray-500 group-hover:text-gray-300"></i>
+                <span>플레이어 모드</span>
+            </a>
+
+            <div class="text-[10px] font-semibold text-gray-500 px-3 py-2 uppercase tracking-wider mt-6">Library</div>
+
+            <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
+                <i data-lucide="book-open" class="w-5 h-5 text-gray-500 group-hover:text-gray-300"></i>
+                <span>공개 시나리오</span>
+            </button>
+            <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
+                <i data-lucide="users" class="w-5 h-5 text-gray-500 group-hover:text-gray-300"></i>
+                <span>커뮤니티</span>
             </button>
         </nav>
 
-        <div class="p-4 text-xs text-gray-600 text-center border-t border-gray-800 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-            Powered by CrewAI & LangGraph
+        <!-- 유저 프로필 -->
+        <div class="p-4 border-t border-white/5">
+            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
+                <img src="https://api.dicebear.com/7.x/notionists/svg?seed=Felix" alt="User" class="w-8 h-8 rounded-full bg-gray-700">
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-white truncate">Game Master</p>
+                    <p class="text-[11px] text-gray-500 truncate">Free Plan</p>
+                </div>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500"></i>
+            </div>
         </div>
     </div>
 
     <!-- 메인 뷰 -->
-    <div id="main-view" class="flex-1 flex flex-col h-full relative z-10">
+    <div id="main-view" class="flex-1 flex flex-col h-full relative z-10 bg-dark-900 overflow-hidden">
 
-        {% if view_mode == 'player_content' %}
-            {% block player_content %}{% endblock %}
-        {% else %}
-            {% block builder_content %}
-            <div class="flex-1 overflow-y-auto p-8 fade-in relative z-10">
-                <div id="full-loading" class="htmx-indicator fixed inset-0 bg-gray-950/90 z-[100] flex flex-col items-center justify-center backdrop-blur-sm">
-                    <div class="relative w-24 h-24 mb-6">
-                        <div class="absolute inset-0 border-t-4 border-blue-500 border-solid rounded-full animate-spin"></div>
-                        <div class="absolute inset-2 border-b-4 border-indigo-500 border-solid rounded-full animate-spin reverse-spin" style="animation-direction: reverse;"></div>
-                        <i data-lucide="dices" class="absolute inset-0 m-auto text-white w-8 h-8 animate-bounce"></i>
-                    </div>
-                    <h3 class="text-2xl font-bold text-white mb-2">시나리오 생성 중...</h3>
-                    <p class="text-blue-300 text-sm animate-pulse">AI가 세계관과 NPC를 창조하고 있습니다.</p>
-                </div>
-
-                <div class="max-w-4xl mx-auto space-y-6 relative z-10">
-                    <div class="flex items-end justify-between border-b border-gray-800 pb-4">
-                        <div>
-                            <h2 class="text-3xl font-bold text-white">시나리오 빌더</h2>
-                            <p class="text-gray-400 mt-1">AI GM에게 전달할 세계관과 룰을 설정하세요.</p>
-                        </div>
-                    </div>
-
-                    <form hx-post="/api/init_game"
-                          hx-target="#init-result"
-                          hx-indicator="#full-loading"
-                          class="space-y-8 pb-12 relative z-20">
-
-                        <div class="bg-gray-900 p-6 rounded-xl border border-gray-800 space-y-4">
-                            <h3 class="text-lg font-bold text-blue-400 flex items-center gap-2">
-                                <i data-lucide="settings"></i> 기본 설정
-                            </h3>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div class="space-y-2">
-                                    <label class="block text-sm font-semibold text-gray-300">시스템 룰</label>
-                                    <select name="dice_system" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer">
-                                        <option value="1d20">D20 (D&D 5e)</option>
-                                        <option value="2d6">2D6 (PbtA)</option>
-                                        <option value="1d100">D100 (CoC)</option>
-                                        <option value="story">Rule-less (스토리 중심)</option>
-                                    </select>
-                                </div>
-                                <div class="space-y-2">
-                                    <label class="block text-sm font-semibold text-gray-300">시나리오 제목</label>
-                                    <input type="text" name="title" required placeholder="예: 잊혀진 광산의 메아리"
-                                           class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none">
-                                </div>
-                                <div class="col-span-1 md:col-span-2 space-y-2">
-                                    <label class="block text-sm font-semibold text-gray-300">배경 스토리</label>
-                                    <textarea name="background" rows="2" required placeholder="예: 사이버펑크 도시의 뒷골목, 기업의 음모..."
-                                              class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none resize-none"></textarea>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="bg-gray-900 p-6 rounded-xl border border-gray-800 space-y-4">
-                            <h3 class="text-lg font-bold text-indigo-400 flex items-center gap-2">
-                                <i data-lucide="scroll"></i> 룰 & 난이도
-                            </h3>
-                            <div class="space-y-2">
-                                <label class="block text-sm font-semibold text-gray-300">하우스 룰</label>
-                                <textarea name="common_rules" rows="2" placeholder="예: 마법 사용 시 체력 소모됨."
-                                          class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none resize-none"></textarea>
-                            </div>
-                            <div class="space-y-3">
-                                <label class="block text-sm font-semibold text-gray-300">난이도 설정</label>
-                                <div class="grid grid-cols-3 gap-4">
-                                    <label class="cursor-pointer">
-                                        <input type="radio" name="difficulty" value="easy" class="peer sr-only" checked>
-                                        <div class="p-4 rounded-lg border border-gray-700 bg-gray-800 peer-checked:bg-green-900 peer-checked:border-green-500 hover:bg-gray-700 transition-all text-center cursor-pointer">
-                                            <div class="font-bold text-green-400">EASY</div>
-                                        </div>
-                                    </label>
-                                    <label class="cursor-pointer">
-                                        <input type="radio" name="difficulty" value="normal" class="peer sr-only">
-                                        <div class="p-4 rounded-lg border border-gray-700 bg-gray-800 peer-checked:bg-blue-900 peer-checked:border-blue-500 hover:bg-gray-700 transition-all text-center cursor-pointer">
-                                            <div class="font-bold text-blue-400">NORMAL</div>
-                                        </div>
-                                    </label>
-                                    <label class="cursor-pointer">
-                                        <input type="radio" name="difficulty" value="hard" class="peer sr-only">
-                                        <div class="p-4 rounded-lg border border-gray-700 bg-gray-800 peer-checked:bg-red-900 peer-checked:border-red-500 hover:bg-gray-700 transition-all text-center cursor-pointer">
-                                            <div class="font-bold text-red-400">HARD</div>
-                                        </div>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="bg-gray-900 p-6 rounded-xl border border-gray-800 space-y-4">
-                            <h3 class="text-lg font-bold text-purple-400 flex items-center gap-2">
-                                <i data-lucide="clapperboard"></i> 씬(Scene) 생성 가이드라인
-                            </h3>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 flex items-start gap-3">
-                                    <input type="checkbox" name="scene_req_desc" checked class="mt-1 w-4 h-4 text-purple-600 rounded focus:ring-purple-500 bg-gray-700 border-gray-600" onclick="return false;">
-                                    <div>
-                                        <div class="text-sm font-bold text-gray-200">6-1. 씬 배경 묘사</div>
-                                    </div>
-                                </div>
-                                <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 flex items-start gap-3">
-                                    <input type="checkbox" name="scene_req_npc" checked class="mt-1 w-4 h-4 text-purple-600 rounded focus:ring-purple-500 bg-gray-700 border-gray-600">
-                                    <div>
-                                        <div class="text-sm font-bold text-gray-200">6-2. NPC 등장</div>
-                                    </div>
-                                </div>
-                                <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 flex items-start gap-3">
-                                    <input type="checkbox" name="scene_req_items" checked class="mt-1 w-4 h-4 text-purple-600 rounded focus:ring-purple-500 bg-gray-700 border-gray-600">
-                                    <div>
-                                        <div class="text-sm font-bold text-gray-200">6-3. 행동 판정</div>
-                                    </div>
-                                </div>
-                                <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 flex items-start gap-3">
-                                    <input type="checkbox" name="scene_req_branch" checked class="mt-1 w-4 h-4 text-purple-600 rounded focus:ring-purple-500 bg-gray-700 border-gray-600">
-                                    <div>
-                                        <div class="text-sm font-bold text-gray-200">6-4. 분기점</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="bg-gray-900 p-6 rounded-xl border border-gray-800 space-y-4">
-                            <h3 class="text-lg font-bold text-green-400 flex items-center gap-2">
-                                <i data-lucide="users"></i> 상세 컨텐츠 설정
-                            </h3>
-                            <div class="space-y-2">
-                                <label class="block text-sm font-semibold text-gray-300">주요 NPC 설정</label>
-                                <textarea name="npc_list" rows="2" placeholder="예: 주점 주인 '바라스', 경비대장 '카일'"
-                                          class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-green-500 outline-none resize-none"></textarea>
-                            </div>
-                            <div class="space-y-2">
-                                <label class="block text-sm font-semibold text-gray-300">엔딩 조건</label>
-                                <textarea name="ending_desc" rows="2" placeholder="예: 유물 찾으면 해피 엔딩"
-                                          class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-green-500 outline-none resize-none"></textarea>
-                            </div>
-                        </div>
-
-                        <button type="submit"
-                                class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-5 rounded-lg shadow-lg transform transition-all hover:scale-[1.01] flex justify-center items-center gap-3 text-lg cursor-pointer">
-                            <i data-lucide="sparkles" class="w-6 h-6"></i>
-                            시나리오 생성 시작
-                        </button>
-                    </form>
-
-                    <div id="init-result" class="text-center min-h-[50px]"></div>
+        <!-- 상단 헤더 -->
+        <header class="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-dark-900/80 backdrop-blur-md sticky top-0 z-20">
+            <div class="flex items-center gap-4 w-full max-w-xl">
+                <div class="relative w-full group">
+                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-brand-light transition-colors"></i>
+                    <input type="text" placeholder="시나리오, NPC, 룰 검색..."
+                           class="w-full bg-dark-800 border border-white/5 rounded-full pl-10 pr-4 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-purple/50 focus:bg-dark-700 transition-all placeholder-gray-600">
                 </div>
             </div>
-            {% endblock %}
-        {% endif %}
+            <div class="flex items-center gap-3 ml-4">
+                <button class="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-full transition-colors relative">
+                    <i data-lucide="bell" class="w-5 h-5"></i>
+                    <span class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-dark-900"></span>
+                </button>
+            </div>
+        </header>
 
+        <!-- 메인 컨텐츠 (스크롤 영역) -->
+        <main class="flex-1 overflow-y-auto p-8 custom-scrollbar">
+
+            <!-- 웰컴 섹션 -->
+            <div class="mb-10">
+                <h2 class="text-2xl font-bold text-white mb-2">반가워요, GM님! 👋</h2>
+                <p class="text-gray-400">오늘도 새로운 세계를 창조해볼까요?</p>
+            </div>
+
+            <!-- 내 작품 목록 (My Projects) -->
+            <div class="mb-12">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i data-lucide="folder-open" class="w-5 h-5 text-gray-500"></i> 내 작품
+                    </h3>
+                    <button class="text-xs text-gray-500 hover:text-brand-light flex items-center gap-1">
+                        전체보기 <i data-lucide="chevron-right" class="w-3 h-3"></i>
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- 카드 1 -->
+                    <div class="group bg-dark-800 rounded-xl border border-white/5 hover:border-brand-purple/50 transition-all hover:shadow-lg hover:shadow-brand-purple/10 overflow-hidden cursor-pointer">
+                        <div class="h-32 bg-gray-800 relative">
+                            <img src="https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=600&auto=format&fit=crop" class="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity">
+                            <div class="absolute top-3 left-3">
+                                <span class="px-2 py-1 rounded bg-black/60 backdrop-blur text-[10px] font-bold text-white border border-white/10">D&D 5e</span>
+                            </div>
+                            <div class="absolute bottom-3 right-3">
+                                <span class="px-2 py-1 rounded-full bg-green-500/20 text-green-400 text-[10px] font-bold border border-green-500/20 flex items-center gap-1">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span> 진행중
+                                </span>
+                            </div>
+                        </div>
+                        <div class="p-5">
+                            <h4 class="font-bold text-white mb-1 group-hover:text-brand-light transition-colors">잊혀진 광산의 메아리</h4>
+                            <p class="text-xs text-gray-500 mb-4 line-clamp-2">고블린들이 점령한 오래된 광산에서 들려오는 기이한 소리를 조사하는 모험...</p>
+                            <div class="flex items-center justify-between text-xs text-gray-600 border-t border-white/5 pt-3">
+                                <span>2시간 전 수정됨</span>
+                                <div class="flex -space-x-2">
+                                    <img src="https://api.dicebear.com/7.x/notionists/svg?seed=Felix" class="w-5 h-5 rounded-full border border-dark-800 bg-gray-700">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 카드 2 -->
+                    <div class="group bg-dark-800 rounded-xl border border-white/5 hover:border-brand-purple/50 transition-all hover:shadow-lg hover:shadow-brand-purple/10 overflow-hidden cursor-pointer">
+                        <div class="h-32 bg-gray-800 relative">
+                            <img src="https://images.unsplash.com/photo-1626265774643-f1943311a86b?q=80&w=600&auto=format&fit=crop" class="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity">
+                            <div class="absolute top-3 left-3">
+                                <span class="px-2 py-1 rounded bg-black/60 backdrop-blur text-[10px] font-bold text-white border border-white/10">CoC 7th</span>
+                            </div>
+                        </div>
+                        <div class="p-5">
+                            <h4 class="font-bold text-white mb-1 group-hover:text-brand-light transition-colors">심해의 부름</h4>
+                            <p class="text-xs text-gray-500 mb-4 line-clamp-2">항구 도시 인스머스에서 실종된 탐정을 찾는 미스터리 호러 시나리오.</p>
+                            <div class="flex items-center justify-between text-xs text-gray-600 border-t border-white/5 pt-3">
+                                <span>3일 전 수정됨</span>
+                                <div class="flex -space-x-2">
+                                    <img src="https://api.dicebear.com/7.x/notionists/svg?seed=Felix" class="w-5 h-5 rounded-full border border-dark-800 bg-gray-700">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 빈 프로젝트 생성 카드 (클릭 시 빌더 뷰로 바로 이동) -->
+                    <a href="/views/builder"
+                         class="group bg-dark-800 rounded-xl border border-white/5 hover:border-brand-purple/50 transition-all hover:shadow-lg hover:shadow-brand-purple/10 overflow-hidden cursor-pointer border-dashed block">
+                        <div class="h-full flex flex-col items-center justify-center p-8 text-center">
+                            <div class="w-12 h-12 rounded-full bg-dark-700 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                                <i data-lucide="plus" class="w-6 h-6 text-gray-400 group-hover:text-white"></i>
+                            </div>
+                            <h4 class="font-bold text-gray-400 group-hover:text-white transition-colors">빈 프로젝트</h4>
+                            <p class="text-xs text-gray-600 mt-1">처음부터 직접 설계하기</p>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <!-- 추천 템플릿 (Explore) -->
+            <div>
+                <h3 class="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-gray-500"></i> 인기 템플릿
+                </h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="bg-dark-800 p-4 rounded-xl border border-white/5 hover:bg-dark-700 cursor-pointer transition-colors">
+                        <div class="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center mb-3">
+                            <i data-lucide="sword" class="w-5 h-5"></i>
+                        </div>
+                        <h5 class="font-bold text-sm text-white">중세 판타지</h5>
+                        <p class="text-[10px] text-gray-500 mt-1">왕국, 드래곤, 마법</p>
+                    </div>
+                    <div class="bg-dark-800 p-4 rounded-xl border border-white/5 hover:bg-dark-700 cursor-pointer transition-colors">
+                        <div class="w-10 h-10 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center mb-3">
+                            <i data-lucide="rocket" class="w-5 h-5"></i>
+                        </div>
+                        <h5 class="font-bold text-sm text-white">사이버펑크</h5>
+                        <p class="text-[10px] text-gray-500 mt-1">네온, 해커, 기업</p>
+                    </div>
+                    <div class="bg-dark-800 p-4 rounded-xl border border-white/5 hover:bg-dark-700 cursor-pointer transition-colors">
+                        <div class="w-10 h-10 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center mb-3">
+                            <i data-lucide="ghost" class="w-5 h-5"></i>
+                        </div>
+                        <h5 class="font-bold text-sm text-white">코즈믹 호러</h5>
+                        <p class="text-[10px] text-gray-500 mt-1">광기, 조사, 고대신</p>
+                    </div>
+                    <div class="bg-dark-800 p-4 rounded-xl border border-white/5 hover:bg-dark-700 cursor-pointer transition-colors">
+                        <div class="w-10 h-10 rounded-lg bg-yellow-500/20 text-yellow-400 flex items-center justify-center mb-3">
+                            <i data-lucide="search" class="w-5 h-5"></i>
+                        </div>
+                        <h5 class="font-bold text-sm text-white">추리/미스터리</h5>
+                        <p class="text-[10px] text-gray-500 mt-1">탐정, 증거, 범인</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <footer class="mt-20 border-t border-white/5 pt-8 pb-4 text-center text-xs text-gray-600">
+                <p>&copy; 2024 TRPG Studio. All rights reserved.</p>
+            </footer>
+        </main>
+    </div>
+
+    <!-- 로딩 인디케이터 (전체화면) -->
+    <div id="full-loading" class="htmx-indicator fixed inset-0 bg-dark-900/90 z-[100] flex flex-col items-center justify-center backdrop-blur-md">
+        <div class="relative w-24 h-24 mb-6">
+            <div class="absolute inset-0 border-t-4 border-brand-purple border-solid rounded-full animate-spin"></div>
+            <div class="absolute inset-2 border-b-4 border-indigo-500 border-solid rounded-full animate-spin reverse-spin" style="animation-direction: reverse;"></div>
+            <i data-lucide="dices" class="absolute inset-0 m-auto text-white w-8 h-8 animate-bounce"></i>
+        </div>
+        <h3 class="text-2xl font-bold text-white mb-2">로딩 중...</h3>
     </div>
 
     <script>
