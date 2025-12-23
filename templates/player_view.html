@@ -347,6 +347,13 @@
                                     chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
                                     break;
 
+                                case 'section_end':
+                                    // 섹션 종료 - HTML 태그를 currentContent에 추가하고 narrator 리셋
+                                    currentContent += narratorText + data.content;
+                                    narratorText = '';
+                                    contentDiv.innerHTML = currentContent + '<span id="narrator-stream"></span><span class="streaming-cursor">▌</span>';
+                                    break;
+
                                 case 'narrator':
                                     // 전체 narrator 출력 (비스트리밍)
                                     contentDiv.innerHTML = data.content;

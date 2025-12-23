@@ -414,8 +414,9 @@ def game_act_stream():
                 for chunk in prologue_stream_generator(processed_state):
                     yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
 
-                # 프롤로그 닫기
-                yield f"data: {json.dumps({'type': 'token', 'content': '</div></div>'})}\n\n"
+                # 프롤로그 닫기 - prefix로 보내서 HTML로 처리되게 함
+                prologue_footer = '</div></div>'
+                yield f"data: {json.dumps({'type': 'section_end', 'content': prologue_footer})}\n\n"
 
                 # 첫 씬 타이틀
                 if new_scene_id in all_scenes:
