@@ -1,178 +1,403 @@
-<div class="flex-1 overflow-y-auto p-8 fade-in relative">
-    <!-- 로딩 인디케이터 (Fixed Position) -->
-    <div id="loading-indicator" class="htmx-indicator fixed inset-0 bg-gray-950/90 z-[100] flex flex-col items-center justify-center backdrop-blur-sm">
-        <div class="text-center space-y-4">
-            <div class="relative w-24 h-24 mx-auto mb-6">
-                <div class="absolute inset-0 border-t-4 border-blue-500 border-solid rounded-full animate-spin"></div>
-                <div class="absolute inset-2 border-b-4 border-indigo-500 border-solid rounded-full animate-spin" style="animation-direction: reverse;"></div>
-                <i data-lucide="dices" class="absolute inset-0 m-auto text-white w-8 h-8 animate-bounce"></i>
-            </div>
-            <h3 class="text-2xl font-bold text-white">시나리오 생성 중...</h3>
-            <p class="text-blue-300 text-sm animate-pulse">
-                세계관 설정 분석 중...<br>
-                NPC 페르소나 주입 중...<br>
-                분기점 논리 회로 구성 중...
-            </p>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scenario Builder</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- React & ReactDOM (CDNJS) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+
+    <!-- Babel (Standalone) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+    <style>
+        body { background-color: #111; color: #fff; margin: 0; overflow: hidden; font-family: sans-serif; }
+
+        .bg-dots-pattern {
+            background-image: radial-gradient(#333 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .no-select { user-select: none; -webkit-user-select: none; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #111; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+        .progress-shine {
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transform: translateX(-100%);
+            animation: shine 2s infinite;
+        }
+        @keyframes shine { 100% { transform: translateX(100%); } }
+
+        #global-error {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(50, 0, 0, 0.9);
+            color: #ffcccc;
+            z-index: 9999;
+            padding: 20px;
+            overflow: auto;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+    </style>
+
+    <script>
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            const errorBox = document.getElementById('global-error');
+            if (errorBox) {
+                errorBox.style.display = 'block';
+                errorBox.innerHTML += `[Error] ${msg}\nLocation: ${url}:${lineNo}:${columnNo}\n\n`;
+            }
+            return false;
+        };
+    </script>
+</head>
+<body class="bg-black text-white h-screen w-screen">
+
+    <div id="global-error"></div>
+
+    <div id="root" class="w-full h-full">
+        <div class="flex items-center justify-center h-full flex-col text-gray-500 gap-4">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+            <p class="text-lg">초기화 중...</p>
         </div>
     </div>
 
-    <div class="max-w-4xl mx-auto space-y-6">
-        <div class="flex items-end justify-between border-b border-gray-800 pb-4">
-            <div>
-                <h2 class="text-3xl font-bold text-white">시나리오 빌더</h2>
-                <p class="text-gray-400 mt-1">AI GM에게 전달할 시나리오의 뼈대를 구성합니다.</p>
-            </div>
-        </div>
+    {% raw %}
+    <script type="text/babel">
+        try {
+            const { useState, useRef, useEffect } = React;
 
-        <form hx-post="/api/init_game"
-              hx-target="#init-result"
-              hx-indicator="#loading-indicator"
-              class="space-y-8 pb-12">
+            const ICONS = {
+                'settings': <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />,
+                'users': <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75" />,
+                'play': <polygon points="5 3 19 12 5 21 5 3" />,
+                'link': <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71 M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />,
+                'x': <path d="M18 6 6 18 M6 6l12 12" />,
+                'log-out': <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-12-5 7 M21 12H9" />,
+                'loader-2': <path d="M21 12a9 9 0 1 1-6.219-8.56" />,
+                'check-circle': <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14 M22 4L12 14.01l-3-3" />,
+                'alert-triangle': <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z M12 9v4 M12 17h.01" />
+            };
 
-            <!-- 1. 기본 설정 -->
-            <div class="bg-gray-900 p-6 rounded-xl border border-gray-800 space-y-4">
-                <h3 class="text-lg font-bold text-blue-400 flex items-center gap-2">
-                    <i data-lucide="settings"></i> 기본 설정
-                </h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="space-y-2">
-                        <label class="block text-sm font-semibold text-gray-300">1. 주사위 시스템 선택</label>
-                        <select name="dice_system" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none">
-                            <option value="1d20">D20 (D&D 5e 스타일)</option>
-                            <option value="2d6">2D6 (PbtA / 던전월드 스타일)</option>
-                            <option value="1d100">D100 (CoC / 백분율 스타일)</option>
-                            <option value="story">주사위 없음 (스토리 중심)</option>
-                        </select>
-                    </div>
-                    <div class="space-y-2">
-                        <label class="block text-sm font-semibold text-gray-300">2. 시나리오 이름</label>
-                        <input type="text" name="title" required placeholder="예: 잊혀진 광산의 메아리"
-                               class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none">
-                    </div>
-                    <div class="col-span-1 md:col-span-2 space-y-2">
-                        <label class="block text-sm font-semibold text-gray-300">3. 시나리오 배경 (테마 및 분위기)</label>
-                        <textarea name="background" rows="2" required placeholder="예: 2077년 네온사인이 가득한 사이버펑크 도시, 기업의 음모가 도사리고 있다."
-                                  class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none resize-none"></textarea>
-                    </div>
-                </div>
-            </div>
+            const Icon = ({ name, size = 20, className = "" }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                    {ICONS[name] || <circle cx="12" cy="12" r="10" />}
+                </svg>
+            );
 
-            <!-- 2. 룰 및 난이도 -->
-            <div class="bg-gray-900 p-6 rounded-xl border border-gray-800 space-y-4">
-                <h3 class="text-lg font-bold text-indigo-400 flex items-center gap-2">
-                    <i data-lucide="scroll"></i> 룰 & 난이도
-                </h3>
-
-                <div class="space-y-2">
-                    <label class="block text-sm font-semibold text-gray-300">4. 공통 룰 (하우스 룰)</label>
-                    <textarea name="common_rules" rows="2" placeholder="예: 마법 사용 시 정신력이 소모됨. 휴식은 안전한 곳에서만 가능."
-                              class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none resize-none"></textarea>
-                </div>
-
-                <div class="space-y-3">
-                    <label class="block text-sm font-semibold text-gray-300">5. 플레이어 난이도 (총 스탯 수치)</label>
-                    <div class="grid grid-cols-3 gap-4">
-                        <label class="cursor-pointer">
-                            <input type="radio" name="difficulty" value="easy" class="peer sr-only" checked>
-                            <div class="p-4 rounded-lg border border-gray-700 bg-gray-800 peer-checked:bg-green-900 peer-checked:border-green-500 hover:bg-gray-700 transition-all text-center">
-                                <div class="font-bold text-green-400 mb-1">EASY</div>
-                                <div class="text-xs text-gray-400">총 스탯 높음<br>(유리한 판정)</div>
+            const Modal = ({ isOpen, title, children, onClose, type = 'info' }) => {
+                if (!isOpen) return null;
+                const colors = type === 'error' ? 'red' : type === 'success' ? 'green' : 'gray';
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+                        <div className={`bg-gray-900 border border-${colors}-500/50 w-full max-w-md rounded-xl shadow-2xl overflow-hidden`}>
+                            <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/5">
+                                <h3 className={`text-lg font-bold text-${colors === 'gray' ? 'white' : colors + '-400'} flex items-center gap-2`}>
+                                    {type === 'success' && <Icon name="check-circle" />}
+                                    {type === 'error' && <Icon name="alert-triangle" />}
+                                    {title}
+                                </h3>
+                                {onClose && <button onClick={onClose}><Icon name="x" size={20} className="text-gray-500 hover:text-white" /></button>}
                             </div>
-                        </label>
-                        <label class="cursor-pointer">
-                            <input type="radio" name="difficulty" value="normal" class="peer sr-only">
-                            <div class="p-4 rounded-lg border border-gray-700 bg-gray-800 peer-checked:bg-blue-900 peer-checked:border-blue-500 hover:bg-gray-700 transition-all text-center">
-                                <div class="font-bold text-blue-400 mb-1">NORMAL</div>
-                                <div class="text-xs text-gray-400">표준 스탯<br>(균형 잡힘)</div>
+                            <div className="p-6 text-gray-300 text-sm leading-relaxed">{children}</div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const LoadingOverlay = ({ isOpen, progress, remainingTime }) => {
+                if (!isOpen) return null;
+                return (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in cursor-wait">
+                        <div className="w-full max-w-lg text-center p-8 rounded-2xl bg-gray-900/50 border border-white/10 shadow-2xl relative overflow-hidden">
+                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/20 blur-[100px] rounded-full pointer-events-none"></div>
+                            <div className="relative z-10">
+                                <div className="mb-6 inline-block p-4 rounded-full bg-blue-500/10 border border-blue-500/20">
+                                    <Icon name="loader-2" size={48} className="animate-spin text-blue-400" />
+                                </div>
+                                <h3 className="text-2xl font-bold text-white mb-2">시나리오 생성 중...</h3>
+                                <p className="text-gray-400 text-sm mb-8">AI 작가가 세계관을 창조하고 있습니다.<br/>노드가 많을수록 시간이 더 걸릴 수 있습니다.</p>
+                                <div className="w-full bg-gray-800 rounded-full h-3 mb-3 overflow-hidden border border-white/5 relative">
+                                    <div className="bg-gradient-to-r from-blue-600 to-indigo-500 h-full transition-all duration-300 ease-out relative" style={{ width: `${progress}%` }}>
+                                        <div className="progress-shine"></div>
+                                    </div>
+                                </div>
+                                <div className="flex justify-between text-xs font-mono text-gray-500 px-1">
+                                    <span className="text-blue-400 font-bold">{Math.round(progress)}% 완료</span>
+                                    <span>예상 소요 시간: 약 <span className="text-white font-bold">{Math.max(0, remainingTime)}</span>초</span>
+                                </div>
                             </div>
-                        </label>
-                        <label class="cursor-pointer">
-                            <input type="radio" name="difficulty" value="hard" class="peer sr-only">
-                            <div class="p-4 rounded-lg border border-gray-700 bg-gray-800 peer-checked:bg-red-900 peer-checked:border-red-500 hover:bg-gray-700 transition-all text-center">
-                                <div class="font-bold text-red-400 mb-1">HARD</div>
-                                <div class="text-xs text-gray-400">총 스탯 낮음<br>(가혹한 판정)</div>
+                        </div>
+                    </div>
+                );
+            };
+
+            function ScenarioBuilder() {
+                const [nodes, setNodes] = useState([
+                    { id: 'start', type: 'start', x: 50, y: 50, data: { label: '시나리오 설정 & 프롤로그', description: '' } },
+                    { id: 'scene-1', type: 'scene', x: 400, y: 150, data: { title: '첫 번째 장면', description: '', npcs: [] } },
+                ]);
+                const [connections, setConnections] = useState([ { id: 'c1', source: 'start', target: 'scene-1' } ]);
+                const [selectedNodeId, setSelectedNodeId] = useState(null);
+                const [globalNpcs, setGlobalNpcs] = useState([]);
+
+                const [npcModalOpen, setNpcModalOpen] = useState(false);
+                const [resultModal, setResultModal] = useState({ open: false, type: 'info', title: '', message: '' });
+                const [isLoading, setIsLoading] = useState(false);
+                const [progress, setProgress] = useState(0);
+                const [remainingTime, setRemainingTime] = useState(0);
+
+                const [draggingNodeId, setDraggingNodeId] = useState(null);
+                const [connectingSourceId, setConnectingSourceId] = useState(null);
+                const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+                const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+                const canvasRef = useRef(null);
+                const timerRef = useRef(null);
+
+                const addNode = (type) => {
+                    const id = `${type}-${Date.now()}`;
+                    setNodes(p => [...p, { id, type, x: Math.random() * 200 + 100, y: Math.random() * 200 + 100, data: { title: type === 'scene' ? '새로운 장면' : '새로운 엔딩', description: '', npcs: [] } }]);
+                };
+
+                const deleteNode = (id) => {
+                    if (id === 'start') return;
+                    setNodes(p => p.filter(n => n.id !== id));
+                    setConnections(p => p.filter(c => c.source !== id && c.target !== id));
+                    if (selectedNodeId === id) setSelectedNodeId(null);
+                };
+
+                const updateNodeData = (key, value) => {
+                    if (!selectedNodeId) return;
+                    setNodes(p => p.map(n => n.id === selectedNodeId ? { ...n, data: { ...n.data, [key]: value } } : n));
+                };
+
+                const addGlobalNpc = (e) => {
+                    e.preventDefault();
+                    const form = e.target;
+                    const name = form.elements.namedItem('npcName').value;
+                    const role = form.elements.namedItem('npcRole').value;
+                    const trait = form.elements.namedItem('npcTrait').value;
+                    if(name) { setGlobalNpcs(p => [...p, { name, role, trait }]); form.reset(); }
+                };
+
+                const handleGenerate = async () => {
+                    if (nodes.length < 2) {
+                        setResultModal({ open: true, type: 'error', title: '생성 불가', message: '최소한 하나의 장면 노드가 추가되어야 합니다.' });
+                        return;
+                    }
+
+                    const estimatedSecs = 10 + (nodes.length * 5);
+                    setRemainingTime(estimatedSecs);
+                    setProgress(0);
+                    setIsLoading(true);
+
+                    const startTime = Date.now();
+                    timerRef.current = setInterval(() => {
+                        const elapsed = (Date.now() - startTime) / 1000;
+                        const newProgress = Math.min(90, (elapsed / estimatedSecs) * 100);
+                        const timeLeft = Math.max(0, Math.ceil(estimatedSecs - elapsed));
+                        setProgress(newProgress);
+                        setRemainingTime(timeLeft);
+                    }, 100);
+
+                    try {
+                        const response = await fetch('/api/init_game', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ nodes, connections, npcs: globalNpcs })
+                        });
+
+                        clearInterval(timerRef.current);
+                        setProgress(100);
+                        setRemainingTime(0);
+                        await new Promise(r => setTimeout(r, 500));
+
+                        if (!response.ok) {
+                            const errData = await response.json();
+                            throw new Error(errData.error || '서버 오류');
+                        }
+
+                        const data = await response.json();
+                        setResultModal({
+                            open: true, type: 'success', title: '생성 완료!',
+                            message: `${data.message}\n이제 플레이어 모드에서 게임을 즐겨보세요.`
+                        });
+
+                    } catch (error) {
+                        clearInterval(timerRef.current);
+                        console.error(error);
+                        setResultModal({ open: true, type: 'error', title: '생성 실패', message: error.message });
+                    } finally {
+                        setIsLoading(false);
+                    }
+                };
+
+                // [수정됨] 누락되었던 배경 클릭 핸들러 추가
+                const handleBackgroundClick = (e) => {
+                    if (e.target === canvasRef.current || e.target.id === 'svg-layer') {
+                        setSelectedNodeId(null);
+                        setConnectingSourceId(null);
+                    }
+                };
+
+                const handleMouseDownNode = (e, id) => {
+                    e.stopPropagation();
+                    if (connectingSourceId) {
+                        if (connectingSourceId !== id && !connections.some(c => c.source === connectingSourceId && c.target === id)) {
+                            setConnections(p => [...p, { id: `c-${Date.now()}`, source: connectingSourceId, target: id }]);
+                        }
+                        setConnectingSourceId(null);
+                        return;
+                    }
+                    const node = nodes.find(n => n.id === id);
+                    if (node) {
+                        const rect = canvasRef.current.getBoundingClientRect();
+                        setDragOffset({ x: e.clientX - rect.left - node.x, y: e.clientY - rect.top - node.y });
+                        setSelectedNodeId(id);
+                        setDraggingNodeId(id);
+                    }
+                };
+
+                const handleCanvasMouseMove = (e) => {
+                    if (!canvasRef.current) return;
+                    const rect = canvasRef.current.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    setMousePos({ x, y });
+                    if (draggingNodeId) {
+                        setNodes(p => p.map(n => n.id === draggingNodeId ? { ...n, x: x - dragOffset.x, y: y - dragOffset.y } : n));
+                    }
+                };
+
+                const getPath = (sx, sy, tx, ty) => {
+                    const cp1x = sx + Math.abs(tx - sx) * 0.5, cp2x = tx - Math.abs(tx - sx) * 0.5;
+                    return `M ${sx} ${sy} C ${cp1x} ${sy}, ${cp2x} ${ty}, ${tx} ${ty}`;
+                };
+
+                return (
+                    <div className="flex h-screen bg-black text-white font-sans overflow-hidden no-select">
+                        <LoadingOverlay isOpen={isLoading} progress={progress} remainingTime={remainingTime} />
+
+                        <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col z-20 shadow-xl">
+                            <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+                                <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">Builder</h1>
+                                <a href="/" className="text-gray-500 hover:text-white p-2 rounded hover:bg-gray-800"><Icon name="log-out" size={18} /></a>
                             </div>
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 3. 씬 구성 요소 (사용자 입력형으로 수정됨) -->
-            <div class="bg-gray-900 p-6 rounded-xl border border-gray-800 space-y-4">
-                <h3 class="text-lg font-bold text-purple-400 flex items-center gap-2">
-                    <i data-lucide="clapperboard"></i> 씬(Scene) 생성 가이드라인
-                </h3>
-                <p class="text-xs text-gray-500">각 씬을 생성할 때 필수적으로 포함되어야 할 요소를 입력하세요. (체크 해제 시 제외)</p>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- 6-1. 배경 -->
-                    <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 flex items-center gap-3 transition-colors focus-within:border-purple-500">
-                        <input type="checkbox" checked class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 bg-gray-700 border-gray-600 shrink-0"
-                               onchange="document.getElementById('req_1').disabled = !this.checked; document.getElementById('req_1').classList.toggle('opacity-50')">
-                        <div class="flex-1">
-                            <input type="text" id="req_1" name="scene_req_desc" value="씬 배경 묘사 (시간, 날씨, 장소의 분위기 서술)"
-                                   class="w-full bg-transparent text-sm text-gray-200 border-none outline-none focus:ring-0 placeholder-gray-500">
+                            <div className="p-4 space-y-3">
+                                <button onClick={() => addNode('scene')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-indigo-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-indigo-500 rounded-full"></div> 씬 추가</button>
+                                <button onClick={() => addNode('ending')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-red-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-red-500 rounded-full"></div> 엔딩 추가</button>
+                                <button onClick={() => setNpcModalOpen(true)} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-green-300 flex items-center justify-center gap-2"><Icon name="users" size={16} /> NPC 관리</button>
+                            </div>
+                            <div className="mt-auto p-4 border-t border-gray-800">
+                                <button onClick={handleGenerate} className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-lg shadow-lg flex items-center justify-center gap-2">
+                                    <Icon name="play" size={18} /> 시나리오 생성
+                                </button>
+                            </div>
                         </div>
-                    </div>
 
-                    <!-- 6-2. NPC -->
-                    <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 flex items-center gap-3 transition-colors focus-within:border-purple-500">
-                        <input type="checkbox" checked class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 bg-gray-700 border-gray-600 shrink-0"
-                               onchange="document.getElementById('req_2').disabled = !this.checked; document.getElementById('req_2').classList.toggle('opacity-50')">
-                        <div class="flex-1">
-                            <input type="text" id="req_2" name="scene_req_npc" value="NPC 등장 및 상호작용 (상황에 맞는 대화)"
-                                   class="w-full bg-transparent text-sm text-gray-200 border-none outline-none focus:ring-0 placeholder-gray-500">
+                        <div ref={canvasRef} className="flex-1 relative bg-gray-950 overflow-hidden cursor-crosshair bg-dots-pattern"
+                            onMouseMove={handleCanvasMouseMove} onMouseUp={() => setDraggingNodeId(null)} onClick={handleBackgroundClick}>
+                            <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
+                                {connections.map(c => {
+                                    const s = nodes.find(n => n.id === c.source), t = nodes.find(n => n.id === c.target);
+                                    if (!s || !t) return null;
+                                    return <path key={c.id} d={getPath(s.x + 200, s.y + 40, t.x, t.y + 40)} stroke="#4b5563" strokeWidth="2" fill="none" />;
+                                })}
+                                {connectingSourceId && (() => {
+                                    const s = nodes.find(n => n.id === connectingSourceId);
+                                    if (!s) return null;
+                                    return <path d={getPath(s.x + 200, s.y + 40, mousePos.x, mousePos.y)} stroke="#6366f1" strokeWidth="2" strokeDasharray="5,5" fill="none" />;
+                                })()}
+                            </svg>
+                            {nodes.map(node => (
+                                <div key={node.id} style={{ left: node.x, top: node.y }} onMouseDown={(e) => handleMouseDownNode(e, node.id)}
+                                    className={`absolute w-[200px] rounded-lg shadow-xl border-2 group select-none transition-shadow ${selectedNodeId === node.id ? 'border-white z-20 ring-2 ring-blue-500/50' : node.type === 'start' ? 'border-blue-600 bg-gray-900 z-10' : node.type === 'ending' ? 'border-red-600 bg-gray-900 z-10' : 'border-indigo-600 bg-gray-900 z-10'} ${connectingSourceId && connectingSourceId !== node.id ? 'hover:scale-105 cursor-pointer' : 'cursor-grab active:cursor-grabbing'}`}>
+                                    <div className={`p-2 rounded-t-md text-sm font-bold flex justify-between ${node.type === 'start' ? 'bg-blue-900/50 text-blue-200' : node.type === 'ending' ? 'bg-red-900/50 text-red-200' : 'bg-indigo-900/50 text-indigo-200'}`}>
+                                        <span className="truncate">{node.type === 'start' ? '설정' : node.type === 'scene' ? 'Scene' : 'Ending'}</span>
+                                        <button onClick={(e) => { e.stopPropagation(); setConnectingSourceId(node.id); setSelectedNodeId(node.id); }} className="hover:text-white p-0.5"><Icon name="link" size={14} /></button>
+                                    </div>
+                                    <div className="p-3 text-xs text-gray-300 min-h-[60px] relative">
+                                        <div className="font-bold mb-1 truncate">{node.data.title || '제목 없음'}</div>
+                                        <div className="text-gray-500 line-clamp-2">{node.data.description || '내용 없음'}</div>
+                                        {node.id !== 'start' && selectedNodeId === node.id && (
+                                            <button onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 w-5 h-5 flex items-center justify-center"><Icon name="x" size={12} /></button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
-                    </div>
 
-                    <!-- 6-3. 아이템/판정 -->
-                    <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 flex items-center gap-3 transition-colors focus-within:border-purple-500">
-                        <input type="checkbox" checked class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 bg-gray-700 border-gray-600 shrink-0"
-                               onchange="document.getElementById('req_3').disabled = !this.checked; document.getElementById('req_3').classList.toggle('opacity-50')">
-                        <div class="flex-1">
-                            <input type="text" id="req_3" name="scene_req_items" value="키 아이템 체크 & 스탯 기반 행동 판정"
-                                   class="w-full bg-transparent text-sm text-gray-200 border-none outline-none focus:ring-0 placeholder-gray-500">
+                        <div className="w-80 bg-gray-900 border-l border-gray-800 overflow-y-auto z-20 shadow-xl">
+                            {selectedNodeId ? (() => {
+                                const node = nodes.find(n => n.id === selectedNodeId);
+                                if (!node) return null;
+                                return (
+                                    <div className="p-6 space-y-6">
+                                        <h2 className="text-lg font-bold border-b border-gray-700 pb-2">속성 편집 <span className="text-xs bg-gray-800 px-2 py-0.5 rounded text-gray-400">{node.type}</span></h2>
+                                        <div className="space-y-3">
+                                            <div><label className="text-xs text-gray-400 block mb-1">제목</label><input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm text-white" value={node.type === 'start' ? (node.data.label || '') : (node.data.title || '')} onChange={e => updateNodeData(node.type === 'start' ? 'label' : 'title', e.target.value)} /></div>
+                                            <div><label className="text-xs text-gray-400 block mb-1">내용</label><textarea rows={5} className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm text-white resize-none" value={node.data.description || ''} onChange={e => updateNodeData('description', e.target.value)} /></div>
+                                        </div>
+                                        {node.type === 'scene' && (
+                                            <div className="space-y-2 pt-4 border-t border-gray-800">
+                                                <h3 className="text-sm font-bold text-green-400 flex justify-between">NPC 등장 <span className="cursor-pointer hover:text-white" onClick={() => setNpcModalOpen(true)}>+추가</span></h3>
+                                                <div className="space-y-1 max-h-40 overflow-y-auto pr-1">{globalNpcs.map((n, i) => (
+                                                    <label key={i} className="flex items-center space-x-2 text-sm p-1.5 hover:bg-gray-800 rounded cursor-pointer">
+                                                        <input type="checkbox" className="rounded bg-gray-700 border-gray-600 text-green-500" checked={(node.data.npcs || []).includes(n.name)}
+                                                            onChange={e => updateNodeData('npcs', e.target.checked ? [...(node.data.npcs || []), n.name] : (node.data.npcs || []).filter(x => x !== n.name))} />
+                                                        <span>{n.name}</span>
+                                                    </label>
+                                                ))}</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })() : <div className="flex flex-col items-center justify-center h-full text-gray-600"><Icon name="settings" size={48} className="mb-4 opacity-50" /><p className="text-sm">노드를 선택하세요</p></div>}
                         </div>
+
+                        <Modal isOpen={npcModalOpen} title="NPC 생성" onClose={() => setNpcModalOpen(false)}>
+                            <form onSubmit={addGlobalNpc} className="space-y-4">
+                                <input name="npcName" required className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white" placeholder="이름" />
+                                <input name="npcRole" required className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white" placeholder="역할" />
+                                <textarea name="npcTrait" required className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white resize-none" placeholder="특징" />
+                                <div className="flex gap-2 mt-6">
+                                    <button type="button" onClick={() => setNpcModalOpen(false)} className="flex-1 py-2 bg-gray-800 rounded">닫기</button>
+                                    <button type="submit" className="flex-1 py-2 bg-green-600 rounded font-bold">추가</button>
+                                </div>
+                            </form>
+                        </Modal>
+
+                        <Modal isOpen={resultModal.open} type={resultModal.type} title={resultModal.title} onClose={() => setResultModal({ ...resultModal, open: false })}>
+                            <div className="whitespace-pre-wrap">{resultModal.message}</div>
+                            <div className="mt-6 flex justify-end gap-2">
+                                {resultModal.type === 'success' && <a href="/views/player" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold">플레이하러 가기</a>}
+                                <button onClick={() => setResultModal({ ...resultModal, open: false })} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white">확인</button>
+                            </div>
+                        </Modal>
                     </div>
+                );
+            }
 
-                    <!-- 6-4. 분기점 -->
-                    <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 flex items-center gap-3 transition-colors focus-within:border-purple-500">
-                        <input type="checkbox" checked class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 bg-gray-700 border-gray-600 shrink-0"
-                               onchange="document.getElementById('req_4').disabled = !this.checked; document.getElementById('req_4').classList.toggle('opacity-50')">
-                        <div class="flex-1">
-                            <input type="text" id="req_4" name="scene_req_branch" value="명확한 성공/실패/선택에 따른 분기 제공"
-                                   class="w-full bg-transparent text-sm text-gray-200 border-none outline-none focus:ring-0 placeholder-gray-500">
-                        </div>
-                    </div>
-                </div>
-            </div>
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(<ScenarioBuilder />);
 
-            <!-- 4. 상세 컨텐츠 -->
-            <div class="bg-gray-900 p-6 rounded-xl border border-gray-800 space-y-4">
-                <h3 class="text-lg font-bold text-green-400 flex items-center gap-2">
-                    <i data-lucide="users"></i> 상세 컨텐츠 설정
-                </h3>
-
-                <div class="space-y-2">
-                    <label class="block text-sm font-semibold text-gray-300">7. 주요 NPC 설정</label>
-                    <textarea name="npc_list" rows="3" placeholder="예: 주점 주인 '바라스' (무뚝뚝함, 정보통), 경비대장 '카일' (뇌물 좋아함)"
-                              class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-green-500 outline-none resize-none"></textarea>
-                </div>
-
-                <div class="space-y-2">
-                    <label class="block text-sm font-semibold text-gray-300">8. 엔딩 조건 및 묘사</label>
-                    <textarea name="ending_desc" rows="2" placeholder="예: 유물을 찾으면 해피 엔딩, 시간 내 못 찾으면 도시가 파괴되는 배드 엔딩"
-                              class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-green-500 outline-none resize-none"></textarea>
-                </div>
-            </div>
-
-            <button type="submit"
-                    class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-5 rounded-lg shadow-lg transform transition-all hover:scale-[1.01] flex justify-center items-center gap-3 text-lg">
-                <i data-lucide="sparkles" class="w-6 h-6"></i>
-                설정 완료: 시나리오 생성 시작
-            </button>
-        </form>
-
-        <div id="init-result" class="text-center min-h-[50px]"></div>
-    </div>
-</div>
+        } catch (error) {
+            document.getElementById('global-error').style.display = 'block';
+            document.getElementById('global-error').innerText = "[React Init Error] " + error.message;
+        }
+    </script>
+    {% endraw %}
+</body>
+</html>
