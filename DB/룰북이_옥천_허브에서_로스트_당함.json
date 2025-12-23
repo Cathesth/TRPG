@@ -1,0 +1,184 @@
+{
+  "scenario": {
+    "title": "룰북이 옥천 허브에서 로스트 당함",
+    "prologue_text": "빌린 아파트 서재에서 TRPG 채팅방을 닫은 당신. 중고로 구한 크툴루의 부름 룰북 배송이 '옥천HUB 도착' 상태에서 48시간째 정체되어 있습니다. 내일이면 반드시 필요한 룰북... 찾지 못하면 첫 키퍼링이 수치스러운 실패로 끝날 겁니다. 택배사 고객센터는 이미 영업이 종료되었고, 주변에 도움을 줄 친구도 없습니다. 결심했습니다. 직접 옥천HUB로 향하기로. 새벽 1시, 푸른 형광등이 유령처럼 떠다니는 거대한 물류 창고에서 당신의 사투가 시작됩니다. 차가운 금속 냄새와 기계음이 당신을 맞이합니다.",
+    "global_rules": [],
+    "npcs": [
+      {
+        "name": "홍길동",
+        "background": "10년 차 야간 근무자로 최근 창고에서 발생하는 초자연적 현상에 심각한 불안감을 느끼고 있음",
+        "personality": "비협조적이며 극도로 피곤한 상태",
+        "hostility": "Neutral",
+        "description": "기름기가 번들거리는 작업복, 깊게 패인 다크서클, 손에서 새어나오는 검은 액체로 가득한 스티로폼 컵"
+      },
+      {
+        "name": "???",
+        "background": "크툴루 신화의 수호자로 오래전부터 물류 창고를 중심으로 활동해온 초월적 존재",
+        "personality": "냉철하고 신성한 임무에 집착",
+        "hostility": "Hostile",
+        "description": "빛을 삼키는 검은 로브, 비정상적으로 긴 여덟 개의 손가락, 그림자보다 어두운 실루엣"
+      }
+    ],
+    "scenes": [
+      {
+        "scene_id": "scene_1",
+        "title": "죽음처럼 고요한 옥천HUB",
+        "description": "거대한 콘크리트 벽들이 음산하게 우뚝 서 있다. 3만 평 규모의 물류 창고는 고요함 그 자체로, 가끔씩 먼 곳에서 금속이 부딪히는 울림만이 침묵을 깨뜨린다. 관리실 창문으로 새어나오는 형광등 빛이 바닥에 기어다니는 곤충 그림자를 비추고 있다. 기름과 먼지, 썩은 살코기 같은 역겨운 냄새가 코를 찌른다.",
+        "has_branch": true,
+        "next_scene_ids": [
+          "scene_2",
+          "ending_1"
+        ],
+        "required_key_item": null,
+        "required_action": null,
+        "npc_names": [
+          "홍길동"
+        ],
+        "choices": [
+          {
+            "text": "홍길동을 설득해 창고 지도를 얻는다 (설득 DC 60)",
+            "next_scene_id": "scene_2",
+            "effects": [
+              {
+                "target_var": "invoice_found",
+                "operation": "set",
+                "value": true
+              }
+            ]
+          },
+          {
+            "text": "시간이 지나 경비에 발각된다",
+            "next_scene_id": "ending_1",
+            "effects": []
+          }
+        ]
+      },
+      {
+        "scene_id": "scene_2",
+        "title": "B-23 구역: 금단의 공간",
+        "description": "'B-23' 철문의 녹슨 표식이 형광등에 따라 유령처럼 반짝인다. 문 너머에서는 기계의 굉음과 함께 살점을 갈아제끼는 듯한 소리가 섞여 들려온다. 공기 중에 떠도는 미세한 먼지가 기관지를 할퀴는 듯 아프다. 어둠 속에서... 분명히 누군가의 시선이 당신의 등을 응시하고 있다.",
+        "has_branch": true,
+        "next_scene_ids": [
+          "scene_3",
+          "ending_2"
+        ],
+        "required_key_item": null,
+        "required_action": null,
+        "npc_names": [
+          "???"
+        ],
+        "choices": [
+          {
+            "text": "부식된 자물쇠를 해제한다 (자물쇠 따기 DC 70)",
+            "next_scene_id": "scene_3",
+            "effects": [
+              {
+                "target_var": "lock_opened",
+                "operation": "set",
+                "value": true
+              }
+            ]
+          },
+          {
+            "text": "경보 시스템이 작동한다",
+            "next_scene_id": "ending_2",
+            "effects": []
+          }
+        ]
+      },
+      {
+        "scene_id": "scene_3",
+        "title": "잃어버린 지식의 심연",
+        "description": "#CTH-1926 컨테이너 표면에는 생물의 내장 같은 점액이 흐르고 있다. 찢겨진 포장 상자 사이로 보라색 안개가 새어나와 공중에서 살아 움직인다. 벽면의 역삼각형 문양이 맥동하며 신선한 피 냄새를 풍긴다. 머릿속에서 고대어 단어들이 강제로 떠오르기 시작한다.",
+        "has_branch": true,
+        "next_scene_ids": [
+          "ending_3",
+          "ending_4"
+        ],
+        "required_key_item": null,
+        "required_action": null,
+        "npc_names": [
+          "???"
+        ],
+        "choices": [
+          {
+            "text": "룰북을 집어든다",
+            "next_scene_id": "ending_4",
+            "effects": [
+              {
+                "target_var": "cthulhu_awakened",
+                "operation": "set",
+                "value": true
+              }
+            ]
+          },
+          {
+            "text": "저주의 문양을 파괴한다 (힘 DC 80)",
+            "next_scene_id": "ending_3",
+            "effects": [
+              {
+                "target_var": "cthulhu_awakened",
+                "operation": "set",
+                "value": false
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "endings": [
+      {
+        "ending_id": "ending_1",
+        "title": "룰북 소멸",
+        "description": "새벽이 밝아올 때까지 아무것도 찾지 못했습니다. 어쩔 수 없이 PC들에게 세션 취소를 통보해야 했고, 당신은 '신뢰할 수 없는 키퍼'로 채팅방 역사에 기록되었습니다. 몇 달 후, 옥천HUB 화재 기사를 보다가 소름 끼치는 사진을 발견합니다. 전소된 창고 유리잔해 사이로... 타지 않은 채 남아있는 검은 책 표지가 선명하게 비추고 있었습니다.",
+        "condition": "time_expired"
+      },
+      {
+        "ending_id": "ending_2",
+        "title": "불청객의 낙인",
+        "description": "경보음과 함께 달려온 경비들에게 발각되었습니다. 경찰서에서 밤새 조사를 받고 훈방 조치되었지만, 다음날 PC들 앞에서 완전히 체면을 잃었습니다. 그날 이후로 해마다 10월 31일이 되면 '룰북이 당신을 기다립니다'라는 미확인 번호의 문자가 도착한다는 소문이...",
+        "condition": "alarm_triggered"
+      },
+      {
+        "ending_id": "ending_3",
+        "title": "기적과 고뇌",
+        "description": "피 문양을 지워내자 안개가 사라지고 룰북이 정상적으로 보이기 시작했습니다. 간신히 집에 도착해 세션을 성공적으로 마쳤지만, 책을 사용할 때마다 컨테이너 안의 기억이 생생하게 떠오릅니다. 다음날 '옥천HUB 직원 3명 실종' 기사를 보며 책을 태울지 말지 머릿속이 복잡해집니다.",
+        "condition": "cthulhu_awakened == false"
+      },
+      {
+        "ending_id": "ending_4",
+        "title": "각성의 서장",
+        "description": "책을 손에 쥐자 머릿속에 고대의 지식이 폭발했습니다. 이건 단순한 룰북이 아니라 '아캄의 금서'였습니다. 창고 공간이 비틀리기 시작했고, PC들은 예정된 세션 테이블에서 당신이 소환한 샨도르의 촉수에 휘감기게 되었습니다. 기술적으로는 완벽한 키퍼링이었지만... 이제 당신은 더 큰 계획의 일부가 되었습니다.",
+        "condition": "cthulhu_awakened == true"
+      }
+    ],
+    "initial_state": {
+      "items": [],
+      "sanity": 70,
+      "skills": {
+        "lockpicking": 30,
+        "persuasion": 45,
+        "stealth": 25
+      },
+      "flags": {
+        "invoice_found": false,
+        "warehouse_entered": false,
+        "cthulhu_awakened": false
+      }
+    }
+  },
+  "player_vars": {
+    "items": [],
+    "sanity": 70,
+    "skills": {
+      "lockpicking": 30,
+      "persuasion": 45,
+      "stealth": 25
+    },
+    "flags": {
+      "invoice_found": false,
+      "warehouse_entered": false,
+      "cthulhu_awakened": false
+    }
+  }
+}

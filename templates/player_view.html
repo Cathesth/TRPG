@@ -1,13 +1,34 @@
 <div class="flex h-full fade-in relative">
 
-    <!-- 시나리오 로드 모달 (기본 숨김) -->
-    <div id="load-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/90 backdrop-blur-sm">
+    <style>
+        /* 생성 중 스타일: 투명도 조절 및 클릭 방지 */
+        form.htmx-request {
+            opacity: 0.5;
+            cursor: wait;
+        }
+
+        /* 채팅창 내 버튼 비활성화 */
+        #chat-log.processing button {
+            opacity: 0.5 !important;
+            pointer-events: none !important;
+            cursor: wait !important;
+        }
+
+        /* 입력창 스타일 */
+        form.htmx-request input {
+            background-color: #1f2937; /* gray-800 */
+            color: #9ca3af; /* gray-400 */
+        }
+    </style>
+
+    <!-- 시나리오 로드 모달 -->
+    <div id="load-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/90 backdrop-blur-sm" style="display: none;">
         <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-4xl h-[80vh] flex flex-col shadow-2xl overflow-hidden m-4">
             <div class="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-800">
                 <h3 class="text-xl font-bold text-white flex items-center gap-2">
                     <i data-lucide="folder-open" class="text-yellow-500"></i> 저장된 시나리오 목록
                 </h3>
-                <button onclick="document.getElementById('load-modal').classList.add('hidden')" class="text-gray-400 hover:text-white p-2">
+                <button onclick="const m=document.getElementById('load-modal'); m.classList.add('hidden'); m.style.display='none';" class="text-gray-400 hover:text-white p-2 cursor-pointer">
                     <i data-lucide="x" class="w-6 h-6"></i>
                 </button>
             </div>
@@ -25,7 +46,7 @@
             </div>
 
             <div class="p-4 bg-gray-800 border-t border-gray-700 text-right">
-                <button onclick="document.getElementById('load-modal').classList.add('hidden')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm">닫기</button>
+                <button onclick="const m=document.getElementById('load-modal'); m.classList.add('hidden'); m.style.display='none';" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm cursor-pointer">닫기</button>
             </div>
         </div>
     </div>
@@ -33,35 +54,39 @@
     <!-- 채팅 영역 -->
     <div class="flex-1 flex flex-col relative bg-gray-950">
 
-        <!-- 상단 툴바 (플레이어 전용) -->
+        <!-- 상단 툴바 -->
         <div class="absolute top-0 left-0 right-0 z-10 p-4 flex justify-end pointer-events-none">
-            <button onclick="document.getElementById('load-modal').classList.remove('hidden'); htmx.trigger('#scenario-list-container', 'reveal')"
-                    class="pointer-events-auto bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-4 py-2 rounded-lg border border-indigo-700/50 backdrop-blur-md shadow-lg flex items-center gap-2 text-sm font-bold transition-all hover:scale-105">
+            <button onclick="const m=document.getElementById('load-modal'); m.classList.remove('hidden'); m.style.display='flex'; htmx.trigger('#scenario-list-container', 'reveal')"
+                    class="pointer-events-auto bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-4 py-2 rounded-lg border border-indigo-700/50 backdrop-blur-md shadow-lg flex items-center gap-2 text-sm font-bold transition-all hover:scale-105 cursor-pointer">
                 <i data-lucide="folder-open" class="w-4 h-4"></i>
                 시나리오 불러오기
             </button>
         </div>
 
         <div id="chat-log" class="flex-1 overflow-y-auto p-6 space-y-6 pb-24 scroll-smooth pt-16">
-            <!-- 알림 메시지 영역 (로드 성공/실패 메시지가 여기 뜸) -->
+            <!-- 알림 메시지 영역 -->
             <div id="init-result" class="mb-4"></div>
 
-            <div class="flex gap-4">
-                <div class="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center shrink-0">
-                    <i data-lucide="bot" class="text-white w-4 h-4"></i>
-                </div>
-                <div class="flex-1">
-                    <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
-                    <div class="bg-[#1a1a1e] border border-gray-700 p-3 rounded-lg text-gray-300 text-sm leading-relaxed serif-font">
-                        시스템에 접속했습니다.
-                        <br>
-                        우측 상단의 <strong>[시나리오 불러오기]</strong> 버튼을 눌러 저장된 게임을 로드하거나, 아래 입력창에 '시작'을 입력하세요.
+            {% if chat_log %}
+                {{ chat_log | safe }}
+            {% else %}
+                <div id="intro-message" class="flex gap-4">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center shrink-0">
+                        <i data-lucide="bot" class="text-white w-4 h-4"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
+                        <div class="bg-[#1a1a1e] border border-gray-700 p-3 rounded-lg text-gray-300 text-sm leading-relaxed serif-font">
+                            시스템에 접속했습니다.
+                            <br>
+                            우측 상단의 <strong>[시나리오 불러오기]</strong> 버튼을 눌러 저장된 게임을 로드하거나, 아래 입력창에 '시작'을 입력하세요.
+                        </div>
                     </div>
                 </div>
-            </div>
+            {% endif %}
 
-            <!-- AI 답변 로딩 인디케이터 (htmx-indicator) -->
-            <div id="ai-loading" class="htmx-indicator flex gap-4 fade-in">
+            <!-- AI 답변 로딩 인디케이터 -->
+            <div id="ai-loading" class="htmx-indicator flex gap-4 fade-in py-2">
                 <div class="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center shrink-0">
                     <i data-lucide="bot" class="text-white w-4 h-4"></i>
                 </div>
@@ -82,15 +107,15 @@
         <!-- 입력창 -->
         <div class="p-4 bg-gray-900 border-t border-gray-800 absolute bottom-0 w-full z-20">
             <form hx-post="/game/act"
-                  hx-target="#chat-log"
-                  hx-swap="beforeend"
+                  hx-target="#ai-loading"
+                  hx-swap="beforebegin"
                   hx-indicator="#ai-loading"
                   hx-on:htmx:before-request="this.reset()"
-                  hx-on:htmx:after-request="document.getElementById('chat-log').scrollTo(0, document.getElementById('chat-log').scrollHeight);"
+                  hx-on:htmx:after-request="setTimeout(() => document.getElementById('chat-log').scrollTo({ top: document.getElementById('chat-log').scrollHeight, behavior: 'smooth' }), 100);"
                   class="max-w-4xl mx-auto flex gap-2">
 
                 <input type="text" name="action" autofocus autocomplete="off"
-                       class="flex-1 bg-gray-800 border border-gray-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-gray-500"
+                       class="flex-1 bg-gray-800 border border-gray-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-gray-500 transition-colors"
                        placeholder="무엇을 하시겠습니까? (예: 1번 선택, 문을 연다, 시작...)">
 
                 <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-bold transition-colors">
@@ -100,7 +125,7 @@
         </div>
     </div>
 
-    <!-- 스탯 사이드바 -->
+    <!-- 스탯 사이드바 (변경 없음) -->
     <div class="w-80 bg-gray-900 border-l border-gray-800 p-4 overflow-y-auto hidden lg:block">
         <h3 class="text-gray-400 font-bold mb-4 flex items-center gap-2">
             <i data-lucide="user" class="w-4 h-4"></i>
@@ -147,3 +172,59 @@
         </div>
     </div>
 </div>
+
+<script>
+    function submitGameAction(actionText) {
+        const form = document.querySelector('form[hx-post="/game/act"]');
+
+        // [수정] 생성 중(htmx-request)이면 클릭 무시
+        if (form.classList.contains('htmx-request')) {
+            console.log("생성 중입니다. 클릭 방지됨.");
+            return;
+        }
+
+        const input = form.querySelector('input[name="action"]');
+        input.value = actionText;
+        htmx.trigger(form, 'submit');
+    }
+
+    // [추가] 생성 중 입력 차단 로직 (readonly 토글)
+    document.body.addEventListener('htmx:beforeRequest', function(evt) {
+        if (evt.target.getAttribute('hx-post') === '/game/act') {
+            document.getElementById('chat-log').classList.add('processing');
+            const input = evt.target.querySelector('input[name="action"]');
+            if(input) input.readOnly = true; // 타이핑 차단
+        }
+    });
+
+    document.body.addEventListener('htmx:afterOnLoad', function(evt) {
+        if (evt.target.getAttribute('hx-post') === '/game/act') {
+            document.getElementById('chat-log').classList.remove('processing');
+            const input = evt.target.querySelector('input[name="action"]');
+            if(input) {
+                input.readOnly = false; // 타이핑 허용
+                input.focus();
+            }
+        }
+    });
+
+    // [수정] 시나리오 로드 성공 시 -> 모달 닫기 & 에러 메시지 삭제 & 인트로 삭제
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'init-result') {
+            // 1. 모달 닫기
+            const modal = document.getElementById('load-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.style.display = 'none';
+            }
+
+            // 2. [요청사항] "게임이 로드되지 않았습니다" 에러 메시지 삭제
+            const errorMsgs = document.querySelectorAll('#chat-log .text-red-500');
+            errorMsgs.forEach(el => el.remove());
+
+            // 3. 인트로 메시지 삭제
+            const intro = document.getElementById('intro-message');
+            if (intro) intro.remove();
+        }
+    });
+</script>
