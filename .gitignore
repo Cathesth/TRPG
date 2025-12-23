@@ -1,0 +1,19 @@
+# 무시할 파일
+
+**/.venv/
+**/.idea
+**/.virtual_documents
+**/.ipynb_checkpoints/
+**/__pycache__/
+**/desktop.ini
+**/.env
+**/*.log
+
+# 추적할 파일
+
+
+# 이 파일들은 항상 추적
+!/.env.example
+!.gitignore
+!.gitmessage.txt
+!requirements.txt
