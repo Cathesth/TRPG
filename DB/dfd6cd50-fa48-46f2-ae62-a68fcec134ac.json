@@ -1,0 +1,155 @@
+{
+  "scenario": {
+    "title": "나이트 시티 노숙자",
+    "prologue_text": "기업들이 지배하는 도시인 나이트 시티에서 노숙자인 주인공은 길거리를 전전하다 데이터 칩을 하나 줍게 된다.\n그러나 갑작스럽게 기업들의 이목이 주인공을 향해 집중되는데...",
+    "global_rules": [
+      "플레이어는 각 씬에서 선택한 행동의 결과에 따라 게임의 진행이 달라질 수 있습니다.",
+      "NPC와의 대화는 게임의 진행에 영향을 줄 수 있습니다.",
+      "플레이어는 자신의 현재 상태와 가지고 있는 아이템을 확인할 수 있습니다."
+    ],
+    "npcs": [
+      {
+        "name": "춘식 더 제임스",
+        "background": "부랑자들의 왕. 나이트 시티에서 가장 어두운 곳의 대장이다.",
+        "personality": "강하고 독립적인 성격을 가지고 있으며, 주변 사람들을 잘 보호합니다.",
+        "hostility": "Neutral",
+        "description": "금발 머리, 피어싱, 태닝한 것처럼 갈색으로 빛나는 피부, 온갖 임플란트로 번쩍이는 두 팔."
+      },
+      {
+        "name": "도로롱",
+        "background": "나이트 시티에서 도시 전설로 불리는 생명체. 발견하여 산 채로 포획하면 포상금이 어마하다는 소문이 있다.",
+        "personality": "신비롭고 정체가 모호한 존재로, 때때로 사람들을 도와줍니다.",
+        "hostility": "Neutral",
+        "description": "핑크색 머리, 비웃는 얼굴, 하얀색 2등신 몸, 특이하게 4족보행을 한다."
+      }
+    ],
+    "scenes": [
+      {
+        "scene_id": "scene_1",
+        "title": "데이터 칩 줍기",
+        "description": "주인공은 길거리를 전전하다 데이터 칩을 하나 줍게 됩니다. 이 데이터 칩은 무엇일까요?",
+        "has_branch": true,
+        "next_scene_ids": [
+          "scene_2",
+          "scene_3"
+        ],
+        "required_key_item": null,
+        "required_action": null,
+        "npc_names": [],
+        "choices": [
+          {
+            "text": "데이터 칩 분석하기",
+            "next_scene_id": "scene_2",
+            "effects": [
+              {
+                "target_var": "knowledge",
+                "operation": "add",
+                "value": 10
+              }
+            ]
+          },
+          {
+            "text": "데이터 칩을 팔기 위해 시장으로 가기",
+            "next_scene_id": "scene_3",
+            "effects": [
+              {
+                "target_var": "gold",
+                "operation": "add",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "scene_id": "scene_2",
+        "title": "데이터 칩 분석",
+        "description": "주인공은 데이터 칩을 분석하여 그 안에 들어있는 정보를 알아냅니다.",
+        "has_branch": false,
+        "next_scene_ids": [],
+        "required_key_item": "데이터 칩",
+        "required_action": "분석",
+        "npc_names": [],
+        "choices": []
+      },
+      {
+        "scene_id": "scene_3",
+        "title": "시장에서 데이터 칩 팔기",
+        "description": "주인공은 시장에서 데이터 칩을 팔기 위해 기다립니다.",
+        "has_branch": true,
+        "next_scene_ids": [
+          "scene_4",
+          "scene_5"
+        ],
+        "required_key_item": "데이터 칩",
+        "required_action": "팔기",
+        "npc_names": [
+          "춘식 더 제임스"
+        ],
+        "choices": [
+          {
+            "text": "춘식 더 제임스에게 데이터 칩 팔기",
+            "next_scene_id": "scene_4",
+            "effects": [
+              {
+                "target_var": "gold",
+                "operation": "add",
+                "value": 500
+              }
+            ]
+          },
+          {
+            "text": "도로롱에게 데이터 칩 팔기",
+            "next_scene_id": "scene_5",
+            "effects": [
+              {
+                "target_var": "knowledge",
+                "operation": "add",
+                "value": 20
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "endings": [
+      {
+        "ending_id": "ending_1",
+        "title": "데이터 칩의 비밀",
+        "description": "주인공은 데이터 칩의 비밀을 알아내고, 이를 이용하여 나이트 시티의 기업들을 물리チます.",
+        "condition": "knowledge >= 50"
+      },
+      {
+        "ending_id": "ending_2",
+        "title": "시장의 위험",
+        "description": "주인공은 시장에서 데이터 칩을 팔다가 위험에 빠지게 됩니다.",
+        "condition": "gold >= 1000"
+      }
+    ],
+    "initial_state": {
+      "hp": 100,
+      "sanity": 50,
+      "inventory": [
+        "데이터 칩"
+      ],
+      "knowledge": 0,
+      "gold": 0
+    }
+  },
+  "current_scene_id": "scene_3",
+  "player_vars": {
+    "hp": 100,
+    "sanity": 50,
+    "inventory": [
+      "데이터 칩"
+    ],
+    "knowledge": 20,
+    "gold": 100
+  },
+  "history": [
+    "[Prologue] 기업들이 지배하는 도시인 나이트 시티에서 노숙자인 주인공은 길거리를 전전하다 데이터 칩을 하나 줍게 된다.\n그러나 갑작스럽게 기업들의 이목이 주인공을 향해 집중되는데...",
+    "시장의 따가로운 햇살이 주인공의 얼굴을 비추고, 사람們의 열띤 거래 소리가 공기를 가득 메웁니다. 주인공은 데이터 칩을 판매하기 위해 시장의 한 구석에서 기다리고 있는데, 손에는 데이터 칩이 든 가방을緊握하고 있습니다. 주변에는 다양한 물건을 판매하는 상인들과 구경꾼들이 삼삼오오 모여있어 분주한 시장 분위기가 느껴집니다.",
+    "시장은 사람이 북적거리고 각종 물건들이 진열된 가운데 활기찬 분위기로 가득 차 있습니다. 주인공은 데이터 칩을 팔기 위해 시장의 한 구석에서 잠복하며, 잠시 동안은 사람들이 데이터 칩에 관심을 보이지 않아 묵묵히 기다리고 있습니다. 주변에는 각종 전자제품이 진열된 상점과 사람들이 venir여서 가는 모습이 보이며, 시장의 분위기는 점점 더 활기차지고 있습니다."
+  ],
+  "last_user_choice_idx": 1
+}

@@ -1,0 +1,173 @@
+{
+  "scenario": {
+    "title": "사이버크 부랑자의 삶",
+    "prologue_text": "기업이 지배하는 이트 시티에서 조실부모한 주인공, 노숙자로서 살아가다 길거리에서 주운 하나의 데이터으로 인해 기업에게 기게 되는데... 주인공은 이 상황을 어떻게 피할 수 있을까? 주인공의 운명은 어떻게 될 것인가?",
+    "global_rules": [
+      "주인공은 전자기기를 사용하면 정신력 2 인다.",
+      "주인공은 하루에 3번만 식사를 할 수 있다.",
+      "주인공은 밤에만 안전한 지역에서 휴식을 취할 수 있다."
+    ],
+    "npcs": [
+      {
+        "name": "춘식 더 제임스",
+        "background": "부랑자들의 왕. 이트 시티에서 가장 어두운 곳의 대장이다. 그는 주인공에게 도움을 줄 수 있지만, 그의 도움은 언제나 금전으로 거래된다.",
+        "personality": "춘식은 정하고 계산적인 사람이다. 그는 주인공에게 도움을 주기 전에 그의 가치를 평가한다.",
+        "hostility": "Neutral",
+        "description": "금발 머리, 피어싱, 태닝한 것처럼 갈색으로 빛나는 피부, 온 임플란트로 번이는 두 팔."
+      },
+      {
+        "name": "도로롱",
+        "background": "나이트 시티에서 도시 전설로 불리는 생명체. 발견하여 산 채로 포획하면 포상금이 어마하다는 소문이 있다. 도로롱은 주인공에게 정보를 제공할 수 있다.",
+        "personality": "도로롱은 친절하고 도움을 주는 성격을 가지고 있다. 그러나 그의 정보는 항상 정확하지는 않다.",
+        "hostility": "Friendly",
+        "description": "핑크색 머리, 비웃는 얼굴, 하색 2등신 몸, 특이하게 4족보행을 한다."
+      }
+    ],
+    "scenes": [
+      {
+        "scene_id": "scene_1",
+        "title": "도시의 시작",
+        "description": "주인공은 이트 시티의 한 구석에서目を 다. 그는 길거리에서 주운 데이터을 가지고 있다. 주인공은 도시를 탐험하기 시작한다.",
+        "has_branch": true,
+        "next_scene_ids": [
+          "scene_2",
+          "scene_3"
+        ],
+        "required_key_item": null,
+        "required_action": null,
+        "npc_names": [],
+        "choices": [
+          {
+            "description": "주인공은 도시의 중심으로 이동한다.",
+            "effects": {
+              "hp": -1
+            },
+            "next_scene_id": "scene_2"
+          },
+          {
+            "description": "주인공은 도시의 외으로 이동한다.",
+            "effects": {
+              "sanity": -1
+            },
+            "next_scene_id": "scene_3"
+          }
+        ]
+      },
+      {
+        "scene_id": "scene_2",
+        "title": "도시의 중심",
+        "description": "주인공은 도시의 중심에 도착한다. 그는 많은 사람들과 건물들을 sieht. 그러나 그는 또한 많은 위험을 느끼게 된다.",
+        "has_branch": true,
+        "next_scene_ids": [
+          "scene_4",
+          "scene_5"
+        ],
+        "required_key_item": null,
+        "required_action": null,
+        "npc_names": [
+          "춘식 더 제임스"
+        ],
+        "choices": [
+          {
+            "description": "주인공은 식 더 제임스와 만난다.",
+            "effects": {
+              "gold": 100
+            },
+            "next_scene_id": "scene_4"
+          },
+          {
+            "description": "주인공은 도시의 중심을 탐험한다.",
+            "effects": {
+              "hp": -1
+            },
+            "next_scene_id": "scene_5"
+          }
+        ]
+      },
+      {
+        "scene_id": "scene_3",
+        "title": "도시의 외",
+        "description": "주인공은 도시의 외에 도착한다. 그는 많은 쓰레기와 은 건물들을 sieht. 그러나 그는 또한 도로롱을 만난다.",
+        "has_branch": true,
+        "next_scene_ids": [
+          "scene_4",
+          "scene_5"
+        ],
+        "required_key_item": null,
+        "required_action": null,
+        "npc_names": [
+          "도로롱"
+        ],
+        "choices": [
+          {
+            "description": "주인공은 도로롱과 대화한다.",
+            "effects": {
+              "sanity": 1
+            },
+            "next_scene_id": "scene_4"
+          },
+          {
+            "description": "주인공은 도시의 외을 탐험한다.",
+            "effects": {
+              "hp": -1
+            },
+            "next_scene_id": "scene_5"
+          }
+        ]
+      },
+      {
+        "scene_id": "scene_4",
+        "title": "도시의 비밀",
+        "description": "주인공은 도시의 비밀을 발견한다. 그는 많은 정보를 얻는다.",
+        "has_branch": false,
+        "next_scene_ids": [],
+        "required_key_item": null,
+        "required_action": null,
+        "npc_names": [],
+        "choices": []
+      },
+      {
+        "scene_id": "scene_5",
+        "title": "도시의 위기",
+        "description": "주인공은 도시의 위기에 직면한다. 그는 많은 위험을 느끼게 된다.",
+        "has_branch": false,
+        "next_scene_ids": [],
+        "required_key_item": null,
+        "required_action": null,
+        "npc_names": [],
+        "choices": []
+      }
+    ],
+    "endings": [
+      {
+        "ending_id": "ending_1",
+        "title": "幸せな結末",
+        "description": "주인공은 도시의 비밀을 발견하고, 많은 정보를 얻는다. 그는幸せな生活을 살 수 있다.",
+        "condition": "hp > 0 and sanity > 0"
+      },
+      {
+        "ending_id": "ending_2",
+        "title": "不幸な結末",
+        "description": "주인공은 도시의 위기에 직면한다. 그는 많은 위험을 느끼게 된다. 그는幸せな生活을 살 수 없다.",
+        "condition": "hp <= 0 or sanity <= 0"
+      }
+    ],
+    "initial_state": {
+      "hp": 100,
+      "sanity": 100,
+      "gold": 0,
+      "inventory": []
+    }
+  },
+  "current_scene_id": "scene_1",
+  "player_vars": {
+    "hp": 100,
+    "sanity": 100,
+    "gold": 0,
+    "inventory": []
+  },
+  "history": [
+    "[Prologue] 기업이 지배하는 이트 시티에서 조실부모한 주인공, 노숙자로서 살아가다 길거리에서 주운 하나의 데이터으로 인해 기업에게 기게 되는데... 주인공은 이 상황을 어떻게 피할 수 있을까? 주인공의 운명은 어떻게 될 것인가?"
+  ],
+  "last_user_choice_idx": -1
+}
