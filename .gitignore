@@ -1,7 +1,7 @@
 # 무시할 파일
 
 **/.venv/
-
+**/.idea
 **/.virtual_documents
 **/.ipynb_checkpoints/
 **/__pycache__/
