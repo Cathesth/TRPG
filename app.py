@@ -303,6 +303,136 @@ def game_act():
 
     current_state['last_user_choice_idx'] = choice_idx
 
+    def generate():
+        try:
+            # 1. narrator 전까지 처리 (intent_parser + rule_engine/npc_actor)
+            processed_state = process_before_narrator(current_state)
+            db['state'] = processed_state
+
+            npc_say = processed_state.get('npc_output', '')
+            sys_msg = processed_state.get('system_message', '')
+            is_ending = processed_state.get('parsed_intent') == 'ending'
+            new_scene_id = processed_state['current_scene_id']
+
+            # 2. 시스템 메시지 (효과 적용 등)
+            if sys_msg and "Game Started" not in sys_msg and "Game Init" not in sys_msg and "Game Over" not in sys_msg:
+                prefix_html = f"<div class='text-xs text-gray-500 mb-2'>[System] {sys_msg}</div>"
+                yield f"data: {json.dumps({'type': 'prefix', 'content': prefix_html})}\n\n"
+
+            # 3. NPC 대화
+            if npc_say:
+                npc_html = f"<div class='bg-gray-800/80 p-3 rounded-lg border-l-4 border-yellow-500 mb-4'><span class='text-yellow-400 font-bold block mb-1'>NPC</span>{npc_say}</div>"
+                yield f"data: {json.dumps({'type': 'prefix', 'content': npc_html})}\n\n"
+
+            # 4. 게임 시작 시 프롤로그 스트리밍
+            if is_game_start:
+                # 프롤로그 헤더 - 다른 메시지들과 동일한 스타일
+                prologue_header = '<div class="mb-4 p-3 bg-indigo-900/30 rounded-lg border-l-4 border-indigo-500"><div class="text-indigo-400 font-bold text-sm mb-2">[Prologue]</div><div class="text-gray-300 leading-relaxed">'
+                yield f"data: {json.dumps({'type': 'prefix', 'content': prologue_header})}\n\n"
+
+                # 프롤로그 AI 스트리밍
+                for chunk in prologue_stream_generator(processed_state):
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+
+                # 프롤로그 닫기 - prefix로 보내서 HTML로 처리되게 함
+                prologue_footer = '</div></div>'
+                yield f"data: {json.dumps({'type': 'section_end', 'content': prologue_footer})}\n\n"
+
+                # 첫 씬 타이틀
+                if new_scene_id in all_scenes:
+                    s = all_scenes[new_scene_id]
+                    scene_title_html = f"<div class='text-lg font-bold text-indigo-300 mb-2 mt-4'>{s.get('title', '')}</div>"
+                    yield f"data: {json.dumps({'type': 'prefix', 'content': scene_title_html})}\n\n"
+
+                # 첫 씬 설명 AI 스트리밍
+                for chunk in scene_stream_generator(processed_state):
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+
+            # 5. 엔딩 처리
+            elif is_ending or new_scene_id in all_endings:
+                ending = all_endings.get(new_scene_id)
+                ending_title = ending.get('title', 'The End') if ending else 'The End'
+
+                # 엔딩 헤더 HTML - 다른 메시지들과 비슷하게 빨간색 계열로 심플하게
+                ending_header = f'''<div class="my-4 p-4 bg-red-900/30 rounded-lg border-l-4 border-red-500">
+                    <div class="text-red-400 font-bold text-sm mb-2">🎮 ENDING REACHED</div>
+                    <div class="text-xl font-bold text-red-300 mb-3">"{ending_title}"</div>
+                    <div class="text-gray-300 leading-relaxed">'''
+                yield f"data: {json.dumps({'type': 'ending_start', 'content': ending_header})}\n\n"
+
+                # 엔딩 나레이션 AI 스트리밍
+                for chunk in ending_stream_generator(processed_state):
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+
+                # 엔딩 푸터 + 새로 시작 버튼 - 심플하게
+                ending_footer = '''</div>
+                    <div class="mt-4 pt-3 border-t border-red-500/30 text-xs text-red-400/70">THANK YOU FOR PLAYING</div>
+                </div>
+                <div class="mt-4 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
+                    <p class="text-gray-400 mb-3 text-sm">🎮 새로운 모험을 시작하시겠습니까?</p>
+                    <div class="flex gap-3 flex-wrap">
+                        <a href="/" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold py-2 px-4 rounded-lg flex items-center gap-2 transition-all">
+                            <i data-lucide="home" class="w-4 h-4"></i>
+                            홈으로
+                        </a>
+                        <a href="/views/player" onclick="window.location.href='/views/player'; window.location.reload(); return false;" class="bg-green-600 hover:bg-green-500 text-white text-sm font-bold py-2 px-4 rounded-lg flex items-center gap-2 transition-all">
+                            <i data-lucide="gamepad-2" class="w-4 h-4"></i>
+                            새 게임
+                        </a>
+                    </div>
+                </div>'''
+                yield f"data: {json.dumps({'type': 'ending_end', 'content': ending_footer})}\n\n"
+
+                # 엔딩 신호 전송
+                yield f"data: {json.dumps({'type': 'game_ended', 'content': True})}\n\n"
+
+            # 6. 일반 씬 전환
+            else:
+                # 씬 타이틀
+                if new_scene_id in all_scenes:
+                    s = all_scenes[new_scene_id]
+                    scene_title_html = f"<div class='text-xl font-bold text-indigo-300 mb-2'>{s.get('title', '')}</div>"
+                    yield f"data: {json.dumps({'type': 'prefix', 'content': scene_title_html})}\n\n"
+
+                # 씬 설명 AI 스트리밍
+                for chunk in scene_stream_generator(processed_state):
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+
+            # 7. 선택지 HTML 생성 (엔딩이 아닐 때만)
+            if not is_ending and new_scene_id not in all_endings:
+                new_scene = all_scenes.get(new_scene_id)
+                if new_scene and new_scene.get('choices'):
+                    choices_html = "<div class='mt-4 pt-4 border-t border-gray-700 space-y-2'>"
+                    for i, c in enumerate(new_scene['choices']):
+                        choices_html += f"""
+                        <button onclick="submitGameAction('{i + 1}')" class="w-full text-left bg-gray-800/50 hover:bg-indigo-900/40 p-3 rounded-lg border border-gray-700 hover:border-indigo-500 transition-all group flex items-start gap-3 cursor-pointer">
+                            <span class="bg-indigo-900 text-indigo-200 text-xs font-bold px-2 py-0.5 rounded group-hover:bg-indigo-500 group-hover:text-white transition-colors">{i + 1}</span>
+                            <span class="text-indigo-200 group-hover:text-white transition-colors text-sm">{c['text']}</span>
+                        </button>
+                        """
+                    choices_html += "</div>"
+                    yield f"data: {json.dumps({'type': 'choices', 'content': choices_html})}\n\n"
+
+            # 8. 스탯 정보
+            stats_data = processed_state['player_vars']
+            yield f"data: {json.dumps({'type': 'stats', 'content': stats_data})}\n\n"
+
+            # 9. 완료 신호
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        }
+    )
     if not db['game_graph']: db['game_graph'] = create_game_graph()
 
     try:
