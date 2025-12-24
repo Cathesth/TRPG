@@ -1,92 +1,163 @@
-from crewai import Agent, Task, Crew
-from schemas import GameScenario
-from llm_factory import get_builder_model
 import json
+import time
+from typing import List, Dict, Any, Optional
+from crewai import Agent, Task, Crew
+from llm_factory import get_builder_model
+from schemas import GameScenario  # 분리된 스키마 임포트
 
 
-def generate_scenario_data(api_key: str, draft_data: dict):
+# --- Helper Functions ---
+
+def calculate_estimated_time(node_count: int, complexity: str = "medium") -> int:
     """
-    작가 -> 언어 검수 -> 논리 검수 순서로 완벽한 시나리오 생성
+    Estimates generation time based on graph size.
+    Rule of thumb: 10s per node + 20s overhead + validation time.
     """
+    base_time = 20
+    per_node = 10
+    if complexity == "high":
+        per_node = 15
+
+    total_seconds = base_time + (node_count * per_node)
+    return total_seconds
+
+
+def transform_graph_to_draft(nodes: List[dict], edges: List[dict], global_npcs: List[dict]) -> dict:
+    """
+    React Flow의 그래프 데이터를 CrewAI가 이해할 수 있는 Draft JSON으로 변환.
+    연결선(Edge)을 분석하여 next_scene_id 등을 매핑함.
+    """
+    scenes = []
+    endings = []
+    start_node = None
+
+    # 1. 노드 분류
+    for node in nodes:
+        node_type = node['type']
+        data = node['data']
+
+        if node_type == 'start':
+            start_node = data
+        elif node_type == 'scene':
+            # Edge를 찾아 연결된 다음 씬 확인
+            my_edges = [e for e in edges if e['source'] == node['id']]
+            choices_draft = []
+
+            # 연결된 노드 개수만큼 선택지 초안 생성 (나중에 AI가 텍스트 채움)
+            for idx, edge in enumerate(my_edges):
+                target_id = edge['target']
+                choices_draft.append({
+                    "text": "",  # AI가 채워야 함
+                    "next_scene_id": target_id
+                })
+
+            scenes.append({
+                "scene_id": node['id'],
+                "title": data.get('title', ''),
+                "description": data.get('description', ''),  # 비어있으면 AI가 생성
+                "required_item": data.get('keyItem', None),
+                "required_action": data.get('action', None),
+                "npc_names": data.get('npcs', []),
+                "choices_draft": choices_draft
+            })
+        elif node_type == 'ending':
+            endings.append({
+                "ending_id": node['id'],
+                "title": data.get('title', ''),
+                "condition": data.get('condition', '')
+            })
+
+    return {
+        "title": start_node.get('label', 'Untitled Scenario') if start_node else "Untitled",
+        "background": start_node.get('description', '') if start_node else "",  # Start node description -> background
+        "global_npcs": global_npcs,
+        "scenes": scenes,
+        "endings": endings
+    }
+
+
+# --- Main Crew Logic ---
+
+def generate_scenario_from_graph(api_key: str, react_flow_data: dict):
+    """
+    React Flow Data -> Draft JSON -> CrewAI -> Final JSON
+    """
+
+    # 1. 데이터 변환
+    nodes = react_flow_data.get('nodes', [])
+    edges = react_flow_data.get('edges', [])
+    global_npcs = react_flow_data.get('globalNpcs', [])
+
+    draft_data = transform_graph_to_draft(nodes, edges, global_npcs)
+
+    # 2. 모델 설정
     claude = get_builder_model(api_key)
 
-    # 1. [Agent] 시나리오 작가 (창조)
-    writer = Agent(
-        role='Lead Scenario Writer',
-        goal='Draft a creative and immersive TRPG scenario.',
-        backstory='You are a creative writer who excels at creating interesting characters and plot twists.',
+    # 3. 에이전트 정의
+
+    # [Agent 1] 구멍 메우기 전문 작가
+    filler_writer = Agent(
+        role='Gap Filler & Creative Writer',
+        goal='Fill in empty descriptions and generate natural choices connecting scenes.',
+        backstory='You are an expert game master. You take a skeleton structure and put flesh on it. If a user left a description blank, you write it based on the background.',
         llm=claude,
         verbose=True
     )
 
-    # 2. [Agent] 언어 검수자 (표현력)
-    language_editor = Agent(
-        role='Korean Language Editor',
-        goal='Ensure the text is in natural, high-quality Korean and matches the requested tone.',
-        backstory='You are a strict editor. You check for grammar, tone consistency, and ensure the text is immersive for players.',
+    # [Agent 2] 언어 및 톤앤매너 검수
+    korean_editor = Agent(
+        role='Korean Flavor Text Editor',
+        goal='Ensure "dark/immersive" tone and correct Korean grammar.',
+        backstory='You are a novelist. You fix awkward sentences and make sure the text feels like a real RPG.',
         llm=claude,
         verbose=True
     )
 
-    # 3. [Agent] 시나리오 검수자 (논리/구조)
-    logic_critic = Agent(
-        role='Game Logic Validator',
-        goal='Ensure the scenario graph is logically connected without dead ends or broken links.',
-        backstory='''You are a QA Engineer. You check:
-        1. Does every scene with choices link to a valid `scene_id`?
-        2. Is there at least one path to an Ending?
-        3. Are all NPC details fully filled out?
-        If you find a logic error, you fix the JSON structure.''',
-        llm=claude,
-        verbose=True
+    # [Agent 3] 로직 검증 (Graph Consistency)
+    logic_validator = Agent(
+        role='Graph Logic Validator',
+        goal='Ensure all graph connections defined in the draft are preserved in the final output.',
+        backstory='You are a compiled code checker. You verify that `next_scene_id` in choices matches actual scene IDs.',
+        llm=claude
     )
 
-    # --- Tasks ---
+    # 4. 태스크 정의
 
-    draft_json = json.dumps(draft_data, indent=2, ensure_ascii=False)
-
-    # Task 1: 초안 작성
-    task_write = Task(
+    task_fill = Task(
         description=f"""
-        Create a full TRPG scenario based on this draft:
-        {draft_json}
+        Based on this skeleton draft: {json.dumps(draft_data, ensure_ascii=False)}
 
-        Fill in all missing fields (prologue, scenes, npcs, endings).
-        Ensure `initial_state` has necessary variables.
+        1. Keep user-provided data (titles, conditions) AS IS.
+        2. If 'description' is empty/short, WRITE a detailed immersive description (100+ chars).
+        3. If 'choices_draft' has empty text, generate a choice text relevant to the `next_scene_id`.
+        4. Generate full NPC profiles from the simple list in `global_npcs`.
+        5. Write a Prologue based on the 'background'.
         """,
-        agent=writer,
-        expected_output="A JSON-like draft of the scenario."
+        agent=filler_writer,
+        expected_output="JSON structure with all fields filled."
     )
 
-    # Task 2: 언어 및 묘사 검수
-    task_edit = Task(
-        description="""
-        Review the draft from the Writer.
-        1. Ensure all text is in fluent Korean.
-        2. Enhance scene descriptions to be more vivid.
-        3. Check if NPC dialogues match their personalities.
-        """,
-        agent=language_editor,
-        expected_output="Refined JSON data with better text."
+    task_polish = Task(
+        description="Review the filled draft. Polish Korean sentences. Make it darker and more serious.",
+        agent=korean_editor,
+        expected_output="Polished JSON."
     )
 
-    # Task 3: 논리 검수 및 최종 출력 (가장 중요)
     task_validate = Task(
         description="""
-        Review the refined draft for LOGICAL ERRORS.
-        1. Check `next_scene_id` validity: Every ID must exist in `scenes` or `endings`.
-        2. Check Flow: Prologue -> Scenes -> Ending flow must be possible.
-        3. Output MUST be a valid JSON matching the `GameScenario` schema perfectly.
+        Final Check:
+        1. Validate `next_scene_id` links.
+        2. Ensure `GameScenario` schema compliance.
         """,
-        agent=logic_critic,
-        expected_output="Final valid JSON object matching GameScenario schema.",
-        output_pydantic=GameScenario  # 최종 포맷 강제
+        agent=logic_validator,
+        expected_output="Final valid JSON.",
+        output_pydantic=GameScenario
     )
 
-    # Process: Sequential (작성 -> 언어검수 -> 논리검수 -> 완료)
+    # 5. 실행
     crew = Crew(
-        agents=[writer, language_editor, logic_critic],
-        tasks=[task_write, task_edit, task_validate],
+        agents=[filler_writer, korean_editor, logic_validator],
+        tasks=[task_fill, task_polish, task_validate],
         verbose=True
     )
 
