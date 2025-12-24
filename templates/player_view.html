@@ -42,13 +42,13 @@
 <div class="flex h-full fade-in relative w-full">
 
     <!-- 시나리오 로드 모달 (기본 숨김) -->
-    <div id="load-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/90 backdrop-blur-sm">
+    <div id="load-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/90 backdrop-blur-sm" style="display: none;">
         <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-4xl h-[80vh] flex flex-col shadow-2xl overflow-hidden m-4">
             <div class="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-800">
                 <h3 class="text-xl font-bold text-white flex items-center gap-2">
                     <i data-lucide="folder-open" class="text-yellow-500"></i> 저장된 시나리오 목록
                 </h3>
-                <button onclick="document.getElementById('load-modal').classList.add('hidden')" class="text-gray-400 hover:text-white p-2">
+                <button onclick="closeLoadModal()" class="text-gray-400 hover:text-white p-2">
                     <i data-lucide="x" class="w-6 h-6"></i>
                 </button>
             </div>
@@ -66,7 +66,7 @@
             </div>
 
             <div class="p-4 bg-gray-800 border-t border-gray-700 text-right">
-                <button onclick="document.getElementById('load-modal').classList.add('hidden')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm">닫기</button>
+                <button onclick="closeLoadModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm">닫기</button>
             </div>
         </div>
     </div>
@@ -85,12 +85,12 @@
 
             <!-- 오른쪽: 버튼들 -->
             <div class="flex gap-2">
-                <a href="/views/scenes"
-                   class="pointer-events-auto bg-pink-900/80 hover:bg-pink-800 text-pink-200 px-4 py-2 rounded-lg border border-pink-700/50 backdrop-blur-md shadow-lg flex items-center gap-2 text-sm font-bold transition-all hover:scale-105">
+                <button id="scenes-btn" onclick="openScenesView()" disabled
+                   class="pointer-events-auto bg-pink-900/80 hover:bg-pink-800 text-pink-200 px-4 py-2 rounded-lg border border-pink-700/50 backdrop-blur-md shadow-lg flex items-center gap-2 text-sm font-bold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">
                     <i data-lucide="git-merge" class="w-4 h-4"></i>
                     전체 씬 보기
-                </a>
-                <button onclick="openLoadModal()"
+                </button>
+                <button id="load-btn" onclick="openLoadModal()"
                         class="pointer-events-auto bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-4 py-2 rounded-lg border border-indigo-700/50 backdrop-blur-md shadow-lg flex items-center gap-2 text-sm font-bold transition-all hover:scale-105">
                     <i data-lucide="folder-open" class="w-4 h-4"></i>
                     시나리오 불러오기
@@ -110,7 +110,7 @@
                 <div class="flex-1">
                     <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
                     <div class="bg-[#1a1a1e] border-gray-700 p-3 rounded-lg border text-gray-300 text-sm leading-relaxed">
-                        시스템에 접속했습니다. 우측 상단의 <span class="text-indigo-400 font-bold">[시나리오 불러오기]</span> 버튼을 눌러 저장된 게임을 로드하거나, 아래 입력창에 <span class="text-indigo-400 font-bold">'시작'</span>을 입력하세요.
+                        시스템에 접속했습니다. 우측 상단의 <span class="text-indigo-400 font-bold">[시나리오 불러오기]</span> 버튼을 눌러 저장된 게임을 로드하세요.
                     </div>
                 </div>
             </div>
@@ -210,16 +210,82 @@
     // 게임 종료 상태
     let isGameEnded = false;
 
+    // 시나리오 로드 상태
+    let isScenarioLoaded = false;
+
     // 채팅 로그 저장 키
     const CHAT_LOG_KEY = 'trpg_chat_log';
     const STATS_KEY = 'trpg_stats';
     const GAME_ENDED_KEY = 'trpg_game_ended';
+    const SCENARIO_LOADED_KEY = 'trpg_scenario_loaded';
+
+    // 전체 씬 보기 페이지 이동
+    function openScenesView() {
+        if (isScenarioLoaded) {
+            isInternalNavigation = true;
+            window.location.href = '/views/scenes';
+        }
+    }
+
+    // 시나리오 로드 후 UI 활성화
+    function enableGameUI() {
+        isScenarioLoaded = true;
+        sessionStorage.setItem(SCENARIO_LOADED_KEY, 'true');
+
+        // 입력창 활성화
+        const form = document.querySelector('form[hx-post="/game/act"]');
+        const input = form.querySelector('input[name="action"]');
+        const submitBtn = form.querySelector('button[type="submit"]');
+
+        if (input) {
+            input.disabled = false;
+            input.placeholder = "무엇을 하시겠습니까? (예: 1번 선택, 문을 연다, 시작...)";
+            input.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+
+        // 전체 씬 보기 버튼 활성화
+        const scenesBtn = document.getElementById('scenes-btn');
+        if (scenesBtn) {
+            scenesBtn.disabled = false;
+        }
+    }
+
+    // 시나리오 미로드 시 UI 비활성화
+    function disableGameUI() {
+        isScenarioLoaded = false;
+
+        // 입력창 비활성화
+        const form = document.querySelector('form[hx-post="/game/act"]');
+        const input = form.querySelector('input[name="action"]');
+        const submitBtn = form.querySelector('button[type="submit"]');
+
+        if (input) {
+            input.disabled = true;
+            input.placeholder = "시나리오를 먼저 불러와주세요...";
+            input.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+
+        // 전체 씬 보기 버튼 비활성화
+        const scenesBtn = document.getElementById('scenes-btn');
+        if (scenesBtn) {
+            scenesBtn.disabled = true;
+        }
+    }
 
     // 페이지 로드 시 저장된 채팅 로그 복원
     function restoreChatLog() {
         const savedLog = sessionStorage.getItem(CHAT_LOG_KEY);
         const savedStats = sessionStorage.getItem(STATS_KEY);
         const savedGameEnded = sessionStorage.getItem(GAME_ENDED_KEY);
+        const savedScenarioLoaded = sessionStorage.getItem(SCENARIO_LOADED_KEY);
 
         if (savedLog) {
             const chatLog = document.getElementById('chat-log');
@@ -232,6 +298,34 @@
             initResult.insertAdjacentHTML('afterend', savedLog);
             chatLog.appendChild(aiLoading);
 
+            // 초기 안내 메시지 제거 (복원된 로그가 있으므로)
+            const intro = document.getElementById('intro-message');
+            if (intro) intro.remove();
+
+            lucide.createIcons();
+
+            // 자동 스크롤
+            chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'auto' });
+        } else if (savedScenarioLoaded === 'true') {
+            // 채팅 로그는 없지만 시나리오는 로드된 상태 (전체 씬 보기에서 돌아온 경우)
+            const intro = document.getElementById('intro-message');
+            if (intro) intro.remove();
+
+            const initResult = document.getElementById('init-result');
+            initResult.innerHTML = `
+            <div class="bg-green-900/30 border border-green-800 text-green-400 p-4 rounded-lg flex items-center gap-3 fade-in mt-4">
+                <i data-lucide="check-circle" class="w-6 h-6"></i>
+                <div>
+                    <div class="font-bold">로드 완료!</div>
+                    <div class="text-sm opacity-80">아래 버튼을 클릭하거나 채팅창에 "시작"을 입력하세요.</div>
+                </div>
+            </div>
+            <button onclick="submitGameAction('시작')"
+                    class="mt-3 w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shadow-lg">
+                <i data-lucide="play" class="w-5 h-5"></i>
+                게임 시작하기
+            </button>
+            `;
             lucide.createIcons();
         }
 
@@ -245,6 +339,13 @@
         if (savedGameEnded === 'true') {
             isGameEnded = true;
             disableInput();
+        }
+
+        // 시나리오 로드 상태 복원
+        if (savedScenarioLoaded === 'true') {
+            enableGameUI();
+        } else {
+            disableGameUI();
         }
     }
 
@@ -617,18 +718,9 @@
             // 새 게임 로드 시 채팅 로그 및 게임 종료 상태 초기화
             clearChatLog();
             isGameEnded = false;
-            const form = document.querySelector('form[hx-post="/game/act"]');
-            const input = form.querySelector('input[name="action"]');
-            const submitBtn = form.querySelector('button[type="submit"]');
-            if (input) {
-                input.disabled = false;
-                input.placeholder = "무엇을 하시겠습니까? (예: 1번 선택, 문을 연다, 시작...)";
-                input.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-            if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
+
+            // 시나리오 로드 후 UI 활성화
+            enableGameUI();
 
             // 기존 채팅 내용 제거 (init-result, ai-loading 제외)
             const chatLog = document.getElementById('chat-log');
@@ -638,6 +730,9 @@
                     child.remove();
                 }
             });
+
+            // 자동 스크롤
+            chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
         }
     });
 
@@ -649,11 +744,26 @@
         const modal = document.getElementById('load-modal');
         const container = document.getElementById('scenario-list-container');
 
+        // 모달이 이미 표시중이면 무시
+        if (!modal.classList.contains('hidden')) {
+            return;
+        }
+
         // 모달 열기
         modal.classList.remove('hidden');
+        modal.style.display = 'flex';
 
         // 목록 다시 로드 (htmx로 강제 리프레시)
         htmx.ajax('GET', '/api/scenarios', {target: '#scenario-list-container', swap: 'innerHTML'});
+    }
+
+    // 모달 닫기 함수
+    function closeLoadModal() {
+        const modal = document.getElementById('load-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+        }
     }
 
     // 내부 링크 클릭 여부 추적
@@ -664,6 +774,12 @@
         link.addEventListener('click', function() {
             isInternalNavigation = true;
         });
+    });
+
+    // 페이지 로드 시 내부 네비게이션 플래그 초기화
+    window.addEventListener('pageshow', function(event) {
+        // bfcache에서 복원된 경우나 새로 로드된 경우 모두 플래그 초기화
+        isInternalNavigation = false;
     });
 
     // 새로고침(F5) 시에만 서버 state 초기화 (내부 페이지 이동 시에는 유지)
@@ -678,6 +794,7 @@
         sessionStorage.removeItem(CHAT_LOG_KEY);
         sessionStorage.removeItem(STATS_KEY);
         sessionStorage.removeItem(GAME_ENDED_KEY);
+        sessionStorage.removeItem(SCENARIO_LOADED_KEY);
     });
 </script>
 
