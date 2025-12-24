@@ -1,4 +1,45 @@
-<div class="flex h-full fade-in relative">
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRPG Player Mode</title>
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Pretendard', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+        .htmx-indicator { display: none; pointer-events: none; }
+        .htmx-request .htmx-indicator { display: flex; pointer-events: auto; }
+        .htmx-request.htmx-indicator { display: flex; pointer-events: auto; }
+
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .typing-dot { animation: typingDot 1.4s infinite ease-in-out both; }
+        .typing-dot:nth-child(1) { animation-delay: 0s; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typingDot { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; } 40% { transform: scale(1); opacity: 1; } }
+
+        .streaming-cursor { animation: blink 1s step-end infinite; color: #818cf8; }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        .serif-font { font-family: 'Noto Serif KR', Georgia, serif; }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-200 h-screen flex overflow-hidden">
+
+<div class="flex h-full fade-in relative w-full">
 
     <!-- 시나리오 로드 모달 (기본 숨김) -->
     <div id="load-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/90 backdrop-blur-sm">
@@ -15,7 +56,7 @@
             <div class="flex-1 overflow-y-auto p-6 bg-gray-900">
                 <div id="scenario-list-container"
                      hx-get="/api/scenarios"
-                     hx-trigger="reveal"
+                     hx-trigger="revealed"
                      class="grid gap-4 grid-cols-1 md:grid-cols-2">
                     <div class="col-span-1 md:col-span-2 text-center text-gray-500 py-12">
                         <i data-lucide="loader" class="w-8 h-8 mx-auto mb-2 animate-spin text-indigo-500"></i>
@@ -34,28 +75,42 @@
     <div class="flex-1 flex flex-col relative bg-gray-950">
 
         <!-- 상단 툴바 (플레이어 전용) -->
-        <div class="absolute top-0 left-0 right-0 z-10 p-4 flex justify-end pointer-events-none">
-            <button onclick="document.getElementById('load-modal').classList.remove('hidden'); htmx.trigger('#scenario-list-container', 'reveal')"
-                    class="pointer-events-auto bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-4 py-2 rounded-lg border border-indigo-700/50 backdrop-blur-md shadow-lg flex items-center gap-2 text-sm font-bold transition-all hover:scale-105">
-                <i data-lucide="folder-open" class="w-4 h-4"></i>
-                시나리오 불러오기
-            </button>
+        <div class="absolute top-0 left-0 right-0 z-10 p-4 flex justify-between pointer-events-none">
+            <!-- 왼쪽: 홈 버튼 -->
+            <a href="/"
+               class="pointer-events-auto bg-gray-800/80 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-lg border border-gray-700/50 backdrop-blur-md shadow-lg flex items-center gap-2 text-sm font-bold transition-all hover:scale-105">
+                <i data-lucide="home" class="w-4 h-4"></i>
+                홈
+            </a>
+
+            <!-- 오른쪽: 버튼들 -->
+            <div class="flex gap-2">
+                <a href="/views/scenes"
+                   class="pointer-events-auto bg-pink-900/80 hover:bg-pink-800 text-pink-200 px-4 py-2 rounded-lg border border-pink-700/50 backdrop-blur-md shadow-lg flex items-center gap-2 text-sm font-bold transition-all hover:scale-105">
+                    <i data-lucide="git-merge" class="w-4 h-4"></i>
+                    전체 씬 보기
+                </a>
+                <button onclick="openLoadModal()"
+                        class="pointer-events-auto bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-4 py-2 rounded-lg border border-indigo-700/50 backdrop-blur-md shadow-lg flex items-center gap-2 text-sm font-bold transition-all hover:scale-105">
+                    <i data-lucide="folder-open" class="w-4 h-4"></i>
+                    시나리오 불러오기
+                </button>
+            </div>
         </div>
 
         <div id="chat-log" class="flex-1 overflow-y-auto p-6 space-y-6 pb-24 scroll-smooth pt-16">
             <!-- 알림 메시지 영역 (로드 성공/실패 메시지가 여기 뜸) -->
             <div id="init-result" class="mb-4"></div>
 
-            <div class="flex gap-4">
+            <!-- 초기 안내 메시지 -->
+            <div id="intro-message" class="flex gap-4 fade-in mb-4">
                 <div class="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center shrink-0">
                     <i data-lucide="bot" class="text-white w-4 h-4"></i>
                 </div>
                 <div class="flex-1">
                     <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
-                    <div class="bg-[#1a1a1e] border border-gray-700 p-3 rounded-lg text-gray-300 text-sm leading-relaxed serif-font">
-                        시스템에 접속했습니다.
-                        <br>
-                        우측 상단의 <strong>[시나리오 불러오기]</strong> 버튼을 눌러 저장된 게임을 로드하거나, 아래 입력창에 '시작'을 입력하세요.
+                    <div class="bg-[#1a1a1e] border-gray-700 p-3 rounded-lg border text-gray-300 text-sm leading-relaxed">
+                        시스템에 접속했습니다. 우측 상단의 <span class="text-indigo-400 font-bold">[시나리오 불러오기]</span> 버튼을 눌러 저장된 게임을 로드하거나, 아래 입력창에 <span class="text-indigo-400 font-bold">'시작'</span>을 입력하세요.
                     </div>
                 </div>
             </div>
@@ -155,6 +210,68 @@
     // 게임 종료 상태
     let isGameEnded = false;
 
+    // 채팅 로그 저장 키
+    const CHAT_LOG_KEY = 'trpg_chat_log';
+    const STATS_KEY = 'trpg_stats';
+    const GAME_ENDED_KEY = 'trpg_game_ended';
+
+    // 페이지 로드 시 저장된 채팅 로그 복원
+    function restoreChatLog() {
+        const savedLog = sessionStorage.getItem(CHAT_LOG_KEY);
+        const savedStats = sessionStorage.getItem(STATS_KEY);
+        const savedGameEnded = sessionStorage.getItem(GAME_ENDED_KEY);
+
+        if (savedLog) {
+            const chatLog = document.getElementById('chat-log');
+            const initResult = document.getElementById('init-result');
+            const aiLoading = document.getElementById('ai-loading');
+
+            // init-result와 ai-loading 보존하고 나머지 복원
+            chatLog.innerHTML = '';
+            chatLog.appendChild(initResult);
+            initResult.insertAdjacentHTML('afterend', savedLog);
+            chatLog.appendChild(aiLoading);
+
+            lucide.createIcons();
+        }
+
+        if (savedStats) {
+            try {
+                const statsData = JSON.parse(savedStats);
+                updateStats(statsData);
+            } catch (e) {}
+        }
+
+        if (savedGameEnded === 'true') {
+            isGameEnded = true;
+            disableInput();
+        }
+    }
+
+    // 채팅 로그 저장
+    function saveChatLog() {
+        const chatLog = document.getElementById('chat-log');
+        const initResult = document.getElementById('init-result');
+        const aiLoading = document.getElementById('ai-loading');
+
+        // init-result와 ai-loading 제외한 내용만 저장
+        let content = '';
+        for (const child of chatLog.children) {
+            if (child.id !== 'init-result' && child.id !== 'ai-loading') {
+                content += child.outerHTML;
+            }
+        }
+        sessionStorage.setItem(CHAT_LOG_KEY, content);
+        sessionStorage.setItem(GAME_ENDED_KEY, isGameEnded.toString());
+    }
+
+    // 채팅 로그 초기화
+    function clearChatLog() {
+        sessionStorage.removeItem(CHAT_LOG_KEY);
+        sessionStorage.removeItem(STATS_KEY);
+        sessionStorage.removeItem(GAME_ENDED_KEY);
+    }
+
     function submitGameAction(actionText) {
         // 게임이 끝났으면 입력 차단
         if (isGameEnded) {
@@ -205,6 +322,10 @@
         const chatLog = document.getElementById('chat-log');
         const loadingIndicator = document.getElementById('ai-loading');
         const input = form.querySelector('input[name="action"]');
+
+        // 게임 시작 시 초기 안내 메시지 제거
+        const introMsg = document.getElementById('intro-message');
+        if (introMsg) introMsg.remove();
 
         // 폼 비활성화
         form.classList.add('streaming');
@@ -384,6 +505,9 @@
 
             // 최종 스크롤
             chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
+
+            // 스트리밍 완료 후 채팅 로그 저장
+            saveChatLog();
         }
     }
 
@@ -425,10 +549,16 @@
 
         statsArea.innerHTML = html;
         lucide.createIcons();
+
+        // 스탯 저장
+        sessionStorage.setItem(STATS_KEY, JSON.stringify(statsData));
     }
 
     // 폼 submit 이벤트 가로채기 (스트리밍 모드일 때)
     document.addEventListener('DOMContentLoaded', function() {
+        // 저장된 채팅 로그 복원
+        restoreChatLog();
+
         const form = document.querySelector('form[hx-post="/game/act"]');
         if (form && USE_STREAMING) {
             form.addEventListener('submit', function(e) {
@@ -484,7 +614,8 @@
             const intro = document.getElementById('intro-message');
             if (intro) intro.remove();
 
-            // 새 게임 로드 시 게임 종료 상태 초기화
+            // 새 게임 로드 시 채팅 로그 및 게임 종료 상태 초기화
+            clearChatLog();
             isGameEnded = false;
             const form = document.querySelector('form[hx-post="/game/act"]');
             const input = form.querySelector('input[name="action"]');
@@ -498,6 +629,57 @@
                 submitBtn.disabled = false;
                 submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
             }
+
+            // 기존 채팅 내용 제거 (init-result, ai-loading 제외)
+            const chatLog = document.getElementById('chat-log');
+            const children = Array.from(chatLog.children);
+            children.forEach(child => {
+                if (child.id !== 'init-result' && child.id !== 'ai-loading') {
+                    child.remove();
+                }
+            });
         }
     });
+
+    // Lucide 아이콘 초기화
+    lucide.createIcons();
+
+    // 시나리오 불러오기 모달 열기 (매번 새로 목록 조회)
+    function openLoadModal() {
+        const modal = document.getElementById('load-modal');
+        const container = document.getElementById('scenario-list-container');
+
+        // 모달 열기
+        modal.classList.remove('hidden');
+
+        // 목록 다시 로드 (htmx로 강제 리프레시)
+        htmx.ajax('GET', '/api/scenarios', {target: '#scenario-list-container', swap: 'innerHTML'});
+    }
+
+    // 내부 링크 클릭 여부 추적
+    let isInternalNavigation = false;
+
+    // 내부 링크 클릭 시 플래그 설정
+    document.querySelectorAll('a[href^="/"]').forEach(link => {
+        link.addEventListener('click', function() {
+            isInternalNavigation = true;
+        });
+    });
+
+    // 새로고침(F5) 시에만 서버 state 초기화 (내부 페이지 이동 시에는 유지)
+    window.addEventListener('beforeunload', function() {
+        // 내부 링크로 이동하는 경우에는 state 초기화하지 않음
+        if (isInternalNavigation) {
+            return;
+        }
+
+        // 실제 새로고침 또는 브라우저 종료 시에만 초기화
+        navigator.sendBeacon('/api/clear_state', '');
+        sessionStorage.removeItem(CHAT_LOG_KEY);
+        sessionStorage.removeItem(STATS_KEY);
+        sessionStorage.removeItem(GAME_ENDED_KEY);
+    });
 </script>
+
+</body>
+</html>
