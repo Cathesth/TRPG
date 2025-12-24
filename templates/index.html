@@ -37,6 +37,58 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
+
+        /* 접이식 사이드바 스타일 */
+        .sidebar {
+            width: 72px;
+            transition: width 0.3s ease;
+        }
+        .sidebar:hover,
+        .sidebar.expanded {
+            width: 260px;
+        }
+        .sidebar .nav-text {
+            opacity: 0;
+            white-space: nowrap;
+            transition: opacity 0.2s ease;
+        }
+        .sidebar:hover .nav-text,
+        .sidebar.expanded .nav-text {
+            opacity: 1;
+        }
+        .sidebar .logo-text {
+            opacity: 0;
+            white-space: nowrap;
+            transition: opacity 0.2s ease;
+        }
+        .sidebar:hover .logo-text,
+        .sidebar.expanded .logo-text {
+            opacity: 1;
+        }
+        .sidebar .section-title {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .sidebar:hover .section-title,
+        .sidebar.expanded .section-title {
+            opacity: 1;
+        }
+        .sidebar .user-info {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .sidebar:hover .user-info,
+        .sidebar.expanded .user-info {
+            opacity: 1;
+        }
+        .sidebar .user-chevron {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .sidebar:hover .user-chevron,
+        .sidebar.expanded .user-chevron {
+            opacity: 1;
+        }
     </style>
 
     <script>
@@ -62,60 +114,64 @@
 </head>
 <body class="bg-dark-900 text-gray-200 h-screen flex overflow-hidden selection:bg-brand-purple selection:text-white">
 
-    <!-- 사이드바 -->
-    <div class="w-[260px] bg-dark-800 border-r border-white/5 flex flex-col hidden md:flex shrink-0 z-20">
-        <div class="p-6">
-            <h1 class="text-xl font-bold text-white tracking-tight flex items-center gap-2 cursor-pointer" onclick="location.href='/'">
-                <div class="w-8 h-8 brand-gradient rounded-lg flex items-center justify-center text-white shadow-lg shadow-brand-purple/20">
+    <!-- 사이드바 (접이식) -->
+    <div class="sidebar bg-dark-800 border-r border-white/5 flex flex-col hidden md:flex shrink-0 z-20 overflow-hidden">
+        <div class="p-4 h-16 flex items-center">
+            <div class="flex items-center gap-2 cursor-pointer" onclick="location.href='/'">
+                <div class="w-10 h-10 brand-gradient rounded-lg flex items-center justify-center text-white shadow-lg shadow-brand-purple/20 shrink-0">
                     <i data-lucide="dice-5" class="w-5 h-5 fill-current"></i>
                 </div>
-                <span>TRPG Studio</span>
-            </h1>
+                <span class="logo-text text-xl font-bold text-white tracking-tight">TRPG Studio</span>
+            </div>
         </div>
 
-        <nav class="flex-1 px-3 space-y-1">
-            <div class="text-[10px] font-semibold text-gray-500 px-3 py-2 uppercase tracking-wider">Workspace</div>
+        <nav class="flex-1 px-3 space-y-1 mt-2">
+            <div class="section-title text-[10px] font-semibold text-gray-500 px-3 py-2 uppercase tracking-wider">Workspace</div>
 
             <a href="/" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/5 text-white group cursor-pointer text-sm font-medium">
-                <i data-lucide="layout-grid" class="w-5 h-5 text-brand-light"></i>
-                <span>대시보드</span>
+                <i data-lucide="layout-grid" class="w-5 h-5 text-brand-light shrink-0"></i>
+                <span class="nav-text">대시보드</span>
             </a>
 
-            <!-- 시나리오 빌더: 페이지 이동(href)으로 변경 -->
             <a href="/views/builder"
                class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
-                <i data-lucide="pen-tool" class="w-5 h-5 text-gray-500 group-hover:text-gray-300"></i>
-                <span>시나리오 빌더</span>
+                <i data-lucide="pen-tool" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
+                <span class="nav-text">시나리오 빌더</span>
             </a>
 
-            <!-- 플레이어 모드: 페이지 이동(href)으로 변경 -->
             <a href="/views/player"
                class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
-                <i data-lucide="gamepad-2" class="w-5 h-5 text-gray-500 group-hover:text-gray-300"></i>
-                <span>플레이어 모드</span>
+                <i data-lucide="gamepad-2" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
+                <span class="nav-text">플레이어 모드</span>
             </a>
 
-            <div class="text-[10px] font-semibold text-gray-500 px-3 py-2 uppercase tracking-wider mt-6">Library</div>
+            <a href="/views/scenes"
+               class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
+                <i data-lucide="git-merge" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
+                <span class="nav-text">전체 씬 보기</span>
+            </a>
+
+            <div class="section-title text-[10px] font-semibold text-gray-500 px-3 py-2 uppercase tracking-wider mt-6">Library</div>
 
             <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
-                <i data-lucide="book-open" class="w-5 h-5 text-gray-500 group-hover:text-gray-300"></i>
-                <span>공개 시나리오</span>
+                <i data-lucide="book-open" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
+                <span class="nav-text">공개 시나리오</span>
             </button>
             <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
-                <i data-lucide="users" class="w-5 h-5 text-gray-500 group-hover:text-gray-300"></i>
-                <span>커뮤니티</span>
+                <i data-lucide="users" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
+                <span class="nav-text">커뮤니티</span>
             </button>
         </nav>
 
         <!-- 유저 프로필 -->
-        <div class="p-4 border-t border-white/5">
+        <div class="p-3 border-t border-white/5">
             <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
-                <img src="https://api.dicebear.com/7.x/notionists/svg?seed=Felix" alt="User" class="w-8 h-8 rounded-full bg-gray-700">
-                <div class="flex-1 min-w-0">
+                <img src="https://api.dicebear.com/7.x/notionists/svg?seed=Felix" alt="User" class="w-8 h-8 rounded-full bg-gray-700 shrink-0">
+                <div class="user-info flex-1 min-w-0">
                     <p class="text-sm font-medium text-white truncate">Game Master</p>
                     <p class="text-[11px] text-gray-500 truncate">Free Plan</p>
                 </div>
-                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500"></i>
+                <i data-lucide="chevron-right" class="user-chevron w-4 h-4 text-gray-500"></i>
             </div>
         </div>
     </div>
@@ -279,6 +335,52 @@
         document.body.addEventListener('htmx:afterSwap', function(evt) {
             lucide.createIcons();
         });
+
+        // 사이드바 상태 관리
+        (function() {
+            const sidebar = document.querySelector('.sidebar');
+            const SIDEBAR_STATE_KEY = 'sidebar_expanded';
+
+            // 페이지 로드 시 저장된 상태 복원
+            if (sessionStorage.getItem(SIDEBAR_STATE_KEY) === 'true') {
+                // transition 일시 비활성화 (깜빡임 방지)
+                sidebar.style.transition = 'none';
+                sidebar.classList.add('expanded');
+                // 상태키 즉시 제거 (다음 페이지 이동을 위해)
+                sessionStorage.removeItem(SIDEBAR_STATE_KEY);
+                // 다음 프레임에서 transition 복원
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        sidebar.style.transition = '';
+                    });
+                });
+            }
+
+            // 사이드바 내 링크 클릭 시 상태 저장
+            sidebar.querySelectorAll('a[href], button').forEach(link => {
+                link.addEventListener('click', function(e) {
+                    // 페이지 이동이 있는 링크인 경우에만 상태 저장
+                    if (this.tagName === 'A' && this.href) {
+                        sessionStorage.setItem(SIDEBAR_STATE_KEY, 'true');
+                        sidebar.classList.add('expanded');
+                    }
+                });
+            });
+
+            // TRPG Studio 로고 클릭 시 상태 저장
+            const logoArea = sidebar.querySelector('.p-4.h-16 .flex.items-center.gap-2');
+            if (logoArea) {
+                logoArea.addEventListener('click', function(e) {
+                    sessionStorage.setItem(SIDEBAR_STATE_KEY, 'true');
+                    sidebar.classList.add('expanded');
+                });
+            }
+
+            // 마우스가 사이드바를 벗어나면 expanded 클래스 제거
+            sidebar.addEventListener('mouseleave', function() {
+                sidebar.classList.remove('expanded');
+            });
+        })();
     </script>
 </body>
 </html>
