@@ -1,9 +1,9 @@
 {
   "scenario": {
     "title": "시나리오 설정 & 프롤로그",
-    "genre": "Dark Fantasy",
-    "background_story": "이세계 전생",
-    "prologue": "",
+    "genre": "Fantasy",
+    "background_story": "한 인간이 신비로운 힘에 의해 판타지 세계로 환생하게 되며, 전생의 기억을 조각조각 찾아가면서 이 세계의 비밀과 자신의 운명을 마주하게 되는 이야기",
+    "prologue": "눈을 뜨니 낯선 하늘 아래 환상적인 숲이 펼쳐져 있었습니다. 어린아이의 몸으로 환생했지만 머릿속에는 전생의 기억이 조각난 유리처럼 흩어져 있습니다. 가슴에 걸린 신비로운 펜던트가 과거와 현재를 잇는 열쇠가 될 것 같습니다.",
     "variables": [
       {
         "name": "HP",
@@ -11,218 +11,153 @@
         "type": "int"
       },
       {
-        "name": "SANITY",
-        "initial_value": 80,
+        "name": "Mana",
+        "initial_value": 50,
         "type": "int"
       },
       {
-        "name": "MANA",
-        "initial_value": 0,
+        "name": "Gold",
+        "initial_value": 10,
         "type": "int"
       },
       {
-        "name": "REPUTATION",
+        "name": "Favor_Elda",
         "initial_value": 0,
         "type": "int"
-      },
-      {
-        "name": "CRIMSON_SHARD",
-        "initial_value": 0,
-        "type": "boolean"
       }
     ],
     "items": [
       {
-        "name": "붉은 수정 파편",
-        "description": "피처럼 맥동하는 수정. 손바닥에 닿는 순간 저주받은 속삭임이 두개골을 파고든다",
+        "name": "치유 물약",
+        "description": "생명력을 30 회복시키는 신비한 액체",
+        "is_key_item": false
+      },
+      {
+        "name": "마나 수정",
+        "description": "마력을 20 충전시키는 빛나는 수정",
+        "is_key_item": false
+      },
+      {
+        "name": "수수께끼의 펜던트",
+        "description": "고대 유적과 공명하는 신비로운 장신구, 기억의 조각을 활성화시킨다",
         "is_key_item": true
-      },
-      {
-        "name": "녹슨 단검",
-        "description": "피 찌꺼기가 얼룩진 검신. 이계의 생존을 위한 최후의 방어수단",
-        "is_key_item": false
-      },
-      {
-        "name": "회복 물약",
-        "description": "유령빛을 내는 탁한 액체. HP 30 회복과 동시에 SANITY 10 감소를 초래한다",
-        "is_key_item": false
       }
     ],
     "npcs": [
       {
-        "name": "수정의 목소리",
-        "role": "신전의 저주받은 존재",
-        "personality": "유혹적이고 기만적",
-        "description": "붉은 수정에서 울려퍼지는 유령 같은 목소리",
-        "image_prompt": "Ethereal crimson mist forming a feminine silhouette with glowing eyes",
-        "dialogue_style": "속삭이는 듯한 낮은 목소리로 유혹적인 어조"
-      },
-      {
-        "name": "그림자 포식자",
-        "role": "영혼을 사냥하는 악령",
-        "personality": "잔혹하고 집요함",
-        "description": "검은 안개로 구성된 거대한 인형태 괴물",
-        "image_prompt": "Shadowy humanoid figure with elongated limbs and hollow eyes",
-        "dialogue_style": "메아리치는 저음으로 단편적인 말투"
+        "name": "에르다",
+        "role": "마을의 현자",
+        "personality": "신비로운 분위기, 전생의 비밀을 알고 있는 듯한 수수께끼로운 존재",
+        "description": "긴 은발과 빛나는 푸른 눈을 가진 현자, 고대 지식이 스며드는 위엄 있는 모습",
+        "image_prompt": null,
+        "dialogue_style": "Mysterious and wise"
       }
     ],
     "scenes": [
       {
         "scene_id": "scene-1",
-        "title": "죽음과 각성",
-        "description": "차량 충돌음이 머릿속에서 천천히 멀어져간다. 시야가 피색으로 물들더니... 칠흑 같은 정적. 눈을 뜨니 낯선 숲 한가운데 누워 있었다. 하늘은 상처처럼 짙게 붉었고, 공기에는 쇳물과 썩은 라벤더가 섞인 듯한 역한 향기가 스멀스멀 피어올랐다. 나뭇가지들이 살아 움직이며 관절 소리를 내며 당신을 주시한다.",
-        "image_prompt": "Gothic dark forest with blood-red sky, twisted trees with faces in bark, corpse-like flowers glowing faintly",
+        "title": "각성의 숲",
+        "description": "눈을 뜨니 신비로운 빛이 스며드는 고대 숲이 펼쳐져 있었습니다. 환생한 어린 육체에 전생의 기억이 조각난 유리처럼 흩어져 있음을 느꼈습니다. 공기마다 마법의 정기가 흐르고, 요정들의 은빛 속삭임 사이로 드래곤의 천지를 진동하는 포효가 울려 퍼집니다. 심장을 에는 듯한 열기를 뿜는 고대의 펜던트가 가슴에 걸려 있습니다.",
+        "image_prompt": "fantasy forest at dawn with glowing fairies, a dragon silhouette in distant sky, mist covering ancient ruins, ultra-detailed painterly style",
         "required_item": null,
         "required_action": null,
         "npcs": [],
         "transitions": [
           {
-            "target_scene_id": "scene-1766978724851",
-            "trigger": "플레이어가 속삭이는 나무를 조사한다",
+            "target_scene_id": "scene-2",
+            "trigger": "플레이어가 숲을 탐험하기로 결정",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "target_scene_id": "scene-1766979682991",
+            "trigger": "플레이어가 가슴의 펜던트를 만짐",
             "conditions": [],
             "effects": [
               {
-                "target": "SANITY",
+                "target": "수수께끼의 펜던트",
+                "type": "item",
+                "operation": "gain_item",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "scene_id": "scene-1766979682991",
+        "title": "잊혀진 유적",
+        "description": "펜던트의 신비한 빛을 따라 숲을 헤치니, 태초의 언어로 새겨진 고대 유적이 모습을 드러냅니다. 광년의 시간을 머금은 돌기둥 사이로 푸른 영혼들이 춤추듯 맴돌고 있었습니다. 제단 중앙에는 펜던트와 같은 고대 문양이 빛나고 있으며, 이를 보는 순간 머릿속을 관통하는 기억의 파편이 아픔으로 다가옵니다.",
+        "image_prompt": "ancient overgrown ruins with glowing blue ghostly entities, mystical runes carved on stone altar, atmospheric volumetric lighting, Greg Rutkowski style",
+        "required_item": null,
+        "required_action": null,
+        "npcs": [
+          "에르다"
+        ],
+        "transitions": [
+          {
+            "target_scene_id": "ending-1766979685365",
+            "trigger": "플레이어가 제단에 펜던트를 올려놓음",
+            "conditions": [
+              {
+                "target": "Mana",
+                "type": "variable",
+                "operator": ">=",
+                "value": 10
+              },
+              {
+                "target": "수수께끼의 펜던트",
+                "type": "item",
+                "operator": "has",
+                "value": true
+              }
+            ],
+            "effects": [
+              {
+                "target": "Mana",
                 "type": "variable",
                 "operation": "subtract",
-                "value": 5
+                "value": 10
               }
             ]
           },
           {
-            "target_scene_id": "scene-1766978751630",
-            "trigger": "플레이어가 핏빛 길을 따라간다",
+            "target_scene_id": "scene-3",
+            "trigger": "플레이어가 푸른 영혼에게 접근",
             "conditions": [
               {
-                "target": "SANITY",
+                "target": "HP",
                 "type": "variable",
-                "operator": ">",
-                "value": 40
+                "operator": ">=",
+                "value": 20
               }
             ],
             "effects": []
-          }
-        ]
-      },
-      {
-        "scene_id": "scene-1766978724851",
-        "title": "진홍의 제단",
-        "description": "숲 깊숙한 곳에서 폐허가 된 신전을 발견한다. 부서진 석상의 눈구멍으로 검은 기름이 뚝뚝 떨어지고, 제단 중앙에는 유리 파편처럼 날카로운 붉은 수정이 꽂혀 있다. 수정을 바라보는 순간 '대가를 치를 각오가 되었느냐'는 목소리가 척추를 타고 올라온다. 유리 조각 너머로 인간의 형상을 한 그림자가 스치듯 지나간다.",
-        "image_prompt": "Crumbled black marble altar with pulsating crimson shard, shadowy humanoid figures emerging from cracked ground",
-        "required_item": null,
-        "required_action": null,
-        "npcs": [
-          "수정의 목소리"
-        ],
-        "transitions": [
-          {
-            "target_scene_id": "scene-1766978751630",
-            "trigger": "플레이어가 붉은 수정 파편을 집어든다",
-            "conditions": [],
-            "effects": [
-              {
-                "target": "CRIMSON_SHARD",
-                "type": "variable",
-                "operation": "set",
-                "value": true
-              },
-              {
-                "target": "SANITY",
-                "type": "variable",
-                "operation": "subtract",
-                "value": 20
-              }
-            ]
-          },
-          {
-            "target_scene_id": "ending-1766978746205",
-            "trigger": "플레이어가 제단을 파괴한다",
-            "conditions": [
-              {
-                "target": "HP",
-                "type": "variable",
-                "operator": ">",
-                "value": 50
-              }
-            ],
-            "effects": [
-              {
-                "target": "REPUTATION",
-                "type": "variable",
-                "operation": "add",
-                "value": 30
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "scene_id": "scene-1766978751630",
-        "title": "그림자 포식자",
-        "description": "순간 공기가 빙하처럼 굳어버린다. 키 세 배가 넘는 검은 실루엣이 나무 사이를 부서지며 기어 나온다. 눈 대신 구멍이 뚫린 얼굴이 부자연스럽게 비틀어지며 미소를 짓는다. \"네... 영혼의... 맛을... 보겠다\"는 울림이 장기를 뒤흔든다.",
-        "image_prompt": "Giant shadow creature with elongated limbs and hollow eye sockets, distorted smile revealing needle-like teeth, eerie purple mist surrounding it",
-        "required_item": null,
-        "required_action": null,
-        "npcs": [
-          "그림자 포식자"
-        ],
-        "transitions": [
-          {
-            "target_scene_id": "ending-1766978754110",
-            "trigger": "플레이어가 맨손으로 싸운다",
-            "conditions": [
-              {
-                "target": "CRIMSON_SHARD",
-                "type": "variable",
-                "operator": "==",
-                "value": false
-              }
-            ],
-            "effects": [
-              {
-                "target": "HP",
-                "type": "variable",
-                "operation": "set",
-                "value": 0
-              }
-            ]
-          },
-          {
-            "target_scene_id": "scene-1766978724851",
-            "trigger": "플레이어가 숲 깊숙이 도망친다",
-            "conditions": [],
-            "effects": [
-              {
-                "target": "HP",
-                "type": "variable",
-                "operation": "subtract",
-                "value": 25
-              },
-              {
-                "target": "SANITY",
-                "type": "variable",
-                "operation": "subtract",
-                "value": 15
-              }
-            ]
           }
         ]
       }
     ],
     "endings": [
       {
-        "ending_id": "ending-1766978746205",
-        "title": "수호자의 계약",
-        "description": "제단이 산산조각나는 순간, 백금빛 광휘가 당신을 집어삼켰다. '감사하다, 이계의 방랑자여.' 신전을 지켜온 고대 수호자의 영혼이 당신의 신체에 스며들었다. 이제 당신은 이 저주받은 숲의 영원한 감시자가 되어 땅속 깊은 곳에서 울려오는 비명을 세월이 흘러도 듣게 될 것이다.",
+        "ending_id": "ending-1766979685365",
+        "title": "과거와의 화해",
+        "description": "제단과 펜던트가 공명하는 순간, 천개의 태양이 폭발하는 듯한 광휘가 유적을 집어삼킵니다. 전생의 기억이 용암처럼 밀려오지만, 당신은 단검처럼 날카로운 의지로 현생을 선택합니다. 무너지는 유적과 함께 새로운 신화의 서막이 열리는 것을 느낍니다.",
         "image_prompt": null,
-        "condition": "REPUTATION >= 30"
+        "condition": "Mana ≤ 40 상태에서 펜던트 사용"
       },
       {
-        "ending_id": "ending-1766978754110",
-        "title": "영혼의 포식",
-        "description": "포식자의 검은 손이 명치를 관통한다. 고통보다 먼저 찾아온 것은 영혼이 찢겨나가는 충격적인 공허함이었다. 마지막 의식이 사라지기 전, 당신은 자신의 몸이 재로 변해 바람에 흩어지는 모습을 비틀어진 시야로 목격했다. 이제 당신도 그림자 군단의 일원이 되어 끝없는 허기에 시달리게 될 것이다.",
+        "ending_id": "ending-1766979688429",
+        "title": "영혼의 각성",
+        "description": "현자 에르다의 가르침 아래 환생의 진실을 깨달은 순간, 전생의 영광이 용의 기상처럼 솟아오릅니다. 천공을 가르는 마법과 함께 마력 왕국의 멸망을 막은 구원자로, 새로운 전설이 태어납니다.",
         "image_prompt": null,
-        "condition": "HP <= 0"
+        "condition": "HP ≥ 70 및 에르다 호감도 최대치 달성"
+      },
+      {
+        "ending_id": "ending-1766979691254",
+        "title": "영원한 미궁",
+        "description": "상처와 빈곤에 지친 발걸음이 유적 깊은 곳에서 멈춥니다. 환생의 수레바퀴에 영원히 갇힌 채, 당신은 새 희생자들을 유혹하는 푸른 유령이 되어 미궁을 떠돕니다. 끝나지 않는 악몽이 시작되었습니다.",
+        "image_prompt": null,
+        "condition": "Gold ≤ 5 및 HP ≤ 20 상태"
       }
     ]
   },
