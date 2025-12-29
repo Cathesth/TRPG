@@ -216,7 +216,8 @@
                         const response = await fetch('/api/init_game', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ nodes, connections, npcs: globalNpcs })
+                            // [수정] edges로 변환하여 전송
+                            body: JSON.stringify({ nodes, edges: connections, npcs: globalNpcs })
                         });
 
                         clearInterval(timerRef.current);

@@ -67,7 +67,7 @@ def get_builder_model(api_key=None):
     """
     # [핵심] CrewAI(LiteLLM) 만족용으로 'openai/'를 붙여서 생성
     # 실제 전송은 OpenRouterLLM 클래스가 알아서 떼고 보냄
-    return LLMFactory.get_llm("openai/tngtech/deepseek-r1t2-chimera:free", api_key, temperature=0.7)
+    return LLMFactory.get_llm("openai/mistralai/mistral-7b-instruct:free", api_key, temperature=0.7)
 
 
 def get_player_model(api_key=None):
