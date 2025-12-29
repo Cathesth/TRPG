@@ -286,10 +286,13 @@ def init_game():
     if not react_flow_data:
         return jsonify({"error": "유효하지 않은 데이터 형식"}), 400
 
-    try:
-        logging.info("Generating scenario from Graph...")
+    # 모델 파라미터 추출
+    selected_model = react_flow_data.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
 
-        scenario_json = generate_scenario_from_graph(api_key, react_flow_data)
+    try:
+        logging.info(f"Generating scenario from Graph... (Model: {selected_model})")
+
+        scenario_json = generate_scenario_from_graph(api_key, react_flow_data, model_name=selected_model)
 
         # [안전장치 1] builder_agent가 문자열을 리턴했을 경우 대비
         if isinstance(scenario_json, str):
