@@ -331,14 +331,19 @@ def _refine_scenario(scenario_data: Dict, issues: str, llm) -> Dict:
         return scenario_data
 
 
-def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any]) -> Dict[str, Any]:
+def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], model_name: str = None) -> Dict[str, Any]:
     logger.info("🚀 [Builder] Starting generation...")
+
+    # 모델 선택: 전달된 model_name 사용, 없으면 DEFAULT_MODEL
+    use_model = model_name if model_name else DEFAULT_MODEL
+    logger.info(f"📦 Using model: {use_model}")
+
     try:
         parsed = parse_react_flow(react_flow_data)
         skeleton = parsed['skeleton']
         if not skeleton: return {"title": "Empty", "scenes": [], "endings": []}
 
-        llm = LLMFactory.get_llm(api_key=api_key, model_name=DEFAULT_MODEL)
+        llm = LLMFactory.get_llm(api_key=api_key, model_name=use_model)
         titles = [s['title'] for s in skeleton.values()]
 
         # [설정 생성 프롬프트 강화]
