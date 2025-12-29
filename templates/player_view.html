@@ -260,7 +260,7 @@
                 </div>
 
                 <!-- AI 답변 로딩 인디케이터 (htmx-indicator) -->
-                <div id="ai-loading" class="htmx-indicator flex gap-4 fade-in">
+                <div id="ai-loading" class="hidden flex gap-4 fade-in">
                     <div class="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center shrink-0">
                         <i data-lucide="bot" class="text-white w-4 h-4"></i>
                     </div>
@@ -280,14 +280,8 @@
 
             <!-- 입력창 -->
             <div class="p-4 bg-gray-900 border-t border-gray-800 absolute bottom-0 w-full z-20">
-                <form hx-post="/game/act"
-                      hx-target="#chat-log"
-                      hx-swap="beforeend"
-                      hx-indicator="#ai-loading"
-                      hx-on:htmx:before-request="this.reset()"
-                      hx-on:htmx:after-request="document.getElementById('chat-log').scrollTo(0, document.getElementById('chat-log').scrollHeight);"
-                      class="max-w-4xl mx-auto flex gap-2">
-
+                <!-- HTMX 제거, 순수 JS로 제어 -->
+                <form id="game-form" class="max-w-4xl mx-auto flex gap-2">
                     <input type="text" name="action" autofocus autocomplete="off"
                            class="flex-1 bg-gray-800 border border-gray-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-gray-500"
                            placeholder="무엇을 하시겠습니까? (예: 1번 선택, 문을 연다, 시작...)">
@@ -349,7 +343,7 @@
 </div>
 
 <script>
-    // 스트리밍 모드 사용 여부 (true: 스트리밍, false: 기존 방식)
+    // 스트리밍 모드 사용 여부
     const USE_STREAMING = true;
 
     // 게임 종료 상태
@@ -378,7 +372,7 @@
         sessionStorage.setItem(SCENARIO_LOADED_KEY, 'true');
 
         // 입력창 활성화
-        const form = document.querySelector('form[hx-post="/game/act"]');
+        const form = document.getElementById('game-form');
         const input = form.querySelector('input[name="action"]');
         const submitBtn = form.querySelector('button[type="submit"]');
 
@@ -404,7 +398,7 @@
         isScenarioLoaded = false;
 
         // 입력창 비활성화
-        const form = document.querySelector('form[hx-post="/game/act"]');
+        const form = document.getElementById('game-form');
         const input = form.querySelector('input[name="action"]');
         const submitBtn = form.querySelector('button[type="submit"]');
 
@@ -443,7 +437,7 @@
             initResult.insertAdjacentHTML('afterend', savedLog);
             chatLog.appendChild(aiLoading);
 
-            // 초기 안내 메시지 제거 (복원된 로그가 있으므로)
+            // 초기 안내 메시지 제거
             const intro = document.getElementById('intro-message');
             if (intro) intro.remove();
 
@@ -452,7 +446,7 @@
             // 자동 스크롤
             chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'auto' });
         } else if (savedScenarioLoaded === 'true') {
-            // 채팅 로그는 없지만 시나리오는 로드된 상태 (전체 씬 보기에서 돌아온 경우)
+            // 채팅 로그는 없지만 시나리오는 로드된 상태
             const intro = document.getElementById('intro-message');
             if (intro) intro.remove();
 
@@ -486,7 +480,6 @@
             disableInput();
         }
 
-        // 시나리오 로드 상태 복원
         if (savedScenarioLoaded === 'true') {
             enableGameUI();
         } else {
@@ -497,9 +490,6 @@
     // 채팅 로그 저장
     function saveChatLog() {
         const chatLog = document.getElementById('chat-log');
-        const initResult = document.getElementById('init-result');
-        const aiLoading = document.getElementById('ai-loading');
-
         // init-result와 ai-loading 제외한 내용만 저장
         let content = '';
         for (const child of chatLog.children) {
@@ -519,38 +509,21 @@
     }
 
     function submitGameAction(actionText) {
-        // 게임이 끝났으면 입력 차단
-        if (isGameEnded) {
-            console.log("게임이 종료되었습니다. 입력이 차단됩니다.");
-            return;
-        }
+        if (isGameEnded) return;
 
-        const form = document.querySelector('form[hx-post="/game/act"]');
-
-        if (form.classList.contains('htmx-request') || form.classList.contains('streaming')) {
-            console.log("생성 중입니다. 클릭 방지됨.");
-            return;
-        }
-
-        const input = form.querySelector('input[name="action"]');
-        input.value = actionText;
-
-        if (USE_STREAMING) {
-            submitWithStreaming(actionText);
-        } else {
-            htmx.trigger(form, 'submit');
-        }
+        // 스트리밍 함수 직접 호출
+        submitWithStreaming(actionText);
     }
 
     // 입력창 비활성화 함수
     function disableInput() {
         isGameEnded = true;
-        const form = document.querySelector('form[hx-post="/game/act"]');
+        const form = document.getElementById('game-form');
         const input = form.querySelector('input[name="action"]');
         const submitBtn = form.querySelector('button[type="submit"]');
 
         input.disabled = true;
-        input.placeholder = "🎮 게임이 종료되었습니다. 위의 버튼을 눌러 새로운 모험을 시작하세요!";
+        input.placeholder = "🎮 게임이 종료되었습니다.";
         input.classList.add('opacity-50', 'cursor-not-allowed');
 
         if (submitBtn) {
@@ -561,10 +534,9 @@
 
     // 스트리밍 전송 함수
     async function submitWithStreaming(actionText) {
-        // 게임 종료 시 차단
         if (isGameEnded) return;
 
-        const form = document.querySelector('form[hx-post="/game/act"]');
+        const form = document.getElementById('game-form');
         const chatLog = document.getElementById('chat-log');
         const loadingIndicator = document.getElementById('ai-loading');
         const input = form.querySelector('input[name="action"]');
@@ -578,24 +550,17 @@
         input.readOnly = true;
         chatLog.classList.add('processing');
 
-        // 기존 버튼들 비활성화
-        const existingButtons = chatLog.querySelectorAll('button');
-        existingButtons.forEach(btn => {
-            btn.disabled = true;
-            btn.classList.add('disabled', 'opacity-50', 'cursor-not-allowed');
-        });
-
-        // 플레이어 메시지 추가
+        // 플레이어 메시지 추가 (오른쪽 정렬)
         const playerMsgHtml = `
-        <div class="flex gap-4 fade-in mb-4">
-            <div class="w-8 h-8 rounded-lg bg-gray-700 flex items-center justify-center shrink-0">
-                <i data-lucide="user" class="text-white w-4 h-4"></i>
-            </div>
-            <div class="flex-1">
+        <div class="flex gap-4 fade-in mb-4 justify-end">
+            <div class="flex-1 text-right">
                 <div class="text-gray-400 text-xs font-bold mb-1">Player</div>
-                <div class="bg-[#202025] border-gray-700 p-3 rounded-lg border text-gray-300 text-sm leading-relaxed">
+                <div class="bg-[#2a2a30] border-gray-600 p-3 rounded-lg border text-white text-sm inline-block text-left">
                     ${actionText}
                 </div>
+            </div>
+            <div class="w-8 h-8 rounded-lg bg-gray-700 flex items-center justify-center shrink-0">
+                <i data-lucide="user" class="text-white w-4 h-4"></i>
             </div>
         </div>`;
         loadingIndicator.insertAdjacentHTML('beforebegin', playerMsgHtml);
@@ -617,8 +582,11 @@
         loadingIndicator.insertAdjacentHTML('beforebegin', gmContainer.outerHTML);
 
         const contentDiv = document.getElementById('gm-streaming-content');
-        loadingIndicator.style.display = 'flex';
-        lucide.createIcons();
+        // loadingIndicator.style.display = 'flex'; // hidden 클래스 토글하는게 나을 수 있으나 기존 유지
+        loadingIndicator.classList.remove('hidden');
+        loadingIndicator.classList.add('flex');
+
+        lucide.createIcons(); // 아이콘 렌더링
 
         try {
             const formData = new FormData();
@@ -641,7 +609,7 @@
 
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
-                buffer = lines.pop(); // 불완전한 마지막 줄 보관
+                buffer = lines.pop();
 
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
@@ -650,13 +618,11 @@
 
                             switch (data.type) {
                                 case 'prefix':
-                                    // 프리픽스 HTML (시스템 메시지, NPC 등)
                                     currentContent += data.content;
                                     contentDiv.innerHTML = currentContent + '<span id="narrator-stream"></span><span class="streaming-cursor">▌</span>';
                                     break;
 
                                 case 'token':
-                                    // 스트리밍 토큰
                                     narratorText += data.content;
                                     const narratorSpan = document.getElementById('narrator-stream');
                                     if (narratorSpan) {
@@ -665,54 +631,30 @@
                                         currentContent += data.content;
                                         contentDiv.innerHTML = currentContent + '<span class="streaming-cursor">▌</span>';
                                     }
-                                    // 자동 스크롤
                                     chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
                                     break;
 
                                 case 'section_end':
-                                    // 섹션 종료 - HTML 태그를 currentContent에 추가하고 narrator 리셋
                                     currentContent += narratorText + data.content;
                                     narratorText = '';
                                     contentDiv.innerHTML = currentContent + '<span id="narrator-stream"></span><span class="streaming-cursor">▌</span>';
                                     break;
 
-                                case 'narrator':
-                                    // 전체 narrator 출력 (비스트리밍)
-                                    contentDiv.innerHTML = data.content;
-                                    break;
-
                                 case 'ending_start':
-                                    // 엔딩 시작 - 헤더 추가
                                     currentContent = data.content;
                                     contentDiv.innerHTML = currentContent + '<span class="streaming-cursor">▌</span>';
                                     narratorText = '';
                                     break;
 
-                                case 'ending_end':
-                                    // 엔딩 종료 - 푸터 및 버튼 추가
-                                    // 커서 제거하고 현재까지의 내용에 푸터 추가
-                                    const currentHtml = contentDiv.innerHTML.replace('<span class="streaming-cursor">▌</span>', '');
-                                    contentDiv.innerHTML = currentHtml + data.content;
-                                    lucide.createIcons();
-                                    break;
-
                                 case 'game_ended':
-                                    // 게임 종료 - 입력창 비활성화
                                     disableInput();
                                     break;
 
-                                case 'choices':
-                                    // 선택지 HTML 추가
-                                    contentDiv.innerHTML = contentDiv.innerHTML.replace('<span class="streaming-cursor">▌</span>', '') + data.content;
-                                    break;
-
                                 case 'stats':
-                                    // 스탯 업데이트
                                     updateStats(data.content);
                                     break;
 
                                 case 'done':
-                                    // 완료 - 커서 제거
                                     contentDiv.innerHTML = contentDiv.innerHTML.replace('<span class="streaming-cursor">▌</span>', '');
                                     break;
 
@@ -730,10 +672,11 @@
             console.error('Streaming error:', error);
             contentDiv.innerHTML = `<div class="text-red-500">스트리밍 오류: ${error.message}</div>`;
         } finally {
-            loadingIndicator.style.display = 'none';
+            loadingIndicator.classList.add('hidden');
+            loadingIndicator.classList.remove('flex');
+
             form.classList.remove('streaming');
 
-            // 게임이 끝나지 않았을 때만 입력 다시 활성화
             if (!isGameEnded) {
                 input.readOnly = false;
                 input.value = '';
@@ -743,16 +686,12 @@
             chatLog.classList.remove('processing');
             lucide.createIcons();
 
-            // ID 제거 (다음 스트리밍을 위해)
             const oldContent = document.getElementById('gm-streaming-content');
             if (oldContent) oldContent.removeAttribute('id');
             const oldNarrator = document.getElementById('narrator-stream');
             if (oldNarrator) oldNarrator.removeAttribute('id');
 
-            // 최종 스크롤
             chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
-
-            // 스트리밍 완료 후 채팅 로그 저장
             saveChatLog();
         }
     }
@@ -795,18 +734,15 @@
 
         statsArea.innerHTML = html;
         lucide.createIcons();
-
-        // 스탯 저장
         sessionStorage.setItem(STATS_KEY, JSON.stringify(statsData));
     }
 
-    // 폼 submit 이벤트 가로채기 (스트리밍 모드일 때)
+    // 초기화 및 이벤트 리스너
     document.addEventListener('DOMContentLoaded', function() {
-        // 저장된 채팅 로그 복원
         restoreChatLog();
 
-        const form = document.querySelector('form[hx-post="/game/act"]');
-        if (form && USE_STREAMING) {
+        const form = document.getElementById('game-form');
+        if (form) {
             form.addEventListener('submit', function(e) {
                 e.preventDefault();
                 if (isGameEnded) return;
@@ -818,137 +754,63 @@
         }
     });
 
-    document.body.addEventListener('htmx:beforeRequest', function(evt) {
-        if (evt.target.getAttribute('hx-post') === '/game/act') {
-            document.getElementById('chat-log').classList.add('processing');
-            const input = evt.target.querySelector('input[name="action"]');
-            if(input) input.readOnly = true;
-
-            const chatLog = document.getElementById('chat-log');
-            if (chatLog) {
-                const buttons = chatLog.querySelectorAll('button');
-                buttons.forEach(btn => {
-                    btn.disabled = true;
-                    btn.classList.add('disabled', 'opacity-50', 'cursor-not-allowed');
-                });
-            }
-        }
-    });
-
-    document.body.addEventListener('htmx:afterOnLoad', function(evt) {
-        if (evt.target.getAttribute('hx-post') === '/game/act') {
-            document.getElementById('chat-log').classList.remove('processing');
-            const input = evt.target.querySelector('input[name="action"]');
-            if(input && !isGameEnded) {
-                input.readOnly = false;
-                input.focus();
-            }
-        }
-    });
-
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         if (evt.detail.target.id === 'init-result') {
-            const modal = document.getElementById('load-modal');
-            if (modal) {
-                modal.classList.add('hidden');
-                modal.style.display = 'none';
+            // 모달 닫기
+            if (typeof closeLoadModal === 'function') {
+                closeLoadModal();
+            } else {
+                const modal = document.getElementById('load-modal');
+                if (modal) {
+                    modal.classList.add('hidden');
+                    modal.style.display = 'none';
+                }
             }
 
-            const errorMsgs = document.querySelectorAll('#chat-log .text-red-500');
-            errorMsgs.forEach(el => el.remove());
-
-            const intro = document.getElementById('intro-message');
-            if (intro) intro.remove();
-
-            // 새 게임 로드 시 채팅 로그 및 게임 종료 상태 초기화
             clearChatLog();
             isGameEnded = false;
-
-            // 시나리오 로드 후 UI 활성화
             enableGameUI();
 
-            // 기존 채팅 내용 제거 (init-result, ai-loading 제외)
             const chatLog = document.getElementById('chat-log');
-            const children = Array.from(chatLog.children);
-            children.forEach(child => {
-                if (child.id !== 'init-result' && child.id !== 'ai-loading') {
-                    child.remove();
-                }
+            // init-result와 ai-loading 제외 초기화
+            Array.from(chatLog.children).forEach(child => {
+                if (child.id !== 'init-result' && child.id !== 'ai-loading') child.remove();
             });
-
-            // 자동 스크롤
-            chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
         }
     });
 
-    // Lucide 아이콘 초기화
     lucide.createIcons();
 
-    // 사이드바 상태 관리
+    // 사이드바 로직
     (function() {
         const sidebar = document.querySelector('.sidebar');
         const SIDEBAR_STATE_KEY = 'sidebar_expanded';
-
-        // 페이지 로드 시 저장된 상태 복원
         if (sessionStorage.getItem(SIDEBAR_STATE_KEY) === 'true') {
-            // transition 일시 비활성화 (깜빡임 방지)
             sidebar.style.transition = 'none';
             sidebar.classList.add('expanded');
-            // 상태키 즉시 제거 (다음 페이지 이동을 위해)
             sessionStorage.removeItem(SIDEBAR_STATE_KEY);
-            // 다음 프레임에서 transition 복원
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    sidebar.style.transition = '';
-                });
-            });
+            requestAnimationFrame(() => requestAnimationFrame(() => sidebar.style.transition = ''));
         }
-
-        // 사이드바 내 링크 클릭 시 상태 저장
         sidebar.querySelectorAll('a[href], button').forEach(link => {
             link.addEventListener('click', function(e) {
-                // 페이지 이동이 있는 링크인 경우에만 상태 저장
                 if (this.tagName === 'A' && this.href) {
                     sessionStorage.setItem(SIDEBAR_STATE_KEY, 'true');
                     sidebar.classList.add('expanded');
                 }
             });
         });
-
-        // TRPG Studio 로고 클릭 시 상태 저장
-        const logoArea = sidebar.querySelector('.p-4.h-16 .flex.items-center.gap-2');
-        if (logoArea) {
-            logoArea.addEventListener('click', function(e) {
-                sessionStorage.setItem(SIDEBAR_STATE_KEY, 'true');
-                sidebar.classList.add('expanded');
-            });
-        }
-
-        // 마우스가 사이드바를 벗어나면 expanded 클래스 제거
-        sidebar.addEventListener('mouseleave', function() {
-            sidebar.classList.remove('expanded');
-        });
+        sidebar.addEventListener('mouseleave', () => sidebar.classList.remove('expanded'));
     })();
 
-    // 시나리오 불러오기 모달 열기 (매번 새로 목록 조회)
     function openLoadModal() {
         const modal = document.getElementById('load-modal');
-        const container = document.getElementById('scenario-list-container');
-
-        // 모달이 이미 표시중이면 무시
-        if (!modal.classList.contains('hidden')) {
-            return;
+        if (modal) {
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+            htmx.ajax('GET', '/api/scenarios', {target: '#scenario-list-container', swap: 'innerHTML'});
         }
-
-        // 모달 열기
-        modal.classList.remove('hidden');
-        modal.style.display = 'flex';
-
-        // 목록 다시 로드 (htmx로 강제 리프레시)
-        htmx.ajax('GET', '/api/scenarios', {target: '#scenario-list-container', swap: 'innerHTML'});
     }
 
-    // 모달 닫기 함수
     function closeLoadModal() {
         const modal = document.getElementById('load-modal');
         if (modal) {
@@ -957,35 +819,19 @@
         }
     }
 
-    // 내부 링크 클릭 여부 추적
     let isInternalNavigation = false;
-
-    // 내부 링크 클릭 시 플래그 설정
     document.querySelectorAll('a[href^="/"]').forEach(link => {
-        link.addEventListener('click', function() {
-            isInternalNavigation = true;
-        });
+        link.addEventListener('click', () => isInternalNavigation = true);
     });
-
-    // 페이지 로드 시 내부 네비게이션 플래그 초기화
-    window.addEventListener('pageshow', function(event) {
-        // bfcache에서 복원된 경우나 새로 로드된 경우 모두 플래그 초기화
-        isInternalNavigation = false;
-    });
-
-    // 새로고침(F5) 시에만 서버 state 초기화 (내부 페이지 이동 시에는 유지)
+    window.addEventListener('pageshow', () => isInternalNavigation = false);
     window.addEventListener('beforeunload', function() {
-        // 내부 링크로 이동하는 경우에는 state 초기화하지 않음
-        if (isInternalNavigation) {
-            return;
+        if (!isInternalNavigation) {
+            navigator.sendBeacon('/api/clear_state', '');
+            sessionStorage.removeItem(CHAT_LOG_KEY);
+            sessionStorage.removeItem(STATS_KEY);
+            sessionStorage.removeItem(GAME_ENDED_KEY);
+            sessionStorage.removeItem(SCENARIO_LOADED_KEY);
         }
-
-        // 실제 새로고침 또는 브라우저 종료 시에만 초기화
-        navigator.sendBeacon('/api/clear_state', '');
-        sessionStorage.removeItem(CHAT_LOG_KEY);
-        sessionStorage.removeItem(STATS_KEY);
-        sessionStorage.removeItem(GAME_ENDED_KEY);
-        sessionStorage.removeItem(SCENARIO_LOADED_KEY);
     });
 </script>
 

@@ -1,174 +1,437 @@
+import os
 import json
-from typing import List
-from crewai import Agent, Task, Crew
-from llm_factory import get_builder_model
-from schemas import GameScenario  # 업데이트된 스키마 사용
+import logging
+import sys
+import re
+from typing import Dict, Any, List, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from llm_factory import LLMFactory
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# --- [로깅 설정] ---
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+DEFAULT_MODEL = "openai/tngtech/deepseek-r1t2-chimera:free"
 
 
-# --- Helper Functions ---
+def parse_react_flow(react_flow_data: Dict[str, Any]) -> Dict[str, Any]:
+    logger.info("Parsing React Flow data...")
+    nodes = react_flow_data.get('nodes', [])
 
-def transform_graph_to_draft(nodes: List[dict], edges: List[dict], global_npcs: List[dict]) -> dict:
-    """
-    React Flow의 그래프 데이터를 CrewAI가 이해할 수 있는 Draft JSON으로 변환.
-    Choice가 아니라 'Transition Draft'를 생성함.
-    """
-    scenes = []
-    endings = []
-    start_node = None
+    # connections도 edges로 처리
+    edges = react_flow_data.get('edges', [])
+    if not edges:
+        edges = react_flow_data.get('connections', [])
 
+    scenes_skeleton = {}
+    adjacency_list = {}
+    reverse_adjacency = {}
+
+    for edge in edges:
+        src = edge.get('source')
+        tgt = edge.get('target')
+        if src and tgt:
+            if src not in adjacency_list: adjacency_list[src] = []
+            if tgt not in adjacency_list[src]: adjacency_list[src].append(tgt)
+            if tgt not in reverse_adjacency: reverse_adjacency[tgt] = []
+            if src not in reverse_adjacency[tgt]: reverse_adjacency[tgt].append(src)
+
+    start_node_id = None
     for node in nodes:
-        node_type = node['type']
-        data = node['data']
+        node_id = node.get('id')
+        data = node.get('data', {})
+        label = data.get('label', 'Untitled')
+        node_type = node.get('type', 'default')
 
-        if node_type == 'start':
-            start_node = data
-        elif node_type == 'scene':
-            my_edges = [e for e in edges if e['source'] == node['id']]
-            transitions_draft = []  # choices_draft -> transitions_draft
-            for edge in my_edges:
-                transitions_draft.append({
-                    "target_scene_id": edge['target'],
-                    "trigger": "",  # AI가 채워야 할 '행동 조건' (예: 문을 연다, 설득한다)
-                    "conditions": [],
-                    "effects": []
-                })
+        if not start_node_id: start_node_id = node_id
+        if 'start' in label.lower() or node_type == 'input': start_node_id = node_id
 
-            scenes.append({
-                "scene_id": node['id'],
-                "title": data.get('title', ''),
-                "description": data.get('description', ''),
-                "npc_names": data.get('npcs', []),
-                "transitions_draft": transitions_draft  # 필드명 변경
-            })
-        elif node_type == 'ending':
-            endings.append({
-                "ending_id": node['id'],
-                "title": data.get('title', ''),
-                "condition": data.get('condition', '')
-            })
+        targets = adjacency_list.get(node_id, [])
+        sources = reverse_adjacency.get(node_id, [])
 
+        scenes_skeleton[node_id] = {
+            "scene_id": node_id,
+            "title": label,
+            "type": node_type,
+            "connected_to": targets,
+            "connected_from": sources
+        }
+
+    logger.info(f"Parsed {len(nodes)} nodes. Start Node: {start_node_id}")
     return {
-        "title": start_node.get('label', 'Untitled Scenario') if start_node else "Untitled",
-        # "genre" 하드코딩 삭제 -> AI가 background 보고 판단
-        "background": start_node.get('description', '') if start_node else "",
-        "global_npcs": global_npcs,
-        "scenes": scenes,
-        "endings": endings
+        "skeleton": scenes_skeleton,
+        "start_node_id": start_node_id,
+        "node_count": len(nodes)
     }
 
 
-# --- Main Crew Logic ---
+def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleton: Dict, api_key: str) -> Dict:
+    try:
+        targets = info['connected_to']
+        target_infos = []
+        for idx, t_id in enumerate(targets):
+            t_title = skeleton.get(t_id, {}).get('title', 'Unknown')
+            target_infos.append(f"{idx + 1}. Destination: '{t_title}'")
 
-def generate_scenario_from_graph(api_key: str, react_flow_data: dict):
-    # 1. 데이터 변환
-    nodes = react_flow_data.get('nodes', [])
-    edges = react_flow_data.get('edges', [])
-    global_npcs = react_flow_data.get('globalNpcs', [])
+        sources = info.get('connected_from', [])
+        source_titles = [skeleton.get(s_id, {}).get('title', 'Unknown') for s_id in sources]
+        source_context = ", ".join(source_titles) if source_titles else "Prologue"
 
-    draft_data = transform_graph_to_draft(nodes, edges, global_npcs)
+        is_ending = (len(targets) == 0)
 
-    # 2. 모델 설정
-    claude = get_builder_model(api_key)
+        scenario_title = setting_data.get('title', 'Unknown')
+        genre = setting_data.get('genre', 'General')
+        bg_story = setting_data.get('background_story', 'None')
 
-    # 3. 에이전트 정의
+        # [수정] 엔딩과 일반 씬의 프롬프트 및 출력 포맷 분리
+        if is_ending:
+            output_format = """
+            {
+                "title": "Creative Ending Title (Korean)",
+                "description": "Rich ending description in Korean...",
+                "condition": "The cause of this ending based on 'Came From' context (e.g., '전투 패배', '비밀 발견', '탈출 성공', '시간 초과') - Korean"
+            }
+            """
+            game_mechanics_prompt = ""  # 엔딩은 전이(Transition)가 없으므로 메카닉 불필요
+        else:
+            output_format = """
+            {
+                "title": "Creative Title in Korean",
+                "description": "Rich scene description in Korean...",
+                "transitions": [
+                    {
+                        "trigger": "Action description in Korean",
+                        "conditions": [
+                            { "type": "stat_check", "stat": "STR", "value": 10 }
+                        ],
+                        "effects": []
+                    }
+                ]
+            }
+            """
+            game_mechanics_prompt = """
+            [GAME MECHANICS]
+            - Add conditions (Stat/Item check) to transitions.
+            - Add effects (Get Item, Change Stat) to transitions.
+            """
 
-    # [Agent 1] 게임 시스템 기획자 & 작가
-    game_designer = Agent(
-        role='Game Systems Designer & Writer',
-        goal='Analyze the background story to determine the best RPG Rule System, then design the game accordingly.',
-        backstory="""
-        You are a legendary RPG Maker capable of adapting to any genre.
+        prompt = f"""
+        [TASK]
+        Write a TRPG scene content for "{scenario_title}".
 
-        Your Core Task:
-        1. **Analyze the `background` story** provided in the draft.
-        2. **Decide the Genre & Rule System**:
-           - If it's cosmic horror/mystery -> Use 'Call of Cthulhu' style (Variables: Sanity, Knowledge).
-           - If it's fantasy -> Use 'D&D' style (Variables: HP, Mana, Gold).
-           - If it's sci-fi/cyberpunk -> Use 'Cyberpunk' style (Variables: Credits, Tech).
-           - If it's survival -> Use 'Survival' style (Variables: Hunger, Stamina).
-        3. **Design Global Variables**: Define 2-3 variables matching your chosen system.
-        4. **Write Narrative**: Write scene descriptions that fit the chosen genre's tone.
-        5. **Define Transitions**: Create logical action triggers for moving between scenes.
-        """,
-        llm=claude,
-        verbose=True
-    )
+        [LANGUAGE]
+        **KOREAN ONLY.** (Must write Title and Description in Korean).
 
-    # [Agent 2] 텍스트 & 로직 검수
-    korean_editor = Agent(
-        role='Korean Editor & Logic Polisher',
-        goal='Ensure immersive tone matches the chosen genre and verify logic.',
-        backstory="""
-        You are a meticulous editor.
-        1. Identify the genre chosen by the designer (e.g., if they used 'Sanity', it's Horror).
-        2. Polish the Korean text to match that specific tone (e.g., dry/despair for Horror, epic for Fantasy).
-        3. Ensure transition triggers feel natural for that genre.
-        """,
-        llm=claude,
-        verbose=True
-    )
+        [WORLD SETTING]
+        - Genre: {genre}
+        - Background: {bg_story}
 
-    # [Agent 3] 스키마 집행자
-    consistency_enforcer = Agent(
-        role='Schema Consistency Enforcer',
-        goal='Produce a strictly valid JSON object matching the GameScenario schema.',
-        backstory="""
-        You are a compiler. Your job is to structure the output into the `GameScenario` JSON format.
+        [SCENE INFO]
+        - Current Title: "{info['title']}"
+        - Type: {"Ending Scene" if is_ending else "Normal Scene"}
+        - **Came From**: "{source_context}" (IMPORTANT: Reflect this context in the description/condition)
 
-        CRITICAL:
-        - Map the drafted transitions to `transitions` list in the schema.
-        - Ensure `trigger` fields explain the action required to move to `target_scene_id`.
-        - Ensure `variables` and `items` are consistent.
-        """,
-        llm=claude,
-        verbose=True
-    )
+        [REQUIRED TRANSITIONS]
+        Destinations:
+        {chr(10).join(target_infos) if targets else "None (Ending)"}
 
-    # 4. 태스크 정의
+        {game_mechanics_prompt}
 
-    task_design = Task(
-        description=f"""
-        Analyze this draft: {json.dumps(draft_data, ensure_ascii=False)}
+        [OUTPUT JSON FORMAT]
+        {output_format}
+        """
 
-        1. **Genre Analysis**: Read the 'background' and decide the Genre (Fantasy, Horror, Sci-Fi, etc.).
-        2. **System Design**: Define `GlobalVariables` and `Items` that fit the genre perfectly.
-           - E.g., For Horror, define 'Sanity'. For Fantasy, define 'HP'.
-        3. **Narrative**: Write pure story descriptions for scenes in the detected tone.
-        4. **Transitions**: Write `trigger` strings describing user actions.
-        5. **Visuals**: Generate `image_prompt`.
-        """,
-        agent=game_designer,
-        expected_output="Draft with genre-adaptive story, variables, items, and action-based transitions."
-    )
+        llm = LLMFactory.get_llm(api_key=api_key, model_name=DEFAULT_MODEL)
+        response = llm.invoke(prompt).content
+        scene_data = parse_json_garbage(response)
 
-    task_polish = Task(
-        description="""
-        Review the draft.
-        1. Polish Korean text to match the detected genre's atmosphere.
-        2. **Verify Triggers**: Ensure `trigger` describes an action, not a menu option.
-        3. Check Logic: Ensure effects/conditions use valid variable/item names.
-        """,
-        agent=korean_editor,
-        expected_output="Polished draft with logical transitions and genre-appropriate tone."
-    )
+        title = scene_data.get('title', info['title'])
+        description = scene_data.get('description', '내용 없음')
 
-    task_finalize = Task(
-        description="""
-        Finalize into `GameScenario` schema.
-        Ensure `transitions` are correctly populated.
-        """,
-        agent=consistency_enforcer,
-        expected_output="Final valid JSON object.",
-        output_pydantic=GameScenario
-    )
+        result = {"type": "ending" if is_ending else "scene", "data": None}
 
-    # 5. 실행
-    crew = Crew(
-        agents=[game_designer, korean_editor, consistency_enforcer],
-        tasks=[task_design, task_polish, task_finalize],
-        verbose=True
-    )
+        if is_ending:
+            # [수정] AI가 생성한 condition 사용, 없으면 문맥 기반 기본값
+            condition_text = scene_data.get('condition')
+            if not condition_text:
+                condition_text = f"{source_context}에서의 결과"
 
-    result = crew.kickoff()
+            result['data'] = {
+                "ending_id": node_id,
+                "title": title,
+                "description": description,
+                "condition": condition_text
+            }
+        else:
+            mapped_transitions = []
+            generated_transitions = scene_data.get('transitions', [])
 
-    return result.pydantic.dict()
+            for i, real_target_id in enumerate(targets):
+                target_title = skeleton[real_target_id]['title']
+
+                # 기본값
+                trigger_text = f"이동"
+                conditions = []
+                effects = []
+
+                if i < len(generated_transitions):
+                    gen_trans = generated_transitions[i]
+                    trigger_text = gen_trans.get('trigger', trigger_text)
+                    conditions = gen_trans.get('conditions', [])
+                    effects = gen_trans.get('effects', [])
+
+                mapped_transitions.append({
+                    "target_scene_id": real_target_id,
+                    "trigger": trigger_text,
+                    "conditions": conditions,
+                    "effects": effects
+                })
+
+            result['data'] = {
+                "scene_id": node_id,
+                "title": title,
+                "description": description,
+                "image_prompt": f"{genre} style scene: {title}, {description[:30]}",
+                "transitions": mapped_transitions,
+                "npcs": []
+            }
+        return result
+
+    except Exception as e:
+        logger.error(f"Scene Gen Error ({node_id}): {e}")
+        targets = info.get('connected_to', [])
+        fallback_data = {
+            "scene_id": node_id,
+            "title": info.get('title', 'Error'),
+            "description": "생성 중 오류가 발생했습니다.",
+            "transitions": [{"target_scene_id": t, "trigger": "이동"} for t in targets],
+            "npcs": []
+        }
+        return {"type": "scene", "data": fallback_data}
+
+
+def _validate_scenario(scenario_data: Dict, llm) -> Tuple[bool, str]:
+    """
+    [Validator Agent] 룰 베이스 + LLM 하이브리드 검수
+    """
+    logger.info("🔍 [Validator] Checking scenario...")
+
+    issues = []
+
+    # 1. [Rule Base] 필수 필드 누락 검사
+    if not scenario_data.get('background_story') or len(scenario_data.get('background_story')) < 10:
+        issues.append("Missing or too short 'background_story'.")
+
+    if not scenario_data.get('prologue'):
+        issues.append("Missing 'prologue'.")
+
+    scenes = scenario_data.get('scenes', [])
+    endings = scenario_data.get('endings', [])
+
+    # 2. [Rule Base] 'Untitled' 및 영어 텍스트 감지
+    english_pattern = re.compile(r'[a-zA-Z]{5,}')  # 영단어 5글자 이상 연속되면 의심
+
+    for s in scenes + endings:
+        t_title = s.get('title', '')
+        t_desc = s.get('description', '')
+
+        if 'Untitled' in t_title or '내용 없음' in t_desc:
+            issues.append(f"Scene '{s.get('scene_id', s.get('ending_id'))}' has placeholder content (Untitled/Empty).")
+            break
+
+        # 영어 감지 (설명에 영어가 너무 많으면)
+        if len(re.findall(english_pattern, t_desc)) > 3:
+            issues.append("Content detected in English. Must be Korean.")
+            break
+
+    if not scenes and not endings:
+        return False, "Scenario is completely empty."
+
+    # 이슈가 발견되면 즉시 리턴 (LLM 아낌)
+    if issues:
+        return False, ", ".join(issues)
+
+    # 3. [LLM Base] 논리적 흐름 검사 (룰 베이스 통과 시에만)
+    prompt = f"""
+    [TASK] Validate TRPG Scenario Logic.
+
+    Data:
+    Title: {scenario_data.get('title')}
+    Scene Count: {len(scenes)}
+
+    [CHECK]
+    1. Is the story consistent?
+    2. Are there any dead ends in normal scenes?
+
+    [OUTPUT JSON]
+    {{ "is_valid": true, "critical_issues": "None" }}
+    """
+    try:
+        res = llm.invoke(prompt).content
+        parsed = parse_json_garbage(res)
+        return parsed.get('is_valid', True), parsed.get('critical_issues', 'None')
+    except:
+        return True, "None"
+
+
+def _refine_scenario(scenario_data: Dict, issues: str, llm) -> Dict:
+    """
+    [Refiner Agent] 아주 강력한 수정 명령
+    """
+    logger.info(f"🛠️ [Refiner] Fixing Issues: {issues}")
+
+    prompt = f"""
+    [ROLE]
+    You are a professional Korean TRPG Editor.
+
+    [TASK]
+    Fix the provided Scenario JSON based on issues: "{issues}".
+
+    [CRITICAL INSTRUCTIONS]
+    1. **TRANSLATE ALL ENGLISH TO KOREAN.** (Titles, Descriptions, Triggers, Conditions)
+    2. **FILL EMPTY FIELDS.** If 'background_story' or 'prologue' is empty, write a creative one fitting the genre.
+    3. **REPLACE 'Untitled'.** Create immersive titles for scenes.
+    4. **FIX CONDITIONS.** Ensure ending conditions describe the cause (e.g., '전투 패배', '탈출 성공').
+    5. **KEEP STRUCTURE.** Do NOT remove scenes or change IDs.
+
+    [INPUT JSON]
+    {json.dumps(scenario_data, ensure_ascii=False)}
+
+    [OUTPUT]
+    Return ONLY the corrected JSON.
+    """
+
+    try:
+        # Deepseek/OpenAI 모델은 긴 컨텍스트 처리가 가능하므로 전체 전송
+        res = llm.invoke(prompt).content
+        fixed_data = parse_json_garbage(res)
+
+        # 구조 체크
+        if isinstance(fixed_data, dict) and ('scenes' in fixed_data or 'endings' in fixed_data):
+            # 만약 리파이너가 실수로 scenes를 날렸으면 원본 복구 시도
+            if 'scenes' not in fixed_data: fixed_data['scenes'] = scenario_data.get('scenes', [])
+            if 'endings' not in fixed_data: fixed_data['endings'] = scenario_data.get('endings', [])
+
+            logger.info("✅ [Refiner] Fixed successfully.")
+            return fixed_data
+        else:
+            logger.warning("❌ [Refiner] Invalid structure. Using original.")
+            return scenario_data
+    except Exception as e:
+        logger.error(f"Refiner Error: {e}")
+        return scenario_data
+
+
+def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any]) -> Dict[str, Any]:
+    logger.info("🚀 [Builder] Starting generation...")
+    try:
+        parsed = parse_react_flow(react_flow_data)
+        skeleton = parsed['skeleton']
+        if not skeleton: return {"title": "Empty", "scenes": [], "endings": []}
+
+        llm = LLMFactory.get_llm(api_key=api_key, model_name=DEFAULT_MODEL)
+        titles = [s['title'] for s in skeleton.values()]
+
+        # [설정 생성 프롬프트 강화]
+        setting_prompt = f"""
+        [TASK] Create TRPG setting for: {', '.join(titles)}
+        [LANGUAGE] **KOREAN ONLY**
+        [OUTPUT JSON] {{ 
+            "title": "Creative Title (Korean)", 
+            "genre": "Genre", 
+            "background_story": "Detailed World Setting (Korean, 3 sentences+)", 
+            "prologue": "Opening Scene Description (Korean)", 
+            "variables": [
+                {{ "name": "HP", "initial_value": 100 }},
+                {{ "name": "SANITY", "initial_value": 100 }}
+            ] 
+        }}
+        """
+        try:
+            setting_res = llm.invoke(setting_prompt).content
+            setting_data = parse_json_garbage(setting_res)
+        except:
+            setting_data = {"title": "New Adventure", "genre": "Adventure", "variables": []}
+
+        final_scenes = []
+        final_endings = []
+
+        logger.info(f"Generating {len(skeleton)} scenes...")
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_node = {
+                executor.submit(_generate_single_scene, nid, info, setting_data, skeleton, api_key): nid
+                for nid, info in skeleton.items()
+            }
+            for future in as_completed(future_to_node):
+                try:
+                    res = future.result()
+                    if res['type'] == 'ending':
+                        final_endings.append(res['data'])
+                    else:
+                        final_scenes.append(res['data'])
+                except:
+                    pass
+
+        draft_scenario = {
+            "title": setting_data.get('title', 'Untitled'),
+            "genre": setting_data.get('genre', 'Adventure'),
+            "background_story": setting_data.get('background_story', ''),
+            "prologue": setting_data.get('prologue', ''),
+            "variables": setting_data.get('variables', []),
+            "items": [],
+            "npcs": [],
+            "scenes": final_scenes,
+            "endings": final_endings
+        }
+
+        # 검수 및 수정
+        is_valid, issues = _validate_scenario(draft_scenario, llm)
+
+        if not is_valid:
+            final_result = _refine_scenario(draft_scenario, issues, llm)
+            logger.info("🎉 Generation Complete (Refined).")
+            return final_result
+        else:
+            logger.info("🎉 Generation Complete (Direct Pass).")
+            return draft_scenario
+
+    except Exception as e:
+        logger.error(f"Critical Builder Error: {e}", exc_info=True)
+        return {"title": "Error", "scenes": [], "endings": []}
+
+
+def parse_json_garbage(text: str) -> Dict[str, Any]:
+    if isinstance(text, dict): return text
+    if not text: return {}
+    try:
+        text = text.strip()
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0]
+        elif "```" in text:
+            text = text.split("```")[1].split("```")[0]
+
+        parsed = json.loads(text)
+        if isinstance(parsed, str):
+            try:
+                parsed = json.loads(parsed)
+            except:
+                pass
+        return parsed if isinstance(parsed, dict) else {}
+    except:
+        try:
+            start = text.find('{')
+            end = text.rfind('}') + 1
+            if start != -1 and end != -1:
+                return json.loads(text[start:end])
+        except:
+            pass
+        return {}
