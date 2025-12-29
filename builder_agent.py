@@ -49,7 +49,7 @@ def transform_graph_to_draft(nodes: List[dict], edges: List[dict], global_npcs: 
 
     return {
         "title": start_node.get('label', 'Untitled Scenario') if start_node else "Untitled",
-        "genre": "Dark Fantasy",
+        # "genre" 하드코딩 삭제 -> AI가 background 보고 판단
         "background": start_node.get('description', '') if start_node else "",
         "global_npcs": global_npcs,
         "scenes": scenes,
@@ -75,17 +75,20 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: dict):
     # [Agent 1] 게임 시스템 기획자 & 작가
     game_designer = Agent(
         role='Game Systems Designer & Writer',
-        goal='Create an immersive story and define LOGICAL TRANSITIONS between scenes.',
+        goal='Analyze the background story to determine the best RPG Rule System, then design the game accordingly.',
         backstory="""
-        You are a legendary RPG Maker. 
+        You are a legendary RPG Maker capable of adapting to any genre.
 
-        Your tasks:
-        1. Write Pure Narrative Descriptions for scenes (NO choice lists inside description).
-        2. Define `transitions` for each scene based on the graph structure.
-           - Instead of writing a "Choice Button Text", describe the **User Action (Trigger)** that causes the transition.
-           - Example Trigger: "Player attacks the guard", "Player successfully picks the lock", "Player gives the potion".
-
-        You also define Global Variables and Items based on the story.
+        Your Core Task:
+        1. **Analyze the `background` story** provided in the draft.
+        2. **Decide the Genre & Rule System**:
+           - If it's cosmic horror/mystery -> Use 'Call of Cthulhu' style (Variables: Sanity, Knowledge).
+           - If it's fantasy -> Use 'D&D' style (Variables: HP, Mana, Gold).
+           - If it's sci-fi/cyberpunk -> Use 'Cyberpunk' style (Variables: Credits, Tech).
+           - If it's survival -> Use 'Survival' style (Variables: Hunger, Stamina).
+        3. **Design Global Variables**: Define 2-3 variables matching your chosen system.
+        4. **Write Narrative**: Write scene descriptions that fit the chosen genre's tone.
+        5. **Define Transitions**: Create logical action triggers for moving between scenes.
         """,
         llm=claude,
         verbose=True
@@ -94,13 +97,12 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: dict):
     # [Agent 2] 텍스트 & 로직 검수
     korean_editor = Agent(
         role='Korean Editor & Logic Polisher',
-        goal='Ensure immersive tone and verify transition logic.',
+        goal='Ensure immersive tone matches the chosen genre and verify logic.',
         backstory="""
-        You are a meticulous editor. 
-        1. Ensure the Korean text is natural and immersive.
-        2. CHECK TRANSITIONS: Ensure the `trigger` for each transition is a clear action description, NOT a UI button text like "1. Go next".
-           - Bad: "1. Open Door"
-           - Good: "Player opens the iron door"
+        You are a meticulous editor.
+        1. Identify the genre chosen by the designer (e.g., if they used 'Sanity', it's Horror).
+        2. Polish the Korean text to match that specific tone (e.g., dry/despair for Horror, epic for Fantasy).
+        3. Ensure transition triggers feel natural for that genre.
         """,
         llm=claude,
         verbose=True
@@ -128,32 +130,32 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: dict):
         description=f"""
         Analyze this draft: {json.dumps(draft_data, ensure_ascii=False)}
 
-        1. **System**: Define GlobalVariables and Items.
-        2. **Narrative**: Write pure story descriptions for scenes.
-        3. **Transitions**:
-           - For each `transitions_draft` entry, write a `trigger` string describing the action.
-           - Add `effects` (e.g., lose HP) and `conditions` (e.g., has Key) if necessary.
-        4. **Visuals**: Generate `image_prompt`.
+        1. **Genre Analysis**: Read the 'background' and decide the Genre (Fantasy, Horror, Sci-Fi, etc.).
+        2. **System Design**: Define `GlobalVariables` and `Items` that fit the genre perfectly.
+           - E.g., For Horror, define 'Sanity'. For Fantasy, define 'HP'.
+        3. **Narrative**: Write pure story descriptions for scenes in the detected tone.
+        4. **Transitions**: Write `trigger` strings describing user actions.
+        5. **Visuals**: Generate `image_prompt`.
         """,
         agent=game_designer,
-        expected_output="Draft with story, variables, items, and action-based transitions."
+        expected_output="Draft with genre-adaptive story, variables, items, and action-based transitions."
     )
 
     task_polish = Task(
         description="""
         Review the draft.
-        1. Polish Korean text.
+        1. Polish Korean text to match the detected genre's atmosphere.
         2. **Verify Triggers**: Ensure `trigger` describes an action, not a menu option.
         3. Check Logic: Ensure effects/conditions use valid variable/item names.
         """,
         agent=korean_editor,
-        expected_output="Polished draft with logical transitions."
+        expected_output="Polished draft with logical transitions and genre-appropriate tone."
     )
 
     task_finalize = Task(
         description="""
         Finalize into `GameScenario` schema.
-        Ensure `transitions` are correctly populated instead of choices.
+        Ensure `transitions` are correctly populated.
         """,
         agent=consistency_enforcer,
         expected_output="Final valid JSON object.",
