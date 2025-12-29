@@ -134,17 +134,94 @@ def intent_parser_node(state: PlayerState):
 def rule_node(state: PlayerState):
     idx = state['last_user_choice_idx']
     scenario = state['scenario']
+    # 현재 씬 ID (변경 전)
     curr_scene_id = state['current_scene_id']
 
     all_scenes = {s['scene_id']: s for s in scenario['scenes']}
     all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
 
-    # 엔딩 도달 시 처리
-    if curr_scene_id in all_endings:
-        ending = all_endings[curr_scene_id]
-        state['parsed_intent'] = 'ending'
+    sys_msg = []
+
+    # --- [1] 트랜지션 및 효과 처리 먼저 수행 ---
+    curr_scene = all_scenes.get(curr_scene_id)
+    transitions = curr_scene.get('transitions', []) if curr_scene else []
+
+    # 선택지가 유효하고 트랜지션 인덱스라면 처리
+    if state['parsed_intent'] == 'transition' and transitions and 0 <= idx < len(transitions):
+        transition = transitions[idx]
+        effects = transition.get('effects', [])
+        next_id = transition.get('target_scene_id')
+        trigger_desc = transition.get('trigger', '행동')
+
+        # 효과 적용
+        for eff in effects:
+            try:
+                # Effect 객체 구조: {target, type, operation, value}
+                if isinstance(eff, dict):
+                    key = eff.get("target", "").lower()
+                    operation = eff.get("operation", "add")
+                    raw_val = eff.get("value", 0)
+
+                    # 값 정수 변환 시도
+                    val = 0
+                    if isinstance(raw_val, (int, float)) or (isinstance(raw_val, str) and raw_val.isdigit()):
+                        val = int(raw_val)
+
+                    # 아이템 처리
+                    if operation in ["gain_item", "lose_item"]:
+                        item_name = str(eff.get("value", ""))
+                        inventory = state['player_vars'].get('inventory', [])
+                        if operation == "gain_item":
+                            if item_name not in inventory:
+                                inventory.append(item_name)
+                                sys_msg.append(f"아이템 획득: {item_name}")
+                        elif operation == "lose_item":
+                            if item_name in inventory:
+                                inventory.remove(item_name)
+                                sys_msg.append(f"아이템 소실: {item_name}")
+                        state['player_vars']['inventory'] = inventory
+                        continue
+
+                    # 수치 변수 처리 (hp, gold, sanity 등)
+                    if key:
+                        current_val = state['player_vars'].get(key, 0)
+                        if not isinstance(current_val, int): current_val = 0
+
+                        if operation == "add":
+                            new_val = current_val + val
+                            sys_msg.append(f"{key.upper()} +{val} (현재: {new_val})")
+                        elif operation == "subtract":
+                            new_val = max(0, current_val - val)
+                            sys_msg.append(f"{key.upper()} -{val} (현재: {new_val})")
+                        elif operation == "set":
+                            new_val = val
+                            sys_msg.append(f"{key.upper()} 설정: {new_val}")
+                        else:
+                            new_val = current_val
+
+                        state['player_vars'][key] = new_val
+
+            except Exception as e:
+                logger.error(f"Effect Error: {e}")
+                pass
+
+        # 씬 전환 (ID 업데이트)
+        if next_id:
+            state['current_scene_id'] = next_id
+            sys_msg.append(f"'{trigger_desc}' 행동으로 장면이 전환됩니다.")
+            logger.info(f"👣 [SCENE MOVE]: {curr_scene_id} -> {next_id}")
+
+    # --- [2] 변경된 current_scene_id 기준으로 엔딩 체크 ---
+    # (트랜지션으로 막 진입했거나, 이미 엔딩 상태이거나 모두 여기서 걸림)
+    current_id_after_action = state['current_scene_id']
+
+    if current_id_after_action in all_endings:
+        ending = all_endings[current_id_after_action]
+        state['parsed_intent'] = 'ending'  # 인텐트 강제 변경 (Narrator 스킵용)
         state['system_message'] = "Game Over"
         state['npc_output'] = ""
+
+        # 엔딩 HTML 생성
         state['narrator_output'] = f"""
         <div class="my-8 p-8 border-2 border-yellow-500/50 bg-gradient-to-b from-yellow-900/40 to-black rounded-xl text-center fade-in shadow-2xl relative overflow-hidden">
             <div class="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-20"></div>
@@ -161,85 +238,9 @@ def rule_node(state: PlayerState):
         """
         return state
 
-    curr_scene = all_scenes.get(curr_scene_id)
-    sys_msg = []
-
-    # Transitions 처리
-    # Schema 변경: choices -> transitions
-    transitions = curr_scene.get('transitions', [])
-
-    if transitions and 0 <= idx < len(transitions):
-        transition = transitions[idx]
-        effects = transition.get('effects', [])
-        next_id = transition.get('target_scene_id')
-        trigger_desc = transition.get('trigger', '행동')
-
-        # 효과 적용
-        for eff in effects:
-            key = None
-            val = 0
-            operation = "add"  # default
-
-            try:
-                # Effect 객체 구조: {target, type, operation, value}
-                if isinstance(eff, dict):
-                    key = eff.get("target", "").lower()  # hp, gold, sanity...
-                    operation = eff.get("operation", "add")
-                    raw_val = eff.get("value", 0)
-
-                    try:
-                        val = int(raw_val)
-                    except:
-                        val = 0  # 숫자가 아니면(아이템 등) 0 처리
-
-                    # 아이템 처리
-                    if operation in ["gain_item", "lose_item"]:
-                        item_name = str(eff.get("value", ""))
-                        inventory = state['player_vars'].get('inventory', [])
-                        if operation == "gain_item":
-                            if item_name not in inventory:
-                                inventory.append(item_name)
-                                sys_msg.append(f"아이템 획득: {item_name}")
-                        elif operation == "lose_item":
-                            if item_name in inventory:
-                                inventory.remove(item_name)
-                                sys_msg.append(f"아이템 소실: {item_name}")
-                        state['player_vars']['inventory'] = inventory
-                        continue  # 아래 수치 계산 건너뜀
-
-                # 수치 변수 처리 (hp, gold, sanity, etc)
-                if key:
-                    current_val = state['player_vars'].get(key, 0)
-                    if not isinstance(current_val, int):
-                        current_val = 0
-
-                    if operation == "add":
-                        new_val = current_val + val
-                        sys_msg.append(f"{key.upper()} +{val} (현재: {new_val})")
-                    elif operation == "subtract":
-                        new_val = max(0, current_val - val)
-                        sys_msg.append(f"{key.upper()} -{val} (현재: {new_val})")
-                    elif operation == "set":
-                        new_val = val
-                        sys_msg.append(f"{key.upper()} 설정: {new_val}")
-                    else:
-                        new_val = current_val  # No change
-
-                    state['player_vars'][key] = new_val
-
-            except Exception as e:
-                logger.error(f"Effect Error: {e}")
-                pass
-
-        if next_id:
-            state['current_scene_id'] = next_id
-            sys_msg.append(f"'{trigger_desc}' 행동으로 장면이 전환됩니다.")
-
+    # 엔딩이 아니라면 일반 메시지 세팅
     state['npc_output'] = ""
     state['system_message'] = " ".join(sys_msg)
-
-    if state.get('current_scene_id') != curr_scene_id:  # 씬이 바뀌었다면
-        logger.info(f"feet [SCENE MOVE]: {curr_scene_id} -> {state.get('current_scene_id')}")
 
     if sys_msg:
         logger.info(f"⚔️ [RULE EFFECT]: {', '.join(sys_msg)}")
