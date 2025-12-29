@@ -32,7 +32,12 @@ class PlayerState(TypedDict):
 # Node 1: Intent Parser (수정: Choices -> Transitions)
 def intent_parser_node(state: PlayerState):
     user_input = state.get('last_user_input', '').strip()
-    # 숫자 입력 등이 들어올 수 있으나, 이제는 자연어 매칭이 핵심
+    logger.info(f"🟢 [USER INPUT]: {user_input}")
+    idx = state.get('last_user_choice_idx', -1)
+
+    if idx != -1:
+        state['parsed_intent'] = 'choice'
+        return state
 
     scenario = state['scenario']
     curr_scene_id = state['current_scene_id']
@@ -119,6 +124,8 @@ def intent_parser_node(state: PlayerState):
     except Exception as e:
         logger.error(f"[Parser] Error: {e}")
         state['parsed_intent'] = 'chat'
+
+    logger.info(f"🔍 [INTENT]: {state.get('parsed_intent')} (Choice Index: {state.get('last_user_choice_idx')})")
 
     return state
 
@@ -230,11 +237,21 @@ def rule_node(state: PlayerState):
 
     state['npc_output'] = ""
     state['system_message'] = " ".join(sys_msg)
+
+    if state.get('current_scene_id') != curr_scene_id:  # 씬이 바뀌었다면
+        logger.info(f"feet [SCENE MOVE]: {curr_scene_id} -> {state.get('current_scene_id')}")
+
+    if sys_msg:
+        logger.info(f"⚔️ [RULE EFFECT]: {', '.join(sys_msg)}")
+
     return state
 
 
 # Node 3: Narrator (변경 없음, 로직 유지)
 def narrator_node(state: PlayerState):
+    logger.info("📜 [NARRATOR]: Generating story...")
+
+    # [핵심] 엔딩이거나 이미 엔딩 메시지가 있으면 건너뜀
     if state.get('parsed_intent') == 'ending' or "ENDING REACHED" in state.get('narrator_output', ''):
         return state
 
@@ -275,6 +292,8 @@ def narrator_node(state: PlayerState):
     except Exception as e:
         logger.error(f"Narrator Error: {e}")
         state['narrator_output'] = "..."
+
+    logger.info(f"✅ [NARRATOR DONE]: {state.get('narrator_output')[:50]}...")
 
     return state
 

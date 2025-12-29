@@ -23,9 +23,11 @@ except ImportError as e:
 load_dotenv()
 
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
+    datefmt='%H:%M:%S'
+)
 
 @app.after_request
 def add_header(response):
