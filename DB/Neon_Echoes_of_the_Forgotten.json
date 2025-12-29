@@ -1,0 +1,217 @@
+{
+  "scenario": {
+    "title": "Neon Echoes of the Forgotten",
+    "genre": "Dark Fantasy",
+    "background_story": "Cyberpunk 2077",
+    "prologue": "",
+    "variables": [
+      {
+        "name": "Cyberware Integrity",
+        "initial_value": 80,
+        "type": "int"
+      },
+      {
+        "name": "Soul Essence",
+        "initial_value": 30,
+        "type": "int"
+      },
+      {
+        "name": "NeonCred",
+        "initial_value": 150,
+        "type": "int"
+      }
+    ],
+    "items": [
+      {
+        "name": "StimPack MK-V",
+        "description": "사이버웨어 청동색 나노 액체가 검은 기름기를 머금고 흐른다. 사용 시 사이버웨어 상태 +20",
+        "is_key_item": false
+      },
+      {
+        "name": "진홍빛 신경여과장치",
+        "description": "1시간 동안 정신 공격에 저항. 사용 시 소멸되는 일회성 아이템",
+        "is_key_item": false
+      },
+      {
+        "name": "조각난 영혼의 파편",
+        "description": "부숴서 사용 시 영혼의 정수 +15. 갇힌 비명과 함께 요동치는 형광빛",
+        "is_key_item": false
+      },
+      {
+        "name": "홀로그래픽 지역 지도",
+        "description": "현재 구역의 숨겨진 영혼의 관문을 드러낸다",
+        "is_key_item": false
+      },
+      {
+        "name": "유령 EMP 수류탄",
+        "description": "30초 동안 사이버웨어와 영적 존재를 무력화",
+        "is_key_item": false
+      }
+    ],
+    "npcs": [],
+    "scenes": [
+      {
+        "scene_id": "scene-1",
+        "title": "속삭이는 회로의 골목",
+        "description": "신경을 후리는 합성 비의 산미와 타오르는 오존 냄새 속에서 눈을 뜬다. 사이버암이 격렬하게 경련하며 콘크리트에 손톱 자국을 새긴다. 불룩한 배수구 위로 그림자들이 지켜보고 있다. 기름기 띤 물웅덩이에 비친 네온빛이 당신의 얼굴을 스쳐지나가며 해골의 형상으로 일그러진다. 낙서로 뒤덮인 제단에서 일그러진 주문이 울려퍼진다: *'장막 너머를 보는 자에게 코드는 구원이 되지 못하리라.'*",
+        "image_prompt": "Rain-soaked neon alley with flickering holograms, glowing cyber-rats scurrying past overflowing trash bins, distant silhouette of a massive nightclub sign reading 'Elysium Void' in corrupted kanji",
+        "required_item": null,
+        "required_action": null,
+        "npcs": [
+          "그림자 감시자들(관찰자 집단)"
+        ],
+        "choices": [
+          {
+            "text": "사이버아이로 골목을 스캔한다",
+            "next_scene_id": null,
+            "conditions": [
+              {
+                "target": "Cyberware Integrity",
+                "type": "variable",
+                "operator": ">",
+                "value": 15
+              }
+            ],
+            "effects": [
+              {
+                "target": "Cyberware Integrity",
+                "type": "variable",
+                "operation": "subtract",
+                "value": 5
+              }
+            ]
+          },
+          {
+            "text": "네온이 밝히는 길을 따라 엘리시엄 보이드로 향한다",
+            "next_scene_id": "scene-1766976552605",
+            "conditions": [],
+            "effects": []
+          },
+          {
+            "text": "속삭이는 제단을 조사한다",
+            "next_scene_id": null,
+            "conditions": [
+              {
+                "target": "neuro-filter",
+                "type": "item",
+                "operator": "has",
+                "value": true
+              }
+            ],
+            "effects": [
+              {
+                "target": "Soul Essence",
+                "type": "variable",
+                "operation": "add",
+                "value": 10
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "scene_id": "scene-1766976552605",
+        "title": "엘리시엄 보이드 라운지",
+        "description": "클럽에 들어서자 진동하는 베이스가 치아를 달그락거리게 만든다. 공기는 신스-블러드 칵테일과 타는 향의 냄새로 가득하다. 세 번째 기계 팔을 가진 바텐더가 카운터 뒤의 당신의 흐릿한 반사체를 가리킨다. 반사체는 당신과 다른 움직임으로 입을 움직인다. 구석진 자리에서 후드 쓴 인물의 사이버네틱 까마귀가 머리를 180도 돌려 당신을 주시하며, 골목 제단과 동일한 불길한 형광빛을 눈에 품고 있다.",
+        "image_prompt": "Three-armed cyborg bartender polishing a glass containing swirling dark matter, patrons with glowing ritual tattoos and cybernetic enhancements, a decaying hologram of a weeping angel flickering near the VIP entrance",
+        "required_item": null,
+        "required_action": null,
+        "npcs": [
+          "Z3R0 (바텐더)",
+          "까마귀 예언자(신비로운 인물)"
+        ],
+        "choices": [
+          {
+            "text": "망가진 반사체에 대해 묻는다",
+            "next_scene_id": null,
+            "conditions": [
+              {
+                "target": "NeonCred",
+                "type": "variable",
+                "operator": ">=",
+                "value": 50
+              }
+            ],
+            "effects": [
+              {
+                "target": "NeonCred",
+                "type": "variable",
+                "operation": "subtract",
+                "value": 50
+              }
+            ]
+          },
+          {
+            "text": "까마귀의 주인에게 접근한다",
+            "next_scene_id": null,
+            "conditions": [
+              {
+                "target": "soul-shard",
+                "type": "item",
+                "operator": "has",
+                "value": true
+              }
+            ],
+            "effects": [
+              {
+                "target": "Soul Essence",
+                "type": "variable",
+                "operation": "add",
+                "value": 5
+              }
+            ]
+          },
+          {
+            "text": "VIP 단말기에 접속한다",
+            "next_scene_id": null,
+            "conditions": [
+              {
+                "target": "Cyberware Integrity",
+                "type": "variable",
+                "operator": ">",
+                "value": 40
+              }
+            ],
+            "effects": [
+              {
+                "target": "Cyberware Integrity",
+                "type": "variable",
+                "operation": "subtract",
+                "value": 20
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "endings": [
+      {
+        "ending_id": "ending-1766976555653",
+        "title": "네온의 승천",
+        "description": "",
+        "image_prompt": "Player character dissolving into data streams and dark energy, becoming one with the city's digital-spiritual network",
+        "condition": "Cyberware Integrity >= 90 AND Soul Essence >= 80"
+      },
+      {
+        "ending_id": "ending-1766976558949",
+        "title": "합성의 심연",
+        "description": "",
+        "image_prompt": "Fully mechanized corpse kneeling before the alley shrine, overgrown with biomechanical vines",
+        "condition": "Cyberware Integrity <= 10 AND Soul Essence <= 20"
+      },
+      {
+        "ending_id": "ending-1766976562125",
+        "title": "영혼의 수확",
+        "description": "",
+        "image_prompt": "Ghostly figure draining energy from dozens of cyber-zombies in the ruins of Elysium Void",
+        "condition": "Soul Essence >= 100 AND Cyberware Integrity <= 30"
+      }
+    ]
+  },
+  "player_vars": {
+    "hp": 100,
+    "max_hp": 100,
+    "inventory": [],
+    "gold": 0
+  }
+}

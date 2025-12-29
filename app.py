@@ -23,7 +23,11 @@ except ImportError as e:
 load_dotenv()
 
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
+    datefmt='%H:%M:%S'
+)
 
 # 개발 환경에서 캐시 방지
 @app.after_request
