@@ -123,14 +123,47 @@ def view_scenes():
     endings = scenario.get('endings', [])
     title = scenario.get('title', 'Untitled')
 
+    # start 노드를 씬에서 제외 (프롤로그는 별도 처리)
+    filtered_scenes = [s for s in scenes if s.get('scene_id') != 'start' and s.get('scene_id') != 'PROLOGUE']
+
     mermaid_lines = ["graph TD"]
     prologue_text = scenario.get('prologue', scenario.get('prologue_text', ''))
+
+    # 프롤로그가 연결하는 씬 ID 목록 가져오기
+    prologue_connects_to = scenario.get('prologue_connects_to', [])
+
+    # prologue_connects_to가 없으면 자동 탐지: 다른 씬에서 연결되지 않은 씬 찾기
+    if not prologue_connects_to and filtered_scenes:
+        # 모든 씬에서 연결되는 대상 씬 ID 수집
+        all_target_ids = set()
+        for scene in filtered_scenes:
+            for trans in scene.get('transitions', []):
+                target_id = trans.get('target_scene_id')
+                if target_id:
+                    all_target_ids.add(target_id)
+
+        # 어떤 씬에서도 연결되지 않은 씬 = 프롤로그에서 시작하는 씬
+        root_scenes = []
+        for scene in filtered_scenes:
+            scene_id = scene.get('scene_id')
+            if scene_id not in all_target_ids:
+                root_scenes.append(scene_id)
+
+        prologue_connects_to = root_scenes if root_scenes else [filtered_scenes[0].get('scene_id')]
+
+    # 프롤로그 노드 추가
     if prologue_text:
         mermaid_lines.append(f'    PROLOGUE["📖 Prologue"]:::prologueStyle')
-        if scenes:
-            mermaid_lines.append(f'    PROLOGUE --> {scenes[0]["scene_id"]}')
 
-    for scene in scenes:
+    # 프롤로그 -> 연결된 씬들
+    if prologue_text and prologue_connects_to:
+        for target_id in prologue_connects_to:
+            # target_id가 실제 존재하는지 확인
+            if any(s.get('scene_id') == target_id for s in filtered_scenes):
+                mermaid_lines.append(f'    PROLOGUE --> {target_id}')
+
+
+    for scene in filtered_scenes:
         scene_id = scene['scene_id']
         scene_title = scene.get('title', scene_id).replace('"', "'")
         mermaid_lines.append(f'    {scene_id}["{scene_title}"]:::sceneStyle')
@@ -139,13 +172,13 @@ def view_scenes():
         for i, trans in enumerate(scene.get('transitions', [])):
             next_id = trans.get('target_scene_id')
             trigger = trans.get('trigger', 'action').replace('"', "'")
-            if next_id:
+            if next_id and next_id != 'start':
                 mermaid_lines.append(f'    {scene_id} -->|"{trigger}"| {next_id}')
 
     for i, ending in enumerate(endings):
         ending_id = ending['ending_id']
-        ending_label = f"엔딩{i + 1}"
-        mermaid_lines.append(f'    {ending_id}["🏁 {ending_label}"]:::endingStyle')
+        ending_title = ending.get('title', f'엔딩{i + 1}').replace('"', "'")
+        mermaid_lines.append(f'    {ending_id}["🏁 {ending_title}"]:::endingStyle')
 
     mermaid_lines.append("    classDef prologueStyle fill:#0f766e,stroke:#14b8a6,color:#fff")
     mermaid_lines.append("    classDef sceneStyle fill:#312e81,stroke:#6366f1,color:#fff")
@@ -156,7 +189,7 @@ def view_scenes():
     return render_template('scenes_view.html',
                            title=title,
                            scenario=scenario,
-                           scenes=scenes,
+                           scenes=filtered_scenes,
                            mermaid_code=mermaid_code)
 
 

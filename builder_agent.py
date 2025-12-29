@@ -46,14 +46,26 @@ def parse_react_flow(react_flow_data: Dict[str, Any]) -> Dict[str, Any]:
             if src not in reverse_adjacency[tgt]: reverse_adjacency[tgt].append(src)
 
     start_node_id = None
+    start_node_data = None
+
     for node in nodes:
         node_id = node.get('id')
         data = node.get('data', {})
-        label = data.get('label', 'Untitled')
+        label = data.get('label', data.get('title', 'Untitled'))
         node_type = node.get('type', 'default')
 
-        if not start_node_id: start_node_id = node_id
-        if 'start' in label.lower() or node_type == 'input': start_node_id = node_id
+        # start 노드 감지 (프롤로그/설정)
+        is_start = (node_id == 'start' or node_type == 'start' or 'start' in label.lower() or node_type == 'input')
+
+        if is_start:
+            start_node_id = node_id
+            start_node_data = {
+                "node_id": node_id,
+                "title": label,
+                "description": data.get('description', ''),
+                "connected_to": adjacency_list.get(node_id, [])
+            }
+            continue  # start 노드는 scenes_skeleton에 추가하지 않음
 
         targets = adjacency_list.get(node_id, [])
         sources = reverse_adjacency.get(node_id, [])
@@ -66,10 +78,19 @@ def parse_react_flow(react_flow_data: Dict[str, Any]) -> Dict[str, Any]:
             "connected_from": sources
         }
 
-    logger.info(f"Parsed {len(nodes)} nodes. Start Node: {start_node_id}")
+    # start 노드의 연결 대상을 첫 번째 씬의 connected_from에 반영
+    if start_node_data:
+        for target_id in start_node_data.get('connected_to', []):
+            if target_id in scenes_skeleton:
+                if 'connected_from' not in scenes_skeleton[target_id]:
+                    scenes_skeleton[target_id]['connected_from'] = []
+                scenes_skeleton[target_id]['connected_from'].append('PROLOGUE')
+
+    logger.info(f"Parsed {len(nodes)} nodes. Start Node: {start_node_id}, Scenes: {len(scenes_skeleton)}")
     return {
         "skeleton": scenes_skeleton,
         "start_node_id": start_node_id,
+        "start_node_data": start_node_data,
         "node_count": len(nodes)
     }
 
@@ -341,6 +362,8 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
     try:
         parsed = parse_react_flow(react_flow_data)
         skeleton = parsed['skeleton']
+        start_node_data = parsed.get('start_node_data')
+
         if not skeleton: return {"title": "Empty", "scenes": [], "endings": []}
 
         llm = LLMFactory.get_llm(api_key=api_key, model_name=use_model)
@@ -386,11 +409,17 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
                 except:
                     pass
 
+        # 프롤로그에서 연결된 첫 번째 씬 ID 저장
+        first_scene_ids = []
+        if start_node_data:
+            first_scene_ids = start_node_data.get('connected_to', [])
+
         draft_scenario = {
             "title": setting_data.get('title', 'Untitled'),
             "genre": setting_data.get('genre', 'Adventure'),
             "background_story": setting_data.get('background_story', ''),
             "prologue": setting_data.get('prologue', ''),
+            "prologue_connects_to": first_scene_ids,  # 프롤로그가 연결하는 씬 ID 목록
             "variables": setting_data.get('variables', []),
             "items": [],
             "npcs": [],
@@ -403,6 +432,8 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
 
         if not is_valid:
             final_result = _refine_scenario(draft_scenario, issues, llm)
+            # prologue_connects_to 유지
+            final_result['prologue_connects_to'] = first_scene_ids
             logger.info("🎉 Generation Complete (Refined).")
             return final_result
         else:
@@ -440,3 +471,4 @@ def parse_json_garbage(text: str) -> Dict[str, Any]:
         except:
             pass
         return {}
+
