@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Any, Optional, Union
+from typing import List, Any, Optional
 
 
 # --- Basic Components ---
@@ -32,36 +32,44 @@ class Effect(BaseModel):
     value: Any
 
 
-# --- Scene Components ---
+# --- Scene Components (CHANGED) ---
 
-class Choice(BaseModel):
-    text: str = Field(description="Choice text shown to player")
-    next_scene_id: Optional[str] = Field(None, description="Target Scene ID")
-    conditions: List[Condition] = Field(default=[], description="Requirements to see/choose this option")
-    effects: List[Effect] = Field(default=[], description="Immediate effects upon choosing")
+class SceneTransition(BaseModel):
+    """
+    Choice(선택지) 대신 사용.
+    플레이어가 특정 행동을 했을 때 다음 씬으로 넘어가는 '규칙'을 정의함.
+    """
+    target_scene_id: str = Field(description="ID of the destination scene")
+    trigger: str = Field(
+        description="The action or event that triggers this transition (e.g., 'Player opens the door', 'Player attacks the merchant'). NOT a UI button text.")
+    conditions: List[Condition] = Field(default=[], description="Requirements for this transition to happen")
+    effects: List[Effect] = Field(default=[], description="Side effects when this transition happens")
 
 
 class NPC(BaseModel):
     name: str
-    role: str = Field(description="Role in the story (e.g., Merchant, Villain)")
+    role: str = Field(description="Role in the story")
     personality: str = Field(description="Personality traits")
-    description: str = Field(description="Visual description for player")
+    description: str = Field(description="Visual description")
     image_prompt: Optional[str] = Field(None, description="Prompt for generating NPC portrait")
-    dialogue_style: str = Field(description="How they speak (e.g., rude, formal)")
+    dialogue_style: str = Field(description="How they speak")
 
 
 class Scene(BaseModel):
     scene_id: str
     title: str
-    description: str = Field(description="Detailed scene description text")
+    description: str = Field(description="Detailed scene description text. Pure narrative.")
     image_prompt: Optional[str] = Field(None, description="Prompt for generating scene background image")
 
-    # Simple requirements (Legacy support, prefer using Choice conditions or entry conditions)
+    # Legacy fields (Optional)
     required_item: Optional[str] = Field(None)
     required_action: Optional[str] = Field(None)
 
     npcs: List[str] = Field(default=[], description="Names of NPCs present in this scene")
-    choices: List[Choice] = Field(default=[])
+
+    # Changed from choices to transitions
+    transitions: List[SceneTransition] = Field(default=[],
+                                               description="Possible paths to other scenes based on player actions.")
 
 
 class Ending(BaseModel):
@@ -69,7 +77,7 @@ class Ending(BaseModel):
     title: str
     description: str
     image_prompt: Optional[str] = Field(None, description="Ending illustration prompt")
-    condition: str = Field(description="Narrative condition (e.g., 'If player has the Holy Grail')")
+    condition: str = Field(description="Narrative condition")
 
 
 # --- Root Schema ---
@@ -80,11 +88,9 @@ class GameScenario(BaseModel):
     background_story: str
     prologue: str
 
-    # State Definitions
-    variables: List[GlobalVariable] = Field(default=[], description="Global state variables (HP, Sanity, etc.)")
-    items: List[Item] = Field(default=[], description="Registry of all items in the game")
+    variables: List[GlobalVariable] = Field(default=[], description="Global state variables")
+    items: List[Item] = Field(default=[], description="Registry of all items")
 
-    # Content
     npcs: List[NPC]
     scenes: List[Scene]
     endings: List[Ending]

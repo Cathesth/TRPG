@@ -10,6 +10,7 @@ from schemas import GameScenario  # 업데이트된 스키마 사용
 def transform_graph_to_draft(nodes: List[dict], edges: List[dict], global_npcs: List[dict]) -> dict:
     """
     React Flow의 그래프 데이터를 CrewAI가 이해할 수 있는 Draft JSON으로 변환.
+    Choice가 아니라 'Transition Draft'를 생성함.
     """
     scenes = []
     endings = []
@@ -23,12 +24,12 @@ def transform_graph_to_draft(nodes: List[dict], edges: List[dict], global_npcs: 
             start_node = data
         elif node_type == 'scene':
             my_edges = [e for e in edges if e['source'] == node['id']]
-            choices_draft = []
+            transitions_draft = []  # choices_draft -> transitions_draft
             for edge in my_edges:
-                choices_draft.append({
-                    "text": "",
-                    "next_scene_id": edge['target'],
-                    "conditions": [],  # 로직 추가용 빈 슬롯
+                transitions_draft.append({
+                    "target_scene_id": edge['target'],
+                    "trigger": "",  # AI가 채워야 할 '행동 조건' (예: 문을 연다, 설득한다)
+                    "conditions": [],
                     "effects": []
                 })
 
@@ -36,20 +37,19 @@ def transform_graph_to_draft(nodes: List[dict], edges: List[dict], global_npcs: 
                 "scene_id": node['id'],
                 "title": data.get('title', ''),
                 "description": data.get('description', ''),
-                # image_prompt는 AI가 생성하도록 비워둠
                 "npc_names": data.get('npcs', []),
-                "choices_draft": choices_draft
+                "transitions_draft": transitions_draft  # 필드명 변경
             })
         elif node_type == 'ending':
             endings.append({
                 "ending_id": node['id'],
                 "title": data.get('title', ''),
-                "condition": data.get('condition', '')  # 텍스트 조건
+                "condition": data.get('condition', '')
             })
 
     return {
         "title": start_node.get('label', 'Untitled Scenario') if start_node else "Untitled",
-        "genre": "Dark Fantasy",  # 기본값, 필요시 파라미터로 받음
+        "genre": "Dark Fantasy",
         "background": start_node.get('description', '') if start_node else "",
         "global_npcs": global_npcs,
         "scenes": scenes,
@@ -60,10 +60,6 @@ def transform_graph_to_draft(nodes: List[dict], edges: List[dict], global_npcs: 
 # --- Main Crew Logic ---
 
 def generate_scenario_from_graph(api_key: str, react_flow_data: dict):
-    """
-    React Flow Data -> Draft JSON -> CrewAI (Gen -> Edit -> Fix) -> Final JSON
-    """
-
     # 1. 데이터 변환
     nodes = react_flow_data.get('nodes', [])
     edges = react_flow_data.get('edges', [])
@@ -79,16 +75,17 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: dict):
     # [Agent 1] 게임 시스템 기획자 & 작가
     game_designer = Agent(
         role='Game Systems Designer & Writer',
-        goal='Create an immersive story AND robust game mechanics (variables, items).',
+        goal='Create an immersive story and define LOGICAL TRANSITIONS between scenes.',
         backstory="""
         You are a legendary RPG Maker. 
-        Your main job is to write Pure Narrative Descriptions for scenes.
 
-        CRITICAL RULE:
-        - NEVER include choice lists (e.g., "1. Go left") or user prompts (e.g., "What do you do?") inside the scene `description`.
-        - The `description` should ONLY contain what the character sees, hears, and feels. The choices are handled by the UI, not the text.
+        Your tasks:
+        1. Write Pure Narrative Descriptions for scenes (NO choice lists inside description).
+        2. Define `transitions` for each scene based on the graph structure.
+           - Instead of writing a "Choice Button Text", describe the **User Action (Trigger)** that causes the transition.
+           - Example Trigger: "Player attacks the guard", "Player successfully picks the lock", "Player gives the potion".
 
-        You also define Global Variables (e.g., HP, Sanity, Gold) and Items based on the story.
+        You also define Global Variables and Items based on the story.
         """,
         llm=claude,
         verbose=True
@@ -97,29 +94,29 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: dict):
     # [Agent 2] 텍스트 & 로직 검수
     korean_editor = Agent(
         role='Korean Editor & Logic Polisher',
-        goal='Ensure immersive tone and CLEAN descriptions without choice texts.',
+        goal='Ensure immersive tone and verify transition logic.',
         backstory="""
         You are a meticulous editor. 
-        1. Ensure the Korean text is natural and immersive (Dark Fantasy tone).
-        2. CLEANUP: If the `description` contains text like "당신의 선택은?" or list of choices, DELETE IT immediately. Keep only the narrative.
-        3. LOGIC: Check if the game logic makes sense (e.g., don't spend Gold if you never gave Gold).
+        1. Ensure the Korean text is natural and immersive.
+        2. CHECK TRANSITIONS: Ensure the `trigger` for each transition is a clear action description, NOT a UI button text like "1. Go next".
+           - Bad: "1. Open Door"
+           - Good: "Player opens the iron door"
         """,
         llm=claude,
         verbose=True
     )
 
-    # [Agent 3] 스키마 집행자 (Consistency Enforcer)
+    # [Agent 3] 스키마 집행자
     consistency_enforcer = Agent(
         role='Schema Consistency Enforcer',
         goal='Produce a strictly valid JSON object matching the GameScenario schema.',
         backstory="""
-        You are a compiler. Your only job is to take the previous output and structure it 
-        perfectly into the `GameScenario` JSON format.
-        You must ensure:
-        1. All referenced `items` in effects/conditions exist in the `items` list.
-        2. All `variables` (HP, etc.) are initialized in `variables` list.
-        3. `next_scene_id` links are valid.
-        4. No hallucinations in NPC names.
+        You are a compiler. Your job is to structure the output into the `GameScenario` JSON format.
+
+        CRITICAL:
+        - Map the drafted transitions to `transitions` list in the schema.
+        - Ensure `trigger` fields explain the action required to move to `target_scene_id`.
+        - Ensure `variables` and `items` are consistent.
         """,
         llm=claude,
         verbose=True
@@ -127,43 +124,36 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: dict):
 
     # 4. 태스크 정의
 
-    # Task 1: 기획 및 초안 작성
     task_design = Task(
         description=f"""
         Analyze this draft: {json.dumps(draft_data, ensure_ascii=False)}
 
-        1. **System Design**: Define 2-3 `GlobalVariables` and 3-5 `Items`.
-        2. **Narrative**: Write descriptions for all scenes. 
-           - **CONSTRAINT**: The `description` MUST be pure storytelling. DO NOT write "1. Attack 2. Run" inside the description.
-        3. **Logic Implementation**: 
-           - For choices, add `effects` and `conditions`.
-        4. **Visuals**: Generate a short English `image_prompt` for scenes/NPCs.
+        1. **System**: Define GlobalVariables and Items.
+        2. **Narrative**: Write pure story descriptions for scenes.
+        3. **Transitions**:
+           - For each `transitions_draft` entry, write a `trigger` string describing the action.
+           - Add `effects` (e.g., lose HP) and `conditions` (e.g., has Key) if necessary.
+        4. **Visuals**: Generate `image_prompt`.
         """,
         agent=game_designer,
-        expected_output="Detailed draft with pure narrative descriptions (no choice text inside) and game logic."
+        expected_output="Draft with story, variables, items, and action-based transitions."
     )
 
-    # Task 2: 윤문 및 로직 체크
     task_polish = Task(
         description="""
         Review the draft.
-        1. Polish Korean text to be serious and immersive.
-        2. **Verify Descriptions**: Ensure NO scene description ends with "What will you do?" or choice lists. If found, remove that part.
-        3. Check Logic: Ensure effects use correct variable names defined in step 1.
+        1. Polish Korean text.
+        2. **Verify Triggers**: Ensure `trigger` describes an action, not a menu option.
+        3. Check Logic: Ensure effects/conditions use valid variable/item names.
         """,
         agent=korean_editor,
-        expected_output="Polished draft with clean descriptions and verified logic."
+        expected_output="Polished draft with logical transitions."
     )
 
-    # Task 3: 최종 JSON 변환
     task_finalize = Task(
         description="""
-        Finalize the output into `GameScenario` schema.
-
-        CRITICAL CHECKS:
-        - Ensure `variables` list contains all variables used in effects.
-        - Ensure `items` list contains all items used in conditions/effects.
-        - Ensure `next_scene_id` allows the game to be playable from start to end.
+        Finalize into `GameScenario` schema.
+        Ensure `transitions` are correctly populated instead of choices.
         """,
         agent=consistency_enforcer,
         expected_output="Final valid JSON object.",
