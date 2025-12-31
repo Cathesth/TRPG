@@ -355,6 +355,51 @@ def _refine_scenario(scenario_data: Dict, issues: str, llm) -> Dict:
         return scenario_data
 
 
+def normalize_ids(scenario_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    씬과 엔딩의 ID를 간단한 형식으로 정규화합니다.
+    scene-1766998232980 -> scene-1, scene-2, ...
+    ending-1766998240477 -> ending-1, ending-2, ...
+    모든 연결 정보(transitions, prologue_connects_to)도 함께 업데이트합니다.
+    """
+    id_map = {}  # { old_id: new_id }
+
+    scenes = scenario_data.get('scenes', [])
+    endings = scenario_data.get('endings', [])
+
+    # 1. 씬 ID 매핑 생성 (scene-1, scene-2, ...)
+    for idx, scene in enumerate(scenes, start=1):
+        old_id = scene.get('scene_id')
+        new_id = f"scene-{idx}"
+        if old_id:
+            id_map[old_id] = new_id
+            scene['scene_id'] = new_id
+
+    # 2. 엔딩 ID 매핑 생성 (ending-1, ending-2, ...)
+    for idx, ending in enumerate(endings, start=1):
+        old_id = ending.get('ending_id')
+        new_id = f"ending-{idx}"
+        if old_id:
+            id_map[old_id] = new_id
+            ending['ending_id'] = new_id
+
+    # 3. Transitions(연결) 정보 업데이트
+    for scene in scenes:
+        for trans in scene.get('transitions', []):
+            target = trans.get('target_scene_id')
+            if target and target in id_map:
+                trans['target_scene_id'] = id_map[target]
+
+    # 4. 프롤로그 연결 정보 업데이트 (매핑된 ID만 포함)
+    prologue_connects_to = scenario_data.get('prologue_connects_to', [])
+    new_prologue_connects = [id_map[old_id] for old_id in prologue_connects_to if old_id in id_map]
+    scenario_data['prologue_connects_to'] = new_prologue_connects
+
+    logger.info(f"✅ [normalize_ids] ID 정규화 완료: {len(id_map)} IDs mapped")
+
+    return scenario_data
+
+
 def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], model_name: str = None) -> Dict[str, Any]:
     logger.info("🚀 [Builder] Starting generation...")
 
@@ -437,11 +482,15 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
             final_result = _refine_scenario(draft_scenario, issues, llm)
             # prologue_connects_to 유지
             final_result['prologue_connects_to'] = first_scene_ids
+            # ID 정규화 적용
+            final_result = normalize_ids(final_result)
             logger.info("🎉 Generation Complete (Refined).")
             return final_result
         else:
+            # ID 정규화 적용
+            normalized_scenario = normalize_ids(draft_scenario)
             logger.info("🎉 Generation Complete (Direct Pass).")
-            return draft_scenario
+            return normalized_scenario
 
     except Exception as e:
         logger.error(f"Critical Builder Error: {e}", exc_info=True)

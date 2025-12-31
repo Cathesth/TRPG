@@ -151,6 +151,61 @@ def view_scenes():
 
         prologue_connects_to = root_scenes if root_scenes else [filtered_scenes[0].get('scene_id')]
 
+    # 각 씬에 도달하기 위한 조건 계산 (incoming conditions)
+    incoming_conditions = {}  # { target_scene_id: [ {from_scene, from_title, condition}, ... ] }
+
+    # 엔딩 ID → 이름 매핑 생성
+    ending_names = {}
+    for ending in endings:
+        ending_names[ending.get('ending_id')] = ending.get('title', ending.get('ending_id'))
+
+    # 씬 ID → 이름 매핑 생성
+    scene_names = {}
+    for scene in filtered_scenes:
+        scene_names[scene.get('scene_id')] = scene.get('title', scene.get('scene_id'))
+
+    # 프롤로그에서 시작하는 씬들
+    for target_id in prologue_connects_to:
+        if target_id not in incoming_conditions:
+            incoming_conditions[target_id] = []
+        incoming_conditions[target_id].append({
+            'from_scene': 'PROLOGUE',
+            'from_title': '프롤로그',
+            'condition': '게임 시작'
+        })
+
+    # 다른 씬들의 transitions에서 도달 조건 수집
+    for scene in filtered_scenes:
+        from_id = scene.get('scene_id')
+        from_title = scene.get('title', from_id)
+        for trans in scene.get('transitions', []):
+            target_id = trans.get('target_scene_id')
+            if target_id:
+                if target_id not in incoming_conditions:
+                    incoming_conditions[target_id] = []
+                incoming_conditions[target_id].append({
+                    'from_scene': from_id,
+                    'from_title': from_title,
+                    'condition': trans.get('trigger') or trans.get('condition') or '자유 행동'
+                })
+
+    # 엔딩에 도달하기 위한 조건 계산 (ending_incoming_conditions)
+    ending_incoming_conditions = {}  # { ending_id: [ {from_scene, from_title, condition}, ... ] }
+    for scene in filtered_scenes:
+        from_id = scene.get('scene_id')
+        from_title = scene.get('title', from_id)
+        for trans in scene.get('transitions', []):
+            target_id = trans.get('target_scene_id')
+            # target_id가 엔딩인지 확인
+            if target_id and target_id in ending_names:
+                if target_id not in ending_incoming_conditions:
+                    ending_incoming_conditions[target_id] = []
+                ending_incoming_conditions[target_id].append({
+                    'from_scene': from_id,
+                    'from_title': from_title,
+                    'condition': trans.get('trigger') or trans.get('condition') or '자유 행동'
+                })
+
     # 프롤로그 노드 추가
     if prologue_text:
         mermaid_lines.append(f'    PROLOGUE["📖 Prologue"]:::prologueStyle')
@@ -190,6 +245,10 @@ def view_scenes():
                            title=title,
                            scenario=scenario,
                            scenes=filtered_scenes,
+                           incoming_conditions=incoming_conditions,
+                           ending_incoming_conditions=ending_incoming_conditions,
+                           ending_names=ending_names,
+                           scene_names=scene_names,
                            mermaid_code=mermaid_code)
 
 
@@ -221,9 +280,16 @@ def list_scenarios():
             pass
 
         html += f"""
-        <div class="bg-gray-800 p-5 rounded-lg border border-gray-700 hover:border-indigo-500 transition-colors flex flex-col justify-between h-full">
+        <div class="bg-gray-800 p-5 rounded-lg border border-gray-700 hover:border-indigo-500 transition-colors flex flex-col justify-between h-full group">
             <div>
-                <h4 class="font-bold text-white text-lg mb-2">{title}</h4>
+                <div class="flex justify-between items-start mb-2">
+                    <h4 class="font-bold text-white text-lg">{title}</h4>
+                    <button onclick="deleteScenario('{f}', this)" 
+                            class="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 p-1 rounded hover:bg-red-900/30 transition-all"
+                            title="삭제">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
                 <div class="text-xs text-gray-500 mb-2">{f}</div>
                 <p class="text-sm text-gray-400 mb-4 line-clamp-2">{desc}</p>
             </div>
@@ -235,6 +301,31 @@ def list_scenarios():
         """
     html += '<script>lucide.createIcons();</script>'
     return html
+
+
+@app.route('/api/delete_scenario', methods=['POST'])
+def delete_scenario():
+    """시나리오 파일 삭제"""
+    data = request.get_json(force=True, silent=True) or {}
+    filename = data.get('filename')
+
+    if not filename:
+        return jsonify({"success": False, "error": "파일명이 없습니다."}), 400
+
+    # 보안: 경로 조작 방지
+    if '..' in filename or '/' in filename or '\\' in filename:
+        return jsonify({"success": False, "error": "잘못된 파일명입니다."}), 400
+
+    file_path = os.path.join(DB_FOLDER, filename)
+
+    if not os.path.exists(file_path):
+        return jsonify({"success": False, "error": "파일을 찾을 수 없습니다."}), 404
+
+    try:
+        os.remove(file_path)
+        return jsonify({"success": True, "message": f"'{filename}' 삭제 완료"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/api/load_scenario', methods=['POST'])
@@ -339,7 +430,7 @@ def init_game():
         # [안전장치 2] 딕셔너리가 아닌 경우 방어
         if not isinstance(scenario_json, dict):
             logging.error(f"❌ Critical: scenario_json is {type(scenario_json)}, expected dict.")
-            return jsonify({"error": "생성된 데이터가 딕셔너리가 아닙니다."}), 500
+            return jsonify({"error": "생성된 데이터가 딕셔 dictionaries가 아닙니다."}), 500
 
         title = scenario_json.get('title', 'Untitled_Scenario')
         safe_title = "".join([c for c in title if c.isalnum() or c in (' ', '-', '_')]).strip().replace(' ', '_')
