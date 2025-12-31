@@ -264,11 +264,26 @@ def list_scenarios():
     if not files:
         return '<div class="col-span-1 md:col-span-2 text-center text-gray-500 py-8">저장된 시나리오가 없습니다.</div>'
 
-    html = ""
+    # 정렬 파라미터 받기 (기본값: newest)
+    sort_order = request.args.get('sort', 'newest')
+
+    # 파일 정보 수집 (생성 시간 및 타이틀 포함)
+    import time
+    from datetime import datetime
+
+    file_infos = []
     for f in files:
         file_path = os.path.join(DB_FOLDER, f)
         title = f.replace('.json', '')
         desc = "저장된 시나리오"
+
+        try:
+            # 파일 생성 시간 (Windows: ctime, Linux/Mac: mtime 사용)
+            created_time = os.path.getctime(file_path)
+        except:
+            created_time = 0
+
+        # 파일에서 title 읽기
         try:
             with open(file_path, 'r', encoding='utf-8') as jf:
                 data = json.load(jf)
@@ -279,18 +294,61 @@ def list_scenarios():
         except:
             pass
 
+        file_infos.append({
+            'filename': f,
+            'path': file_path,
+            'created_time': created_time,
+            'title': title,
+            'desc': desc
+        })
+
+    # 정렬: newest(최신순), oldest(오래된순), name_asc(이름 오름차순), name_desc(이름 내림차순)
+    if sort_order == 'oldest':
+        file_infos.sort(key=lambda x: x['created_time'])
+    elif sort_order == 'name_asc':
+        file_infos.sort(key=lambda x: x['title'].lower())
+    elif sort_order == 'name_desc':
+        file_infos.sort(key=lambda x: x['title'].lower(), reverse=True)
+    else:  # newest (기본값)
+        file_infos.sort(key=lambda x: x['created_time'], reverse=True)
+
+    current_time = time.time()
+
+    html = ""
+    for info in file_infos:
+        f = info['filename']
+        created_time = info['created_time']
+        title = info['title']
+        desc = info['desc']
+
+        # 시간 포맷팅
+        time_str = ""
+        is_new = False
+        if created_time > 0:
+            dt = datetime.fromtimestamp(created_time)
+            time_str = dt.strftime('%Y-%m-%d %H:%M')
+            # 10분 이내면 NEW
+            if (current_time - created_time) < 600:  # 600초 = 10분
+                is_new = True
+
+        # NEW 딱지 HTML
+        new_badge = ""
+        if is_new:
+            new_badge = '<span class="ml-2 px-1.5 py-0.5 text-[10px] font-bold bg-yellow-500 text-black rounded">NEW</span>'
+
         html += f"""
         <div class="bg-gray-800 p-5 rounded-lg border border-gray-700 hover:border-indigo-500 transition-colors flex flex-col justify-between h-full group">
             <div>
                 <div class="flex justify-between items-start mb-2">
-                    <h4 class="font-bold text-white text-lg">{title}</h4>
+                    <h4 class="font-bold text-white text-lg flex items-center">{title}{new_badge}</h4>
                     <button onclick="deleteScenario('{f}', this)" 
                             class="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 p-1 rounded hover:bg-red-900/30 transition-all"
                             title="삭제">
                         <i data-lucide="trash-2" class="w-4 h-4"></i>
                     </button>
                 </div>
-                <div class="text-xs text-gray-500 mb-2">{f}</div>
+                <div class="text-xs text-gray-500 mb-1">{f}</div>
+                <div class="text-[10px] text-gray-600 mb-2">{time_str}</div>
                 <p class="text-sm text-gray-400 mb-4 line-clamp-2">{desc}</p>
             </div>
             <button hx-post="/api/load_scenario" hx-vals='{{"filename": "{f}"}}' hx-target="#init-result"
