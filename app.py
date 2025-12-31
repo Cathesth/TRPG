@@ -82,6 +82,56 @@ def parse_request_data(req):
         return {}
 
 
+
+
+# --- [Core] 시작 씬 선택 헬퍼 (프롤로그 연결 우선) ---
+def pick_start_scene_id(scenario: dict) -> str:
+    """시나리오 시작 씬을 결정.
+    우선순위:
+      1) prologue_connects_to 중 실제 존재하는 씬
+      2) (prologue_connects_to가 비어있으면) 어떤 씬에서도 target으로 등장하지 않는 'root' 씬
+      3) scenes[0]
+      4) 'start'
+    """
+    if not isinstance(scenario, dict):
+        return "start"
+
+    scenes = scenario.get('scenes', [])
+    if not isinstance(scenes, list) or not scenes:
+        return "start"
+
+    scene_ids = [s.get('scene_id') for s in scenes if isinstance(s, dict) and s.get('scene_id')]
+    valid_ids = set(scene_ids)
+
+    # 1) prologue_connects_to 우선
+    connects = scenario.get('prologue_connects_to', [])
+    if isinstance(connects, list):
+        for sid in connects:
+            if isinstance(sid, str) and sid in valid_ids:
+                return sid
+
+    # 2) root scene 자동 탐지 (target으로 한 번도 등장하지 않는 씬)
+    targets = set()
+    for s in scenes:
+        if not isinstance(s, dict):
+            continue
+        for trans in s.get('transitions', []) or []:
+            if isinstance(trans, dict):
+                tid = trans.get('target_scene_id')
+                if isinstance(tid, str) and tid:
+                    targets.add(tid)
+
+    for sid in scene_ids:
+        if sid not in targets and sid not in ('start', 'PROLOGUE'):
+            return sid
+
+    # 3) fallback
+    first = scenes[0]
+    if isinstance(first, dict) and first.get('scene_id'):
+        return first.get('scene_id')
+    return "start"
+
+
 # --- 라우트 ---
 
 @app.route('/')
@@ -417,9 +467,7 @@ def load_scenario():
         if 'hp' not in initial_vars: initial_vars['hp'] = 100
         if 'inventory' not in initial_vars: initial_vars['inventory'] = []
 
-        start_id = "start"
-        if scenario.get('scenes'):
-            start_id = scenario['scenes'][0]['scene_id']
+        start_id = pick_start_scene_id(scenario)
 
         db['config']['title'] = scenario.get('title', 'Loaded')
         db['state'] = {
@@ -516,10 +564,7 @@ def init_game():
                 "player_vars": initial_vars
             }, f, ensure_ascii=False, indent=2)
 
-        start_id = "start"
-        scenes = scenario_json.get('scenes', [])
-        if scenes and isinstance(scenes, list) and len(scenes) > 0:
-            start_id = scenes[0].get('scene_id', 'start')
+        start_id = pick_start_scene_id(scenario_json)
 
         db['config']['title'] = title
         db['state'] = {
