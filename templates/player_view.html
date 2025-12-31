@@ -802,12 +802,32 @@
     (function() {
         const sidebar = document.querySelector('.sidebar');
         const SIDEBAR_STATE_KEY = 'sidebar_expanded';
+        let isRestoredState = false;
+
         if (sessionStorage.getItem(SIDEBAR_STATE_KEY) === 'true') {
             sidebar.style.transition = 'none';
             sidebar.classList.add('expanded');
+            isRestoredState = true;
             sessionStorage.removeItem(SIDEBAR_STATE_KEY);
             requestAnimationFrame(() => requestAnimationFrame(() => sidebar.style.transition = ''));
         }
+
+        // 페이지 로드 완료 후 마우스 위치 확인하여 사이드바 닫기
+        if (isRestoredState) {
+            setTimeout(() => {
+                const checkMousePosition = (e) => {
+                    const rect = sidebar.getBoundingClientRect();
+                    const isInsideSidebar = e.clientX >= rect.left && e.clientX <= rect.right &&
+                                           e.clientY >= rect.top && e.clientY <= rect.bottom;
+                    if (!isInsideSidebar) {
+                        sidebar.classList.remove('expanded');
+                    }
+                    document.removeEventListener('mousemove', checkMousePosition);
+                };
+                document.addEventListener('mousemove', checkMousePosition, { once: true });
+            }, 100);
+        }
+
         sidebar.querySelectorAll('a[href], button').forEach(link => {
             link.addEventListener('click', function(e) {
                 if (this.tagName === 'A' && this.href) {

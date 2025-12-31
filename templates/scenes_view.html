@@ -448,12 +448,14 @@
     (function() {
         const sidebar = document.querySelector('.sidebar');
         const SIDEBAR_STATE_KEY = 'sidebar_expanded';
+        let isRestoredState = false;
 
         // 페이지 로드 시 저장된 상태 복원
         if (sessionStorage.getItem(SIDEBAR_STATE_KEY) === 'true') {
             // transition 일시 비활성화 (깜빡임 방지)
             sidebar.style.transition = 'none';
             sidebar.classList.add('expanded');
+            isRestoredState = true;
             // 상태키 즉시 제거 (다음 페이지 이동을 위해)
             sessionStorage.removeItem(SIDEBAR_STATE_KEY);
             // 다음 프레임에서 transition 복원
@@ -462,6 +464,23 @@
                     sidebar.style.transition = '';
                 });
             });
+        }
+
+        // 페이지 로드 완료 후 마우스 위치 확인하여 사이드바 닫기
+        if (isRestoredState) {
+            // 약간의 지연 후 마우스 위치 체크
+            setTimeout(() => {
+                const checkMousePosition = (e) => {
+                    const rect = sidebar.getBoundingClientRect();
+                    const isInsideSidebar = e.clientX >= rect.left && e.clientX <= rect.right &&
+                                           e.clientY >= rect.top && e.clientY <= rect.bottom;
+                    if (!isInsideSidebar) {
+                        sidebar.classList.remove('expanded');
+                    }
+                    document.removeEventListener('mousemove', checkMousePosition);
+                };
+                document.addEventListener('mousemove', checkMousePosition, { once: true });
+            }, 100);
         }
 
         // 사이드바 내 링크 클릭 시 상태 저장
