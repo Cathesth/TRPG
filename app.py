@@ -151,6 +151,61 @@ def view_scenes():
 
         prologue_connects_to = root_scenes if root_scenes else [filtered_scenes[0].get('scene_id')]
 
+    # 각 씬에 도달하기 위한 조건 계산 (incoming conditions)
+    incoming_conditions = {}  # { target_scene_id: [ {from_scene, from_title, condition}, ... ] }
+
+    # 엔딩 ID → 이름 매핑 생성
+    ending_names = {}
+    for ending in endings:
+        ending_names[ending.get('ending_id')] = ending.get('title', ending.get('ending_id'))
+
+    # 씬 ID → 이름 매핑 생성
+    scene_names = {}
+    for scene in filtered_scenes:
+        scene_names[scene.get('scene_id')] = scene.get('title', scene.get('scene_id'))
+
+    # 프롤로그에서 시작하는 씬들
+    for target_id in prologue_connects_to:
+        if target_id not in incoming_conditions:
+            incoming_conditions[target_id] = []
+        incoming_conditions[target_id].append({
+            'from_scene': 'PROLOGUE',
+            'from_title': '프롤로그',
+            'condition': '게임 시작'
+        })
+
+    # 다른 씬들의 transitions에서 도달 조건 수집
+    for scene in filtered_scenes:
+        from_id = scene.get('scene_id')
+        from_title = scene.get('title', from_id)
+        for trans in scene.get('transitions', []):
+            target_id = trans.get('target_scene_id')
+            if target_id:
+                if target_id not in incoming_conditions:
+                    incoming_conditions[target_id] = []
+                incoming_conditions[target_id].append({
+                    'from_scene': from_id,
+                    'from_title': from_title,
+                    'condition': trans.get('trigger') or trans.get('condition') or '자유 행동'
+                })
+
+    # 엔딩에 도달하기 위한 조건 계산 (ending_incoming_conditions)
+    ending_incoming_conditions = {}  # { ending_id: [ {from_scene, from_title, condition}, ... ] }
+    for scene in filtered_scenes:
+        from_id = scene.get('scene_id')
+        from_title = scene.get('title', from_id)
+        for trans in scene.get('transitions', []):
+            target_id = trans.get('target_scene_id')
+            # target_id가 엔딩인지 확인
+            if target_id and target_id in ending_names:
+                if target_id not in ending_incoming_conditions:
+                    ending_incoming_conditions[target_id] = []
+                ending_incoming_conditions[target_id].append({
+                    'from_scene': from_id,
+                    'from_title': from_title,
+                    'condition': trans.get('trigger') or trans.get('condition') or '자유 행동'
+                })
+
     # 프롤로그 노드 추가
     if prologue_text:
         mermaid_lines.append(f'    PROLOGUE["📖 Prologue"]:::prologueStyle')
@@ -190,6 +245,10 @@ def view_scenes():
                            title=title,
                            scenario=scenario,
                            scenes=filtered_scenes,
+                           incoming_conditions=incoming_conditions,
+                           ending_incoming_conditions=ending_incoming_conditions,
+                           ending_names=ending_names,
+                           scene_names=scene_names,
                            mermaid_code=mermaid_code)
 
 
