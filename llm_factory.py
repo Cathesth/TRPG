@@ -6,6 +6,56 @@ from langchain_openai import ChatOpenAI
 # .env 파일 활성화
 load_dotenv()
 
+# 사용 가능한 모델 목록 (OpenRouter 형식)
+AVAILABLE_MODELS = {
+    # Google (2.0 → 2.5 → 3)
+    "openai/google/gemini-2.0-flash-001": {"name": "Gemini 2.0 Flash", "provider": "Google", "context": "1M"},
+    "openai/google/gemini-2.5-flash-lite": {"name": "Gemini 2.5 Flash Lite", "provider": "Google", "context": "1M"},
+    "openai/google/gemini-2.5-flash": {"name": "Gemini 2.5 Flash", "provider": "Google", "context": "1M"},
+    "openai/google/gemini-3-flash-preview": {"name": "Gemini 3 Flash (Preview)", "provider": "Google", "context": "1M"},
+    "openai/google/gemini-3-pro-preview": {"name": "Gemini 3 Pro (Preview)", "provider": "Google", "context": "1M"},
+
+    # Anthropic (3.5 → 4 → 4.5)
+    "openai/anthropic/claude-3.5-haiku": {"name": "Claude 3.5 Haiku", "provider": "Anthropic", "context": "200K"},
+    "openai/anthropic/claude-3.5-sonnet": {"name": "Claude 3.5 Sonnet", "provider": "Anthropic", "context": "200K"},
+    "openai/anthropic/claude-sonnet-4": {"name": "Claude Sonnet 4", "provider": "Anthropic", "context": "200K"},
+    "openai/anthropic/claude-haiku-4.5": {"name": "Claude Haiku 4.5", "provider": "Anthropic", "context": "200K"},
+    "openai/anthropic/claude-sonnet-4.5": {"name": "Claude Sonnet 4.5", "provider": "Anthropic", "context": "200K"},
+    "openai/anthropic/claude-opus-4.5": {"name": "Claude Opus 4.5", "provider": "Anthropic", "context": "200K"},
+
+    # OpenAI (4o → 5)
+    "openai/openai/gpt-4o-mini": {"name": "GPT-4o Mini", "provider": "OpenAI", "context": "128K"},
+    "openai/openai/gpt-4o": {"name": "GPT-4o", "provider": "OpenAI", "context": "128K"},
+    "openai/openai/gpt-5-mini": {"name": "GPT-5 Mini", "provider": "OpenAI", "context": "1M"},
+    "openai/openai/gpt-5.2": {"name": "GPT-5.2", "provider": "OpenAI", "context": "1M"},
+
+    # DeepSeek
+    "openai/tngtech/deepseek-r1t2-chimera:free": {"name": "R1 Chimera (Free)", "provider": "DeepSeek", "context": "164K", "free": True},
+    "openai/deepseek/deepseek-chat-v3-0324": {"name": "DeepSeek Chat V3", "provider": "DeepSeek", "context": "128K"},
+    "openai/deepseek/deepseek-v3.2": {"name": "DeepSeek V3.2", "provider": "DeepSeek", "context": "128K"},
+
+    # Meta Llama (3.1 → 3.3)
+    "openai/meta-llama/llama-3.1-8b-instruct": {"name": "Llama 3.1 8B", "provider": "Meta", "context": "128K"},
+    "openai/meta-llama/llama-3.1-405b-instruct:free": {"name": "Llama 3.1 405B (Free)", "provider": "Meta", "context": "128K", "free": True},
+    "openai/meta-llama/llama-3.1-405b-instruct": {"name": "Llama 3.1 405B", "provider": "Meta", "context": "128K"},
+    "openai/meta-llama/llama-3.3-70b-instruct:free": {"name": "Llama 3.3 70B (Free)", "provider": "Meta", "context": "128K", "free": True},
+    "openai/meta-llama/llama-3.3-70b-instruct": {"name": "Llama 3.3 70B", "provider": "Meta", "context": "128K"},
+
+    # xAI Grok (1 → 4 → 4.1)
+    "openai/x-ai/grok-code-fast-1": {"name": "Grok Code Fast 1", "provider": "xAI", "context": "128K"},
+    "openai/x-ai/grok-4-fast": {"name": "Grok 4 Fast", "provider": "xAI", "context": "256K"},
+    "openai/x-ai/grok-4.1-fast": {"name": "Grok 4.1 Fast", "provider": "xAI", "context": "1M"},
+
+    # Mistral AI
+    "openai/mistralai/devstral-2512:free": {"name": "Devstral 2512 (Free)", "provider": "Mistral", "context": "128K", "free": True},
+
+    # Xiaomi
+    "openai/xiaomi/mimo-v2-flash:free": {"name": "MiMo V2 Flash (Free)", "provider": "Xiaomi", "context": "128K", "free": True},
+}
+
+# 기본 모델
+DEFAULT_MODEL = "openai/tngtech/deepseek-r1t2-chimera:free"
+
 
 class OpenRouterLLM(ChatOpenAI):
     """
@@ -30,7 +80,12 @@ class OpenRouterLLM(ChatOpenAI):
 
 class LLMFactory:
     @staticmethod
-    def get_llm(model_name: str, api_key: str, temperature: float = 0.7, streaming: bool = False):
+    def get_llm(model_name: str, api_key: str = None, temperature: float = 0.7, streaming: bool = False):
+        # 모델 유효성 검사
+        if model_name not in AVAILABLE_MODELS:
+            print(f"[경고] 알 수 없는 모델 '{model_name}', 기본 모델 '{DEFAULT_MODEL}' 사용")
+            model_name = DEFAULT_MODEL
+
         # API Key 확인
         if not api_key:
             api_key = os.getenv("OPENROUTER_API_KEY")
@@ -54,32 +109,35 @@ class LLMFactory:
         )
 
     @staticmethod
-    def get_streaming_llm(model_name: str = "openai/tngtech/deepseek-r1t2-chimera:free", api_key: str = None, temperature: float = 0.7):
+    def get_streaming_llm(model_name: str = None, api_key: str = None, temperature: float = 0.7):
         """스트리밍 지원 LLM 반환"""
+        if model_name is None:
+            model_name = DEFAULT_MODEL
         return LLMFactory.get_llm(model_name, api_key, temperature, streaming=True)
 
 
 # --- 편의 함수 ---
 
-def get_builder_model(api_key=None):
+def get_builder_model(model_name: str = None, api_key: str = None):
     """
-    빌더용: Meta Llama 3.3 70B Instruct (Free)
+    빌더용 모델 반환
     """
-    # [핵심] CrewAI(LiteLLM) 만족용으로 'openai/'를 붙여서 생성
-    # 실제 전송은 OpenRouterLLM 클래스가 알아서 떼고 보냄
-    return LLMFactory.get_llm("openai/mistralai/mistral-7b-instruct:free", api_key, temperature=0.7)
+    if model_name is None:
+        model_name = DEFAULT_MODEL
+    return LLMFactory.get_llm(model_name, api_key, temperature=0.7)
 
 
-def get_player_model(api_key=None):
+def get_player_model(model_name: str = None, api_key: str = None):
     """
-    플레이어/나레이터용: Meta Llama 3.3 70B Instruct (Free)
+    플레이어/나레이터용 모델 반환
     """
-    # 여기도 'openai/' 붙임
-    return LLMFactory.get_llm("openai/tngtech/deepseek-r1t2-chimera:free", api_key, temperature=0.7)
+    if model_name is None:
+        model_name = DEFAULT_MODEL
+    return LLMFactory.get_llm(model_name, api_key, temperature=0.7)
 
 
-def get_streaming_model(api_key=None):
+def get_streaming_model(model_name: str = None, api_key: str = None):
     """
     스트리밍용 모델 반환
     """
-    return LLMFactory.get_streaming_llm(api_key=api_key)
+    return LLMFactory.get_streaming_llm(model_name=model_name, api_key=api_key)

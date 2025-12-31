@@ -151,16 +151,105 @@
                 const [connections, setConnections] = useState([ { id: 'c1', source: 'start', target: 'scene-1' } ]);
                 const [selectedNodeId, setSelectedNodeId] = useState(null);
                 const [globalNpcs, setGlobalNpcs] = useState([]);
+
+                // 모델 제공사 및 버전 정보
+                const MODEL_PROVIDERS = {
+                    'google': {
+                        name: 'Google',
+                        icon: '🔵',
+                        models: [
+                            { id: 'openai/google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', context: '1M', input: '$0.10/M', output: '$0.40/M' },
+                            { id: 'openai/google/gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', context: '1M', input: '$0.075/M', output: '$0.30/M' },
+                            { id: 'openai/google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', context: '1M', input: '$0.15/M', output: '$0.60/M' },
+                            { id: 'openai/google/gemini-3-flash-preview', name: 'Gemini 3 Flash (Preview)', context: '1M', input: '$0.15/M', output: '$0.60/M' },
+                            { id: 'openai/google/gemini-3-pro-preview', name: 'Gemini 3 Pro (Preview)', context: '1M', input: '$1.25/M', output: '$10/M' },
+                        ]
+                    },
+                    'anthropic': {
+                        name: 'Anthropic',
+                        icon: '🟠',
+                        models: [
+                            { id: 'openai/anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', context: '200K', input: '$0.80/M', output: '$4/M' },
+                            { id: 'openai/anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', context: '200K', input: '$3/M', output: '$15/M' },
+                            { id: 'openai/anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', context: '200K', input: '$3/M', output: '$15/M' },
+                            { id: 'openai/anthropic/claude-haiku-4.5', name: 'Claude Haiku 4.5', context: '200K', input: '$0.80/M', output: '$4/M' },
+                            { id: 'openai/anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5', context: '200K', input: '$3/M', output: '$15/M' },
+                            { id: 'openai/anthropic/claude-opus-4.5', name: 'Claude Opus 4.5', context: '200K', input: '$15/M', output: '$75/M' },
+                        ]
+                    },
+                    'openai': {
+                        name: 'OpenAI',
+                        icon: '🟢',
+                        models: [
+                            { id: 'openai/openai/gpt-4o-mini', name: 'GPT-4o Mini', context: '128K', input: '$0.15/M', output: '$0.60/M' },
+                            { id: 'openai/openai/gpt-4o', name: 'GPT-4o', context: '128K', input: '$2.50/M', output: '$10/M' },
+                            { id: 'openai/openai/gpt-5-mini', name: 'GPT-5 Mini', context: '1M', input: '$1.10/M', output: '$4.40/M' },
+                            { id: 'openai/openai/gpt-5.2', name: 'GPT-5.2', context: '1M', input: '$2/M', output: '$8/M' },
+                        ]
+                    },
+                    'deepseek': {
+                        name: 'DeepSeek',
+                        icon: '🔮',
+                        models: [
+                            { id: 'openai/tngtech/deepseek-r1t2-chimera:free', name: 'R1 Chimera (Free)', context: '164K', input: 'Free', output: 'Free', free: true },
+                            { id: 'openai/deepseek/deepseek-chat-v3-0324', name: 'DeepSeek Chat V3', context: '128K', input: '$0.14/M', output: '$0.28/M' },
+                            { id: 'openai/deepseek/deepseek-v3.2', name: 'DeepSeek V3.2', context: '128K', input: '$0.14/M', output: '$0.28/M' },
+                        ]
+                    },
+                    'meta': {
+                        name: 'Meta Llama',
+                        icon: '🦙',
+                        models: [
+                            { id: 'openai/meta-llama/llama-3.1-8b-instruct', name: 'Llama 3.1 8B', context: '128K', input: '$0.02/M', output: '$0.05/M' },
+                            { id: 'openai/meta-llama/llama-3.1-405b-instruct:free', name: 'Llama 3.1 405B (Free)', context: '128K', input: 'Free', output: 'Free', free: true },
+                            { id: 'openai/meta-llama/llama-3.1-405b-instruct', name: 'Llama 3.1 405B', context: '128K', input: '$0.80/M', output: '$0.80/M' },
+                            { id: 'openai/meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B (Free)', context: '128K', input: 'Free', output: 'Free', free: true },
+                            { id: 'openai/meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', context: '128K', input: '$0.10/M', output: '$0.25/M' },
+                        ]
+                    },
+                    'xai': {
+                        name: 'xAI (Grok)',
+                        icon: '⚡',
+                        models: [
+                            { id: 'openai/x-ai/grok-code-fast-1', name: 'Grok Code Fast 1', context: '128K', input: '$0.15/M', output: '$0.60/M' },
+                            { id: 'openai/x-ai/grok-4-fast', name: 'Grok 4 Fast', context: '256K', input: '$2/M', output: '$10/M' },
+                            { id: 'openai/x-ai/grok-4.1-fast', name: 'Grok 4.1 Fast', context: '1M', input: '$3/M', output: '$15/M' },
+                        ]
+                    },
+                    'mistral': {
+                        name: 'Mistral AI',
+                        icon: '🌀',
+                        models: [
+                            { id: 'openai/mistralai/devstral-2512:free', name: 'Devstral 2512 (Free)', context: '128K', input: 'Free', output: 'Free', free: true },
+                        ]
+                    },
+                    'xiaomi': {
+                        name: 'Xiaomi',
+                        icon: '📱',
+                        models: [
+                            { id: 'openai/xiaomi/mimo-v2-flash:free', name: 'MiMo V2 Flash (Free)', context: '128K', input: 'Free', output: 'Free', free: true },
+                        ]
+                    },
+                };
+
+                const [selectedProvider, setSelectedProvider] = useState('deepseek');
                 const [selectedModel, setSelectedModel] = useState('openai/tngtech/deepseek-r1t2-chimera:free');
 
-                const AVAILABLE_MODELS = [
-                    { id: 'openai/tngtech/deepseek-r1t2-chimera:free', name: 'DeepSeek R1 Chimera (Free)', desc: '무료, 빠름' },
-                    { id: 'openai/mistralai/mistral-7b-instruct:free', name: 'Mistral 7B (Free)', desc: '무료, 안정적' },
-                    { id: 'openai/google/gemma-2-9b-it:free', name: 'Gemma 2 9B (Free)', desc: '무료, 균형' },
-                    { id: 'openai/meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B (Free)', desc: '무료, 고품질' },
-                    { id: 'openai/deepseek/deepseek-chat', name: 'DeepSeek Chat (Paid)', desc: '유료, 최고 품질' },
-                    { id: 'openai/anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet (Paid)', desc: '유료, 프리미엄' },
-                ];
+                // 제공사 변경 시 첫 번째 모델로 자동 선택
+                const handleProviderChange = (provider) => {
+                    setSelectedProvider(provider);
+                    const models = MODEL_PROVIDERS[provider]?.models;
+                    if (models && models.length > 0) {
+                        setSelectedModel(models[0].id);
+                    }
+                };
+
+                // 현재 선택된 모델 정보
+                const getSelectedModelInfo = () => {
+                    const provider = MODEL_PROVIDERS[selectedProvider];
+                    if (!provider) return null;
+                    return provider.models.find(m => m.id === selectedModel);
+                };
 
                 const [npcModalOpen, setNpcModalOpen] = useState(false);
                 const [resultModal, setResultModal] = useState({ open: false, type: 'info', title: '', message: '' });
@@ -313,17 +402,28 @@
 
                                 <div className="pt-3 border-t border-gray-800">
                                     <label className="text-xs text-gray-400 block mb-2">🤖 AI 모델 선택</label>
-                                    <select
-                                        value={selectedModel}
-                                        onChange={(e) => setSelectedModel(e.target.value)}
-                                        className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-sm text-white cursor-pointer hover:border-gray-600 focus:border-blue-500 focus:outline-none"
-                                    >
-                                        {AVAILABLE_MODELS.map(m => (
-                                            <option key={m.id} value={m.id}>{m.name}</option>
-                                        ))}
-                                    </select>
+                                    <div className="flex flex-col gap-2">
+                                        <select
+                                            value={selectedProvider}
+                                            onChange={(e) => handleProviderChange(e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-sm text-white cursor-pointer hover:border-gray-600 focus:border-blue-500 focus:outline-none"
+                                        >
+                                            {Object.entries(MODEL_PROVIDERS).map(([key, provider]) => (
+                                                <option key={key} value={key}>{provider.name}</option>
+                                            ))}
+                                        </select>
+                                        <select
+                                            value={selectedModel}
+                                            onChange={(e) => setSelectedModel(e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-sm text-white cursor-pointer hover:border-gray-600 focus:border-blue-500 focus:outline-none"
+                                        >
+                                            {MODEL_PROVIDERS[selectedProvider]?.models.map(m => (
+                                                <option key={m.id} value={m.id}>{m.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                     <p className="text-xs text-gray-500 mt-1.5">
-                                        {AVAILABLE_MODELS.find(m => m.id === selectedModel)?.desc || ''}
+                                        {getSelectedModelInfo()?.context} | 입력: {getSelectedModelInfo()?.input} | 출력: {getSelectedModelInfo()?.output}
                                     </p>
                                 </div>
                             </div>
