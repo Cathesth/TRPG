@@ -95,8 +95,11 @@ def parse_react_flow(react_flow_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleton: Dict, api_key: str) -> Dict:
+def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleton: Dict, api_key: str, model_name: str = None) -> Dict:
     try:
+        # 모델 선택
+        use_model = model_name if model_name else DEFAULT_MODEL
+
         targets = info['connected_to']
         target_infos = []
         for idx, t_id in enumerate(targets):
@@ -171,7 +174,7 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
         {output_format}
         """
 
-        llm = LLMFactory.get_llm(api_key=api_key, model_name=DEFAULT_MODEL)
+        llm = LLMFactory.get_llm(api_key=api_key, model_name=use_model)
         response = llm.invoke(prompt).content
         scene_data = parse_json_garbage(response)
 
@@ -396,7 +399,7 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
         logger.info(f"Generating {len(skeleton)} scenes...")
         with ThreadPoolExecutor(max_workers=5) as executor:
             future_to_node = {
-                executor.submit(_generate_single_scene, nid, info, setting_data, skeleton, api_key): nid
+                executor.submit(_generate_single_scene, nid, info, setting_data, skeleton, api_key, use_model): nid
                 for nid, info in skeleton.items()
             }
             for future in as_completed(future_to_node):
