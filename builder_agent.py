@@ -414,24 +414,46 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
 
         if not skeleton: return {"title": "Empty", "scenes": [], "endings": []}
 
+        # 1. 사용자의 의도(장르, 설정 등) 추출
+        user_prompt = ""
+        if start_node_data:
+            # Start 노드의 제목과 설명을 합쳐서 유저의 요구사항으로 간주
+            user_prompt = f"Title: {start_node_data.get('title', '')}\nDescription: {start_node_data.get('description', '')}"
+
+        # 만약 내용이 없으면 기본값
+        if not user_prompt.strip() or user_prompt.strip() == "Title:\nDescription:":
+            user_prompt = "Genre: General Fantasy"
+
         llm = LLMFactory.get_llm(api_key=api_key, model_name=use_model)
         titles = [s['title'] for s in skeleton.values()]
 
-        # [설정 생성 프롬프트 강화]
+        # 2. 프롬프트에 user_prompt 추가 (강력하게 반영하도록 지시)
         setting_prompt = f"""
-        [TASK] Create TRPG setting for: {', '.join(titles)}
-        [LANGUAGE] **KOREAN ONLY**
-        [OUTPUT JSON] {{ 
-            "title": "Creative Title (Korean)", 
-            "genre": "Genre", 
-            "background_story": "Detailed World Setting (Korean, 3 sentences+)", 
-            "prologue": "Opening Scene Description (Korean)", 
-            "variables": [
-                {{ "name": "HP", "initial_value": 100 }},
-                {{ "name": "SANITY", "initial_value": 100 }}
-            ] 
-        }}
-        """
+            [TASK] Create a TRPG world setting.
+            
+            [USER REQUEST - MUST FOLLOW]
+            {user_prompt}
+            
+            [SCENE TITLES FOR REFERENCE]
+            {', '.join(titles)}
+            
+            [RULES]
+            1. The genre and background_story MUST match what the user requested above.
+            2. Do NOT ignore or change the user's specified genre/theme.
+            3. All text must be in Korean.
+            
+            [OUTPUT JSON]
+            {{
+                "title": "창의적인 시나리오 제목",
+                "genre": "사용자가 요청한 장르",
+                "background_story": "세계관 설명 (3문장 이상)",
+                "prologue": "프롤로그 장면 묘사",
+                "variables": [
+                    {{ "name": "HP", "initial_value": 100 }},
+                    {{ "name": "SANITY", "initial_value": 100 }}
+                ]
+            }}
+            """
         try:
             setting_res = llm.invoke(setting_prompt).content
             setting_data = parse_json_garbage(setting_res)
