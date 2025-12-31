@@ -284,7 +284,7 @@
                 <form id="game-form" class="max-w-4xl mx-auto flex gap-2">
                     <input type="text" name="action" autofocus autocomplete="off"
                            class="flex-1 bg-gray-800 border border-gray-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-gray-500"
-                           placeholder="무엇을 하시겠습니까? (예: 1번 선택, 문을 연다, 시작...)">
+                           placeholder="무엇을 하시겠습니까? (예: 문을 연다, 주변을 살핀다, 시작...)">
 
                     <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-bold transition-colors">
                         <i data-lucide="send"></i>
@@ -378,7 +378,7 @@
 
         if (input) {
             input.disabled = false;
-            input.placeholder = "무엇을 하시겠습니까? (예: 1번 선택, 문을 연다, 시작...)";
+            input.placeholder = "무엇을 하시겠습니까? (예: 문을 연다, 주변을 살핀다, 시작...)";
             input.classList.remove('opacity-50', 'cursor-not-allowed');
         }
         if (submitBtn) {
@@ -565,6 +565,9 @@
         </div>`;
         loadingIndicator.insertAdjacentHTML('beforebegin', playerMsgHtml);
 
+        // 입력창 즉시 비우기
+        input.value = '';
+
         // GM 응답 컨테이너 생성
         const gmContainer = document.createElement('div');
         gmContainer.className = 'flex gap-4 fade-in mb-4';
@@ -587,6 +590,9 @@
         loadingIndicator.classList.add('flex');
 
         lucide.createIcons(); // 아이콘 렌더링
+
+        // 로딩 인디케이터 표시 후 자동 스크롤
+        scrollToBottom();
 
         try {
             const formData = new FormData();
@@ -693,6 +699,17 @@
 
             chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
             saveChatLog();
+        }
+    }
+
+    // 채팅 로그 자동 스크롤 함수
+    function scrollToBottom(smooth = true) {
+        const chatLog = document.getElementById('chat-log');
+        if (chatLog) {
+            chatLog.scrollTo({
+                top: chatLog.scrollHeight,
+                behavior: smooth ? 'smooth' : 'auto'
+            });
         }
     }
 
@@ -819,6 +836,46 @@
         }
     }
 
+    // 시나리오 삭제 함수
+    async function deleteScenario(filename, btnElement) {
+        if (!confirm(`"${filename}" 시나리오를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/delete_scenario', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: filename })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // 삭제된 카드 애니메이션 후 제거
+                const card = btnElement.closest('.bg-gray-800');
+                if (card) {
+                    card.style.transition = 'opacity 0.3s, transform 0.3s';
+                    card.style.opacity = '0';
+                    card.style.transform = 'scale(0.9)';
+                    setTimeout(() => {
+                        card.remove();
+                        // 남은 시나리오가 없으면 메시지 표시
+                        const container = document.getElementById('scenario-list-container');
+                        if (container && container.children.length === 0) {
+                            container.innerHTML = '<div class="col-span-1 md:col-span-2 text-center text-gray-500 py-8">저장된 시나리오가 없습니다.</div>';
+                        }
+                    }, 300);
+                }
+            } else {
+                alert('삭제 실패: ' + (result.error || '알 수 없는 오류'));
+            }
+        } catch (error) {
+            console.error('Delete error:', error);
+            alert('삭제 중 오류가 발생했습니다.');
+        }
+    }
+
     let isInternalNavigation = false;
     document.querySelectorAll('a[href^="/"]').forEach(link => {
         link.addEventListener('click', () => isInternalNavigation = true);
@@ -837,3 +894,4 @@
 
 </body>
 </html>
+

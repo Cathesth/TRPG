@@ -221,9 +221,16 @@ def list_scenarios():
             pass
 
         html += f"""
-        <div class="bg-gray-800 p-5 rounded-lg border border-gray-700 hover:border-indigo-500 transition-colors flex flex-col justify-between h-full">
+        <div class="bg-gray-800 p-5 rounded-lg border border-gray-700 hover:border-indigo-500 transition-colors flex flex-col justify-between h-full group">
             <div>
-                <h4 class="font-bold text-white text-lg mb-2">{title}</h4>
+                <div class="flex justify-between items-start mb-2">
+                    <h4 class="font-bold text-white text-lg">{title}</h4>
+                    <button onclick="deleteScenario('{f}', this)" 
+                            class="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 p-1 rounded hover:bg-red-900/30 transition-all"
+                            title="삭제">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
                 <div class="text-xs text-gray-500 mb-2">{f}</div>
                 <p class="text-sm text-gray-400 mb-4 line-clamp-2">{desc}</p>
             </div>
@@ -235,6 +242,31 @@ def list_scenarios():
         """
     html += '<script>lucide.createIcons();</script>'
     return html
+
+
+@app.route('/api/delete_scenario', methods=['POST'])
+def delete_scenario():
+    """시나리오 파일 삭제"""
+    data = request.get_json(force=True, silent=True) or {}
+    filename = data.get('filename')
+
+    if not filename:
+        return jsonify({"success": False, "error": "파일명이 없습니다."}), 400
+
+    # 보안: 경로 조작 방지
+    if '..' in filename or '/' in filename or '\\' in filename:
+        return jsonify({"success": False, "error": "잘못된 파일명입니다."}), 400
+
+    file_path = os.path.join(DB_FOLDER, filename)
+
+    if not os.path.exists(file_path):
+        return jsonify({"success": False, "error": "파일을 찾을 수 없습니다."}), 404
+
+    try:
+        os.remove(file_path)
+        return jsonify({"success": True, "message": f"'{filename}' 삭제 완료"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/api/load_scenario', methods=['POST'])
@@ -339,7 +371,7 @@ def init_game():
         # [안전장치 2] 딕셔너리가 아닌 경우 방어
         if not isinstance(scenario_json, dict):
             logging.error(f"❌ Critical: scenario_json is {type(scenario_json)}, expected dict.")
-            return jsonify({"error": "생성된 데이터가 딕셔너리가 아닙니다."}), 500
+            return jsonify({"error": "생성된 데이터가 딕셔 dictionaries가 아닙니다."}), 500
 
         title = scenario_json.get('title', 'Untitled_Scenario')
         safe_title = "".join([c for c in title if c.isalnum() or c in (' ', '-', '_')]).strip().replace(' ', '_')
