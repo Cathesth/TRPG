@@ -1,0 +1,35 @@
+name: Update Directory Tree
+
+on:
+  push:
+    branches:
+      - master  # 니 메인 브랜치 이름 확인해서 수정해라
+
+jobs:
+  update-tree:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # README 수정하고 커밋하려면 권한 필수임
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install tree
+        run: sudo apt-get install -y tree
+
+      - name: Generate Directory Tree and Update README
+        run: |
+          # 1. tree 생성 (node_modules나 .git 같은 쓰레기는 제외)
+          TREE_OUTPUT=$(tree -I "node_modules|.git|.github" -F)
+          
+          # 2. README 파일 읽어서 주석 사이 내용 교체
+          # 파이썬이나 노드 깔기 귀찮으니 그냥 쉘 스크립트로 조진다
+          perl -0777 -i -pe "s/().*()/\${1}\n\n\`\`\`text\n${TREE_OUTPUT}\n\`\`\`\n\n\${2}/s" README.md
+
+      - name: Commit and Push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --quiet && git diff --staged --quiet || (git commit -m "docs: update directory tree" && git push)
