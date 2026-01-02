@@ -92,6 +92,43 @@
         .sidebar.expanded .user-chevron {
             opacity: 1;
         }
+
+        /* 입력창 및 버튼 비활성화 스타일 */
+        input:disabled, button:disabled {
+            cursor: not-allowed !important;
+            opacity: 0.5;
+        }
+
+        input:disabled {
+            background-color: #1f2937 !important;
+            border-color: #374151 !important;
+            color: #6b7280 !important;
+        }
+
+        button:disabled {
+            background-color: #374151 !important;
+            border-color: #4b5563 !important;
+        }
+
+        /* 읽기 전용 입력창 스타일 (GM 응답 중) */
+        input:read-only:not(:disabled) {
+            background-color: #1f2937;
+            border-color: #fbbf24;
+            cursor: wait;
+            opacity: 0.7;
+        }
+
+        /* 활성 상태 입력창 */
+        input:not(:disabled):not(:read-only) {
+            background-color: #1f2937;
+            border-color: #4b5563;
+            transition: all 0.2s ease;
+        }
+
+        input:not(:disabled):not(:read-only):focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 1px #6366f1;
+        }
     </style>
 
     <script>
@@ -520,6 +557,21 @@
 
     function submitGameAction(actionText) {
         if (isGameEnded) return;
+
+        // "시작" 명령이면 게임 시작 버튼 비활성화
+        if (actionText.toLowerCase() === '시작' || actionText.toLowerCase() === 'start' || actionText.toLowerCase() === '게임시작') {
+            // init-result 영역의 게임 시작 버튼 찾아서 비활성화
+            const startButtons = document.querySelectorAll('button[onclick*="submitGameAction"]');
+            startButtons.forEach(btn => {
+                if (btn.textContent.includes('게임 시작')) {
+                    btn.disabled = true;
+                    btn.classList.add('opacity-50', 'cursor-not-allowed');
+                    btn.classList.remove('hover:bg-indigo-500', 'hover:scale-[1.02]');
+                    btn.innerHTML = '<i data-lucide="check" class="w-5 h-5"></i> 게임 시작됨';
+                    lucide.createIcons();
+                }
+            });
+        }
 
         // 스트리밍 함수 직접 호출
         submitWithStreaming(actionText);
