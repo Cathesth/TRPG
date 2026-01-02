@@ -38,10 +38,14 @@ def view_scenes():
                                title="시나리오 없음",
                                scenario={"endings": [], "prologue_text": ""},
                                scenes=[],
+                               current_scene_id=None,
                                mermaid_code="graph TD\n    A[시나리오를 먼저 로드하세요]")
 
     scenario = game_state.state['scenario']
     title = scenario.get('title', 'Untitled')
+
+    # 현재 씬 ID 가져오기
+    current_scene_id = game_state.state.get('current_scene_id', None)
 
     # Mermaid 서비스로 차트 생성
     chart_data = MermaidService.generate_chart(scenario)
@@ -54,5 +58,5 @@ def view_scenes():
                            ending_incoming_conditions=chart_data['ending_incoming_conditions'],
                            ending_names=chart_data['ending_names'],
                            scene_names=chart_data['scene_names'],
+                           current_scene_id=current_scene_id,
                            mermaid_code=chart_data['mermaid_code'])
-
