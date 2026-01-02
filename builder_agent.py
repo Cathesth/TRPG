@@ -116,12 +116,39 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
         genre = setting_data.get('genre', 'General')
         bg_story = setting_data.get('background_story', 'None')
 
+        # ===== [Narrative Continuity 규칙] =====
+        narrative_continuity_rules = """
+        [NARRATIVE CONTINUITY - 인과관계 체인 규칙]
+        이 규칙을 반드시 엄격히 준수하라:
+
+        1. **인과관계 확인 (Causal Link)**
+           - 이 씬의 시작은 이전 씬(Came From)에서 플레이어가 선택한 '트리거(Trigger)' 행동이 완료된 직후의 상황이어야 한다.
+           - 예: 이전 씬에서 "문을 부수고 들어간다"를 선택했다면, 이 씬의 첫 문장은 문이 부서진 잔해나 그 소동으로 인한 주변의 반응으로 시작해야 함.
+           - **첫 문단에 반드시 '이전 선택이 초래한 결과'를 배치하라.**
+
+        2. **상태 및 환경의 전이 (Context Carry-over)**
+           - 이전 씬에서 발생한 물리적 변화(불이 남, 물건이 파괴됨, NPC가 부상당함 등)는 이 씬의 배경 묘사에 지속적으로 포함되어야 한다.
+           - 일회성 묘사가 아니라, 해당 사건이 현재 전개에 어떤 영향을 주는지 명시하라.
+
+        3. **선택지의 무게감 (Weight of Choice)**
+           - 선택지는 단순히 씬을 이동시키는 버튼이 아니다.
+           - 각 선택지는 플레이어의 스탯 변화뿐만 아니라, **'서사적 태그'**를 남겨야 한다.
+           - 다음 씬은 "플레이어가 [어떤 선택]을 통해 이 씬에 도달했음"을 인지하고 그에 맞는 톤앤매너를 유지해야 한다.
+
+        4. **논리적 일관성 체크 (Consistency Check)**
+           - 이전 씬에서 NPC가 죽었다면 이 씬에서 그 NPC가 다시 등장해서는 안 된다.
+           - 모든 씬은 전체 세계관 설명(Background)과 이전 선택지의 결과라는 두 가지 축을 중심으로 논리적으로 구성되어야 한다.
+
+        [핵심 지시]
+        단순한 묘사가 아니라, '이전 선택이 초래한 결과'를 첫 문단에 배치하고, 그 결과가 현재 씬의 분위기를 어떻게 지배하고 있는지 서술하라.
+        """
+
         # [수정] 엔딩과 일반 씬의 프롬프트 및 출력 포맷 분리
         if is_ending:
             output_format = """
             {
                 "title": "Creative Ending Title (Korean)",
-                "description": "Rich ending description in Korean...",
+                "description": "Rich ending description in Korean. 첫 문단은 반드시 이전 씬에서의 선택 결과로 시작해야 함.",
                 "condition": "The cause of this ending based on 'Came From' context (e.g., '전투 패배', '비밀 발견', '탈출 성공', '시간 초과') - Korean"
             }
             """
@@ -130,14 +157,17 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
             output_format = """
             {
                 "title": "Creative Title in Korean",
-                "description": "Rich scene description in Korean...",
+                "description": "Rich scene description in Korean. 첫 문단은 반드시 이전 씬에서의 선택 결과로 시작해야 함. 이 결과가 현재 씬의 분위기를 어떻게 지배하는지 서술.",
                 "transitions": [
                     {
-                        "trigger": "Action description in Korean",
+                        "trigger": "Action description in Korean (이 선택이 다음 씬에 어떤 결과를 초래할지 암시)",
                         "conditions": [
                             { "type": "stat_check", "stat": "STR", "value": 10 }
                         ],
-                        "effects": []
+                        "effects": [
+                            { "type": "change_stat", "stat": "HP", "value": -10 }
+                        ],
+                        "narrative_tag": "이 선택의 서사적 의미 (예: '폭력적 해결', '은밀한 접근', '희생적 선택')"
                     }
                 ]
             }
@@ -146,6 +176,7 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
             [GAME MECHANICS]
             - Add conditions (Stat/Item check) to transitions.
             - Add effects (Get Item, Change Stat) to transitions.
+            - Add narrative_tag to each transition (서사적 태그: 이 선택이 플레이어 캐릭터에게 어떤 의미인지).
             """
 
         prompt = f"""
@@ -162,7 +193,9 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
         [SCENE INFO]
         - Current Title: "{info['title']}"
         - Type: {"Ending Scene" if is_ending else "Normal Scene"}
-        - **Came From**: "{source_context}" (IMPORTANT: Reflect this context in the description/condition)
+        - **Came From**: "{source_context}" (CRITICAL: 이 씬의 첫 문단은 이전 씬에서의 선택 결과를 반영해야 함)
+
+        {narrative_continuity_rules}
 
         [REQUIRED TRANSITIONS]
         Destinations:
@@ -246,6 +279,7 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
 def _validate_scenario(scenario_data: Dict, llm) -> Tuple[bool, str]:
     """
     [Validator Agent] 룰 베이스 + LLM 하이브리드 검수
+    - 인과관계 체인(Narrative Continuity) 검증 포함
     """
     logger.info("🔍 [Validator] Checking scenario...")
 
@@ -284,20 +318,27 @@ def _validate_scenario(scenario_data: Dict, llm) -> Tuple[bool, str]:
     if issues:
         return False, ", ".join(issues)
 
-    # 3. [LLM Base] 논리적 흐름 검사 (룰 베이스 통과 시에만)
+    # 3. [LLM Base] 논리적 흐름 + 인과관계 체인 검사 (룰 베이스 통과 시에만)
     prompt = f"""
-    [TASK] Validate TRPG Scenario Logic.
+    [TASK] Validate TRPG Scenario Logic and Narrative Continuity.
 
     Data:
     Title: {scenario_data.get('title')}
     Scene Count: {len(scenes)}
+    Ending Count: {len(endings)}
 
-    [CHECK]
-    1. Is the story consistent?
-    2. Are there any dead ends in normal scenes?
+    [CHECK - 인과관계 체인 규칙]
+    1. **Causal Link**: 각 씬의 시작이 이전 씬의 선택 결과를 반영하는가?
+    2. **Context Carry-over**: 이전 씬에서 발생한 물리적 변화가 다음 씬에 지속되는가?
+    3. **Consistency Check**: 죽은 NPC가 다시 등장하거나, 논리적 모순이 있는가?
+    4. **Dead Ends**: 일반 씬에서 막다른 길(연결 없음)이 있는가?
+    5. **Story Flow**: 전체적인 서사 흐름이 일관성 있는가?
 
     [OUTPUT JSON]
     {{ "is_valid": true, "critical_issues": "None" }}
+    
+    If issues found:
+    {{ "is_valid": false, "critical_issues": "씬 간 인과관계 부족, NPC 일관성 오류 등 구체적 문제점" }}
     """
     try:
         res = llm.invoke(prompt).content
