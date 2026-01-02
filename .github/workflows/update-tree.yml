@@ -5,11 +5,10 @@ on:
     branches:
       - master
     paths-ignore:
-      - 'README.md'  # README 수정으로 인한 트리거 방지 (이게 핵심임)
+      - 'README.md'  # README 수정으로 인한 재실행 방지
 
 jobs:
   update-tree:
-    # 봇이 커밋한 건 실행 안 되게 한 번 더 방어
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
@@ -18,18 +17,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install tree
         run: sudo apt-get install -y tree
 
-      - name: Update README with Tree
+      - name: Update README
         run: |
-          # 트리 생성 (불필요한 파일 제외)
           tree -I "node_modules|.git|.github|tree_output.txt" -F > tree_output.txt
 
           python3 -c '
           import re
-          import os
 
           with open("tree_output.txt", "r", encoding="utf-8") as f:
               tree_content = f.read()
@@ -40,18 +39,22 @@ jobs:
           start_tag = ""
           end_tag = ""
           
-          # 코드 블록 포함한 새로운 내용
-          new_content = f"{start_tag}\n\n```text\n{tree_content}```\n\n{end_tag}"
+          new_block = f"{start_tag}\n\n```text\n{tree_content}```\n\n{end_tag}"
           
-          # 파일에 태그가 있는지 확인하고 딱 한 번만 교체
+          # greedy matching으로 첫 시작태그부터 마지막 끝태그까지 통째로 교체
           if start_tag in readme and end_tag in readme:
-              # 가장 바깥쪽 태그 사이를 통째로 갈아끼움
+              # .*(greedy)를 써서 중간에 태그가 여러 개 있어도 맨 처음과 맨 끝을 잡아버림
               pattern = re.compile(rf"{start_tag}.*?{end_tag}", re.DOTALL)
-              updated_readme = pattern.sub(new_content, readme)
               
+              # 만약 이미 중복 태그가 많다면, 모든 매칭을 하나로 합치기 위해 sub 대신 직접 처리
+              parts = readme.split(start_tag)
+              prefix = parts[0]
+              suffix = readme.split(end_tag)[-1]
+              updated_readme = f"{prefix}{new_block}{suffix}"
+
               with open("README.md", "w", encoding="utf-8") as f:
                   f.write(updated_readme)
-              print("README updated successfully.")
+              print("README cleaned and updated.")
           else:
               print("Tags not found!")
           '
@@ -61,8 +64,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add README.md
-          # 변경사항이 있을 때만 커밋
           if ! git diff --quiet README.md; then
             git commit -m "docs: auto update directory tree [skip ci]"
-            git push
+            git push origin ajh
           fi
