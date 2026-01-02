@@ -5,7 +5,8 @@ import os
 import json
 import logging
 import time
-from flask import Blueprint, request, jsonify
+import threading
+from flask import Blueprint, request, jsonify, Response, stream_with_context
 
 from config import DB_FOLDER
 from core.state import game_state
@@ -19,6 +20,68 @@ from game_engine import create_game_graph
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+# --- 빌드 진행률 추적 ---
+build_progress = {
+    "status": "idle",  # idle, building, completed, error
+    "step": "",
+    "detail": "",
+    "progress": 0,
+    "total_scenes": 0,
+    "completed_scenes": 0,
+    "current_phase": ""
+}
+build_lock = threading.Lock()
+
+def update_build_progress(status=None, step=None, detail=None, progress=None,
+                          total_scenes=None, completed_scenes=None, current_phase=None):
+    """빌드 진행률 업데이트"""
+    global build_progress
+    with build_lock:
+        if status is not None:
+            build_progress["status"] = status
+        if step is not None:
+            build_progress["step"] = step
+        if detail is not None:
+            build_progress["detail"] = detail
+        if progress is not None:
+            build_progress["progress"] = progress
+        if total_scenes is not None:
+            build_progress["total_scenes"] = total_scenes
+        if completed_scenes is not None:
+            build_progress["completed_scenes"] = completed_scenes
+        if current_phase is not None:
+            build_progress["current_phase"] = current_phase
+
+
+@api_bp.route('/build_progress')
+def get_build_progress_sse():
+    """SSE 엔드포인트 - 빌드 진행률 실시간 스트리밍"""
+    def generate():
+        last_data = None
+        while True:
+            with build_lock:
+                current_data = json.dumps(build_progress, ensure_ascii=False)
+
+            if current_data != last_data:
+                yield f"data: {current_data}\n\n"
+                last_data = current_data
+
+                # 완료 또는 에러 상태면 종료
+                if build_progress["status"] in ["completed", "error"]:
+                    break
+
+            time.sleep(0.3)  # 300ms 간격으로 체크
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        }
+    )
 
 
 # --- 상태 관리 ---
@@ -153,9 +216,23 @@ def init_game():
 
     selected_model = react_flow_data.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
 
+    # 진행률 초기화
+    update_build_progress(
+        status="building",
+        step="0/5",
+        detail="빌드 준비 중...",
+        progress=0,
+        total_scenes=0,
+        completed_scenes=0,
+        current_phase="initializing"
+    )
+
     try:
         # 지연 import로 순환 참조 방지
-        from builder_agent import generate_scenario_from_graph
+        from builder_agent import generate_scenario_from_graph, set_progress_callback
+
+        # 콜백 연결
+        set_progress_callback(update_build_progress)
 
         logging.info(f"Generating scenario from Graph... (Model: {selected_model})")
         scenario_json = generate_scenario_from_graph(api_key, react_flow_data, model_name=selected_model)
@@ -167,14 +244,17 @@ def init_game():
                 scenario_json = json.loads(scenario_json)
             except Exception as parse_error:
                 logger.error(f"Failed to parse scenario_json: {parse_error}")
+                update_build_progress(status="error", detail="생성된 데이터 형식이 잘못되었습니다.")
                 return jsonify({"error": "생성된 데이터 형식이 잘못되었습니다."}), 500
 
         if not isinstance(scenario_json, dict):
+            update_build_progress(status="error", detail="생성된 데이터가 딕셔너리가 아닙니다.")
             return jsonify({"error": "생성된 데이터가 딕셔너리가 아닙니다."}), 500
 
         # 저장
         filename, error = ScenarioService.save_scenario(scenario_json)
         if error:
+            update_build_progress(status="error", detail=f"저장 오류: {error}")
             return jsonify({"error": f"저장 오류: {error}"}), 500
 
         title = scenario_json.get('title', 'Untitled_Scenario')
@@ -206,6 +286,15 @@ def init_game():
         }
         game_state.game_graph = create_game_graph()
 
+        # 완료 상태 업데이트
+        update_build_progress(
+            status="completed",
+            step="완료",
+            detail=f"'{title}' 생성 및 저장 완료!",
+            progress=100,
+            current_phase="done"
+        )
+
         return jsonify({
             "status": "success",
             "message": f"'{title}' 생성 완료! 플레이 탭으로 이동하세요.",
@@ -214,6 +303,7 @@ def init_game():
 
     except Exception as e:
         logger.error(f"Error in init_game: {e}", exc_info=True)
+        update_build_progress(status="error", detail=f"생성 오류: {str(e)[:100]}")
         return jsonify({"error": f"생성 오류: {str(e)}"}), 500
 
 

@@ -141,26 +141,109 @@
                 );
             };
 
-            const LoadingOverlay = ({ isOpen, progress, remainingTime }) => {
+            const LoadingOverlay = ({ isOpen, progress, buildStatus }) => {
                 if (!isOpen) return null;
+
+                // 단계별 아이콘 및 색상
+                const phaseConfig = {
+                    'initializing': { icon: 'settings', color: 'gray', label: '준비 중' },
+                    'parsing': { icon: 'settings', color: 'blue', label: '그래프 분석' },
+                    'worldbuilding': { icon: 'users', color: 'purple', label: '세계관 생성' },
+                    'scene_generation': { icon: 'play', color: 'indigo', label: '씬 생성' },
+                    'validation': { icon: 'check-circle', color: 'yellow', label: '검증' },
+                    'refining': { icon: 'settings', color: 'orange', label: '품질 개선' },
+                    'finalizing': { icon: 'check-circle', color: 'green', label: '마무리' },
+                    'done': { icon: 'check-circle', color: 'green', label: '완료' },
+                    'error': { icon: 'alert-triangle', color: 'red', label: '오류' }
+                };
+
+                const currentPhase = phaseConfig[buildStatus.current_phase] || phaseConfig['initializing'];
+                const isError = buildStatus.status === 'error';
+
                 return (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in cursor-wait">
-                        <div className="w-full max-w-lg text-center p-8 rounded-2xl bg-gray-900/50 border border-white/10 shadow-2xl relative overflow-hidden">
-                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/20 blur-[100px] rounded-full pointer-events-none"></div>
+                        <div className="w-full max-w-xl text-center p-8 rounded-2xl bg-gray-900/50 border border-white/10 shadow-2xl relative overflow-hidden">
+                            <div className={`absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 ${isError ? 'bg-red-600/20' : 'bg-blue-600/20'} blur-[100px] rounded-full pointer-events-none`}></div>
                             <div className="relative z-10">
-                                <div className="mb-6 inline-block p-4 rounded-full bg-blue-500/10 border border-blue-500/20">
-                                    <Icon name="loader-2" size={48} className="animate-spin text-blue-400" />
+                                {/* 아이콘 */}
+                                <div className={`mb-6 inline-block p-4 rounded-full ${isError ? 'bg-red-500/10 border-red-500/20' : 'bg-blue-500/10 border-blue-500/20'} border`}>
+                                    <Icon name={isError ? 'alert-triangle' : 'loader-2'} size={48} className={`${isError ? 'text-red-400' : 'animate-spin text-blue-400'}`} />
                                 </div>
-                                <h3 className="text-2xl font-bold text-white mb-2">시나리오 생성 중...</h3>
-                                <p className="text-gray-400 text-sm mb-8">AI 작가가 세계관을 창조하고 있습니다.<br/>노드가 많을수록 시간이 더 걸릴 수 있습니다.</p>
-                                <div className="w-full bg-gray-800 rounded-full h-3 mb-3 overflow-hidden border border-white/5 relative">
-                                    <div className="bg-gradient-to-r from-blue-600 to-indigo-500 h-full transition-all duration-300 ease-out relative" style={{ width: `${progress}%` }}>
-                                        <div className="progress-shine"></div>
+
+                                {/* 제목 */}
+                                <h3 className="text-2xl font-bold text-white mb-2">
+                                    {isError ? '생성 오류 발생' : '시나리오 생성 중...'}
+                                </h3>
+
+                                {/* 현재 단계 표시 */}
+                                <div className="flex items-center justify-center gap-2 mb-4">
+                                    <span className={`px-3 py-1 rounded-full text-xs font-bold bg-${currentPhase.color}-500/20 text-${currentPhase.color}-400 border border-${currentPhase.color}-500/30`}>
+                                        {buildStatus.step || '0/5'}
+                                    </span>
+                                    <span className="text-gray-300 font-medium">{currentPhase.label}</span>
+                                </div>
+
+                                {/* 상세 정보 */}
+                                <p className={`text-sm mb-6 ${isError ? 'text-red-300' : 'text-gray-400'}`}>
+                                    {buildStatus.detail || 'AI 작가가 세계관을 창조하고 있습니다...'}
+                                </p>
+
+                                {/* 씬 생성 진행률 (씬 생성 단계일 때만) */}
+                                {buildStatus.current_phase === 'scene_generation' && buildStatus.total_scenes > 0 && (
+                                    <div className="mb-4 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
+                                        <div className="flex justify-between text-xs text-gray-400 mb-2">
+                                            <span>씬 생성 진행률</span>
+                                            <span className="text-indigo-400 font-bold">{buildStatus.completed_scenes} / {buildStatus.total_scenes}</span>
+                                        </div>
+                                        <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                                            <div
+                                                className="bg-indigo-500 h-full transition-all duration-300"
+                                                style={{ width: `${(buildStatus.completed_scenes / buildStatus.total_scenes) * 100}%` }}
+                                            ></div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 메인 프로그레스 바 */}
+                                <div className="w-full bg-gray-800 rounded-full h-4 mb-3 overflow-hidden border border-white/5 relative">
+                                    <div
+                                        className={`h-full transition-all duration-500 ease-out relative ${isError ? 'bg-red-600' : 'bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500'}`}
+                                        style={{ width: `${progress}%` }}
+                                    >
+                                        {!isError && <div className="progress-shine"></div>}
                                     </div>
                                 </div>
+
+                                {/* 진행률 텍스트 */}
                                 <div className="flex justify-between text-xs font-mono text-gray-500 px-1">
-                                    <span className="text-blue-400 font-bold">{Math.round(progress)}% 완료</span>
-                                    <span>예상 소요 시간: 약 <span className="text-white font-bold">{Math.max(0, remainingTime)}</span>초</span>
+                                    <span className={`font-bold ${isError ? 'text-red-400' : 'text-blue-400'}`}>
+                                        {Math.round(progress)}% {isError ? '실패' : '완료'}
+                                    </span>
+                                    {buildStatus.total_scenes > 0 && (
+                                        <span>총 {buildStatus.total_scenes}개 씬</span>
+                                    )}
+                                </div>
+
+                                {/* 단계 인디케이터 */}
+                                <div className="mt-6 flex justify-center gap-2">
+                                    {['parsing', 'worldbuilding', 'scene_generation', 'validation', 'finalizing'].map((phase, idx) => {
+                                        const phaseOrder = ['parsing', 'worldbuilding', 'scene_generation', 'validation', 'finalizing', 'refining', 'done'];
+                                        const currentIdx = phaseOrder.indexOf(buildStatus.current_phase);
+                                        const thisIdx = phaseOrder.indexOf(phase);
+                                        const isActive = buildStatus.current_phase === phase;
+                                        const isCompleted = currentIdx > thisIdx;
+
+                                        return (
+                                            <div
+                                                key={phase}
+                                                className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                                                    isActive ? 'bg-blue-400 scale-150' :
+                                                    isCompleted ? 'bg-green-500' : 'bg-gray-600'
+                                                }`}
+                                                title={phaseConfig[phase]?.label}
+                                            ></div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
@@ -371,7 +454,15 @@
                 const [resultModal, setResultModal] = useState({ open: false, type: 'info', title: '', message: '', showPlayButton: false });
                 const [isLoading, setIsLoading] = useState(false);
                 const [progress, setProgress] = useState(0);
-                const [remainingTime, setRemainingTime] = useState(0);
+                const [buildStatus, setBuildStatus] = useState({
+                    status: 'idle',
+                    step: '0/5',
+                    detail: '',
+                    progress: 0,
+                    total_scenes: 0,
+                    completed_scenes: 0,
+                    current_phase: 'initializing'
+                });
 
                 // 자동 제목 기능
                 const [useAutoTitle, setUseAutoTitle] = useState(true);
@@ -465,32 +556,54 @@
                         return;
                     }
 
-                    const estimatedSecs = 10 + (nodes.length * 5);
-                    setRemainingTime(estimatedSecs);
+                    // 초기화
                     setProgress(0);
                     setIsLoading(true);
+                    setBuildStatus({
+                        status: 'building',
+                        step: '0/5',
+                        detail: '빌드 준비 중...',
+                        progress: 0,
+                        total_scenes: 0,
+                        completed_scenes: 0,
+                        current_phase: 'initializing'
+                    });
 
-                    const startTime = Date.now();
-                    timerRef.current = setInterval(() => {
-                        const elapsed = (Date.now() - startTime) / 1000;
-                        const newProgress = Math.min(90, (elapsed / estimatedSecs) * 100);
-                        const timeLeft = Math.max(0, Math.ceil(estimatedSecs - elapsed));
-                        setProgress(newProgress);
-                        setRemainingTime(timeLeft);
-                    }, 100);
+                    // SSE 연결로 진행률 실시간 수신
+                    const eventSource = new EventSource('/api/build_progress');
+
+                    eventSource.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            setBuildStatus(data);
+                            setProgress(data.progress || 0);
+
+                            // 완료 또는 에러 시 SSE 연결 종료
+                            if (data.status === 'completed' || data.status === 'error') {
+                                eventSource.close();
+                            }
+                        } catch (e) {
+                            console.error('SSE parse error:', e);
+                        }
+                    };
+
+                    eventSource.onerror = (error) => {
+                        console.error('SSE error:', error);
+                        eventSource.close();
+                    };
 
                     try {
                         const response = await fetch('/api/init_game', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            // [수정] edges로 변환하여 전송
                             body: JSON.stringify({ nodes, edges: connections, npcs: globalNpcs, model: selectedModel })
                         });
 
-                        clearInterval(timerRef.current);
+                        // SSE 연결 종료 (이미 종료되었을 수 있음)
+                        eventSource.close();
+
                         setProgress(100);
-                        setRemainingTime(0);
-                        await new Promise(r => setTimeout(r, 500));
+                        await new Promise(r => setTimeout(r, 300));
 
                         if (!response.ok) {
                             const errData = await response.json();
@@ -521,8 +634,9 @@
                         });
 
                     } catch (error) {
-                        clearInterval(timerRef.current);
+                        eventSource.close();
                         console.error(error);
+                        setBuildStatus(prev => ({ ...prev, status: 'error', detail: error.message }));
                         setResultModal({ open: true, type: 'error', title: '생성 실패', message: error.message });
                     } finally {
                         setIsLoading(false);
@@ -763,7 +877,7 @@
 
                 return (
                     <div className="flex h-screen bg-black text-white font-sans overflow-hidden no-select">
-                        <LoadingOverlay isOpen={isLoading} progress={progress} remainingTime={remainingTime} />
+                        <LoadingOverlay isOpen={isLoading} progress={progress} buildStatus={buildStatus} />
 
                         <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col z-20 shadow-xl">
                             <div className="p-4 border-b border-gray-800 flex justify-between items-center">

@@ -22,6 +22,24 @@ if not logger.handlers:
 
 DEFAULT_MODEL = "openai/tngtech/deepseek-r1t2-chimera:free"
 
+# --- [진행률 콜백 함수] ---
+_progress_callback = None
+
+def set_progress_callback(callback):
+    """진행률 업데이트 콜백 설정"""
+    global _progress_callback
+    _progress_callback = callback
+
+def _update_progress(status=None, step=None, detail=None, progress=None,
+                     total_scenes=None, completed_scenes=None, current_phase=None):
+    """진행률 업데이트 (콜백이 설정된 경우에만 호출)"""
+    if _progress_callback:
+        _progress_callback(
+            status=status, step=step, detail=detail, progress=progress,
+            total_scenes=total_scenes, completed_scenes=completed_scenes,
+            current_phase=current_phase
+        )
+
 
 def parse_react_flow(react_flow_data: Dict[str, Any]) -> Dict[str, Any]:
     logger.info("Parsing React Flow data...")
@@ -449,26 +467,50 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
     logger.info(f"📦 Using model: {use_model}")
 
     try:
+        # Phase 1: 그래프 파싱
+        _update_progress(
+            status="building",
+            current_phase="parsing",
+            step="1/5",
+            detail="노드 그래프 분석 중...",
+            progress=5
+        )
+
         parsed = parse_react_flow(react_flow_data)
         skeleton = parsed['skeleton']
         start_node_data = parsed.get('start_node_data')
+        total_scene_count = len(skeleton)
 
-        if not skeleton: return {"title": "Empty", "scenes": [], "endings": []}
+        _update_progress(
+            detail=f"총 {total_scene_count}개의 씬 감지됨",
+            progress=10,
+            total_scenes=total_scene_count,
+            completed_scenes=0
+        )
+
+        if not skeleton:
+            _update_progress(status="error", detail="씬이 없습니다")
+            return {"title": "Empty", "scenes": [], "endings": []}
 
         # 1. 사용자의 의도(장르, 설정 등) 추출
         user_prompt = ""
         if start_node_data:
-            # Start 노드의 제목과 설명을 합쳐서 유저의 요구사항으로 간주
             user_prompt = f"Title: {start_node_data.get('title', '')}\nDescription: {start_node_data.get('description', '')}"
 
-        # 만약 내용이 없으면 기본값
         if not user_prompt.strip() or user_prompt.strip() == "Title:\nDescription:":
             user_prompt = "Genre: General Fantasy"
+
+        # Phase 2: 세계관 생성
+        _update_progress(
+            current_phase="worldbuilding",
+            step="2/5",
+            detail="세계관 및 프롤로그 생성 중...",
+            progress=15
+        )
 
         llm = LLMFactory.get_llm(api_key=api_key, model_name=use_model)
         titles = [s['title'] for s in skeleton.values()]
 
-        # 2. 프롬프트에 user_prompt 추가 (강력하게 반영하도록 지시)
         setting_prompt = f"""
             [TASK] Create a TRPG world setting.
             
@@ -498,11 +540,24 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
         try:
             setting_res = llm.invoke(setting_prompt).content
             setting_data = parse_json_garbage(setting_res)
+            _update_progress(
+                detail=f"세계관 '{setting_data.get('title', '?')}' 생성 완료",
+                progress=25
+            )
         except:
             setting_data = {"title": "New Adventure", "genre": "Adventure", "variables": []}
 
+        # Phase 3: 씬 생성 (병렬 처리)
+        _update_progress(
+            current_phase="scene_generation",
+            step="3/5",
+            detail=f"씬 콘텐츠 생성 시작 (0/{total_scene_count})",
+            progress=30
+        )
+
         final_scenes = []
         final_endings = []
+        completed_count = 0
 
         logger.info(f"Generating {len(skeleton)} scenes...")
         with ThreadPoolExecutor(max_workers=5) as executor:
@@ -511,14 +566,27 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
                 for nid, info in skeleton.items()
             }
             for future in as_completed(future_to_node):
+                node_id = future_to_node[future]
                 try:
                     res = future.result()
+                    completed_count += 1
+
+                    # 씬 생성 진행률 업데이트
+                    scene_progress = 30 + int((completed_count / total_scene_count) * 45)
+                    scene_title = res.get('data', {}).get('title', node_id)
+                    _update_progress(
+                        detail=f"씬 생성 완료: '{scene_title}' ({completed_count}/{total_scene_count})",
+                        progress=scene_progress,
+                        completed_scenes=completed_count
+                    )
+
                     if res['type'] == 'ending':
                         final_endings.append(res['data'])
                     else:
                         final_scenes.append(res['data'])
-                except:
-                    pass
+                except Exception as e:
+                    completed_count += 1
+                    logger.error(f"Scene generation failed for {node_id}: {e}")
 
         # 프롤로그에서 연결된 첫 번째 씬 ID 저장
         first_scene_ids = []
@@ -530,7 +598,7 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
             "genre": setting_data.get('genre', 'Adventure'),
             "background_story": setting_data.get('background_story', ''),
             "prologue": setting_data.get('prologue', ''),
-            "prologue_connects_to": first_scene_ids,  # 프롤로그가 연결하는 씬 ID 목록
+            "prologue_connects_to": first_scene_ids,
             "variables": setting_data.get('variables', []),
             "items": [],
             "npcs": [],
@@ -538,25 +606,72 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
             "endings": final_endings
         }
 
-        # 검수 및 수정
+        # Phase 4: 검증
+        _update_progress(
+            current_phase="validation",
+            step="4/5",
+            detail="시나리오 일관성 검증 중...",
+            progress=80
+        )
+
         is_valid, issues = _validate_scenario(draft_scenario, llm)
 
         if not is_valid:
+            # Phase 5: 수정 (필요 시)
+            _update_progress(
+                current_phase="refining",
+                step="5/5",
+                detail=f"품질 개선 중: {issues[:50]}...",
+                progress=85
+            )
+
             final_result = _refine_scenario(draft_scenario, issues, llm)
-            # prologue_connects_to 유지
             final_result['prologue_connects_to'] = first_scene_ids
-            # ID 정규화 적용
+
+            _update_progress(detail="ID 정규화 중...", progress=92)
             final_result = normalize_ids(final_result)
+
+            _update_progress(
+                status="completed",
+                current_phase="done",
+                step="완료",
+                detail=f"시나리오 '{final_result.get('title')}' 생성 완료! (수정됨)",
+                progress=100
+            )
+
             logger.info("🎉 Generation Complete (Refined).")
             return final_result
         else:
-            # ID 정규화 적용
+            # Phase 5: 완료
+            _update_progress(
+                current_phase="finalizing",
+                step="5/5",
+                detail="ID 정규화 및 최종 처리 중...",
+                progress=90
+            )
+
             normalized_scenario = normalize_ids(draft_scenario)
+
+            _update_progress(
+                status="completed",
+                current_phase="done",
+                step="완료",
+                detail=f"시나리오 '{normalized_scenario.get('title')}' 생성 완료!",
+                progress=100
+            )
+
             logger.info("🎉 Generation Complete (Direct Pass).")
             return normalized_scenario
 
     except Exception as e:
         logger.error(f"Critical Builder Error: {e}", exc_info=True)
+        _update_progress(
+            status="error",
+            current_phase="error",
+            step="오류",
+            detail=f"생성 실패: {str(e)[:100]}",
+            progress=0
+        )
         return {"title": "Error", "scenes": [], "endings": []}
 
 
