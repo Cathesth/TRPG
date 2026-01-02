@@ -47,14 +47,25 @@ def game_act_stream():
 
     def generate():
         try:
-            # 1. AI 로직 처리
-            processed_state = process_before_narrator(current_state)
-            game_state.state = processed_state
+            # 1. AI 로직 처리 (게임 시작이 아닌 경우)
+            if not is_game_start:
+                processed_state = process_before_narrator(current_state)
+                game_state.state = processed_state
+            else:
+                # 게임 시작 시에는 AI 로직 없이 바로 프롤로그와 첫 씬 표시
+                start_scene_id = current_state.get('start_scene_id') or current_state.get('current_scene_id')
+                logger.info(f"🎮 [GAME START] Setting current_scene_id to: {start_scene_id}")
+                current_state['current_scene_id'] = start_scene_id
+                current_state['system_message'] = 'Game Started'
+                processed_state = current_state
+                game_state.state = processed_state
 
             npc_say = processed_state.get('npc_output', '')
             sys_msg = processed_state.get('system_message', '')
             is_ending = processed_state.get('parsed_intent') == 'ending'
             new_scene_id = processed_state['current_scene_id']
+
+            logger.info(f"📍 [CURRENT SCENE] After processing: {new_scene_id}")
 
             # 2. 시스템 메시지 전송
             if sys_msg and "Game Started" not in sys_msg:
@@ -116,4 +127,3 @@ def game_act_stream():
             'X-Accel-Buffering': 'no'
         }
     )
-

@@ -94,7 +94,8 @@ def load_scenario():
     game_state.config['title'] = scenario.get('title', 'Loaded')
     game_state.state = {
         "scenario": scenario,
-        "current_scene_id": start_id,
+        "current_scene_id": "prologue",  # 프롤로그를 초기 위치로 설정
+        "start_scene_id": start_id,  # 실제 시작 씬 ID 저장
         "player_vars": initial_vars,
         "history": [],
         "last_user_choice_idx": -1,
@@ -267,4 +268,3 @@ def delete_preset():
         return jsonify({"success": False, "error": error}), 400 if "없습니다" in error else 404
 
     return jsonify({"success": True, "message": "프리셋 삭제 완료"})
-

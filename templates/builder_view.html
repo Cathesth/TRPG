@@ -49,6 +49,29 @@
             white-space: pre-wrap;
             font-family: monospace;
         }
+
+        /* 연결선이 더 잘 보이도록 스타일 개선 */
+        .connection-line {
+            stroke: #6b7280;
+            stroke-width: 3;
+            fill: none;
+            filter: drop-shadow(0 0 4px rgba(107, 114, 128, 0.5));
+        }
+        .connection-line:hover {
+            stroke: #9ca3af;
+            stroke-width: 4;
+        }
+        .connecting-line {
+            stroke: #6366f1;
+            stroke-width: 3;
+            stroke-dasharray: 8,4;
+            fill: none;
+            filter: drop-shadow(0 0 6px rgba(99, 102, 241, 0.6));
+            animation: dash 0.5s linear infinite;
+        }
+        @keyframes dash {
+            to { stroke-dashoffset: -12; }
+        }
     </style>
 
     <script>
@@ -87,7 +110,9 @@
                 'log-out': <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-12-5 7 M21 12H9" />,
                 'loader-2': <path d="M21 12a9 9 0 1 1-6.219-8.56" />,
                 'check-circle': <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14 M22 4L12 14.01l-3-3" />,
-                'alert-triangle': <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z M12 9v4 M12 17h.01" />
+                'alert-triangle': <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z M12 9v4 M12 17h.01" />,
+                'undo': <path d="M3 7v6h6 M21 17a9 9 0 0 0-9-9 9 9 0 0 0-9 9" />,
+                'redo': <path d="M21 7v6h-6 M3 17a9 9 0 0 1 9-9 9 9 0 0 1 9 9" />
             };
 
             const Icon = ({ name, size = 20, className = "" }) => (
@@ -151,6 +176,89 @@
                 const [connections, setConnections] = useState([ { id: 'c1', source: 'start', target: 'scene-1' } ]);
                 const [selectedNodeId, setSelectedNodeId] = useState(null);
                 const [globalNpcs, setGlobalNpcs] = useState([]);
+
+                // Undo/Redo를 위한 히스토리 관리
+                const [history, setHistory] = useState([]);
+                const [historyIndex, setHistoryIndex] = useState(-1);
+
+                // 프리셋 불러오기 플래그
+                const [isLoadingPreset, setIsLoadingPreset] = useState(false);
+
+                // 히스토리에 현재 상태 저장
+                const saveToHistory = () => {
+                    const newState = {
+                        nodes: JSON.parse(JSON.stringify(nodes)),
+                        connections: JSON.parse(JSON.stringify(connections)),
+                        globalNpcs: JSON.parse(JSON.stringify(globalNpcs))
+                    };
+
+                    // 현재 인덱스 이후의 히스토리 삭제하고 새 상태 추가
+                    const newHistory = history.slice(0, historyIndex + 1);
+                    newHistory.push(newState);
+
+                    // 히스토리 최대 50개로 제한
+                    if (newHistory.length > 50) {
+                        newHistory.shift();
+                    } else {
+                        setHistoryIndex(historyIndex + 1);
+                    }
+
+                    setHistory(newHistory);
+                };
+
+                // Undo 실행
+                const handleUndo = () => {
+                    if (historyIndex > 0) {
+                        const newIndex = historyIndex - 1;
+                        const prevState = history[newIndex];
+                        setNodes(JSON.parse(JSON.stringify(prevState.nodes)));
+                        setConnections(JSON.parse(JSON.stringify(prevState.connections)));
+                        setGlobalNpcs(JSON.parse(JSON.stringify(prevState.globalNpcs)));
+                        setHistoryIndex(newIndex);
+                    }
+                };
+
+                // Redo 실행
+                const handleRedo = () => {
+                    if (historyIndex < history.length - 1) {
+                        const newIndex = historyIndex + 1;
+                        const nextState = history[newIndex];
+                        setNodes(JSON.parse(JSON.stringify(nextState.nodes)));
+                        setConnections(JSON.parse(JSON.stringify(nextState.connections)));
+                        setGlobalNpcs(JSON.parse(JSON.stringify(nextState.globalNpcs)));
+                        setHistoryIndex(newIndex);
+                    }
+                };
+
+                // 키보드 단축키 (Ctrl+Z, Ctrl+Y)
+                useEffect(() => {
+                    const handleKeyDown = (e) => {
+                        if (e.ctrlKey && e.key === 'z') {
+                            e.preventDefault();
+                            handleUndo();
+                        } else if (e.ctrlKey && e.key === 'y') {
+                            e.preventDefault();
+                            handleRedo();
+                        }
+                    };
+                    window.addEventListener('keydown', handleKeyDown);
+                    return () => window.removeEventListener('keydown', handleKeyDown);
+                }, [historyIndex, history]);
+
+                // 초기 상태를 히스토리에 저장
+                useEffect(() => {
+                    if (history.length === 0) {
+                        saveToHistory();
+                    }
+                }, []);
+
+                // 프리셋 불러온 후 state가 업데이트되면 히스토리에 저장
+                useEffect(() => {
+                    if (isLoadingPreset) {
+                        saveToHistory();
+                        setIsLoadingPreset(false);
+                    }
+                }, [nodes, connections, globalNpcs, isLoadingPreset]);
 
                 // 프리셋 관련 state
                 const [presetModalOpen, setPresetModalOpen] = useState(false);
@@ -322,6 +430,7 @@
                 const addNode = (type) => {
                     const id = `${type}-${Date.now()}`;
                     setNodes(p => [...p, { id, type, x: Math.random() * 200 + 100, y: Math.random() * 200 + 100, data: { title: type === 'scene' ? '새로운 장면' : '새로운 엔딩', description: '', npcs: [] } }]);
+                    setTimeout(saveToHistory, 100);
                 };
 
                 const deleteNode = (id) => {
@@ -329,6 +438,7 @@
                     setNodes(p => p.filter(n => n.id !== id));
                     setConnections(p => p.filter(c => c.source !== id && c.target !== id));
                     if (selectedNodeId === id) setSelectedNodeId(null);
+                    setTimeout(saveToHistory, 100);
                 };
 
                 const updateNodeData = (key, value) => {
@@ -342,7 +452,11 @@
                     const name = form.elements.namedItem('npcName').value;
                     const role = form.elements.namedItem('npcRole').value;
                     const trait = form.elements.namedItem('npcTrait').value;
-                    if(name) { setGlobalNpcs(p => [...p, { name, role, trait }]); form.reset(); }
+                    if(name) {
+                        setGlobalNpcs(p => [...p, { name, role, trait }]);
+                        form.reset();
+                        setTimeout(saveToHistory, 100);
+                    }
                 };
 
                 const handleGenerate = async () => {
@@ -428,6 +542,7 @@
                     if (connectingSourceId) {
                         if (connectingSourceId !== id && !connections.some(c => c.source === connectingSourceId && c.target === id)) {
                             setConnections(p => [...p, { id: `c-${Date.now()}`, source: connectingSourceId, target: id }]);
+                            setTimeout(saveToHistory, 100);
                         }
                         setConnectingSourceId(null);
                         return;
@@ -461,6 +576,9 @@
                 };
 
                 const handleCanvasMouseUp = () => {
+                    if (draggingNodeId) {
+                        setTimeout(saveToHistory, 100);
+                    }
                     setDraggingNodeId(null);
                     setIsPanning(false);
                 };
@@ -600,12 +718,17 @@
                         if (!data.success) throw new Error(data.error || '불러오기 실패');
 
                         const presetData = data.data;
+
+                        // 프리셋 불러오기 플래그 설정
+                        setIsLoadingPreset(true);
+
                         setNodes(presetData.nodes || []);
                         setConnections(presetData.connections || []);
                         setGlobalNpcs(presetData.globalNpcs || []);
                         setSelectedProvider(presetData.selectedProvider || 'deepseek');
                         setSelectedModel(presetData.selectedModel || 'openai/tngtech/deepseek-r1t2-chimera:free');
                         setUseAutoTitle(presetData.useAutoTitle !== false);
+
 
                         setPresetModalOpen(false);
                         setResultModal({ open: true, type: 'success', title: '불러오기 완료', message: `'${presetData.name}' 프리셋을 불러왔습니다.` });
@@ -648,6 +771,26 @@
                                 <a href="/" className="text-gray-500 hover:text-white p-2 rounded hover:bg-gray-800"><Icon name="log-out" size={18} /></a>
                             </div>
                             <div className="p-4 space-y-3">
+                                {/* Undo/Redo 버튼 추가 */}
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={handleUndo}
+                                        disabled={historyIndex <= 0}
+                                        className={`flex-1 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-sm flex items-center justify-center gap-2 ${historyIndex <= 0 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-700 text-cyan-300'}`}
+                                        title="실행 취소 (Ctrl+Z)"
+                                    >
+                                        <Icon name="undo" size={16} /> Undo
+                                    </button>
+                                    <button
+                                        onClick={handleRedo}
+                                        disabled={historyIndex >= history.length - 1}
+                                        className={`flex-1 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-sm flex items-center justify-center gap-2 ${historyIndex >= history.length - 1 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-700 text-cyan-300'}`}
+                                        title="다시 실행 (Ctrl+Y)"
+                                    >
+                                        <Icon name="redo" size={16} /> Redo
+                                    </button>
+                                </div>
+
                                 <button onClick={() => addNode('scene')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-indigo-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-indigo-500 rounded-full"></div> 씬 추가</button>
                                 <button onClick={() => addNode('ending')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-red-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-red-500 rounded-full"></div> 엔딩 추가</button>
                                 <button onClick={() => setNpcModalOpen(true)} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-green-300 flex items-center justify-center gap-2"><Icon name="users" size={16} /> NPC 관리</button>
@@ -741,6 +884,10 @@
                                     <span>마우스 휠 = 줌</span>
                                     <span className="text-gray-600">|</span>
                                     <span>Shift + 드래그 = 이동</span>
+                                    <span className="text-gray-600">|</span>
+                                    <span>Ctrl+Z = 실행취소</span>
+                                    <span className="text-gray-600">|</span>
+                                    <span>Ctrl+Y = 다시실행</span>
                                 </div>
                             </div>
 
@@ -752,12 +899,12 @@
                                 height: '100%',
                                 position: 'absolute'
                             }}>
-                                <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
+                                <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" style={{ overflow: 'visible' }}>
                                     {connections.map(c => {
                                         const s = nodes.find(n => n.id === c.source), t = nodes.find(n => n.id === c.target);
                                         if (!s || !t) return null;
                                         const { sx, sy, tx, ty } = getConnectionPoints(s, t);
-                                        return <path key={c.id} d={createPath(sx, sy, tx, ty)} stroke="#4b5563" strokeWidth="2" fill="none" />;
+                                        return <path key={c.id} d={createPath(sx, sy, tx, ty)} className="connection-line" />;
                                     })}
                                     {connectingSourceId && (() => {
                                         const s = nodes.find(n => n.id === connectingSourceId);
@@ -765,7 +912,7 @@
                                         // 연결 중인 선: 소스 노드 중심에서 마우스 위치까지
                                         const sx = s.x + NODE_WIDTH / 2;
                                         const sy = s.y + NODE_HEIGHT / 2;
-                                        return <path d={createPath(sx, sy, mousePos.x, mousePos.y)} stroke="#6366f1" strokeWidth="2" strokeDasharray="5,5" fill="none" />;
+                                        return <path d={createPath(sx, sy, mousePos.x, mousePos.y)} className="connecting-line" />;
                                     })()}
                                 </svg>
                                 {nodes.map(node => (
