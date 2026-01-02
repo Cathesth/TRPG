@@ -152,6 +152,14 @@
                 const [selectedNodeId, setSelectedNodeId] = useState(null);
                 const [globalNpcs, setGlobalNpcs] = useState([]);
 
+                // 프리셋 관련 state
+                const [presetModalOpen, setPresetModalOpen] = useState(false);
+                const [presetSaveModalOpen, setPresetSaveModalOpen] = useState(false);
+                const [presets, setPresets] = useState([]);
+                const [presetName, setPresetName] = useState('');
+                const [presetDescription, setPresetDescription] = useState('');
+                const [loadingPresets, setLoadingPresets] = useState(false);
+
                 // 모델 제공사 및 버전 정보
                 const MODEL_PROVIDERS = {
                     'google': {
@@ -252,7 +260,7 @@
                 };
 
                 const [npcModalOpen, setNpcModalOpen] = useState(false);
-                const [resultModal, setResultModal] = useState({ open: false, type: 'info', title: '', message: '' });
+                const [resultModal, setResultModal] = useState({ open: false, type: 'info', title: '', message: '', showPlayButton: false });
                 const [isLoading, setIsLoading] = useState(false);
                 const [progress, setProgress] = useState(0);
                 const [remainingTime, setRemainingTime] = useState(0);
@@ -394,7 +402,8 @@
 
                         setResultModal({
                             open: true, type: 'success', title: '생성 완료!',
-                            message: `${data.message}\n이제 플레이어 모드에서 게임을 즐겨보세요.`
+                            message: `${data.message}\n이제 플레이어 모드에서 게임을 즐겨보세요.`,
+                            showPlayButton: true
                         });
 
                     } catch (error) {
@@ -527,6 +536,108 @@
                     }
                 };
 
+                // 프리셋 목록 불러오기
+                const fetchPresets = async () => {
+                    setLoadingPresets(true);
+                    try {
+                        const response = await fetch('/api/presets');
+                        if (!response.ok) throw new Error('프리셋 목록 조회 실패');
+                        const data = await response.json();
+                        setPresets(data || []);
+                    } catch (error) {
+                        console.error('프리셋 로드 실패:', error);
+                    } finally {
+                        setLoadingPresets(false);
+                    }
+                };
+
+                // 프리셋 저장
+                const handleSavePreset = async () => {
+                    if (!presetName.trim()) {
+                        setResultModal({ open: true, type: 'error', title: '저장 실패', message: '프리셋 이름을 입력하세요.' });
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch('/api/presets/save', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                name: presetName,
+                                description: presetDescription,
+                                nodes: nodes,
+                                connections: connections,
+                                globalNpcs: globalNpcs,
+                                selectedProvider: selectedProvider,
+                                selectedModel: selectedModel,
+                                useAutoTitle: useAutoTitle
+                            })
+                        });
+
+                        const data = await response.json();
+                        if (!data.success) throw new Error(data.error || '저장 실패');
+
+                        setResultModal({ open: true, type: 'success', title: '저장 완료', message: data.message });
+                        setPresetName('');
+                        setPresetDescription('');
+                        setPresetSaveModalOpen(false);
+                        fetchPresets(); // 목록 새로고침
+                    } catch (error) {
+                        setResultModal({ open: true, type: 'error', title: '저장 실패', message: error.message });
+                    }
+                };
+
+                // 프리셋 불러오기
+                const handleLoadPreset = async (preset) => {
+                    try {
+                        const response = await fetch('/api/presets/load', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filename: preset.filename })
+                        });
+
+                        const data = await response.json();
+                        if (!data.success) throw new Error(data.error || '불러오기 실패');
+
+                        const presetData = data.data;
+                        setNodes(presetData.nodes || []);
+                        setConnections(presetData.connections || []);
+                        setGlobalNpcs(presetData.globalNpcs || []);
+                        setSelectedProvider(presetData.selectedProvider || 'deepseek');
+                        setSelectedModel(presetData.selectedModel || 'openai/tngtech/deepseek-r1t2-chimera:free');
+                        setUseAutoTitle(presetData.useAutoTitle !== false);
+
+                        setPresetModalOpen(false);
+                        setResultModal({ open: true, type: 'success', title: '불러오기 완료', message: `'${presetData.name}' 프리셋을 불러왔습니다.` });
+                    } catch (error) {
+                        setResultModal({ open: true, type: 'error', title: '불러오기 실패', message: error.message });
+                    }
+                };
+
+                // 프리셋 삭제
+                const handleDeletePreset = async (filename) => {
+                    if (!confirm('정말 이 프리셋을 삭제하시겠습니까?')) return;
+
+                    try {
+                        const response = await fetch('/api/presets/delete', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filename })
+                        });
+
+                        const data = await response.json();
+                        if (!data.success) throw new Error(data.error || '삭제 실패');
+
+                        fetchPresets(); // 목록 새로고침
+                    } catch (error) {
+                        setResultModal({ open: true, type: 'error', title: '삭제 실패', message: error.message });
+                    }
+                };
+
+                useEffect(() => {
+                    fetchPresets();
+                }, []);
+
                 return (
                     <div className="flex h-screen bg-black text-white font-sans overflow-hidden no-select">
                         <LoadingOverlay isOpen={isLoading} progress={progress} remainingTime={remainingTime} />
@@ -540,6 +651,16 @@
                                 <button onClick={() => addNode('scene')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-indigo-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-indigo-500 rounded-full"></div> 씬 추가</button>
                                 <button onClick={() => addNode('ending')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-red-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-red-500 rounded-full"></div> 엔딩 추가</button>
                                 <button onClick={() => setNpcModalOpen(true)} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-green-300 flex items-center justify-center gap-2"><Icon name="users" size={16} /> NPC 관리</button>
+
+                                {/* 프리셋 버튼 */}
+                                <button onClick={() => { setPresetModalOpen(true); fetchPresets(); }} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-yellow-300 flex items-center justify-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                                        <polyline points="17 21 17 13 7 13 7 21"/>
+                                        <polyline points="7 3 7 8 15 8"/>
+                                    </svg>
+                                    프리셋 관리
+                                </button>
 
                                 <div className="pt-3 border-t border-gray-800">
                                     <label className="text-xs text-gray-400 block mb-2">🤖 AI 모델 선택</label>
@@ -733,6 +854,81 @@
                             })() : <div className="flex flex-col items-center justify-center h-full text-gray-600"><Icon name="settings" size={48} className="mb-4 opacity-50" /><p className="text-sm">노드를 선택하세요</p></div>}
                         </div>
 
+                        {/* 프리셋 관련 모달 */}
+                        <Modal isOpen={presetModalOpen} title="프리셋 관리" onClose={() => setPresetModalOpen(false)}>
+                            <div className="space-y-4">
+                                <div className="flex justify-between items-center">
+                                    <h3 className="text-base font-bold text-gray-200">저장된 프리셋</h3>
+                                    <span className="text-xs text-gray-500">{presets.length}개</span>
+                                </div>
+                                {loadingPresets ? (
+                                    <div className="flex items-center justify-center py-10">
+                                        <Icon name="loader-2" size={32} className="animate-spin text-blue-400" />
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                                        {presets.length === 0 && <p className="text-gray-500 text-sm text-center py-4">저장된 프리셋이 없습니다.</p>}
+                                        {presets.map(preset => (
+                                            <div key={preset.filename} className="p-3 bg-gray-800 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors">
+                                                <div className="flex justify-between items-start">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-bold text-gray-200 truncate">{preset.name}</div>
+                                                        <div className="text-xs text-gray-500 truncate">{preset.description || '설명 없음'}</div>
+                                                        <div className="text-[10px] text-gray-600 mt-1">
+                                                            노드 {preset.nodeCount}개 · NPC {preset.npcCount}개
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-1.5 ml-2">
+                                                        <button onClick={() => handleLoadPreset(preset)} className="px-2.5 py-1 text-xs bg-blue-600 hover:bg-blue-500 rounded font-medium">불러오기</button>
+                                                        <button onClick={() => handleDeletePreset(preset.filename)} className="p-1 text-xs bg-red-600/80 hover:bg-red-500 rounded" title="삭제">
+                                                            <Icon name="x" size={14} className="text-white" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="pt-3 border-t border-gray-800">
+                                    <button onClick={() => { setPresetModalOpen(false); setPresetSaveModalOpen(true); }} className="w-full py-2.5 bg-green-600 hover:bg-green-500 rounded-lg font-bold transition-colors flex items-center justify-center gap-2">
+                                        <Icon name="check-circle" size={18} /> 현재 설정을 프리셋으로 저장
+                                    </button>
+                                </div>
+                            </div>
+                        </Modal>
+
+                        <Modal isOpen={presetSaveModalOpen} title="프리셋 저장" onClose={() => setPresetSaveModalOpen(false)}>
+                            <div className="p-4">
+                                <h3 className="text-lg font-bold text-gray-200 mb-4">프리셋 이름 및 설명</h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-xs text-gray-400 block mb-1">프리셋 이름</label>
+                                        <input
+                                            value={presetName}
+                                            onChange={e => setPresetName(e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm text-white"
+                                            placeholder="프리셋 이름을 입력하세요"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-400 block mb-1">프리셋 설명</label>
+                                        <textarea
+                                            value={presetDescription}
+                                            onChange={e => setPresetDescription(e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm text-white resize-none"
+                                            rows={3}
+                                            placeholder="프리셋 설명을 입력하세요 (선택 사항)"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="mt-4">
+                                    <button onClick={handleSavePreset} className="w-full py-2 bg-green-600 hover:bg-green-500 rounded-lg font-bold transition-colors flex items-center justify-center gap-2">
+                                        <Icon name="check-circle" size={18} /> 저장
+                                    </button>
+                                </div>
+                            </div>
+                        </Modal>
+
                         <Modal isOpen={npcModalOpen} title="NPC 생성" onClose={() => setNpcModalOpen(false)}>
                             <form onSubmit={addGlobalNpc} className="space-y-4">
                                 <input name="npcName" required className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white" placeholder="이름" />
@@ -748,7 +944,7 @@
                         <Modal isOpen={resultModal.open} type={resultModal.type} title={resultModal.title} onClose={() => setResultModal({ ...resultModal, open: false })}>
                             <div className="whitespace-pre-wrap">{resultModal.message}</div>
                             <div className="mt-6 flex justify-end gap-2">
-                                {resultModal.type === 'success' && <a href="/views/player" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold">플레이하러 가기</a>}
+                                {resultModal.type === 'success' && resultModal.showPlayButton && <a href="/views/player" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold">플레이하러 가기</a>}
                                 <button onClick={() => setResultModal({ ...resultModal, open: false })} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white">확인</button>
                             </div>
                         </Modal>

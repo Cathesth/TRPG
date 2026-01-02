@@ -3,6 +3,7 @@ import logging
 import json
 import glob
 import re
+import time
 from flask import Flask, render_template, request, render_template_string, jsonify, Response, stream_with_context
 from dotenv import load_dotenv
 
@@ -39,6 +40,7 @@ def add_header(response):
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FOLDER = os.path.join(BASE_DIR, 'DB', 'scenarios')
+PRESETS_FOLDER = os.path.join(BASE_DIR, 'DB', 'presets')
 
 db = {
     "config": {"title": "미정", "dice_system": "1d20"},
@@ -318,7 +320,6 @@ def list_scenarios():
     sort_order = request.args.get('sort', 'newest')
 
     # 파일 정보 수집 (생성 시간 및 타이틀 포함)
-    import time
     from datetime import datetime
 
     file_infos = []
@@ -432,6 +433,141 @@ def delete_scenario():
     try:
         os.remove(file_path)
         return jsonify({"success": True, "message": f"'{filename}' 삭제 완료"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# --- [Preset] 프리셋 API ---
+
+@app.route('/api/presets')
+def list_presets():
+    """프리셋 목록 조회"""
+    if not os.path.exists(PRESETS_FOLDER):
+        try:
+            os.makedirs(PRESETS_FOLDER)
+        except OSError:
+            pass
+
+    files = [f for f in os.listdir(PRESETS_FOLDER) if f.endswith('.json')]
+
+    presets = []
+    for f in files:
+        file_path = os.path.join(PRESETS_FOLDER, f)
+        try:
+            with open(file_path, 'r', encoding='utf-8') as jf:
+                data = json.load(jf)
+                presets.append({
+                    'filename': f,
+                    'name': data.get('name', f.replace('.json', '')),
+                    'description': data.get('description', ''),
+                    'nodeCount': len(data.get('nodes', [])),
+                    'npcCount': len(data.get('globalNpcs', [])),
+                    'model': data.get('selectedModel', ''),
+                    'createdAt': os.path.getctime(file_path)
+                })
+        except:
+            presets.append({
+                'filename': f,
+                'name': f.replace('.json', ''),
+                'description': '',
+                'nodeCount': 0,
+                'npcCount': 0,
+                'model': '',
+                'createdAt': 0
+            })
+
+    # 최신순 정렬
+    presets.sort(key=lambda x: x['createdAt'], reverse=True)
+    return jsonify(presets)
+
+
+@app.route('/api/presets/save', methods=['POST'])
+def save_preset():
+    """프리셋 저장"""
+    data = parse_request_data(request)
+    if not data:
+        return jsonify({"success": False, "error": "유효하지 않은 데이터"}), 400
+
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({"success": False, "error": "프리셋 이름을 입력하세요"}), 400
+
+    # 안전한 파일명 생성
+    safe_name = "".join([c for c in name if c.isalnum() or c in (' ', '-', '_', 'ㄱ-ㅎ', 'ㅏ-ㅣ', '가-힣')]).strip().replace(' ', '_')
+    if not safe_name:
+        safe_name = f"preset_{int(time.time())}"
+
+    preset_data = {
+        'name': name,
+        'description': data.get('description', ''),
+        'nodes': data.get('nodes', []),
+        'connections': data.get('connections', []),
+        'globalNpcs': data.get('globalNpcs', []),
+        'selectedProvider': data.get('selectedProvider', 'deepseek'),
+        'selectedModel': data.get('selectedModel', 'openai/tngtech/deepseek-r1t2-chimera:free'),
+        'useAutoTitle': data.get('useAutoTitle', True)
+    }
+
+    if not os.path.exists(PRESETS_FOLDER):
+        os.makedirs(PRESETS_FOLDER)
+
+    file_path = os.path.join(PRESETS_FOLDER, f"{safe_name}.json")
+
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(preset_data, f, ensure_ascii=False, indent=2)
+        return jsonify({"success": True, "message": f"프리셋 '{name}' 저장 완료", "filename": f"{safe_name}.json"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/presets/load', methods=['POST'])
+def load_preset():
+    """프리셋 로드"""
+    data = parse_request_data(request)
+    filename = data.get('filename')
+
+    if not filename:
+        return jsonify({"success": False, "error": "파일명이 없습니다"}), 400
+
+    # 보안: 경로 조작 방지
+    if '..' in filename or '/' in filename or '\\' in filename:
+        return jsonify({"success": False, "error": "잘못된 파일명입니다"}), 400
+
+    file_path = os.path.join(PRESETS_FOLDER, filename)
+
+    if not os.path.exists(file_path):
+        return jsonify({"success": False, "error": "파일을 찾을 수 없습니다"}), 404
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            preset_data = json.load(f)
+        return jsonify({"success": True, "data": preset_data})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/presets/delete', methods=['POST'])
+def delete_preset():
+    """프리셋 삭제"""
+    data = parse_request_data(request)
+    filename = data.get('filename')
+
+    if not filename:
+        return jsonify({"success": False, "error": "파일명이 없습니다"}), 400
+
+    # 보안: 경로 조작 방지
+    if '..' in filename or '/' in filename or '\\' in filename:
+        return jsonify({"success": False, "error": "잘못된 파일명입니다"}), 400
+
+    file_path = os.path.join(PRESETS_FOLDER, filename)
+
+    if not os.path.exists(file_path):
+        return jsonify({"success": False, "error": "파일을 찾을 수 없습니다"}), 404
+
+    try:
+        os.remove(file_path)
+        return jsonify({"success": True, "message": "프리셋 삭제 완료"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
