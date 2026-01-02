@@ -4,9 +4,13 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      - 'README.md'  # README 수정으로 인한 트리거 방지 (이게 핵심임)
 
 jobs:
   update-tree:
+    # 봇이 커밋한 건 실행 안 되게 한 번 더 방어
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -18,17 +22,17 @@ jobs:
       - name: Install tree
         run: sudo apt-get install -y tree
 
-      - name: Generate Tree and Update README
+      - name: Update README with Tree
         run: |
-          # 1. 트리 구조 생성해서 임시 파일에 저장
-          tree -I "node_modules|.git|.github" -F > tree_output.txt
+          # 트리 생성 (불필요한 파일 제외)
+          tree -I "node_modules|.git|.github|tree_output.txt" -F > tree_output.txt
 
-          # 2. 파이썬으로 README 안전하게 업데이트
           python3 -c '
           import re
+          import os
 
           with open("tree_output.txt", "r", encoding="utf-8") as f:
-              tree_text = f.read()
+              tree_content = f.read()
 
           with open("README.md", "r", encoding="utf-8") as f:
               readme = f.read()
@@ -36,14 +40,20 @@ jobs:
           start_tag = ""
           end_tag = ""
           
-          # 트리 내용을 텍스트 코드 블록으로 감싸기
-          replacement = f"{start_tag}\n\n```text\n{tree_text}```\n\n{end_tag}"
+          # 코드 블록 포함한 새로운 내용
+          new_content = f"{start_tag}\n\n```text\n{tree_content}```\n\n{end_tag}"
           
-          # 정규표현식으로 태그 사이 내용 교체 (re.DOTALL로 줄바꿈 무시)
-          new_readme = re.sub(rf"{start_tag}.*?{end_tag}", replacement, readme, flags=re.DOTALL)
-
-          with open("README.md", "w", encoding="utf-8") as f:
-              f.write(new_readme)
+          # 파일에 태그가 있는지 확인하고 딱 한 번만 교체
+          if start_tag in readme and end_tag in readme:
+              # 가장 바깥쪽 태그 사이를 통째로 갈아끼움
+              pattern = re.compile(rf"{start_tag}.*?{end_tag}", re.DOTALL)
+              updated_readme = pattern.sub(new_content, readme)
+              
+              with open("README.md", "w", encoding="utf-8") as f:
+                  f.write(updated_readme)
+              print("README updated successfully.")
+          else:
+              print("Tags not found!")
           '
 
       - name: Commit and Push
@@ -51,4 +61,8 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add README.md
-          git diff --quiet && git diff --staged --quiet || (git commit -m "docs: update directory tree" && git push)
+          # 변경사항이 있을 때만 커밋
+          if ! git diff --quiet README.md; then
+            git commit -m "docs: auto update directory tree [skip ci]"
+            git push
+          fi
