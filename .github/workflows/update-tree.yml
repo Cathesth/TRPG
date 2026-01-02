@@ -3,7 +3,7 @@ name: Update Directory Tree
 on:
   push:
     branches:
-      - master
+      - master  # master로 수정 완료
     paths-ignore:
       - 'README.md'
 
@@ -23,13 +23,12 @@ jobs:
 
       - name: Update README
         run: |
-          # 1. 트리 생성 (지 자신 tree_output.txt는 무조건 제외)
           tree -I "node_modules|.git|.github|tree_output.txt" -F > tree_output.txt
 
-          # 2. 파이썬 실행
           python3 -c '
           import os
 
+          # 여기 빈칸으로 두지 마라. 내가 채워놨다.
           START_TAG = ""
           END_TAG = ""
 
@@ -43,7 +42,6 @@ jobs:
           with open("README.md", "r", encoding="utf-8") as f:
               content = f.read()
 
-          # 첫 번째 시작 태그와 마지막 끝 태그 위치 찾기
           start_idx = content.find(START_TAG)
           end_idx = content.rfind(END_TAG)
 
@@ -51,7 +49,7 @@ jobs:
               print("Tags not found in README.md!")
               exit(1)
 
-          # 태그 포함해서 그 사이를 싹 다 갈아끼움
+          # 내용 갈아끼우기
           new_block = f"{START_TAG}\n\n```text\n{tree_data}```\n\n{END_TAG}"
           new_content = content[:start_idx] + new_block + content[end_idx + len(END_TAG):]
 
@@ -66,5 +64,5 @@ jobs:
           git add README.md
           if ! git diff --quiet README.md; then
             git commit -m "docs: auto update directory tree [skip ci]"
-            git push origin ajh
+            git push origin master  # 여기도 master로 수정했다
           fi
