@@ -38,7 +38,7 @@ def add_header(response):
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_FOLDER = os.path.join(BASE_DIR, 'DB')
+DB_FOLDER = os.path.join(BASE_DIR, 'DB', 'scenarios')
 
 db = {
     "config": {"title": "미정", "dice_system": "1d20"},
