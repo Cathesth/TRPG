@@ -17,4 +17,5 @@
 !/.env.example
 !.gitignore
 !.gitmessage.txt
+!README.md
 !requirements.txt
