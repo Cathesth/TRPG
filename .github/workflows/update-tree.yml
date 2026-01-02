@@ -5,7 +5,7 @@ on:
     branches:
       - master
     paths-ignore:
-      - 'README.md'  # README 수정으로 인한 재실행 방지
+      - 'README.md'
 
 jobs:
   update-tree:
@@ -17,46 +17,46 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Install tree
         run: sudo apt-get install -y tree
 
       - name: Update README
         run: |
+          # 1. 트리 생성 (지 자신 tree_output.txt는 무조건 제외)
           tree -I "node_modules|.git|.github|tree_output.txt" -F > tree_output.txt
 
+          # 2. 파이썬 실행
           python3 -c '
-          import re
+          import os
+
+          START_TAG = ""
+          END_TAG = ""
+
+          if not os.path.exists("tree_output.txt") or not os.path.exists("README.md"):
+              print("Files missing!")
+              exit(1)
 
           with open("tree_output.txt", "r", encoding="utf-8") as f:
-              tree_content = f.read()
+              tree_data = f.read()
 
           with open("README.md", "r", encoding="utf-8") as f:
-              readme = f.read()
+              content = f.read()
 
-          start_tag = ""
-          end_tag = ""
-          
-          new_block = f"{start_tag}\n\n```text\n{tree_content}```\n\n{end_tag}"
-          
-          # greedy matching으로 첫 시작태그부터 마지막 끝태그까지 통째로 교체
-          if start_tag in readme and end_tag in readme:
-              # .*(greedy)를 써서 중간에 태그가 여러 개 있어도 맨 처음과 맨 끝을 잡아버림
-              pattern = re.compile(rf"{start_tag}.*?{end_tag}", re.DOTALL)
-              
-              # 만약 이미 중복 태그가 많다면, 모든 매칭을 하나로 합치기 위해 sub 대신 직접 처리
-              parts = readme.split(start_tag)
-              prefix = parts[0]
-              suffix = readme.split(end_tag)[-1]
-              updated_readme = f"{prefix}{new_block}{suffix}"
+          # 첫 번째 시작 태그와 마지막 끝 태그 위치 찾기
+          start_idx = content.find(START_TAG)
+          end_idx = content.rfind(END_TAG)
 
-              with open("README.md", "w", encoding="utf-8") as f:
-                  f.write(updated_readme)
-              print("README cleaned and updated.")
-          else:
-              print("Tags not found!")
+          if start_idx == -1 or end_idx == -1:
+              print("Tags not found in README.md!")
+              exit(1)
+
+          # 태그 포함해서 그 사이를 싹 다 갈아끼움
+          new_block = f"{START_TAG}\n\n```text\n{tree_data}```\n\n{END_TAG}"
+          new_content = content[:start_idx] + new_block + content[end_idx + len(END_TAG):]
+
+          with open("README.md", "w", encoding="utf-8") as f:
+              f.write(new_content)
           '
 
       - name: Commit and Push
