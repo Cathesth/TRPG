@@ -771,25 +771,6 @@
                                 <a href="/" className="text-gray-500 hover:text-white p-2 rounded hover:bg-gray-800"><Icon name="log-out" size={18} /></a>
                             </div>
                             <div className="p-4 space-y-3">
-                                {/* Undo/Redo 버튼 추가 */}
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={handleUndo}
-                                        disabled={historyIndex <= 0}
-                                        className={`flex-1 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-sm flex items-center justify-center gap-2 ${historyIndex <= 0 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-700 text-cyan-300'}`}
-                                        title="실행 취소 (Ctrl+Z)"
-                                    >
-                                        <Icon name="undo" size={16} /> Undo
-                                    </button>
-                                    <button
-                                        onClick={handleRedo}
-                                        disabled={historyIndex >= history.length - 1}
-                                        className={`flex-1 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-sm flex items-center justify-center gap-2 ${historyIndex >= history.length - 1 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-700 text-cyan-300'}`}
-                                        title="다시 실행 (Ctrl+Y)"
-                                    >
-                                        <Icon name="redo" size={16} /> Redo
-                                    </button>
-                                </div>
 
                                 <button onClick={() => addNode('scene')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-indigo-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-indigo-500 rounded-full"></div> 씬 추가</button>
                                 <button onClick={() => addNode('ending')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-red-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-red-500 rounded-full"></div> 엔딩 추가</button>
