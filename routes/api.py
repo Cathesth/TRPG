@@ -111,6 +111,7 @@ def list_scenarios():
 
     user_id = current_user.id if current_user.is_authenticated else None
 
+    # 서비스 호출
     file_infos = ScenarioService.list_scenarios(sort_order, user_id, filter_mode, limit)
 
     if not file_infos:
@@ -160,11 +161,11 @@ def list_scenarios():
 
 @api_bp.route('/load_scenario', methods=['POST'])
 def load_scenario():
-    fid = request.form.get('filename')  # DB ID
+    fid = request.form.get('filename')
     user_id = current_user.id if current_user.is_authenticated else None
 
     result, error = ScenarioService.load_scenario(fid, user_id)
-    if error: return f'<div class="bg-red-500/10 text-red-400 p-4 rounded-lg border border-red-500/20 shadow-lg fixed bottom-4 right-4 z-50">로드 실패: {error}</div>'
+    if error: return f'<div class="bg-red-500/10 text-red-400 p-4 rounded-lg border border-red-500/20 shadow-lg fixed bottom-4 right-4 z-50 animate-bounce-in">로드 실패: {error}</div>'
 
     scenario = result['scenario']
     start_id = pick_start_scene_id(scenario)
@@ -179,7 +180,7 @@ def load_scenario():
     }
     game_state.game_graph = create_game_graph()
 
-    # [수정] 버튼 클릭 시 함수 실행이 아니라 플레이어 페이지로 이동하도록 변경
+    # [핵심 수정] 버튼을 클릭하면 JS 함수가 아니라 실제 URL로 이동하도록 <a> 태그 사용
     return f'''
     <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 animate-bounce-in">
         <div class="bg-green-900/90 border border-green-500/30 text-green-100 px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-4">
@@ -246,12 +247,12 @@ def init_game():
             update_build_progress(status="error", detail=f"저장 오류: {error}")
             return jsonify({"error": error}), 500
 
-        # 즉시 로드
+        # 즉시 로드 (선택 사항)
         game_state.config['title'] = scenario_json.get('title')
         game_state.state = {
             "scenario": scenario_json,
             "current_scene_id": pick_start_scene_id(scenario_json),
-            "player_vars": {},  # 초기화 생략
+            "player_vars": {},
             "history": [], "last_user_choice_idx": -1, "system_message": "Init", "npc_output": "", "narrator_output": ""
         }
         game_state.game_graph = create_game_graph()
