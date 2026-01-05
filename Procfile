@@ -1,1 +1,1 @@
-web: gunicorn final_git.app:app --timeout 600 --worker-class gthread --threads 4 --log-file -
+web: gunicorn app:app --worker-class gthread --threads 4 --timeout 600 --bind 0.0.0.0:$PORT
