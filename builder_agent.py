@@ -181,7 +181,7 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
                 "description": "Rich scene description in Korean. 첫 문단은 반드시 이전 씬에서의 선택 결과로 시작해야 함. 이 결과가 현재 씬의 분위기를 어떻게 지배하는지 서술.",
                 "transitions": [
                     {
-                        "trigger": "Action description in Korean (이 선택이 다음 씬에 어떤 결과를 초래할지 암시)",
+                        "trigger": "Simple Action description in Korean (예: '문을 연다', '망치로 벽을 부순다')",
                         "conditions": [
                             { "type": "stat_check", "stat": "STR", "value": 10 }
                         ],
@@ -193,11 +193,26 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
                 ]
             }
             """
+            # [수정] 게임 메카닉 및 행동 정의 규칙 강화
             game_mechanics_prompt = """
-            [GAME MECHANICS]
-            - Add conditions (Stat/Item check) to transitions.
-            - Add effects (Get Item, Change Stat) to transitions.
-            - Add narrative_tag to each transition (서사적 태그: 이 선택이 플레이어 캐릭터에게 어떤 의미인지).
+            [GAME MECHANICS & ACTION RULES]
+            1. **Simple Triggers (Actions)**:
+               - Actions MUST be simple and direct. Format: "Object + Verb".
+               - Example: "문을 연다" (Open door), "열쇠를 줍는다" (Pick up key), "도망친다" (Run away).
+               - **DO NOT** use complex sentences like "열쇠를 주워서 문을 열고 나간다". Break it down.
+
+            2. **Key Item Actions**:
+               - If an action requires a specific item, explicitly state it in the trigger.
+               - Format: "Item + Target + Verb".
+               - Example: "망치로 벽을 부순다" (Break wall with hammer), "열쇠로 상자를 연다" (Open box with key).
+
+            3. **Item Acquisition & Hints**:
+               - If this scene involves obtaining a key item (effect: gain_item), the 'description' MUST provide a **subtle hint** about its future use.
+               - Example: When getting a 'Hammer', describe: "A heavy hammer lies there. It looks strong enough to break a cracked wall."
+               - The trigger to get the item should simply be "망치를 줍는다" (Pick up hammer).
+
+            4. **Logical Conditions**:
+               - Add logical 'conditions' for transitions (e.g., must have 'Key' to 'Open locked door').
             """
 
         prompt = f"""
