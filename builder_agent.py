@@ -25,10 +25,12 @@ DEFAULT_MODEL = "openai/tngtech/deepseek-r1t2-chimera:free"
 # --- [진행률 콜백 함수] ---
 _progress_callback = None
 
+
 def set_progress_callback(callback):
     """진행률 업데이트 콜백 설정"""
     global _progress_callback
     _progress_callback = callback
+
 
 def _update_progress(status=None, step=None, detail=None, progress=None,
                      total_scenes=None, completed_scenes=None, current_phase=None):
@@ -113,7 +115,8 @@ def parse_react_flow(react_flow_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleton: Dict, api_key: str, model_name: str = None) -> Dict:
+def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleton: Dict, api_key: str,
+                           model_name: str = None) -> Dict:
     try:
         # 모델 선택
         use_model = model_name if model_name else DEFAULT_MODEL
@@ -354,7 +357,7 @@ def _validate_scenario(scenario_data: Dict, llm) -> Tuple[bool, str]:
 
     [OUTPUT JSON]
     {{ "is_valid": true, "critical_issues": "None" }}
-    
+
     If issues found:
     {{ "is_valid": false, "critical_issues": "씬 간 인과관계 부족, NPC 일관성 오류 등 구체적 문제점" }}
     """
@@ -368,47 +371,78 @@ def _validate_scenario(scenario_data: Dict, llm) -> Tuple[bool, str]:
 
 def _refine_scenario(scenario_data: Dict, issues: str, llm) -> Dict:
     """
-    [Refiner Agent] 아주 강력한 수정 명령
+    [Refiner Agent - Patch Mode]
+    전체 시나리오를 다시 생성하지 않고, 수정이 필요한 부분만 JSON으로 반환받아 병합합니다.
     """
-    logger.info(f"🛠️ [Refiner] Fixing Issues: {issues}")
+    logger.info(f"🛠️ [Refiner] Patching Issues: {issues}")
 
     prompt = f"""
     [ROLE]
     You are a professional Korean TRPG Editor.
 
     [TASK]
-    Fix the provided Scenario JSON based on issues: "{issues}".
+    Fix the provided Scenario based on issues: "{issues}".
 
-    [CRITICAL INSTRUCTIONS]
-    1. **TRANSLATE ALL ENGLISH TO KOREAN.** (Titles, Descriptions, Triggers, Conditions)
-    2. **FILL EMPTY FIELDS.** If 'background_story' or 'prologue' is empty, write a creative one fitting the genre.
-    3. **REPLACE 'Untitled'.** Create immersive titles for scenes.
-    4. **FIX CONDITIONS.** Ensure ending conditions describe the cause (e.g., '전투 패배', '탈출 성공').
-    5. **KEEP STRUCTURE.** Do NOT remove scenes or change IDs.
+    [CONSTRAINT] 
+    1. **DO NOT REWRITE THE WHOLE SCENARIO.** (It is too long)
+    2. Return a JSON containing **ONLY the fields or scenes that need changes.**
+    3. If a specific scene needs fixing, include its 'scene_id' and the updated fields (title, description, transitions).
+    4. If prologue needs fixing, include 'prologue'.
+    5. **ALL CONTENT MUST BE IN KOREAN.**
 
-    [INPUT JSON]
-    {json.dumps(scenario_data, ensure_ascii=False)}
+    [INPUT CONTEXT]
+    Title: {scenario_data.get('title')}
+    Background: {scenario_data.get('background_story')[:200]}...
+    Current Scene IDs: {[s['scene_id'] for s in scenario_data.get('scenes', [])]}
 
-    [OUTPUT]
-    Return ONLY the corrected JSON.
+    [OUTPUT JSON FORMAT]
+    {{
+        "prologue": "Updated prologue text (optional, only if needed)",
+        "scenes_to_update": [
+            {{ 
+                "scene_id": "target_scene_id", 
+                "title": "Fixed Title (Korean)", 
+                "description": "Fixed Description (Korean)" 
+            }}
+        ]
+    }}
     """
 
     try:
-        # Deepseek/OpenAI 모델은 긴 컨텍스트 처리가 가능하므로 전체 전송
         res = llm.invoke(prompt).content
-        fixed_data = parse_json_garbage(res)
+        patch_data = parse_json_garbage(res)
 
-        # 구조 체크
-        if isinstance(fixed_data, dict) and ('scenes' in fixed_data or 'endings' in fixed_data):
-            # 만약 리파이너가 실수로 scenes를 날렸으면 원본 복구 시도
-            if 'scenes' not in fixed_data: fixed_data['scenes'] = scenario_data.get('scenes', [])
-            if 'endings' not in fixed_data: fixed_data['endings'] = scenario_data.get('endings', [])
+        # 1. 프롤로그 수정 적용
+        if 'prologue' in patch_data and patch_data['prologue']:
+            scenario_data['prologue'] = patch_data['prologue']
+            logger.info("✅ [Refiner] Prologue patched.")
 
-            logger.info("✅ [Refiner] Fixed successfully.")
-            return fixed_data
-        else:
-            logger.warning("❌ [Refiner] Invalid structure. Using original.")
-            return scenario_data
+        # 2. 씬 수정 적용
+        updates = {s['scene_id']: s for s in patch_data.get('scenes_to_update', []) if 'scene_id' in s}
+
+        if updates:
+            updated_count = 0
+            # 기존 씬 리스트를 순회하며 ID가 일치하면 업데이트
+            for scene in scenario_data.get('scenes', []):
+                sid = scene.get('scene_id')
+                if sid in updates:
+                    logger.info(f"✅ [Refiner] Patching scene {sid}...")
+                    # 기존 데이터에 업데이트 데이터 병합 (덮어쓰기)
+                    scene.update(updates[sid])
+                    updated_count += 1
+
+            # 엔딩도 체크 (혹시 엔딩을 수정했을 경우)
+            for ending in scenario_data.get('endings', []):
+                eid = ending.get('ending_id')
+                if eid in updates:
+                    logger.info(f"✅ [Refiner] Patching ending {eid}...")
+                    ending.update(updates[eid])
+                    updated_count += 1
+
+            logger.info(f"✅ [Refiner] Total {updated_count} scenes/endings updated.")
+
+        return scenario_data
+
     except Exception as e:
         logger.error(f"Refiner Error: {e}")
         return scenario_data
@@ -459,7 +493,8 @@ def normalize_ids(scenario_data: Dict[str, Any]) -> Dict[str, Any]:
     return scenario_data
 
 
-def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], model_name: str = None) -> Dict[str, Any]:
+def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], model_name: str = None) -> Dict[
+    str, Any]:
     logger.info("🚀 [Builder] Starting generation...")
 
     # 모델 선택: 전달된 model_name 사용, 없으면 DEFAULT_MODEL
@@ -513,18 +548,18 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
 
         setting_prompt = f"""
             [TASK] Create a TRPG world setting.
-            
+
             [USER REQUEST - MUST FOLLOW]
             {user_prompt}
-            
+
             [SCENE TITLES FOR REFERENCE]
             {', '.join(titles)}
-            
+
             [RULES]
             1. The genre and background_story MUST match what the user requested above.
             2. Do NOT ignore or change the user's specified genre/theme.
             3. All text must be in Korean.
-            
+
             [OUTPUT JSON]
             {{
                 "title": "창의적인 시나리오 제목",
@@ -625,6 +660,7 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
                 progress=85
             )
 
+            # Refine 단계에서 Patch 방식으로 수정
             final_result = _refine_scenario(draft_scenario, issues, llm)
             final_result['prologue_connects_to'] = first_scene_ids
 
@@ -701,4 +737,3 @@ def parse_json_garbage(text: str) -> Dict[str, Any]:
         except:
             pass
         return {}
-
