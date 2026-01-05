@@ -354,9 +354,6 @@ def narrator_stream_generator(state: PlayerState):
         yield state.get('narrator_output', '')
         return
 
-    # Narrator 로직과 동일, but stream() 사용
-    # ... (생략 없이 위 narrator_node 로직을 스트리밍으로 구현)
-
     scenario = state['scenario']
     curr_id = state['current_scene_id']
     p_vars = state['player_vars']
@@ -367,6 +364,10 @@ def narrator_stream_generator(state: PlayerState):
     scene_title = curr_scene.get('title') if curr_scene else "Unknown"
     scene_desc = curr_scene.get('description') if curr_scene else ""
 
+    # 트랜지션 트리거 정보 수집 (힌트용)
+    transitions = curr_scene.get('transitions', []) if curr_scene else []
+    trigger_hints = [t.get('trigger', '') for t in transitions if t.get('trigger')]
+
     npc_context = f"[NPC SPEAKING]: {state.get('npc_output')}" if state.get('npc_output') else ""
 
     context = f"""
@@ -375,14 +376,22 @@ def narrator_stream_generator(state: PlayerState):
     [PLAYER STATUS]: HP={p_vars.get('hp')}, Inventory={p_vars.get('inventory', [])}
     {npc_context}
     [LAST ACTION]: "{state.get('last_user_input')}"
+    [AVAILABLE TRIGGERS (HIDDEN FROM PLAYER)]: {trigger_hints}
     """
 
     system_prompt = f"""
     You are the Game Master (Narrator).
     Describe the result of the player's action and the new situation.
-    - If NPC is speaking, incorporate it.
+    
+    **HINT SYSTEM:**
+    - Available triggers: {trigger_hints}
+    - Wrap 1-2 key keywords with <mark> tags. Example: "문 옆에 <mark>열쇠</mark>가 반짝인다"
+    - Be natural - do NOT say "힌트"
+    
+    - Include NPC dialogue if present
     - Style: {scenario.get('genre', 'General')}
     - Language: Korean (한국어)
+    - Keep it brief (2-3 sentences)
     """
 
     try:
@@ -441,6 +450,10 @@ def scene_stream_generator(state: PlayerState):
     scene_desc = curr_scene.get('description', '')
     npc_names = curr_scene.get('npcs', [])
 
+    # 트랜지션 트리거 정보 수집 (힌트용)
+    transitions = curr_scene.get('transitions', []) if curr_scene else []
+    trigger_hints = [t.get('trigger', '') for t in transitions if t.get('trigger')]
+
     last_action = state.get('last_user_input', '')
 
     prompt = f"""
@@ -452,13 +465,25 @@ def scene_stream_generator(state: PlayerState):
     [NPCs PRESENT]: {', '.join(npc_names) if npc_names else 'None'}
     [PLAYER STATUS]: HP={p_vars.get('hp')}, Inventory={p_vars.get('inventory', [])}
     [LAST ACTION]: "{last_action}"
+    [AVAILABLE TRIGGERS (HIDDEN FROM PLAYER)]: {trigger_hints}
 
     Describe this scene vividly as if the player just arrived or just made a choice.
+    
+    **IMPORTANT HINT SYSTEM:**
+    - You have access to [AVAILABLE TRIGGERS] which are the hidden actions that lead to the next scene.
+    - Naturally weave hints about ALL these triggers into your narration WITHOUT directly revealing them.
+    - When hinting at a key action or keyword related to triggers, wrap it with <mark> tags.
+    - Example: "탕비실의 <mark>썩은 우유</mark> 냄새가 코를 찌르며, 과열된 <mark>커피 머신</mark>이 딸깍거린다."
+    - The hints should feel organic and immersive, like environmental storytelling.
+    - Try to include hints for ALL available triggers (1-3 hints depending on trigger count).
+    - Do NOT say "힌트:" or explicitly mention that you're giving a hint.
+    - Do NOT directly say "you can do X" - instead describe objects/situations that suggest actions.
+    
     - Be atmospheric and immersive
     - Describe the environment and any NPCs present
     - Keep it around 3-4 sentences
     - Language: Korean (한국어)
-    - IMPORTANT: Do NOT list choices. Just describe the scene.
+    - IMPORTANT: Do NOT list choices. Just describe the scene with subtle hints.
     """
 
     try:
