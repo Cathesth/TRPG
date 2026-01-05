@@ -226,6 +226,7 @@ def init_game():
 
 @api_bp.route('/presets', methods=['GET'])
 def list_presets():
+    """프리셋 목록 조회 API (JSON 반환)"""
     sort_order = request.args.get('sort', 'newest')
     limit = request.args.get('limit', type=int)
 
@@ -233,44 +234,8 @@ def list_presets():
 
     file_infos = PresetService.list_presets(sort_order, user_id, limit)
 
-    if not file_infos:
-        return '<div class="col-span-1 md:col-span-2 text-center text-gray-500 py-8">표시할 프리셋이 없습니다.</div>'
-
-    html = ""
-    for info in file_infos:
-        fid = info['filename']
-        title = info['title']
-        desc = info['desc']
-        author = info['author']
-        is_owner = info['is_owner']
-
-        action_buttons = ""
-        if is_owner:
-            action_buttons += f"""
-            <button onclick="deletePreset('{fid}', this)" 
-                    class="text-gray-500 hover:text-red-400 p-1" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-            """
-
-        html += f"""
-        <div class="bg-dark-800 p-5 rounded-lg border border-white/5 hover:border-brand-purple/50 transition-colors flex flex-col justify-between h-full group relative">
-            <div>
-                <div class="flex justify-between items-start mb-2">
-                    <h4 class="font-bold text-white text-lg flex items-center">{title}</h4>
-                    <div class="opacity-0 group-hover:opacity-100 transition-opacity flex">{action_buttons}</div>
-                </div>
-                <div class="flex justify-between items-center text-xs text-gray-500 mb-1">
-                    <span>{author}</span>
-                </div>
-                <p class="text-sm text-gray-400 mb-4 line-clamp-2">{desc}</p>
-            </div>
-            <button hx-post="/api/load_preset" hx-vals='{{"filename": "{fid}"}}' hx-target="#init-result"
-                    class="w-full bg-brand-purple/10 hover:bg-brand-purple/20 text-brand-light py-2 rounded text-sm font-bold flex justify-center gap-2 border border-brand-purple/30 transition-all">
-                <i data-lucide="play" class="w-4 h-4"></i> 적용하기
-            </button>
-        </div>
-        """
-    html += '<script>lucide.createIcons();</script>'
-    return html
+    # JSON으로 반환 (React에서 사용)
+    return jsonify(file_infos)
 
 
 @api_bp.route('/presets/save', methods=['POST'])
