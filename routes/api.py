@@ -6,10 +6,12 @@ import threading
 from flask import Blueprint, request, jsonify, Response, stream_with_context
 from flask_login import login_user, logout_user, login_required, current_user
 
+
 from core.state import game_state
 from core.utils import parse_request_data, pick_start_scene_id
 from services.scenario_service import ScenarioService
 from services.user_service import UserService
+from services.preset_service import PresetService  # [추가] 이거 없어서 에러 난 거임
 from game_engine import create_game_graph
 
 logger = logging.getLogger(__name__)
@@ -217,3 +219,48 @@ def init_game():
         logger.error(f"Init Error: {e}")
         update_build_progress(status="error", detail=str(e))
         return jsonify({"error": str(e)}), 500
+
+    # --- [프리셋 관리 API] ---
+
+    @api_bp.route('/presets', methods=['GET'])
+    def list_presets():
+        """프리셋 목록 조회"""
+        presets = PresetService.list_presets()
+        return jsonify(presets)
+
+    @api_bp.route('/presets/save', methods=['POST'])
+    def save_preset():
+        """프리셋 저장"""
+        data = request.get_json(force=True)
+        filename, error = PresetService.save_preset(data)
+
+        if error:
+            return jsonify({"success": False, "error": error}), 400
+
+        return jsonify({
+            "success": True,
+            "message": "프리셋이 성공적으로 저장되었습니다.",
+            "filename": filename
+        })
+
+    @api_bp.route('/presets/load', methods=['POST'])
+    def load_preset():
+        """프리셋 불러오기"""
+        data = request.get_json(force=True)
+        preset_data, error = PresetService.load_preset(data.get('filename'))
+
+        if error:
+            return jsonify({"success": False, "error": error}), 400
+
+        return jsonify({"success": True, "data": preset_data})
+
+    @api_bp.route('/presets/delete', methods=['POST'])
+    def delete_preset():
+        """프리셋 삭제"""
+        data = request.get_json(force=True)
+        success, error = PresetService.delete_preset(data.get('filename'))
+
+        if not success:
+            return jsonify({"success": False, "error": error}), 400
+
+        return jsonify({"success": True, "message": "프리셋이 삭제되었습니다."})
