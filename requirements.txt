@@ -8,3 +8,4 @@ flask-login
 werkzeug
 flask-sqlalchemy
 psycopg2-binary
+gunicorn
