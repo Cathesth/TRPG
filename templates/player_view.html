@@ -36,6 +36,15 @@
 
         .serif-font { font-family: 'Noto Serif KR', Georgia, serif; }
 
+        /* 힌트 키워드 하이라이트 스타일 */
+        mark {
+            background: linear-gradient(120deg, rgba(251, 191, 36, 0.15) 0%, rgba(251, 191, 36, 0.2) 100%);
+            color: #fbbf24;
+            padding: 0.1em 0.3em;
+            border-radius: 3px;
+            font-weight: 500;
+        }
+
         /* 뤼튼 스타일 그라데이션 */
         .brand-gradient {
             background: linear-gradient(135deg, #6E47E6 0%, #818cf8 100%);
@@ -694,7 +703,7 @@
                                     narratorText += data.content;
                                     const narratorSpan = document.getElementById('narrator-stream');
                                     if (narratorSpan) {
-                                        narratorSpan.textContent = narratorText;
+                                        narratorSpan.innerHTML = narratorText;
                                     } else {
                                         currentContent += data.content;
                                         contentDiv.innerHTML = currentContent + '<span class="streaming-cursor">▌</span>';
