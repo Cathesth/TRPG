@@ -17,6 +17,8 @@ LOG_DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 # 레거시 파일 시스템 호환용
 DB_FOLDER = os.path.join(BASE_DIR, 'DB')
+# [CRITICAL FIX] PresetService에서 참조하는 경로 추가
+PRESETS_FOLDER = os.path.join(DB_FOLDER, 'presets')
 
 # [CRITICAL FIX] state.py 오류 방지용 기본 설정
 DEFAULT_CONFIG = {
