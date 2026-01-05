@@ -4,7 +4,7 @@ import logging
 import os
 import re
 import difflib
-from typing import TypedDict, List, Dict, Any, Union
+from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 from llm_factory import LLMFactory
 from dotenv import load_dotenv
@@ -19,10 +19,9 @@ class PlayerState(TypedDict):
     current_scene_id: str
     player_vars: Dict[str, Any]
     history: List[str]
-    last_user_choice_idx: int  # -1이면 선택 안함 / 트랜지션 인덱스로 사용
+    last_user_choice_idx: int
     last_user_input: str
-
-    parsed_intent: str  # 'transition', 'chat', 'ending', 'unknown'
+    parsed_intent: str
     system_message: str
     npc_output: str
     narrator_output: str
@@ -32,17 +31,23 @@ class PlayerState(TypedDict):
 
 
 def normalize_text(text: str) -> str:
-    """공백 제거 및 소문자 변환 (매칭 확률 높이기 위함)"""
+    """텍스트 정규화 (공백 제거, 소문자)"""
     return text.lower().replace(" ", "")
 
 
-# Node 1: Intent Parser (속도 최적화: Fuzzy Matching 적용)
+# --- Nodes ---
+
 def intent_parser_node(state: PlayerState):
+    """
+    Node 1: 유저 입력 의도 파악
+    - Fast-Track: 단순 선택이나 키워드 매칭 시 LLM 없이 즉시 처리
+    - Slow-Path: 애매한 입력은 LLM이 판단
+    """
     user_input = state.get('last_user_input', '').strip()
     norm_input = normalize_text(user_input)
     logger.info(f"🟢 [USER INPUT]: {user_input}")
 
-    # 1. 시스템적으로 이미 선택된 경우 (UI 클릭 등 대비)
+    # 1. 시스템적으로 이미 선택된 경우 (UI 클릭 등)
     if state.get('last_user_choice_idx', -1) != -1:
         state['parsed_intent'] = 'transition'
         return state
@@ -52,7 +57,7 @@ def intent_parser_node(state: PlayerState):
     scenes = {s['scene_id']: s for s in scenario['scenes']}
     curr_scene = scenes.get(curr_scene_id)
 
-    # 엔딩 체크
+    # 2. 엔딩 체크
     endings = {e['ending_id']: e for e in scenario.get('endings', [])}
     if curr_scene_id in endings:
         state['parsed_intent'] = 'ending'
@@ -60,13 +65,13 @@ def intent_parser_node(state: PlayerState):
 
     transitions = curr_scene.get('transitions', []) if curr_scene else []
 
+    # 트랜지션 없으면 무조건 채팅
     if not transitions:
         state['parsed_intent'] = 'chat'
         return state
 
-    # --- [Fast-Track] 텍스트 매칭 & 유사도 검사 (LLM 생략) ---
-
-    match_found = False
+    # 3. [Fast-Track] 텍스트 유사도 매칭 (LLM 생략)
+    # 파이썬 코드로 직접 비교하므로 속도가 매우 빠름 (0.01초 미만)
     best_idx = -1
     highest_ratio = 0.0
 
@@ -75,7 +80,7 @@ def intent_parser_node(state: PlayerState):
         if not trigger: continue
         norm_trigger = normalize_text(trigger)
 
-        # 1. 완전 일치 또는 포함 관계
+        # 완전 일치 또는 포함 관계
         if norm_input == norm_trigger or (
                 len(norm_input) > 2 and (norm_input in norm_trigger or norm_trigger in norm_input)):
             logger.info(f"⚡ [FAST-TRACK] Direct Match: '{user_input}' matched '{trigger}'")
@@ -83,85 +88,62 @@ def intent_parser_node(state: PlayerState):
             state['parsed_intent'] = 'transition'
             return state
 
-        # 2. 유사도 검사 (오타 허용) - difflib 사용
+        # 유사도 검사 (오타 허용)
         similarity = difflib.SequenceMatcher(None, norm_input, norm_trigger).ratio()
         if similarity > highest_ratio:
             highest_ratio = similarity
             best_idx = idx
 
-    # 유사도가 0.8(80%) 이상이면 AI 호출 없이 바로 인정
-    if highest_ratio >= 0.8:
+    # 유사도가 0.7(70%) 이상이면 AI 호출 없이 바로 인정
+    if highest_ratio >= 0.7:
         logger.info(f"⚡ [FAST-TRACK] Fuzzy Match ({highest_ratio:.2f}): '{user_input}' -> Transtion {best_idx}")
         state['last_user_choice_idx'] = best_idx
         state['parsed_intent'] = 'transition'
         return state
 
-    # --- [Slow-Path] LLM 기반 판단 ---
-
-    triggers_text = "\n".join([f"- [HIDDEN ACTION] {t['trigger']}" for t in transitions])
-
+    # 4. [Slow-Path] LLM 기반 판단 (최후의 수단)
+    triggers_text = "\n".join([f"- {t['trigger']}" for t in transitions])
     prompt = f"""
-    [ROLE] Intent Classifier for TRPG
-    [TASK] Determine if the USER INPUT matches any of the HIDDEN ACTIONS semantically.
-
-    [SCENE CONTEXT]
-    Current Scene: {curr_scene.get('title')}
-
-    [HIDDEN ACTIONS (Player doesn't see these)]
+    [TASK] Match user input to hidden triggers.
+    [TRIGGERS]
     {triggers_text}
-
-    [USER INPUT]
-    "{user_input}"
-
-    [INSTRUCTION]
-    - The player does NOT know the exact phrasing of hidden actions.
-    - If the user's input implies they want to perform one of the hidden actions, match it.
-    - If it's just a question, casual chat, or unrelated action, return "chat".
-
-    [OUTPUT JSON ONLY]
-    Match found: {{"type": "transition", "index": <1-based index>}}
-    No match: {{"type": "chat"}}
+    [INPUT] "{user_input}"
+    [OUTPUT JSON] {{"type": "transition"|"chat", "index": 1-based_index}}
     """
-
     try:
         api_key = os.getenv("OPENROUTER_API_KEY")
+        # 판단용 가벼운 모델 사용
         llm = LLMFactory.get_llm(api_key=api_key, model_name="openai/tngtech/deepseek-r1t2-chimera:free")
         response = llm.invoke(prompt).content.strip()
 
+        # JSON 파싱 시도
         try:
             if "```" in response:
                 response = response.split("```")[1].replace("json", "").strip()
             result = json.loads(response)
+
+            if result.get('type') == 'transition':
+                idx = int(result.get('index', 0)) - 1
+                if 0 <= idx < len(transitions):
+                    state['last_user_choice_idx'] = idx
+                    state['parsed_intent'] = 'transition'
+                    return state
         except:
-            import re
-            type_match = re.search(r'"type":\s*"(\w+)"', response)
-            idx_match = re.search(r'"index":\s*(\d+)', response)
-            result = {
-                "type": type_match.group(1) if type_match else "chat",
-                "index": int(idx_match.group(1)) if idx_match else 0
-            }
-
-        if result.get('type') == 'transition':
-            idx = int(result.get('index', 0)) - 1
-            if 0 <= idx < len(transitions):
-                state['last_user_choice_idx'] = idx
-                state['parsed_intent'] = 'transition'
-            else:
-                state['parsed_intent'] = 'chat'
-        else:
-            state['parsed_intent'] = 'chat'
-
+            pass
     except Exception as e:
-        logger.error(f"[Parser] Error: {e}")
-        state['parsed_intent'] = 'chat'
+        logger.error(f"Intent Parser LLM Error: {e}")
 
-    logger.info(f"🔍 [INTENT]: {state.get('parsed_intent')} (Idx: {state.get('last_user_choice_idx')})")
-
+    # 매칭 실패 시 기본값: 채팅
+    state['parsed_intent'] = 'chat'
     return state
 
 
-# Node 2: Rule Engine
 def rule_node(state: PlayerState):
+    """
+    Node 2: 규칙 엔진 (이펙트 적용 및 씬 이동)
+    - 아이템 획득/분실
+    - 스탯(HP, Sanity 등) 변경
+    """
     idx = state['last_user_choice_idx']
     scenario = state['scenario']
     curr_scene_id = state['current_scene_id']
@@ -170,18 +152,17 @@ def rule_node(state: PlayerState):
     all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
 
     sys_msg = []
-
-    # --- [1] 트랜지션 및 효과 처리 ---
     curr_scene = all_scenes.get(curr_scene_id)
     transitions = curr_scene.get('transitions', []) if curr_scene else []
 
-    if state['parsed_intent'] == 'transition' and transitions and 0 <= idx < len(transitions):
-        transition = transitions[idx]
-        effects = transition.get('effects', [])
-        next_id = transition.get('target_scene_id')
-        trigger_desc = transition.get('trigger', '행동')
+    # 트랜지션 실행 조건 충족 시
+    if state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
+        trans = transitions[idx]
+        effects = trans.get('effects', [])
+        next_id = trans.get('target_scene_id')
+        trigger_desc = trans.get('trigger', '행동')
 
-        # 효과 적용
+        # --- [이펙트 처리 로직 복구됨] ---
         for eff in effects:
             try:
                 if isinstance(eff, dict):
@@ -189,29 +170,34 @@ def rule_node(state: PlayerState):
                     operation = eff.get("operation", "add")
                     raw_val = eff.get("value", 0)
 
+                    # 값 타입 변환
                     val = 0
-                    if isinstance(raw_val, (int, float)) or (isinstance(raw_val, str) and raw_val.isdigit()):
+                    if isinstance(raw_val, (int, float)):
+                        val = int(raw_val)
+                    elif isinstance(raw_val, str) and raw_val.isdigit():
                         val = int(raw_val)
 
-                    # 아이템 처리
+                    # A. 아이템 처리 (gain_item / lose_item)
                     if operation in ["gain_item", "lose_item"]:
                         item_name = str(eff.get("value", ""))
                         inventory = state['player_vars'].get('inventory', [])
+
                         if operation == "gain_item":
                             if item_name not in inventory:
                                 inventory.append(item_name)
-                                sys_msg.append(f"아이템 획득: {item_name}")
+                                sys_msg.append(f"📦 아이템 획득: {item_name}")
                         elif operation == "lose_item":
                             if item_name in inventory:
                                 inventory.remove(item_name)
-                                sys_msg.append(f"아이템 소실: {item_name}")
+                                sys_msg.append(f"🗑️ 아이템 사용: {item_name}")
+
                         state['player_vars']['inventory'] = inventory
                         continue
 
-                    # 수치 변수 처리
+                    # B. 수치 변수 처리 (HP, Sanity, Gold 등)
                     if key:
                         current_val = state['player_vars'].get(key, 0)
-                        if not isinstance(current_val, int): current_val = 0
+                        if not isinstance(current_val, (int, float)): current_val = 0
 
                         if operation == "add":
                             new_val = current_val + val
@@ -228,24 +214,19 @@ def rule_node(state: PlayerState):
                         state['player_vars'][key] = new_val
 
             except Exception as e:
-                logger.error(f"Effect Error: {e}")
+                logger.error(f"Effect Processing Error: {e}")
                 pass
 
-        # 씬 전환 (ID 업데이트)
+        # 씬 ID 변경
         if next_id:
             state['current_scene_id'] = next_id
-            logger.info(f"👣 [SCENE MOVE]: {curr_scene_id} -> {next_id}")
+            logger.info(f"👣 [MOVE] {curr_scene_id} -> {next_id}")
 
-    # --- [2] 변경된 current_scene_id 기준으로 엔딩 체크 ---
-    current_id_after_action = state['current_scene_id']
-
-    if current_id_after_action in all_endings:
-        ending = all_endings[current_id_after_action]
+    # 이동 후 엔딩인지 체크
+    if state['current_scene_id'] in all_endings:
+        ending = all_endings[state['current_scene_id']]
         state['parsed_intent'] = 'ending'
-        state['system_message'] = "Game Over"
-        state['npc_output'] = ""
-
-        # 엔딩 HTML
+        # 엔딩 시 나레이터 출력 미리 생성
         state['narrator_output'] = f"""
         <div class="my-8 p-8 border-2 border-yellow-500/50 bg-gradient-to-b from-yellow-900/40 to-black rounded-xl text-center fade-in shadow-2xl relative overflow-hidden">
             <h3 class="text-3xl font-black text-yellow-400 mb-4 tracking-[0.2em] uppercase drop-shadow-md">🎉 ENDING 🎉</h3>
@@ -256,20 +237,15 @@ def rule_node(state: PlayerState):
             </p>
         </div>
         """
-        return state
 
-    state['npc_output'] = ""
     state['system_message'] = " | ".join(sys_msg)
     return state
 
 
-# Node 3: Narrator (나레이션 생성 - 폴백)
-def narrator_node(state: PlayerState):
-    return state
-
-
-# Node 4: NPC Actor (챗봇)
 def npc_node(state: PlayerState):
+    """
+    Node 3: NPC 챗봇 (유저가 채팅을 시도했을 때)
+    """
     if state.get('parsed_intent') != 'chat':
         state['npc_output'] = ""
         return state
@@ -286,18 +262,22 @@ def npc_node(state: PlayerState):
         state['npc_output'] = ""
         return state
 
+    # 첫 번째 NPC가 대답한다고 가정
     target_npc_name = npc_names[0]
-    npc_info = ""
+    npc_info = f"Name: {target_npc_name}"
+
+    # 시나리오 전체 NPC 목록에서 정보 찾기
     for npc in scenario.get('npcs', []):
         if npc.get('name') == target_npc_name:
-            npc_info = f"Name: {npc.get('name')}\nPersonality: {npc.get('personality')}\nTone: {npc.get('dialogue_style')}"
+            npc_info += f"\nPersonality: {npc.get('personality')}\nTone: {npc.get('dialogue_style')}"
             break
 
     prompt = f"""
-    [ROLE] Act as the NPC '{target_npc_name}'.
+    [ROLE] Act as the NPC '{target_npc_name}' in a TRPG.
+    [SCENE] Current Location: {curr_scene.get('title')}
     [PROFILE] {npc_info}
     [USER SAID] "{user_text}"
-    [TASK] Respond in character. Short (1-2 sentences). Korean.
+    [INSTRUCTION] Respond naturally in character. Keep it short (1-2 sentences). Use Korean.
     """
 
     try:
@@ -305,35 +285,41 @@ def npc_node(state: PlayerState):
         llm = LLMFactory.get_llm(api_key=api_key, model_name="openai/tngtech/deepseek-r1t2-chimera:free")
         response = llm.invoke(prompt).content.strip()
         state['npc_output'] = response
-    except:
-        state['npc_output'] = ""
+    except Exception as e:
+        logger.error(f"NPC LLM Error: {e}")
+        state['npc_output'] = "..."
 
     return state
 
 
-# --- Streaming Functions ---
+def narrator_node(state: PlayerState):
+    """나레이터 노드 (실제 생성은 스트리밍 함수에서 처리하므로 여기선 패스)"""
+    return state
 
-def narrator_stream_generator(state: PlayerState):
-    yield ""
 
+# --- Streaming Generators (SSE) ---
 
 def prologue_stream_generator(state: PlayerState):
+    """프롤로그 텍스트 스트리밍"""
     scenario = state['scenario']
+    # 프롤로그 텍스트 키가 다를 수 있어서 안전하게 가져옴
     prologue_text = scenario.get('prologue', scenario.get('prologue_text', ''))
+
     if not prologue_text:
         yield "이야기가 시작됩니다..."
         return
+
+    # 한 번에 보내지 않고 청크 단위로 끊어서 보내거나, 이미 완성된 텍스트면 그냥 보냄
+    # 여기서는 단순하게 전체 전송 (LLM 생성이 아니므로)
     yield prologue_text
 
 
 def scene_stream_generator(state: PlayerState):
     """
-    씬 묘사 스트리밍 (선택지 미노출 + 힌트 은유적 포함)
+    씬 묘사 스트리밍 (핵심: 선택지 미노출 + 힌트 은유적 포함)
     """
     scenario = state['scenario']
     curr_id = state['current_scene_id']
-    p_vars = state['player_vars']
-    genre = scenario.get('genre', 'Adventure')
 
     all_scenes = {s['scene_id']: s for s in scenario['scenes']}
     curr_scene = all_scenes.get(curr_id)
@@ -346,28 +332,29 @@ def scene_stream_generator(state: PlayerState):
     scene_desc = curr_scene.get('description', '')
     npc_names = curr_scene.get('npcs', [])
 
-    # 힌트용 트리거 정보 (출력용 아님)
+    # 힌트용 트리거 정보 (출력용 아님, AI 힌트용)
     transitions = curr_scene.get('transitions', []) if curr_scene else []
     trigger_hints = [t.get('trigger', '') for t in transitions if t.get('trigger')]
 
     last_action = state.get('last_user_input', '')
 
+    # 나레이션 프롬프트
     prompt = f"""
     You are a Game Master narrating a TRPG scene.
 
     [CONTEXT]
     Title: {scene_title}
     Description: {scene_desc}
-    Last Action: "{last_action}"
-    NPCs: {', '.join(npc_names)}
+    Last Action Player Took: "{last_action}"
+    NPCs Here: {', '.join(npc_names)}
 
-    [AVAILABLE HIDDEN ACTIONS]
+    [AVAILABLE HIDDEN ACTIONS (Do not list these directly!)]
     {trigger_hints}
 
     [INSTRUCTIONS]
-    1. Describe the scene vividly based on the 'Description' and 'Last Action'.
+    1. Describe the scene vividly. Start by describing the result of the 'Last Action'.
     2. Naturally weave **subtle hints** about the 'Available Hidden Actions' into the environment description.
-       - Use <mark>keyword</mark> to highlight interactable objects.
+       - Use HTML <mark>keyword</mark> to slightly highlight interactable objects if needed.
        - Example: "You see a <mark>rusty key</mark> on the table." (Implying user can take it)
     3. **CRITICAL: DO NOT LIST CHOICES.** - Never write "1. Open door", "2. Run away".
        - Never ask "What do you want to do?".
@@ -378,6 +365,7 @@ def scene_stream_generator(state: PlayerState):
 
     try:
         api_key = os.getenv("OPENROUTER_API_KEY")
+        # 스트리밍 지원 모델 사용
         llm = LLMFactory.get_llm(
             api_key=api_key,
             model_name="openai/tngtech/deepseek-r1t2-chimera:free",
@@ -390,20 +378,26 @@ def scene_stream_generator(state: PlayerState):
 
     except Exception as e:
         logger.error(f"Scene Streaming Error: {e}")
+        # 오류 시 기본 설명이라도 출력
         yield scene_desc if scene_desc else "..."
 
 
-# Graph Construction
+# --- Graph Construction ---
+
 def create_game_graph():
+    """LangGraph 워크플로우 생성"""
     workflow = StateGraph(PlayerState)
 
+    # 노드 등록
     workflow.add_node("intent_parser", intent_parser_node)
     workflow.add_node("rule_engine", rule_node)
     workflow.add_node("npc_actor", npc_node)
     workflow.add_node("narrator", narrator_node)
 
+    # 시작점
     workflow.set_entry_point("intent_parser")
 
+    # 조건부 엣지 (분기 처리)
     def route_action(state):
         intent = state.get('parsed_intent')
         if intent == 'transition' or intent == 'ending':
@@ -420,6 +414,7 @@ def create_game_graph():
         }
     )
 
+    # 흐름 연결
     workflow.add_edge("rule_engine", "narrator")
     workflow.add_edge("npc_actor", "narrator")
     workflow.add_edge("narrator", END)
