@@ -50,3 +50,29 @@ class Scenario(db.Model):
             'created_at': self.created_at.timestamp(),
             'updated_at': self.updated_at.timestamp()
         }
+
+
+class Preset(db.Model):
+    __tablename__ = 'presets'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, default='')
+    author_id = db.Column(db.String(50), db.ForeignKey('users.id'), nullable=True)
+
+    # 프리셋 전체 데이터 (nodes, connections, globalNpcs, settings 등)
+    data = db.Column(JSON_TYPE, nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'author': self.author_id or 'Anonymous',
+            'data': self.data,
+            'created_at': self.created_at.timestamp(),
+            'updated_at': self.updated_at.timestamp()
+        }
