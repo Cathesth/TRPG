@@ -271,7 +271,7 @@ def list_presets():
     return html
 
 
-@api_bp.route('/save_preset', methods=['POST'])
+@api_bp.route('/presets/save', methods=['POST'])
 @login_required
 def save_preset():
     """프리셋 저장 API"""
@@ -287,8 +287,41 @@ def save_preset():
     return jsonify({"success": True, "filename": fid, "message": "프리셋이 저장되었습니다."})
 
 
-@api_bp.route('/load_preset', methods=['POST'])
+@api_bp.route('/presets/load', methods=['POST'])
 def load_preset():
+    """프리셋 로드 API"""
+    data = request.get_json(force=True, silent=True) or {}
+    filename = data.get('filename')
+
+    user_id = current_user.id if current_user.is_authenticated else None
+
+    result, error = PresetService.load_preset(filename, user_id)
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+
+    preset = result['preset']
+
+    return jsonify({
+        "success": True,
+        "data": preset,
+        "message": f"'{preset.get('name')}' 프리셋을 불러왔습니다."
+    })
+
+
+@api_bp.route('/presets/delete', methods=['POST'])
+@login_required
+def delete_preset():
+    """프리셋 삭제 API"""
+    data = request.get_json(force=True, silent=True) or {}
+    fid = data.get('filename')
+    success, msg = PresetService.delete_preset(fid, current_user.id)
+    if success: return jsonify({"success": True, "message": "삭제 완료"})
+    return jsonify({"success": False, "error": msg}), 400
+
+
+@api_bp.route('/load_preset', methods=['POST'])
+def load_preset_old():
+    """레거시 프리셋 로드 (HTMX용)"""
     fid = request.form.get('filename')  # DB ID
     user_id = current_user.id if current_user.is_authenticated else None
 
@@ -326,13 +359,3 @@ def load_preset():
     </div>
     <script>lucide.createIcons();</script>
     '''
-
-
-@api_bp.route('/delete_preset', methods=['POST'])
-@login_required
-def delete_preset():
-    data = request.get_json(force=True, silent=True) or {}
-    fid = data.get('filename')
-    success, msg = PresetService.delete_preset(fid, current_user.id)
-    if success: return jsonify({"success": True, "message": "삭제 완료"})
-    return jsonify({"success": False, "error": msg}), 400
