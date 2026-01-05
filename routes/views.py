@@ -5,6 +5,7 @@ from flask import Blueprint, render_template
 
 from core.state import game_state
 from services.mermaid_service import MermaidService
+from config import get_full_version
 
 views_bp = Blueprint('views', __name__)
 
@@ -12,7 +13,7 @@ views_bp = Blueprint('views', __name__)
 @views_bp.route('/')
 def index():
     """메인 페이지"""
-    return render_template('index.html')
+    return render_template('index.html', version=get_full_version())
 
 
 @views_bp.route('/views/builder')
