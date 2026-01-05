@@ -285,8 +285,34 @@
         }
 
         // 로그인/회원가입/로그아웃 등 기존 함수들 (동일하게 유지)
-        function openModal(id) { document.getElementById(id).classList.remove('opacity-0', 'pointer-events-none'); document.body.classList.add('modal-active'); }
-        function closeModal(id) { document.getElementById(id).classList.add('opacity-0', 'pointer-events-none'); document.body.classList.remove('modal-active'); }
+        function openModal(id) {
+            const modal = document.getElementById(id);
+            const container = modal.querySelector('.modal-container');
+
+            // 1. 배경 보이기
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            document.body.classList.add('modal-active');
+
+            // 2. 내부 컨테이너 팝업 효과 (약간의 딜레이 후 실행해야 트랜지션 먹음)
+            setTimeout(() => {
+                container.classList.remove('scale-95', 'opacity-0');
+                container.classList.add('scale-100', 'opacity-100');
+            }, 10);
+        }
+        function closeModal(id) {
+            const modal = document.getElementById(id);
+            const container = modal.querySelector('.modal-container');
+
+            // 1. 내부 컨테이너 숨기기
+            container.classList.remove('scale-100', 'opacity-100');
+            container.classList.add('scale-95', 'opacity-0');
+
+            // 2. 배경 숨기기 (컨테이너 사라지는 시간 기다렸다가)
+            setTimeout(() => {
+                modal.classList.add('opacity-0', 'pointer-events-none');
+                document.body.classList.remove('modal-active');
+            }, 300); // duration-300이랑 맞춤
+        }
 
         async function handleLogin(e) {
             e.preventDefault(); const form = e.target;
