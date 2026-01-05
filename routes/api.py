@@ -6,11 +6,13 @@ import threading
 from flask import Blueprint, request, jsonify, Response, stream_with_context
 from flask_login import login_user, logout_user, login_required, current_user
 
+
 from core.state import game_state
 from core.utils import parse_request_data, pick_start_scene_id
 from services.scenario_service import ScenarioService
 from services.preset_service import PresetService
 from services.user_service import UserService
+from services.preset_service import PresetService  # [추가] 이거 없어서 에러 난 거임
 from game_engine import create_game_graph
 
 logger = logging.getLogger(__name__)
