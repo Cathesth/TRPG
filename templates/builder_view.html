@@ -49,6 +49,29 @@
             white-space: pre-wrap;
             font-family: monospace;
         }
+
+        /* 연결선이 더 잘 보이도록 스타일 개선 */
+        .connection-line {
+            stroke: #6b7280;
+            stroke-width: 3;
+            fill: none;
+            filter: drop-shadow(0 0 4px rgba(107, 114, 128, 0.5));
+        }
+        .connection-line:hover {
+            stroke: #9ca3af;
+            stroke-width: 4;
+        }
+        .connecting-line {
+            stroke: #6366f1;
+            stroke-width: 3;
+            stroke-dasharray: 8,4;
+            fill: none;
+            filter: drop-shadow(0 0 6px rgba(99, 102, 241, 0.6));
+            animation: dash 0.5s linear infinite;
+        }
+        @keyframes dash {
+            to { stroke-dashoffset: -12; }
+        }
     </style>
 
     <script>
@@ -87,7 +110,9 @@
                 'log-out': <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-12-5 7 M21 12H9" />,
                 'loader-2': <path d="M21 12a9 9 0 1 1-6.219-8.56" />,
                 'check-circle': <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14 M22 4L12 14.01l-3-3" />,
-                'alert-triangle': <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z M12 9v4 M12 17h.01" />
+                'alert-triangle': <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z M12 9v4 M12 17h.01" />,
+                'undo': <path d="M3 7v6h6 M21 17a9 9 0 0 0-9-9 9 9 0 0 0-9 9" />,
+                'redo': <path d="M21 7v6h-6 M3 17a9 9 0 0 1 9-9 9 9 0 0 1 9 9" />
             };
 
             const Icon = ({ name, size = 20, className = "" }) => (
@@ -116,26 +141,109 @@
                 );
             };
 
-            const LoadingOverlay = ({ isOpen, progress, remainingTime }) => {
+            const LoadingOverlay = ({ isOpen, progress, buildStatus }) => {
                 if (!isOpen) return null;
+
+                // 단계별 아이콘 및 색상
+                const phaseConfig = {
+                    'initializing': { icon: 'settings', color: 'gray', label: '준비 중' },
+                    'parsing': { icon: 'settings', color: 'blue', label: '그래프 분석' },
+                    'worldbuilding': { icon: 'users', color: 'purple', label: '세계관 생성' },
+                    'scene_generation': { icon: 'play', color: 'indigo', label: '씬 생성' },
+                    'validation': { icon: 'check-circle', color: 'yellow', label: '검증' },
+                    'refining': { icon: 'settings', color: 'orange', label: '품질 개선' },
+                    'finalizing': { icon: 'check-circle', color: 'green', label: '마무리' },
+                    'done': { icon: 'check-circle', color: 'green', label: '완료' },
+                    'error': { icon: 'alert-triangle', color: 'red', label: '오류' }
+                };
+
+                const currentPhase = phaseConfig[buildStatus.current_phase] || phaseConfig['initializing'];
+                const isError = buildStatus.status === 'error';
+
                 return (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in cursor-wait">
-                        <div className="w-full max-w-lg text-center p-8 rounded-2xl bg-gray-900/50 border border-white/10 shadow-2xl relative overflow-hidden">
-                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/20 blur-[100px] rounded-full pointer-events-none"></div>
+                        <div className="w-full max-w-xl text-center p-8 rounded-2xl bg-gray-900/50 border border-white/10 shadow-2xl relative overflow-hidden">
+                            <div className={`absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 ${isError ? 'bg-red-600/20' : 'bg-blue-600/20'} blur-[100px] rounded-full pointer-events-none`}></div>
                             <div className="relative z-10">
-                                <div className="mb-6 inline-block p-4 rounded-full bg-blue-500/10 border border-blue-500/20">
-                                    <Icon name="loader-2" size={48} className="animate-spin text-blue-400" />
+                                {/* 아이콘 */}
+                                <div className={`mb-6 inline-block p-4 rounded-full ${isError ? 'bg-red-500/10 border-red-500/20' : 'bg-blue-500/10 border-blue-500/20'} border`}>
+                                    <Icon name={isError ? 'alert-triangle' : 'loader-2'} size={48} className={`${isError ? 'text-red-400' : 'animate-spin text-blue-400'}`} />
                                 </div>
-                                <h3 className="text-2xl font-bold text-white mb-2">시나리오 생성 중...</h3>
-                                <p className="text-gray-400 text-sm mb-8">AI 작가가 세계관을 창조하고 있습니다.<br/>노드가 많을수록 시간이 더 걸릴 수 있습니다.</p>
-                                <div className="w-full bg-gray-800 rounded-full h-3 mb-3 overflow-hidden border border-white/5 relative">
-                                    <div className="bg-gradient-to-r from-blue-600 to-indigo-500 h-full transition-all duration-300 ease-out relative" style={{ width: `${progress}%` }}>
-                                        <div className="progress-shine"></div>
+
+                                {/* 제목 */}
+                                <h3 className="text-2xl font-bold text-white mb-2">
+                                    {isError ? '생성 오류 발생' : '시나리오 생성 중...'}
+                                </h3>
+
+                                {/* 현재 단계 표시 */}
+                                <div className="flex items-center justify-center gap-2 mb-4">
+                                    <span className={`px-3 py-1 rounded-full text-xs font-bold bg-${currentPhase.color}-500/20 text-${currentPhase.color}-400 border border-${currentPhase.color}-500/30`}>
+                                        {buildStatus.step || '0/5'}
+                                    </span>
+                                    <span className="text-gray-300 font-medium">{currentPhase.label}</span>
+                                </div>
+
+                                {/* 상세 정보 */}
+                                <p className={`text-sm mb-6 ${isError ? 'text-red-300' : 'text-gray-400'}`}>
+                                    {buildStatus.detail || 'AI 작가가 세계관을 창조하고 있습니다...'}
+                                </p>
+
+                                {/* 씬 생성 진행률 (씬 생성 단계일 때만) */}
+                                {buildStatus.current_phase === 'scene_generation' && buildStatus.total_scenes > 0 && (
+                                    <div className="mb-4 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
+                                        <div className="flex justify-between text-xs text-gray-400 mb-2">
+                                            <span>씬 생성 진행률</span>
+                                            <span className="text-indigo-400 font-bold">{buildStatus.completed_scenes} / {buildStatus.total_scenes}</span>
+                                        </div>
+                                        <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                                            <div
+                                                className="bg-indigo-500 h-full transition-all duration-300"
+                                                style={{ width: `${(buildStatus.completed_scenes / buildStatus.total_scenes) * 100}%` }}
+                                            ></div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 메인 프로그레스 바 */}
+                                <div className="w-full bg-gray-800 rounded-full h-4 mb-3 overflow-hidden border border-white/5 relative">
+                                    <div
+                                        className={`h-full transition-all duration-500 ease-out relative ${isError ? 'bg-red-600' : 'bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500'}`}
+                                        style={{ width: `${progress}%` }}
+                                    >
+                                        {!isError && <div className="progress-shine"></div>}
                                     </div>
                                 </div>
+
+                                {/* 진행률 텍스트 */}
                                 <div className="flex justify-between text-xs font-mono text-gray-500 px-1">
-                                    <span className="text-blue-400 font-bold">{Math.round(progress)}% 완료</span>
-                                    <span>예상 소요 시간: 약 <span className="text-white font-bold">{Math.max(0, remainingTime)}</span>초</span>
+                                    <span className={`font-bold ${isError ? 'text-red-400' : 'text-blue-400'}`}>
+                                        {Math.round(progress)}% {isError ? '실패' : '완료'}
+                                    </span>
+                                    {buildStatus.total_scenes > 0 && (
+                                        <span>총 {buildStatus.total_scenes}개 씬</span>
+                                    )}
+                                </div>
+
+                                {/* 단계 인디케이터 */}
+                                <div className="mt-6 flex justify-center gap-2">
+                                    {['parsing', 'worldbuilding', 'scene_generation', 'validation', 'finalizing'].map((phase, idx) => {
+                                        const phaseOrder = ['parsing', 'worldbuilding', 'scene_generation', 'validation', 'finalizing', 'refining', 'done'];
+                                        const currentIdx = phaseOrder.indexOf(buildStatus.current_phase);
+                                        const thisIdx = phaseOrder.indexOf(phase);
+                                        const isActive = buildStatus.current_phase === phase;
+                                        const isCompleted = currentIdx > thisIdx;
+
+                                        return (
+                                            <div
+                                                key={phase}
+                                                className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                                                    isActive ? 'bg-blue-400 scale-150' :
+                                                    isCompleted ? 'bg-green-500' : 'bg-gray-600'
+                                                }`}
+                                                title={phaseConfig[phase]?.label}
+                                            ></div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
@@ -151,34 +259,269 @@
                 const [connections, setConnections] = useState([ { id: 'c1', source: 'start', target: 'scene-1' } ]);
                 const [selectedNodeId, setSelectedNodeId] = useState(null);
                 const [globalNpcs, setGlobalNpcs] = useState([]);
+
+                // Undo/Redo를 위한 히스토리 관리
+                const [history, setHistory] = useState([]);
+                const [historyIndex, setHistoryIndex] = useState(-1);
+
+                // 프리셋 불러오기 플래그
+                const [isLoadingPreset, setIsLoadingPreset] = useState(false);
+
+                // 히스토리에 현재 상태 저장
+                const saveToHistory = () => {
+                    const newState = {
+                        nodes: JSON.parse(JSON.stringify(nodes)),
+                        connections: JSON.parse(JSON.stringify(connections)),
+                        globalNpcs: JSON.parse(JSON.stringify(globalNpcs))
+                    };
+
+                    // 현재 인덱스 이후의 히스토리 삭제하고 새 상태 추가
+                    const newHistory = history.slice(0, historyIndex + 1);
+                    newHistory.push(newState);
+
+                    // 히스토리 최대 50개로 제한
+                    if (newHistory.length > 50) {
+                        newHistory.shift();
+                    } else {
+                        setHistoryIndex(historyIndex + 1);
+                    }
+
+                    setHistory(newHistory);
+                };
+
+                // Undo 실행
+                const handleUndo = () => {
+                    if (historyIndex > 0) {
+                        const newIndex = historyIndex - 1;
+                        const prevState = history[newIndex];
+                        setNodes(JSON.parse(JSON.stringify(prevState.nodes)));
+                        setConnections(JSON.parse(JSON.stringify(prevState.connections)));
+                        setGlobalNpcs(JSON.parse(JSON.stringify(prevState.globalNpcs)));
+                        setHistoryIndex(newIndex);
+                    }
+                };
+
+                // Redo 실행
+                const handleRedo = () => {
+                    if (historyIndex < history.length - 1) {
+                        const newIndex = historyIndex + 1;
+                        const nextState = history[newIndex];
+                        setNodes(JSON.parse(JSON.stringify(nextState.nodes)));
+                        setConnections(JSON.parse(JSON.stringify(nextState.connections)));
+                        setGlobalNpcs(JSON.parse(JSON.stringify(nextState.globalNpcs)));
+                        setHistoryIndex(newIndex);
+                    }
+                };
+
+                // 키보드 단축키 (Ctrl+Z, Ctrl+Y)
+                useEffect(() => {
+                    const handleKeyDown = (e) => {
+                        if (e.ctrlKey && e.key === 'z') {
+                            e.preventDefault();
+                            handleUndo();
+                        } else if (e.ctrlKey && e.key === 'y') {
+                            e.preventDefault();
+                            handleRedo();
+                        }
+                    };
+                    window.addEventListener('keydown', handleKeyDown);
+                    return () => window.removeEventListener('keydown', handleKeyDown);
+                }, [historyIndex, history]);
+
+                // 초기 상태를 히스토리에 저장
+                useEffect(() => {
+                    if (history.length === 0) {
+                        saveToHistory();
+                    }
+                }, []);
+
+                // 프리셋 불러온 후 state가 업데이트되면 히스토리에 저장
+                useEffect(() => {
+                    if (isLoadingPreset) {
+                        saveToHistory();
+                        setIsLoadingPreset(false);
+                    }
+                }, [nodes, connections, globalNpcs, isLoadingPreset]);
+
+                // 프리셋 관련 state
+                const [presetModalOpen, setPresetModalOpen] = useState(false);
+                const [presetSaveModalOpen, setPresetSaveModalOpen] = useState(false);
+                const [presets, setPresets] = useState([]);
+                const [presetName, setPresetName] = useState('');
+                const [presetDescription, setPresetDescription] = useState('');
+                const [loadingPresets, setLoadingPresets] = useState(false);
+
+                // 모델 제공사 및 버전 정보
+                const MODEL_PROVIDERS = {
+                    'google': {
+                        name: 'Google',
+                        icon: '🔵',
+                        models: [
+                            { id: 'openai/google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', context: '1M', input: '$0.10/M', output: '$0.40/M' },
+                            { id: 'openai/google/gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', context: '1M', input: '$0.075/M', output: '$0.30/M' },
+                            { id: 'openai/google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', context: '1M', input: '$0.15/M', output: '$0.60/M' },
+                            { id: 'openai/google/gemini-3-flash-preview', name: 'Gemini 3 Flash (Preview)', context: '1M', input: '$0.15/M', output: '$0.60/M' },
+                            { id: 'openai/google/gemini-3-pro-preview', name: 'Gemini 3 Pro (Preview)', context: '1M', input: '$1.25/M', output: '$10/M' },
+                        ]
+                    },
+                    'anthropic': {
+                        name: 'Anthropic',
+                        icon: '🟠',
+                        models: [
+                            { id: 'openai/anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', context: '200K', input: '$0.80/M', output: '$4/M' },
+                            { id: 'openai/anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', context: '200K', input: '$3/M', output: '$15/M' },
+                            { id: 'openai/anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', context: '200K', input: '$3/M', output: '$15/M' },
+                            { id: 'openai/anthropic/claude-haiku-4.5', name: 'Claude Haiku 4.5', context: '200K', input: '$0.80/M', output: '$4/M' },
+                            { id: 'openai/anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5', context: '200K', input: '$3/M', output: '$15/M' },
+                            { id: 'openai/anthropic/claude-opus-4.5', name: 'Claude Opus 4.5', context: '200K', input: '$15/M', output: '$75/M' },
+                        ]
+                    },
+                    'openai': {
+                        name: 'OpenAI',
+                        icon: '🟢',
+                        models: [
+                            { id: 'openai/openai/gpt-4o-mini', name: 'GPT-4o Mini', context: '128K', input: '$0.15/M', output: '$0.60/M' },
+                            { id: 'openai/openai/gpt-4o', name: 'GPT-4o', context: '128K', input: '$2.50/M', output: '$10/M' },
+                            { id: 'openai/openai/gpt-5-mini', name: 'GPT-5 Mini', context: '1M', input: '$1.10/M', output: '$4.40/M' },
+                            { id: 'openai/openai/gpt-5.2', name: 'GPT-5.2', context: '1M', input: '$2/M', output: '$8/M' },
+                        ]
+                    },
+                    'deepseek': {
+                        name: 'DeepSeek',
+                        icon: '🔮',
+                        models: [
+                            { id: 'openai/tngtech/deepseek-r1t2-chimera:free', name: 'R1 Chimera (Free)', context: '164K', input: 'Free', output: 'Free', free: true },
+                            { id: 'openai/deepseek/deepseek-chat-v3-0324', name: 'DeepSeek Chat V3', context: '128K', input: '$0.14/M', output: '$0.28/M' },
+                            { id: 'openai/deepseek/deepseek-v3.2', name: 'DeepSeek V3.2', context: '128K', input: '$0.14/M', output: '$0.28/M' },
+                        ]
+                    },
+                    'meta': {
+                        name: 'Meta Llama',
+                        icon: '🦙',
+                        models: [
+                            { id: 'openai/meta-llama/llama-3.1-8b-instruct', name: 'Llama 3.1 8B', context: '128K', input: '$0.02/M', output: '$0.05/M' },
+                            { id: 'openai/meta-llama/llama-3.1-405b-instruct:free', name: 'Llama 3.1 405B (Free)', context: '128K', input: 'Free', output: 'Free', free: true },
+                            { id: 'openai/meta-llama/llama-3.1-405b-instruct', name: 'Llama 3.1 405B', context: '128K', input: '$0.80/M', output: '$0.80/M' },
+                            { id: 'openai/meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B (Free)', context: '128K', input: 'Free', output: 'Free', free: true },
+                            { id: 'openai/meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', context: '128K', input: '$0.10/M', output: '$0.25/M' },
+                        ]
+                    },
+                    'xai': {
+                        name: 'xAI (Grok)',
+                        icon: '⚡',
+                        models: [
+                            { id: 'openai/x-ai/grok-code-fast-1', name: 'Grok Code Fast 1', context: '128K', input: '$0.15/M', output: '$0.60/M' },
+                            { id: 'openai/x-ai/grok-4-fast', name: 'Grok 4 Fast', context: '256K', input: '$2/M', output: '$10/M' },
+                            { id: 'openai/x-ai/grok-4.1-fast', name: 'Grok 4.1 Fast', context: '1M', input: '$3/M', output: '$15/M' },
+                        ]
+                    },
+                    'mistral': {
+                        name: 'Mistral AI',
+                        icon: '🌀',
+                        models: [
+                            { id: 'openai/mistralai/devstral-2512:free', name: 'Devstral 2512 (Free)', context: '128K', input: 'Free', output: 'Free', free: true },
+                        ]
+                    },
+                    'xiaomi': {
+                        name: 'Xiaomi',
+                        icon: '📱',
+                        models: [
+                            { id: 'openai/xiaomi/mimo-v2-flash:free', name: 'MiMo V2 Flash (Free)', context: '128K', input: 'Free', output: 'Free', free: true },
+                        ]
+                    },
+                };
+
+                const [selectedProvider, setSelectedProvider] = useState('deepseek');
                 const [selectedModel, setSelectedModel] = useState('openai/tngtech/deepseek-r1t2-chimera:free');
 
-                const AVAILABLE_MODELS = [
-                    { id: 'openai/tngtech/deepseek-r1t2-chimera:free', name: 'DeepSeek R1 Chimera (Free)', desc: '무료, 빠름' },
-                    { id: 'openai/mistralai/mistral-7b-instruct:free', name: 'Mistral 7B (Free)', desc: '무료, 안정적' },
-                    { id: 'openai/google/gemma-2-9b-it:free', name: 'Gemma 2 9B (Free)', desc: '무료, 균형' },
-                    { id: 'openai/meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B (Free)', desc: '무료, 고품질' },
-                    { id: 'openai/deepseek/deepseek-chat', name: 'DeepSeek Chat (Paid)', desc: '유료, 최고 품질' },
-                    { id: 'openai/anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet (Paid)', desc: '유료, 프리미엄' },
-                ];
+                // 제공사 변경 시 첫 번째 모델로 자동 선택
+                const handleProviderChange = (provider) => {
+                    setSelectedProvider(provider);
+                    const models = MODEL_PROVIDERS[provider]?.models;
+                    if (models && models.length > 0) {
+                        setSelectedModel(models[0].id);
+                    }
+                };
+
+                // 현재 선택된 모델 정보
+                const getSelectedModelInfo = () => {
+                    const provider = MODEL_PROVIDERS[selectedProvider];
+                    if (!provider) return null;
+                    return provider.models.find(m => m.id === selectedModel);
+                };
 
                 const [npcModalOpen, setNpcModalOpen] = useState(false);
-                const [resultModal, setResultModal] = useState({ open: false, type: 'info', title: '', message: '' });
+                const [resultModal, setResultModal] = useState({ open: false, type: 'info', title: '', message: '', showPlayButton: false });
                 const [isLoading, setIsLoading] = useState(false);
                 const [progress, setProgress] = useState(0);
-                const [remainingTime, setRemainingTime] = useState(0);
+                const [buildStatus, setBuildStatus] = useState({
+                    status: 'idle',
+                    step: '0/5',
+                    detail: '',
+                    progress: 0,
+                    total_scenes: 0,
+                    completed_scenes: 0,
+                    current_phase: 'initializing'
+                });
+
+                // 자동 제목 기능
+                const [useAutoTitle, setUseAutoTitle] = useState(true);
+                const [generatedTitle, setGeneratedTitle] = useState('');
 
                 const [draggingNodeId, setDraggingNodeId] = useState(null);
                 const [connectingSourceId, setConnectingSourceId] = useState(null);
                 const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
                 const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
+                // 줌 기능 state 추가
+                const [zoom, setZoom] = useState(1);
+                const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+                const [isPanning, setIsPanning] = useState(false);
+                const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+
                 const canvasRef = useRef(null);
                 const timerRef = useRef(null);
+
+                // 줌 제한
+                const MIN_ZOOM = 0.25;
+                const MAX_ZOOM = 2;
+
+                // 마우스 휠 줌 핸들러
+                const handleWheel = (e) => {
+                    e.preventDefault();
+                    const delta = e.deltaY * -0.001;
+                    const newZoom = Math.min(Math.max(zoom + delta, MIN_ZOOM), MAX_ZOOM);
+                    setZoom(newZoom);
+                };
+
+                // 줌 버튼 핸들러
+                const handleZoomIn = () => {
+                    setZoom(prev => Math.min(prev + 0.1, MAX_ZOOM));
+                };
+
+                const handleZoomOut = () => {
+                    setZoom(prev => Math.max(prev - 0.1, MIN_ZOOM));
+                };
+
+                const handleZoomReset = () => {
+                    setZoom(1);
+                    setPanOffset({ x: 0, y: 0 });
+                };
+
+                // 캔버스 마우스 다운 (패닝 시작)
+                const handleCanvasMouseDown = (e) => {
+                    // 스페이스바를 누르거나 중간 마우스 버튼으로 패닝
+                    if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+                        e.preventDefault();
+                        setIsPanning(true);
+                        setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
+                    }
+                };
 
                 const addNode = (type) => {
                     const id = `${type}-${Date.now()}`;
                     setNodes(p => [...p, { id, type, x: Math.random() * 200 + 100, y: Math.random() * 200 + 100, data: { title: type === 'scene' ? '새로운 장면' : '새로운 엔딩', description: '', npcs: [] } }]);
+                    setTimeout(saveToHistory, 100);
                 };
 
                 const deleteNode = (id) => {
@@ -186,6 +529,7 @@
                     setNodes(p => p.filter(n => n.id !== id));
                     setConnections(p => p.filter(c => c.source !== id && c.target !== id));
                     if (selectedNodeId === id) setSelectedNodeId(null);
+                    setTimeout(saveToHistory, 100);
                 };
 
                 const updateNodeData = (key, value) => {
@@ -199,7 +543,11 @@
                     const name = form.elements.namedItem('npcName').value;
                     const role = form.elements.namedItem('npcRole').value;
                     const trait = form.elements.namedItem('npcTrait').value;
-                    if(name) { setGlobalNpcs(p => [...p, { name, role, trait }]); form.reset(); }
+                    if(name) {
+                        setGlobalNpcs(p => [...p, { name, role, trait }]);
+                        form.reset();
+                        setTimeout(saveToHistory, 100);
+                    }
                 };
 
                 const handleGenerate = async () => {
@@ -208,32 +556,54 @@
                         return;
                     }
 
-                    const estimatedSecs = 10 + (nodes.length * 5);
-                    setRemainingTime(estimatedSecs);
+                    // 초기화
                     setProgress(0);
                     setIsLoading(true);
+                    setBuildStatus({
+                        status: 'building',
+                        step: '0/5',
+                        detail: '빌드 준비 중...',
+                        progress: 0,
+                        total_scenes: 0,
+                        completed_scenes: 0,
+                        current_phase: 'initializing'
+                    });
 
-                    const startTime = Date.now();
-                    timerRef.current = setInterval(() => {
-                        const elapsed = (Date.now() - startTime) / 1000;
-                        const newProgress = Math.min(90, (elapsed / estimatedSecs) * 100);
-                        const timeLeft = Math.max(0, Math.ceil(estimatedSecs - elapsed));
-                        setProgress(newProgress);
-                        setRemainingTime(timeLeft);
-                    }, 100);
+                    // SSE 연결로 진행률 실시간 수신
+                    const eventSource = new EventSource('/api/build_progress');
+
+                    eventSource.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            setBuildStatus(data);
+                            setProgress(data.progress || 0);
+
+                            // 완료 또는 에러 시 SSE 연결 종료
+                            if (data.status === 'completed' || data.status === 'error') {
+                                eventSource.close();
+                            }
+                        } catch (e) {
+                            console.error('SSE parse error:', e);
+                        }
+                    };
+
+                    eventSource.onerror = (error) => {
+                        console.error('SSE error:', error);
+                        eventSource.close();
+                    };
 
                     try {
                         const response = await fetch('/api/init_game', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            // [수정] edges로 변환하여 전송
                             body: JSON.stringify({ nodes, edges: connections, npcs: globalNpcs, model: selectedModel })
                         });
 
-                        clearInterval(timerRef.current);
+                        // SSE 연결 종료 (이미 종료되었을 수 있음)
+                        eventSource.close();
+
                         setProgress(100);
-                        setRemainingTime(0);
-                        await new Promise(r => setTimeout(r, 500));
+                        await new Promise(r => setTimeout(r, 300));
 
                         if (!response.ok) {
                             const errData = await response.json();
@@ -241,14 +611,32 @@
                         }
 
                         const data = await response.json();
+
+                        // 생성된 제목 추출 (filename에서 .json 제거)
+                        if (data.filename) {
+                            const titleFromFilename = data.filename.replace('.json', '').replace(/_/g, ' ');
+                            setGeneratedTitle(titleFromFilename);
+
+                            // 자동 제목 사용 시 start 노드의 label 업데이트
+                            if (useAutoTitle) {
+                                setNodes(prev => prev.map(n =>
+                                    n.id === 'start'
+                                        ? { ...n, data: { ...n.data, label: titleFromFilename } }
+                                        : n
+                                ));
+                            }
+                        }
+
                         setResultModal({
                             open: true, type: 'success', title: '생성 완료!',
-                            message: `${data.message}\n이제 플레이어 모드에서 게임을 즐겨보세요.`
+                            message: `${data.message}\n이제 플레이어 모드에서 게임을 즐겨보세요.`,
+                            showPlayButton: true
                         });
 
                     } catch (error) {
-                        clearInterval(timerRef.current);
+                        eventSource.close();
                         console.error(error);
+                        setBuildStatus(prev => ({ ...prev, status: 'error', detail: error.message }));
                         setResultModal({ open: true, type: 'error', title: '생성 실패', message: error.message });
                     } finally {
                         setIsLoading(false);
@@ -268,6 +656,7 @@
                     if (connectingSourceId) {
                         if (connectingSourceId !== id && !connections.some(c => c.source === connectingSourceId && c.target === id)) {
                             setConnections(p => [...p, { id: `c-${Date.now()}`, source: connectingSourceId, target: id }]);
+                            setTimeout(saveToHistory, 100);
                         }
                         setConnectingSourceId(null);
                         return;
@@ -275,7 +664,9 @@
                     const node = nodes.find(n => n.id === id);
                     if (node) {
                         const rect = canvasRef.current.getBoundingClientRect();
-                        setDragOffset({ x: e.clientX - rect.left - node.x, y: e.clientY - rect.top - node.y });
+                        const x = (e.clientX - rect.left - panOffset.x) / zoom;
+                        const y = (e.clientY - rect.top - panOffset.y) / zoom;
+                        setDragOffset({ x: x - node.x, y: y - node.y });
                         setSelectedNodeId(id);
                         setDraggingNodeId(id);
                     }
@@ -284,22 +675,209 @@
                 const handleCanvasMouseMove = (e) => {
                     if (!canvasRef.current) return;
                     const rect = canvasRef.current.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const y = e.clientY - rect.top;
+                    const x = (e.clientX - rect.left - panOffset.x) / zoom;
+                    const y = (e.clientY - rect.top - panOffset.y) / zoom;
                     setMousePos({ x, y });
-                    if (draggingNodeId) {
+
+                    if (isPanning) {
+                        setPanOffset({
+                            x: e.clientX - panStart.x,
+                            y: e.clientY - panStart.y
+                        });
+                    } else if (draggingNodeId) {
                         setNodes(p => p.map(n => n.id === draggingNodeId ? { ...n, x: x - dragOffset.x, y: y - dragOffset.y } : n));
                     }
                 };
 
-                const getPath = (sx, sy, tx, ty) => {
-                    const cp1x = sx + Math.abs(tx - sx) * 0.5, cp2x = tx - Math.abs(tx - sx) * 0.5;
-                    return `M ${sx} ${sy} C ${cp1x} ${sy}, ${cp2x} ${ty}, ${tx} ${ty}`;
+                const handleCanvasMouseUp = () => {
+                    if (draggingNodeId) {
+                        setTimeout(saveToHistory, 100);
+                    }
+                    setDraggingNodeId(null);
+                    setIsPanning(false);
                 };
+
+                // 노드 크기 상수
+                const NODE_WIDTH = 200;
+                const NODE_HEIGHT = 80;
+
+                // 두 노드 간 최적의 연결점 계산
+                const getConnectionPoints = (sourceNode, targetNode) => {
+                    const sCenterX = sourceNode.x + NODE_WIDTH / 2;
+                    const sCenterY = sourceNode.y + NODE_HEIGHT / 2;
+                    const tCenterX = targetNode.x + NODE_WIDTH / 2;
+                    const tCenterY = targetNode.y + NODE_HEIGHT / 2;
+
+                    const dx = tCenterX - sCenterX;
+                    const dy = tCenterY - sCenterY;
+
+                    let sx, sy, tx, ty;
+
+                    // 수평 거리가 수직 거리보다 크면 좌우 연결
+                    if (Math.abs(dx) > Math.abs(dy)) {
+                        if (dx > 0) {
+                            // 타겟이 오른쪽에 있음: 소스 오른쪽 → 타겟 왼쪽
+                            sx = sourceNode.x + NODE_WIDTH;
+                            sy = sourceNode.y + NODE_HEIGHT / 2;
+                            tx = targetNode.x;
+                            ty = targetNode.y + NODE_HEIGHT / 2;
+                        } else {
+                            // 타겟이 왼쪽에 있음: 소스 왼쪽 → 타겟 오른쪽
+                            sx = sourceNode.x;
+                            sy = sourceNode.y + NODE_HEIGHT / 2;
+                            tx = targetNode.x + NODE_WIDTH;
+                            ty = targetNode.y + NODE_HEIGHT / 2;
+                        }
+                    } else {
+                        // 수직 거리가 더 크면 상하 연결
+                        if (dy > 0) {
+                            // 타겟이 아래에 있음: 소스 하단 → 타겟 상단
+                            sx = sourceNode.x + NODE_WIDTH / 2;
+                            sy = sourceNode.y + NODE_HEIGHT;
+                            tx = targetNode.x + NODE_WIDTH / 2;
+                            ty = targetNode.y;
+                        } else {
+                            // 타겟이 위에 있음: 소스 상단 → 타겟 하단
+                            sx = sourceNode.x + NODE_WIDTH / 2;
+                            sy = sourceNode.y;
+                            tx = targetNode.x + NODE_WIDTH / 2;
+                            ty = targetNode.y + NODE_HEIGHT;
+                        }
+                    }
+
+                    return { sx, sy, tx, ty };
+                };
+
+                // 베지어 커브 경로 생성 (연결 방향에 따라 제어점 조정)
+                const createPath = (sx, sy, tx, ty) => {
+                    const dx = tx - sx;
+                    const dy = ty - sy;
+
+                    // 수평 연결인 경우
+                    if (Math.abs(dx) > Math.abs(dy)) {
+                        const cpOffset = Math.abs(dx) * 0.4;
+                        const cp1x = sx + (dx > 0 ? cpOffset : -cpOffset);
+                        const cp2x = tx + (dx > 0 ? -cpOffset : cpOffset);
+                        return `M ${sx} ${sy} C ${cp1x} ${sy}, ${cp2x} ${ty}, ${tx} ${ty}`;
+                    } else {
+                        // 수직 연결인 경우
+                        const cpOffset = Math.abs(dy) * 0.4;
+                        const cp1y = sy + (dy > 0 ? cpOffset : -cpOffset);
+                        const cp2y = ty + (dy > 0 ? -cpOffset : cpOffset);
+                        return `M ${sx} ${sy} C ${sx} ${cp1y}, ${tx} ${cp2y}, ${tx} ${ty}`;
+                    }
+                };
+
+                // 프리셋 목록 불러오기
+                const fetchPresets = async () => {
+                    setLoadingPresets(true);
+                    try {
+                        const response = await fetch('/api/presets');
+                        if (!response.ok) throw new Error('프리셋 목록 조회 실패');
+                        const data = await response.json();
+                        setPresets(data || []);
+                    } catch (error) {
+                        console.error('프리셋 로드 실패:', error);
+                    } finally {
+                        setLoadingPresets(false);
+                    }
+                };
+
+                // 프리셋 저장
+                const handleSavePreset = async () => {
+                    if (!presetName.trim()) {
+                        setResultModal({ open: true, type: 'error', title: '저장 실패', message: '프리셋 이름을 입력하세요.' });
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch('/api/presets/save', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                name: presetName,
+                                description: presetDescription,
+                                nodes: nodes,
+                                connections: connections,
+                                globalNpcs: globalNpcs,
+                                selectedProvider: selectedProvider,
+                                selectedModel: selectedModel,
+                                useAutoTitle: useAutoTitle
+                            })
+                        });
+
+                        const data = await response.json();
+                        if (!data.success) throw new Error(data.error || '저장 실패');
+
+                        setResultModal({ open: true, type: 'success', title: '저장 완료', message: data.message });
+                        setPresetName('');
+                        setPresetDescription('');
+                        setPresetSaveModalOpen(false);
+                        fetchPresets(); // 목록 새로고침
+                    } catch (error) {
+                        setResultModal({ open: true, type: 'error', title: '저장 실패', message: error.message });
+                    }
+                };
+
+                // 프리셋 불러오기
+                const handleLoadPreset = async (preset) => {
+                    try {
+                        const response = await fetch('/api/presets/load', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filename: preset.filename })
+                        });
+
+                        const data = await response.json();
+                        if (!data.success) throw new Error(data.error || '불러오기 실패');
+
+                        const presetData = data.data;
+
+                        // 프리셋 불러오기 플래그 설정
+                        setIsLoadingPreset(true);
+
+                        setNodes(presetData.nodes || []);
+                        setConnections(presetData.connections || []);
+                        setGlobalNpcs(presetData.globalNpcs || []);
+                        setSelectedProvider(presetData.selectedProvider || 'deepseek');
+                        setSelectedModel(presetData.selectedModel || 'openai/tngtech/deepseek-r1t2-chimera:free');
+                        setUseAutoTitle(presetData.useAutoTitle !== false);
+
+
+                        setPresetModalOpen(false);
+                        setResultModal({ open: true, type: 'success', title: '불러오기 완료', message: `'${presetData.name}' 프리셋을 불러왔습니다.` });
+                    } catch (error) {
+                        setResultModal({ open: true, type: 'error', title: '불러오기 실패', message: error.message });
+                    }
+                };
+
+                // 프리셋 삭제
+                const handleDeletePreset = async (filename) => {
+                    if (!confirm('정말 이 프리셋을 삭제하시겠습니까?')) return;
+
+                    try {
+                        const response = await fetch('/api/presets/delete', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filename })
+                        });
+
+                        const data = await response.json();
+                        if (!data.success) throw new Error(data.error || '삭제 실패');
+
+                        fetchPresets(); // 목록 새로고침
+                    } catch (error) {
+                        setResultModal({ open: true, type: 'error', title: '삭제 실패', message: error.message });
+                    }
+                };
+
+                useEffect(() => {
+                    fetchPresets();
+                }, []);
 
                 return (
                     <div className="flex h-screen bg-black text-white font-sans overflow-hidden no-select">
-                        <LoadingOverlay isOpen={isLoading} progress={progress} remainingTime={remainingTime} />
+                        <LoadingOverlay isOpen={isLoading} progress={progress} buildStatus={buildStatus} />
 
                         <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col z-20 shadow-xl">
                             <div className="p-4 border-b border-gray-800 flex justify-between items-center">
@@ -307,23 +885,45 @@
                                 <a href="/" className="text-gray-500 hover:text-white p-2 rounded hover:bg-gray-800"><Icon name="log-out" size={18} /></a>
                             </div>
                             <div className="p-4 space-y-3">
+
                                 <button onClick={() => addNode('scene')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-indigo-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-indigo-500 rounded-full"></div> 씬 추가</button>
                                 <button onClick={() => addNode('ending')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-red-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-red-500 rounded-full"></div> 엔딩 추가</button>
                                 <button onClick={() => setNpcModalOpen(true)} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-green-300 flex items-center justify-center gap-2"><Icon name="users" size={16} /> NPC 관리</button>
 
+                                {/* 프리셋 버튼 */}
+                                <button onClick={() => { setPresetModalOpen(true); fetchPresets(); }} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-yellow-300 flex items-center justify-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                                        <polyline points="17 21 17 13 7 13 7 21"/>
+                                        <polyline points="7 3 7 8 15 8"/>
+                                    </svg>
+                                    프리셋 관리
+                                </button>
+
                                 <div className="pt-3 border-t border-gray-800">
                                     <label className="text-xs text-gray-400 block mb-2">🤖 AI 모델 선택</label>
-                                    <select
-                                        value={selectedModel}
-                                        onChange={(e) => setSelectedModel(e.target.value)}
-                                        className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-sm text-white cursor-pointer hover:border-gray-600 focus:border-blue-500 focus:outline-none"
-                                    >
-                                        {AVAILABLE_MODELS.map(m => (
-                                            <option key={m.id} value={m.id}>{m.name}</option>
-                                        ))}
-                                    </select>
+                                    <div className="flex flex-col gap-2">
+                                        <select
+                                            value={selectedProvider}
+                                            onChange={(e) => handleProviderChange(e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-sm text-white cursor-pointer hover:border-gray-600 focus:border-blue-500 focus:outline-none"
+                                        >
+                                            {Object.entries(MODEL_PROVIDERS).map(([key, provider]) => (
+                                                <option key={key} value={key}>{provider.name}</option>
+                                            ))}
+                                        </select>
+                                        <select
+                                            value={selectedModel}
+                                            onChange={(e) => setSelectedModel(e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 rounded-lg p-2.5 text-sm text-white cursor-pointer hover:border-gray-600 focus:border-blue-500 focus:outline-none"
+                                        >
+                                            {MODEL_PROVIDERS[selectedProvider]?.models.map(m => (
+                                                <option key={m.id} value={m.id}>{m.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                     <p className="text-xs text-gray-500 mt-1.5">
-                                        {AVAILABLE_MODELS.find(m => m.id === selectedModel)?.desc || ''}
+                                        {getSelectedModelInfo()?.context} | 입력: {getSelectedModelInfo()?.input} | 출력: {getSelectedModelInfo()?.output}
                                     </p>
                                 </div>
                             </div>
@@ -335,35 +935,98 @@
                         </div>
 
                         <div ref={canvasRef} className="flex-1 relative bg-gray-950 overflow-hidden cursor-crosshair bg-dots-pattern"
-                            onMouseMove={handleCanvasMouseMove} onMouseUp={() => setDraggingNodeId(null)} onClick={handleBackgroundClick}>
-                            <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
-                                {connections.map(c => {
-                                    const s = nodes.find(n => n.id === c.source), t = nodes.find(n => n.id === c.target);
-                                    if (!s || !t) return null;
-                                    return <path key={c.id} d={getPath(s.x + 200, s.y + 40, t.x, t.y + 40)} stroke="#4b5563" strokeWidth="2" fill="none" />;
-                                })}
-                                {connectingSourceId && (() => {
-                                    const s = nodes.find(n => n.id === connectingSourceId);
-                                    if (!s) return null;
-                                    return <path d={getPath(s.x + 200, s.y + 40, mousePos.x, mousePos.y)} stroke="#6366f1" strokeWidth="2" strokeDasharray="5,5" fill="none" />;
-                                })()}
-                            </svg>
-                            {nodes.map(node => (
-                                <div key={node.id} style={{ left: node.x, top: node.y }} onMouseDown={(e) => handleMouseDownNode(e, node.id)}
-                                    className={`absolute w-[200px] rounded-lg shadow-xl border-2 group select-none transition-shadow ${selectedNodeId === node.id ? 'border-white z-20 ring-2 ring-blue-500/50' : node.type === 'start' ? 'border-blue-600 bg-gray-900 z-10' : node.type === 'ending' ? 'border-red-600 bg-gray-900 z-10' : 'border-indigo-600 bg-gray-900 z-10'} ${connectingSourceId && connectingSourceId !== node.id ? 'hover:scale-105 cursor-pointer' : 'cursor-grab active:cursor-grabbing'}`}>
-                                    <div className={`p-2 rounded-t-md text-sm font-bold flex justify-between ${node.type === 'start' ? 'bg-blue-900/50 text-blue-200' : node.type === 'ending' ? 'bg-red-900/50 text-red-200' : 'bg-indigo-900/50 text-indigo-200'}`}>
-                                        <span className="truncate">{node.type === 'start' ? '설정' : node.type === 'scene' ? 'Scene' : 'Ending'}</span>
-                                        <button onClick={(e) => { e.stopPropagation(); setConnectingSourceId(node.id); setSelectedNodeId(node.id); }} className="hover:text-white p-0.5"><Icon name="link" size={14} /></button>
-                                    </div>
-                                    <div className="p-3 text-xs text-gray-300 min-h-[60px] relative">
-                                        <div className="font-bold mb-1 truncate">{node.data.title || '제목 없음'}</div>
-                                        <div className="text-gray-500 line-clamp-2">{node.data.description || '내용 없음'}</div>
-                                        {node.id !== 'start' && selectedNodeId === node.id && (
-                                            <button onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 w-5 h-5 flex items-center justify-center"><Icon name="x" size={12} /></button>
-                                        )}
-                                    </div>
+                            onMouseMove={handleCanvasMouseMove} onMouseUp={handleCanvasMouseUp} onClick={handleBackgroundClick}
+                            onWheel={handleWheel} onMouseDown={handleCanvasMouseDown}>
+
+                            {/* 줌 컨트롤 UI */}
+                            <div className="absolute top-4 right-4 z-30 flex flex-col gap-2 bg-gray-900/90 backdrop-blur-sm rounded-lg p-2 border border-gray-700 shadow-xl">
+                                <button
+                                    onClick={handleZoomIn}
+                                    className="w-10 h-10 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center justify-center text-white transition-colors border border-gray-600 hover:border-gray-500"
+                                    title="확대 (Zoom In)"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="11" cy="11" r="8"></circle>
+                                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                        <line x1="11" y1="8" x2="11" y2="14"></line>
+                                        <line x1="8" y1="11" x2="14" y2="11"></line>
+                                    </svg>
+                                </button>
+                                <button
+                                    onClick={handleZoomReset}
+                                    className="w-10 h-10 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center justify-center text-white transition-colors border border-gray-600 hover:border-gray-500 text-xs font-bold"
+                                    title="초기화 (Reset)"
+                                >
+                                    {Math.round(zoom * 100)}%
+                                </button>
+                                <button
+                                    onClick={handleZoomOut}
+                                    className="w-10 h-10 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center justify-center text-white transition-colors border border-gray-600 hover:border-gray-500"
+                                    title="축소 (Zoom Out)"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="11" cy="11" r="8"></circle>
+                                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                        <line x1="8" y1="11" x2="14" y2="11"></line>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            {/* 조작 가이드 */}
+                            <div className="absolute bottom-4 left-4 z-30 bg-gray-900/80 backdrop-blur-sm rounded-lg px-3 py-2 border border-gray-700 text-xs text-gray-400">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-white font-bold">조작법:</span>
+                                    <span>마우스 휠 = 줌</span>
+                                    <span className="text-gray-600">|</span>
+                                    <span>Shift + 드래그 = 이동</span>
+                                    <span className="text-gray-600">|</span>
+                                    <span>Ctrl+Z = 실행취소</span>
+                                    <span className="text-gray-600">|</span>
+                                    <span>Ctrl+Y = 다시실행</span>
                                 </div>
-                            ))}
+                            </div>
+
+                            {/* transform 적용된 컨테이너 */}
+                            <div style={{
+                                transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
+                                transformOrigin: '0 0',
+                                width: '100%',
+                                height: '100%',
+                                position: 'absolute'
+                            }}>
+                                <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" style={{ overflow: 'visible' }}>
+                                    {connections.map(c => {
+                                        const s = nodes.find(n => n.id === c.source), t = nodes.find(n => n.id === c.target);
+                                        if (!s || !t) return null;
+                                        const { sx, sy, tx, ty } = getConnectionPoints(s, t);
+                                        return <path key={c.id} d={createPath(sx, sy, tx, ty)} className="connection-line" />;
+                                    })}
+                                    {connectingSourceId && (() => {
+                                        const s = nodes.find(n => n.id === connectingSourceId);
+                                        if (!s) return null;
+                                        // 연결 중인 선: 소스 노드 중심에서 마우스 위치까지
+                                        const sx = s.x + NODE_WIDTH / 2;
+                                        const sy = s.y + NODE_HEIGHT / 2;
+                                        return <path d={createPath(sx, sy, mousePos.x, mousePos.y)} className="connecting-line" />;
+                                    })()}
+                                </svg>
+                                {nodes.map(node => (
+                                    <div key={node.id} style={{ left: node.x, top: node.y }} onMouseDown={(e) => handleMouseDownNode(e, node.id)}
+                                        className={`absolute w-[200px] rounded-lg shadow-xl border-2 group select-none transition-shadow ${selectedNodeId === node.id ? 'border-white z-20 ring-2 ring-blue-500/50' : node.type === 'start' ? 'border-blue-600 bg-gray-900 z-10' : node.type === 'ending' ? 'border-red-600 bg-gray-900 z-10' : 'border-indigo-600 bg-gray-900 z-10'} ${connectingSourceId && connectingSourceId !== node.id ? 'hover:scale-105 cursor-pointer' : 'cursor-grab active:cursor-grabbing'}`}>
+                                        <div className={`p-2 rounded-t-md text-sm font-bold flex justify-between ${node.type === 'start' ? 'bg-blue-900/50 text-blue-200' : node.type === 'ending' ? 'bg-red-900/50 text-red-200' : 'bg-indigo-900/50 text-indigo-200'}`}>
+                                            <span className="truncate">{node.type === 'start' ? '설정' : node.type === 'scene' ? 'Scene' : 'Ending'}</span>
+                                            <button onClick={(e) => { e.stopPropagation(); setConnectingSourceId(node.id); setSelectedNodeId(node.id); }} className="hover:text-white p-0.5"><Icon name="link" size={14} /></button>
+                                        </div>
+                                        <div className="p-3 text-xs text-gray-300 min-h-[60px] relative">
+                                            <div className="font-bold mb-1 truncate">{node.data.title || '제목 없음'}</div>
+                                            <div className="text-gray-500 line-clamp-2">{node.data.description || '내용 없음'}</div>
+                                            {node.id !== 'start' && selectedNodeId === node.id && (
+                                                <button onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 w-5 h-5 flex items-center justify-center"><Icon name="x" size={12} /></button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
 
                         <div className="w-80 bg-gray-900 border-l border-gray-800 overflow-y-auto z-20 shadow-xl">
@@ -374,7 +1037,46 @@
                                     <div className="p-6 space-y-6">
                                         <h2 className="text-lg font-bold border-b border-gray-700 pb-2">속성 편집 <span className="text-xs bg-gray-800 px-2 py-0.5 rounded text-gray-400">{node.type}</span></h2>
                                         <div className="space-y-3">
-                                            <div><label className="text-xs text-gray-400 block mb-1">제목</label><input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm text-white" value={node.type === 'start' ? (node.data.label || '') : (node.data.title || '')} onChange={e => updateNodeData(node.type === 'start' ? 'label' : 'title', e.target.value)} /></div>
+                                            {/* start 노드일 경우 자동 제목 체크박스 표시 */}
+                                            {node.type === 'start' && (
+                                                <div className="bg-blue-900/20 border border-blue-800/50 rounded-lg p-3 space-y-2">
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="rounded bg-gray-700 border-gray-600 text-blue-500 w-4 h-4"
+                                                            checked={useAutoTitle}
+                                                            onChange={(e) => {
+                                                                setUseAutoTitle(e.target.checked);
+                                                                // 자동 제목 활성화 시 생성된 제목으로 업데이트
+                                                                if (e.target.checked && generatedTitle) {
+                                                                    setNodes(prev => prev.map(n =>
+                                                                        n.id === 'start'
+                                                                            ? { ...n, data: { ...n.data, label: generatedTitle } }
+                                                                            : n
+                                                                    ));
+                                                                }
+                                                            }}
+                                                        />
+                                                        <span className="text-sm text-blue-300 font-medium">AI 생성 제목 사용</span>
+                                                    </label>
+                                                    {generatedTitle && (
+                                                        <p className="text-xs text-gray-400 pl-6">생성된 제목: <span className="text-blue-400">{generatedTitle}</span></p>
+                                                    )}
+                                                    {!generatedTitle && (
+                                                        <p className="text-xs text-gray-500 pl-6">시나리오 생성 후 자동으로 제목이 입력됩니다</p>
+                                                    )}
+                                                </div>
+                                            )}
+                                            <div>
+                                                <label className="text-xs text-gray-400 block mb-1">제목</label>
+                                                <input
+                                                    className={`w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm text-white ${node.type === 'start' && useAutoTitle ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                    value={node.type === 'start' ? (node.data.label || '') : (node.data.title || '')}
+                                                    onChange={e => updateNodeData(node.type === 'start' ? 'label' : 'title', e.target.value)}
+                                                    disabled={node.type === 'start' && useAutoTitle}
+                                                    placeholder={node.type === 'start' && useAutoTitle ? '시나리오 생성 시 자동 입력' : '제목을 입력하세요'}
+                                                />
+                                            </div>
                                             <div><label className="text-xs text-gray-400 block mb-1">내용</label><textarea rows={5} className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm text-white resize-none" value={node.data.description || ''} onChange={e => updateNodeData('description', e.target.value)} /></div>
                                         </div>
                                         {node.type === 'scene' && (
@@ -394,6 +1096,81 @@
                             })() : <div className="flex flex-col items-center justify-center h-full text-gray-600"><Icon name="settings" size={48} className="mb-4 opacity-50" /><p className="text-sm">노드를 선택하세요</p></div>}
                         </div>
 
+                        {/* 프리셋 관련 모달 */}
+                        <Modal isOpen={presetModalOpen} title="프리셋 관리" onClose={() => setPresetModalOpen(false)}>
+                            <div className="space-y-4">
+                                <div className="flex justify-between items-center">
+                                    <h3 className="text-base font-bold text-gray-200">저장된 프리셋</h3>
+                                    <span className="text-xs text-gray-500">{presets.length}개</span>
+                                </div>
+                                {loadingPresets ? (
+                                    <div className="flex items-center justify-center py-10">
+                                        <Icon name="loader-2" size={32} className="animate-spin text-blue-400" />
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                                        {presets.length === 0 && <p className="text-gray-500 text-sm text-center py-4">저장된 프리셋이 없습니다.</p>}
+                                        {presets.map(preset => (
+                                            <div key={preset.filename} className="p-3 bg-gray-800 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors">
+                                                <div className="flex justify-between items-start">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-bold text-gray-200 truncate">{preset.name}</div>
+                                                        <div className="text-xs text-gray-500 truncate">{preset.description || '설명 없음'}</div>
+                                                        <div className="text-[10px] text-gray-600 mt-1">
+                                                            노드 {preset.nodeCount}개 · NPC {preset.npcCount}개
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-1.5 ml-2">
+                                                        <button onClick={() => handleLoadPreset(preset)} className="px-2.5 py-1 text-xs bg-blue-600 hover:bg-blue-500 rounded font-medium">불러오기</button>
+                                                        <button onClick={() => handleDeletePreset(preset.filename)} className="p-1 text-xs bg-red-600/80 hover:bg-red-500 rounded" title="삭제">
+                                                            <Icon name="x" size={14} className="text-white" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="pt-3 border-t border-gray-800">
+                                    <button onClick={() => { setPresetModalOpen(false); setPresetSaveModalOpen(true); }} className="w-full py-2.5 bg-green-600 hover:bg-green-500 rounded-lg font-bold transition-colors flex items-center justify-center gap-2">
+                                        <Icon name="check-circle" size={18} /> 현재 설정을 프리셋으로 저장
+                                    </button>
+                                </div>
+                            </div>
+                        </Modal>
+
+                        <Modal isOpen={presetSaveModalOpen} title="프리셋 저장" onClose={() => setPresetSaveModalOpen(false)}>
+                            <div className="p-4">
+                                <h3 className="text-lg font-bold text-gray-200 mb-4">프리셋 이름 및 설명</h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-xs text-gray-400 block mb-1">프리셋 이름</label>
+                                        <input
+                                            value={presetName}
+                                            onChange={e => setPresetName(e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm text-white"
+                                            placeholder="프리셋 이름을 입력하세요"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-400 block mb-1">프리셋 설명</label>
+                                        <textarea
+                                            value={presetDescription}
+                                            onChange={e => setPresetDescription(e.target.value)}
+                                            className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm text-white resize-none"
+                                            rows={3}
+                                            placeholder="프리셋 설명을 입력하세요 (선택 사항)"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="mt-4">
+                                    <button onClick={handleSavePreset} className="w-full py-2 bg-green-600 hover:bg-green-500 rounded-lg font-bold transition-colors flex items-center justify-center gap-2">
+                                        <Icon name="check-circle" size={18} /> 저장
+                                    </button>
+                                </div>
+                            </div>
+                        </Modal>
+
                         <Modal isOpen={npcModalOpen} title="NPC 생성" onClose={() => setNpcModalOpen(false)}>
                             <form onSubmit={addGlobalNpc} className="space-y-4">
                                 <input name="npcName" required className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white" placeholder="이름" />
@@ -409,7 +1186,7 @@
                         <Modal isOpen={resultModal.open} type={resultModal.type} title={resultModal.title} onClose={() => setResultModal({ ...resultModal, open: false })}>
                             <div className="whitespace-pre-wrap">{resultModal.message}</div>
                             <div className="mt-6 flex justify-end gap-2">
-                                {resultModal.type === 'success' && <a href="/views/player" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold">플레이하러 가기</a>}
+                                {resultModal.type === 'success' && resultModal.showPlayButton && <a href="/views/player" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold">플레이하러 가기</a>}
                                 <button onClick={() => setResultModal({ ...resultModal, open: false })} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white">확인</button>
                             </div>
                         </Modal>

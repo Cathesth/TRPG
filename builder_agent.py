@@ -22,6 +22,24 @@ if not logger.handlers:
 
 DEFAULT_MODEL = "openai/tngtech/deepseek-r1t2-chimera:free"
 
+# --- [진행률 콜백 함수] ---
+_progress_callback = None
+
+def set_progress_callback(callback):
+    """진행률 업데이트 콜백 설정"""
+    global _progress_callback
+    _progress_callback = callback
+
+def _update_progress(status=None, step=None, detail=None, progress=None,
+                     total_scenes=None, completed_scenes=None, current_phase=None):
+    """진행률 업데이트 (콜백이 설정된 경우에만 호출)"""
+    if _progress_callback:
+        _progress_callback(
+            status=status, step=step, detail=detail, progress=progress,
+            total_scenes=total_scenes, completed_scenes=completed_scenes,
+            current_phase=current_phase
+        )
+
 
 def parse_react_flow(react_flow_data: Dict[str, Any]) -> Dict[str, Any]:
     logger.info("Parsing React Flow data...")
@@ -95,8 +113,11 @@ def parse_react_flow(react_flow_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleton: Dict, api_key: str) -> Dict:
+def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleton: Dict, api_key: str, model_name: str = None) -> Dict:
     try:
+        # 모델 선택
+        use_model = model_name if model_name else DEFAULT_MODEL
+
         targets = info['connected_to']
         target_infos = []
         for idx, t_id in enumerate(targets):
@@ -113,12 +134,39 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
         genre = setting_data.get('genre', 'General')
         bg_story = setting_data.get('background_story', 'None')
 
+        # ===== [Narrative Continuity 규칙] =====
+        narrative_continuity_rules = """
+        [NARRATIVE CONTINUITY - 인과관계 체인 규칙]
+        이 규칙을 반드시 엄격히 준수하라:
+
+        1. **인과관계 확인 (Causal Link)**
+           - 이 씬의 시작은 이전 씬(Came From)에서 플레이어가 선택한 '트리거(Trigger)' 행동이 완료된 직후의 상황이어야 한다.
+           - 예: 이전 씬에서 "문을 부수고 들어간다"를 선택했다면, 이 씬의 첫 문장은 문이 부서진 잔해나 그 소동으로 인한 주변의 반응으로 시작해야 함.
+           - **첫 문단에 반드시 '이전 선택이 초래한 결과'를 배치하라.**
+
+        2. **상태 및 환경의 전이 (Context Carry-over)**
+           - 이전 씬에서 발생한 물리적 변화(불이 남, 물건이 파괴됨, NPC가 부상당함 등)는 이 씬의 배경 묘사에 지속적으로 포함되어야 한다.
+           - 일회성 묘사가 아니라, 해당 사건이 현재 전개에 어떤 영향을 주는지 명시하라.
+
+        3. **선택지의 무게감 (Weight of Choice)**
+           - 선택지는 단순히 씬을 이동시키는 버튼이 아니다.
+           - 각 선택지는 플레이어의 스탯 변화뿐만 아니라, **'서사적 태그'**를 남겨야 한다.
+           - 다음 씬은 "플레이어가 [어떤 선택]을 통해 이 씬에 도달했음"을 인지하고 그에 맞는 톤앤매너를 유지해야 한다.
+
+        4. **논리적 일관성 체크 (Consistency Check)**
+           - 이전 씬에서 NPC가 죽었다면 이 씬에서 그 NPC가 다시 등장해서는 안 된다.
+           - 모든 씬은 전체 세계관 설명(Background)과 이전 선택지의 결과라는 두 가지 축을 중심으로 논리적으로 구성되어야 한다.
+
+        [핵심 지시]
+        단순한 묘사가 아니라, '이전 선택이 초래한 결과'를 첫 문단에 배치하고, 그 결과가 현재 씬의 분위기를 어떻게 지배하고 있는지 서술하라.
+        """
+
         # [수정] 엔딩과 일반 씬의 프롬프트 및 출력 포맷 분리
         if is_ending:
             output_format = """
             {
                 "title": "Creative Ending Title (Korean)",
-                "description": "Rich ending description in Korean...",
+                "description": "Rich ending description in Korean. 첫 문단은 반드시 이전 씬에서의 선택 결과로 시작해야 함.",
                 "condition": "The cause of this ending based on 'Came From' context (e.g., '전투 패배', '비밀 발견', '탈출 성공', '시간 초과') - Korean"
             }
             """
@@ -127,14 +175,17 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
             output_format = """
             {
                 "title": "Creative Title in Korean",
-                "description": "Rich scene description in Korean...",
+                "description": "Rich scene description in Korean. 첫 문단은 반드시 이전 씬에서의 선택 결과로 시작해야 함. 이 결과가 현재 씬의 분위기를 어떻게 지배하는지 서술.",
                 "transitions": [
                     {
-                        "trigger": "Action description in Korean",
+                        "trigger": "Action description in Korean (이 선택이 다음 씬에 어떤 결과를 초래할지 암시)",
                         "conditions": [
                             { "type": "stat_check", "stat": "STR", "value": 10 }
                         ],
-                        "effects": []
+                        "effects": [
+                            { "type": "change_stat", "stat": "HP", "value": -10 }
+                        ],
+                        "narrative_tag": "이 선택의 서사적 의미 (예: '폭력적 해결', '은밀한 접근', '희생적 선택')"
                     }
                 ]
             }
@@ -143,6 +194,7 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
             [GAME MECHANICS]
             - Add conditions (Stat/Item check) to transitions.
             - Add effects (Get Item, Change Stat) to transitions.
+            - Add narrative_tag to each transition (서사적 태그: 이 선택이 플레이어 캐릭터에게 어떤 의미인지).
             """
 
         prompt = f"""
@@ -159,7 +211,9 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
         [SCENE INFO]
         - Current Title: "{info['title']}"
         - Type: {"Ending Scene" if is_ending else "Normal Scene"}
-        - **Came From**: "{source_context}" (IMPORTANT: Reflect this context in the description/condition)
+        - **Came From**: "{source_context}" (CRITICAL: 이 씬의 첫 문단은 이전 씬에서의 선택 결과를 반영해야 함)
+
+        {narrative_continuity_rules}
 
         [REQUIRED TRANSITIONS]
         Destinations:
@@ -171,7 +225,7 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
         {output_format}
         """
 
-        llm = LLMFactory.get_llm(api_key=api_key, model_name=DEFAULT_MODEL)
+        llm = LLMFactory.get_llm(api_key=api_key, model_name=use_model)
         response = llm.invoke(prompt).content
         scene_data = parse_json_garbage(response)
 
@@ -243,6 +297,7 @@ def _generate_single_scene(node_id: str, info: Dict, setting_data: Dict, skeleto
 def _validate_scenario(scenario_data: Dict, llm) -> Tuple[bool, str]:
     """
     [Validator Agent] 룰 베이스 + LLM 하이브리드 검수
+    - 인과관계 체인(Narrative Continuity) 검증 포함
     """
     logger.info("🔍 [Validator] Checking scenario...")
 
@@ -281,20 +336,27 @@ def _validate_scenario(scenario_data: Dict, llm) -> Tuple[bool, str]:
     if issues:
         return False, ", ".join(issues)
 
-    # 3. [LLM Base] 논리적 흐름 검사 (룰 베이스 통과 시에만)
+    # 3. [LLM Base] 논리적 흐름 + 인과관계 체인 검사 (룰 베이스 통과 시에만)
     prompt = f"""
-    [TASK] Validate TRPG Scenario Logic.
+    [TASK] Validate TRPG Scenario Logic and Narrative Continuity.
 
     Data:
     Title: {scenario_data.get('title')}
     Scene Count: {len(scenes)}
+    Ending Count: {len(endings)}
 
-    [CHECK]
-    1. Is the story consistent?
-    2. Are there any dead ends in normal scenes?
+    [CHECK - 인과관계 체인 규칙]
+    1. **Causal Link**: 각 씬의 시작이 이전 씬의 선택 결과를 반영하는가?
+    2. **Context Carry-over**: 이전 씬에서 발생한 물리적 변화가 다음 씬에 지속되는가?
+    3. **Consistency Check**: 죽은 NPC가 다시 등장하거나, 논리적 모순이 있는가?
+    4. **Dead Ends**: 일반 씬에서 막다른 길(연결 없음)이 있는가?
+    5. **Story Flow**: 전체적인 서사 흐름이 일관성 있는가?
 
     [OUTPUT JSON]
     {{ "is_valid": true, "critical_issues": "None" }}
+    
+    If issues found:
+    {{ "is_valid": false, "critical_issues": "씬 간 인과관계 부족, NPC 일관성 오류 등 구체적 문제점" }}
     """
     try:
         res = llm.invoke(prompt).content
@@ -352,6 +414,51 @@ def _refine_scenario(scenario_data: Dict, issues: str, llm) -> Dict:
         return scenario_data
 
 
+def normalize_ids(scenario_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    씬과 엔딩의 ID를 간단한 형식으로 정규화합니다.
+    scene-1766998232980 -> scene-1, scene-2, ...
+    ending-1766998240477 -> ending-1, ending-2, ...
+    모든 연결 정보(transitions, prologue_connects_to)도 함께 업데이트합니다.
+    """
+    id_map = {}  # { old_id: new_id }
+
+    scenes = scenario_data.get('scenes', [])
+    endings = scenario_data.get('endings', [])
+
+    # 1. 씬 ID 매핑 생성 (scene-1, scene-2, ...)
+    for idx, scene in enumerate(scenes, start=1):
+        old_id = scene.get('scene_id')
+        new_id = f"scene-{idx}"
+        if old_id:
+            id_map[old_id] = new_id
+            scene['scene_id'] = new_id
+
+    # 2. 엔딩 ID 매핑 생성 (ending-1, ending-2, ...)
+    for idx, ending in enumerate(endings, start=1):
+        old_id = ending.get('ending_id')
+        new_id = f"ending-{idx}"
+        if old_id:
+            id_map[old_id] = new_id
+            ending['ending_id'] = new_id
+
+    # 3. Transitions(연결) 정보 업데이트
+    for scene in scenes:
+        for trans in scene.get('transitions', []):
+            target = trans.get('target_scene_id')
+            if target and target in id_map:
+                trans['target_scene_id'] = id_map[target]
+
+    # 4. 프롤로그 연결 정보 업데이트 (매핑된 ID만 포함)
+    prologue_connects_to = scenario_data.get('prologue_connects_to', [])
+    new_prologue_connects = [id_map[old_id] for old_id in prologue_connects_to if old_id in id_map]
+    scenario_data['prologue_connects_to'] = new_prologue_connects
+
+    logger.info(f"✅ [normalize_ids] ID 정규화 완료: {len(id_map)} IDs mapped")
+
+    return scenario_data
+
+
 def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], model_name: str = None) -> Dict[str, Any]:
     logger.info("🚀 [Builder] Starting generation...")
 
@@ -360,54 +467,126 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
     logger.info(f"📦 Using model: {use_model}")
 
     try:
+        # Phase 1: 그래프 파싱
+        _update_progress(
+            status="building",
+            current_phase="parsing",
+            step="1/5",
+            detail="노드 그래프 분석 중...",
+            progress=5
+        )
+
         parsed = parse_react_flow(react_flow_data)
         skeleton = parsed['skeleton']
         start_node_data = parsed.get('start_node_data')
+        total_scene_count = len(skeleton)
 
-        if not skeleton: return {"title": "Empty", "scenes": [], "endings": []}
+        _update_progress(
+            detail=f"총 {total_scene_count}개의 씬 감지됨",
+            progress=10,
+            total_scenes=total_scene_count,
+            completed_scenes=0
+        )
+
+        if not skeleton:
+            _update_progress(status="error", detail="씬이 없습니다")
+            return {"title": "Empty", "scenes": [], "endings": []}
+
+        # 1. 사용자의 의도(장르, 설정 등) 추출
+        user_prompt = ""
+        if start_node_data:
+            user_prompt = f"Title: {start_node_data.get('title', '')}\nDescription: {start_node_data.get('description', '')}"
+
+        if not user_prompt.strip() or user_prompt.strip() == "Title:\nDescription:":
+            user_prompt = "Genre: General Fantasy"
+
+        # Phase 2: 세계관 생성
+        _update_progress(
+            current_phase="worldbuilding",
+            step="2/5",
+            detail="세계관 및 프롤로그 생성 중...",
+            progress=15
+        )
 
         llm = LLMFactory.get_llm(api_key=api_key, model_name=use_model)
         titles = [s['title'] for s in skeleton.values()]
 
-        # [설정 생성 프롬프트 강화]
         setting_prompt = f"""
-        [TASK] Create TRPG setting for: {', '.join(titles)}
-        [LANGUAGE] **KOREAN ONLY**
-        [OUTPUT JSON] {{ 
-            "title": "Creative Title (Korean)", 
-            "genre": "Genre", 
-            "background_story": "Detailed World Setting (Korean, 3 sentences+)", 
-            "prologue": "Opening Scene Description (Korean)", 
-            "variables": [
-                {{ "name": "HP", "initial_value": 100 }},
-                {{ "name": "SANITY", "initial_value": 100 }}
-            ] 
-        }}
-        """
+            [TASK] Create a TRPG world setting.
+            
+            [USER REQUEST - MUST FOLLOW]
+            {user_prompt}
+            
+            [SCENE TITLES FOR REFERENCE]
+            {', '.join(titles)}
+            
+            [RULES]
+            1. The genre and background_story MUST match what the user requested above.
+            2. Do NOT ignore or change the user's specified genre/theme.
+            3. All text must be in Korean.
+            
+            [OUTPUT JSON]
+            {{
+                "title": "창의적인 시나리오 제목",
+                "genre": "사용자가 요청한 장르",
+                "background_story": "세계관 설명 (3문장 이상)",
+                "prologue": "프롤로그 장면 묘사",
+                "variables": [
+                    {{ "name": "HP", "initial_value": 100 }},
+                    {{ "name": "SANITY", "initial_value": 100 }}
+                ]
+            }}
+            """
         try:
             setting_res = llm.invoke(setting_prompt).content
             setting_data = parse_json_garbage(setting_res)
+            _update_progress(
+                detail=f"세계관 '{setting_data.get('title', '?')}' 생성 완료",
+                progress=25
+            )
         except:
             setting_data = {"title": "New Adventure", "genre": "Adventure", "variables": []}
 
+        # Phase 3: 씬 생성 (병렬 처리)
+        _update_progress(
+            current_phase="scene_generation",
+            step="3/5",
+            detail=f"씬 콘텐츠 생성 시작 (0/{total_scene_count})",
+            progress=30
+        )
+
         final_scenes = []
         final_endings = []
+        completed_count = 0
 
         logger.info(f"Generating {len(skeleton)} scenes...")
         with ThreadPoolExecutor(max_workers=5) as executor:
             future_to_node = {
-                executor.submit(_generate_single_scene, nid, info, setting_data, skeleton, api_key): nid
+                executor.submit(_generate_single_scene, nid, info, setting_data, skeleton, api_key, use_model): nid
                 for nid, info in skeleton.items()
             }
             for future in as_completed(future_to_node):
+                node_id = future_to_node[future]
                 try:
                     res = future.result()
+                    completed_count += 1
+
+                    # 씬 생성 진행률 업데이트
+                    scene_progress = 30 + int((completed_count / total_scene_count) * 45)
+                    scene_title = res.get('data', {}).get('title', node_id)
+                    _update_progress(
+                        detail=f"씬 생성 완료: '{scene_title}' ({completed_count}/{total_scene_count})",
+                        progress=scene_progress,
+                        completed_scenes=completed_count
+                    )
+
                     if res['type'] == 'ending':
                         final_endings.append(res['data'])
                     else:
                         final_scenes.append(res['data'])
-                except:
-                    pass
+                except Exception as e:
+                    completed_count += 1
+                    logger.error(f"Scene generation failed for {node_id}: {e}")
 
         # 프롤로그에서 연결된 첫 번째 씬 ID 저장
         first_scene_ids = []
@@ -419,7 +598,7 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
             "genre": setting_data.get('genre', 'Adventure'),
             "background_story": setting_data.get('background_story', ''),
             "prologue": setting_data.get('prologue', ''),
-            "prologue_connects_to": first_scene_ids,  # 프롤로그가 연결하는 씬 ID 목록
+            "prologue_connects_to": first_scene_ids,
             "variables": setting_data.get('variables', []),
             "items": [],
             "npcs": [],
@@ -427,21 +606,72 @@ def generate_scenario_from_graph(api_key: str, react_flow_data: Dict[str, Any], 
             "endings": final_endings
         }
 
-        # 검수 및 수정
+        # Phase 4: 검증
+        _update_progress(
+            current_phase="validation",
+            step="4/5",
+            detail="시나리오 일관성 검증 중...",
+            progress=80
+        )
+
         is_valid, issues = _validate_scenario(draft_scenario, llm)
 
         if not is_valid:
+            # Phase 5: 수정 (필요 시)
+            _update_progress(
+                current_phase="refining",
+                step="5/5",
+                detail=f"품질 개선 중: {issues[:50]}...",
+                progress=85
+            )
+
             final_result = _refine_scenario(draft_scenario, issues, llm)
-            # prologue_connects_to 유지
             final_result['prologue_connects_to'] = first_scene_ids
+
+            _update_progress(detail="ID 정규화 중...", progress=92)
+            final_result = normalize_ids(final_result)
+
+            _update_progress(
+                status="completed",
+                current_phase="done",
+                step="완료",
+                detail=f"시나리오 '{final_result.get('title')}' 생성 완료! (수정됨)",
+                progress=100
+            )
+
             logger.info("🎉 Generation Complete (Refined).")
             return final_result
         else:
+            # Phase 5: 완료
+            _update_progress(
+                current_phase="finalizing",
+                step="5/5",
+                detail="ID 정규화 및 최종 처리 중...",
+                progress=90
+            )
+
+            normalized_scenario = normalize_ids(draft_scenario)
+
+            _update_progress(
+                status="completed",
+                current_phase="done",
+                step="완료",
+                detail=f"시나리오 '{normalized_scenario.get('title')}' 생성 완료!",
+                progress=100
+            )
+
             logger.info("🎉 Generation Complete (Direct Pass).")
-            return draft_scenario
+            return normalized_scenario
 
     except Exception as e:
         logger.error(f"Critical Builder Error: {e}", exc_info=True)
+        _update_progress(
+            status="error",
+            current_phase="error",
+            step="오류",
+            detail=f"생성 실패: {str(e)[:100]}",
+            progress=0
+        )
         return {"title": "Error", "scenes": [], "endings": []}
 
 

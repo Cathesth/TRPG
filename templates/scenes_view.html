@@ -76,6 +76,21 @@
         .sidebar.expanded .user-chevron {
             opacity: 1;
         }
+
+        /* 현재 씬 하이라이트 스타일 */
+        .current-scene-node {
+            filter: drop-shadow(0 0 8px #22d3ee) drop-shadow(0 0 12px #06b6d4);
+        }
+        .current-scene-node rect,
+        .current-scene-node polygon {
+            stroke: #22d3ee !important;
+            stroke-width: 3px !important;
+            fill: #164e63 !important;
+        }
+        .current-scene-node .nodeLabel {
+            color: #67e8f9 !important;
+            font-weight: bold !important;
+        }
     </style>
 
     <script>
@@ -197,6 +212,12 @@
                         시나리오 흐름도 (Tree View)
                     </h2>
                     <p class="text-gray-400 mt-1">"{{ title }}"의 장면 연결 구조를 시각적으로 확인합니다.</p>
+                    {% if current_scene_id %}
+                    <p class="text-sm text-cyan-400 mt-2 flex items-center gap-2">
+                        <i data-lucide="map-pin" class="w-4 h-4"></i>
+                        현재 위치: <span class="font-bold">{{ current_scene_id }}</span>
+                    </p>
+                    {% endif %}
                 </div>
                 <div class="text-sm text-gray-500">
                     총 {{ scenes|length }}개의 씬 + {{ scenario.endings|length }}개의 엔딩
@@ -239,13 +260,19 @@
             <!-- 상세 리스트 (접이식) -->
             <div class="mt-8 space-y-4 pb-8">
 
-                <details class="group bg-gray-900 rounded-lg border border-gray-800">
+                <details class="group bg-gray-900 rounded-lg border {% if current_scene_id == 'prologue' %}border-cyan-400 shadow-lg shadow-cyan-500/20{% else %}border-gray-800{% endif %} {% if current_scene_id == 'prologue' %}relative{% endif %}">
+                    {% if current_scene_id == 'prologue' %}
+                    <div class="absolute -top-2 -right-2 bg-cyan-400 text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg z-10">
+                        <i data-lucide="map-pin" class="w-3 h-3"></i>
+                        현재 위치
+                    </div>
+                    {% endif %}
                     <summary class="p-4 cursor-pointer font-bold text-gray-300 hover:text-white flex justify-between items-center select-none bg-gray-800/30">
                         <span class="flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4 text-yellow-500"></i> 프롤로그 (Prologue)</span>
                         <i data-lucide="chevron-down" class="transition-transform group-open:rotate-180"></i>
                     </summary>
                     <div class="p-6 border-t border-gray-800 text-gray-300 leading-relaxed italic bg-gray-900/50">
-                        {{ scenario.prologue_text or "프롤로그 없음" }}
+                        {{ scenario.prologue or scenario.prologue_text or "프롤로그 없음" }}
                     </div>
                 </details>
 
@@ -256,12 +283,56 @@
                     </summary>
                     <div class="p-4 border-t border-gray-800 grid grid-cols-1 md:grid-cols-2 gap-4">
                         {% for scene in scenes %}
-                        <div class="bg-gray-800/50 p-4 rounded border border-gray-700/50 hover:border-blue-500/30 transition-colors">
-                            <div class="font-bold text-indigo-300 text-sm mb-1 flex justify-between">
+                        <div class="bg-gray-800/50 p-4 rounded border {% if current_scene_id == scene.scene_id %}border-cyan-400 shadow-lg shadow-cyan-500/20{% else %}border-gray-700/50 hover:border-blue-500/30{% endif %} transition-colors {% if current_scene_id == scene.scene_id %}relative{% endif %}">
+                            {% if current_scene_id == scene.scene_id %}
+                            <div class="absolute -top-2 -right-2 bg-cyan-400 text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg">
+                                <i data-lucide="map-pin" class="w-3 h-3"></i>
+                                현재 위치
+                            </div>
+                            {% endif %}
+                            <div class="font-bold {% if current_scene_id == scene.scene_id %}text-cyan-300{% else %}text-indigo-300{% endif %} text-sm mb-1 flex justify-between">
                                 <span>{{ scene.title }}</span>
                                 <span class="text-xs text-gray-600 bg-gray-900 px-1.5 py-0.5 rounded">{{ scene.scene_id }}</span>
                             </div>
-                            <div class="text-xs text-gray-400 line-clamp-3">{{ scene.description }}</div>
+                            <div class="text-xs text-gray-400 line-clamp-3 mb-2">{{ scene.description }}</div>
+
+                            {% if incoming_conditions and incoming_conditions[scene.scene_id] %}
+                            <div class="text-[10px] border-t border-gray-700/50 pt-2 mt-2">
+                                <span class="text-gray-500">이 씬에 도달하는 조건:</span>
+                                <ul class="mt-1 space-y-1">
+                                {% for cond in incoming_conditions[scene.scene_id] %}
+                                    <li class="flex items-start gap-1">
+                                        <span class="text-green-400">←</span>
+                                        <span class="text-indigo-300">{{ cond.from_title }}</span>
+                                        <span class="text-gray-500">에서</span>
+                                        <span class="text-green-300">"{{ cond.condition }}"</span>
+                                    </li>
+                                {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+
+                            {% if scene.transitions and scene.transitions|length > 0 %}
+                            <div class="text-[10px] border-t border-gray-700/50 pt-2 mt-2">
+                                <span class="text-gray-500">다음 씬으로 이동 조건:</span>
+                                <ul class="mt-1 space-y-1">
+                                {% for trans in scene.transitions %}
+                                    <li class="flex items-start gap-1 flex-wrap">
+                                        <span class="text-indigo-400">→</span>
+                                        {% if ending_names and trans.target_scene_id in ending_names %}
+                                        <span class="text-pink-400 font-medium">🏁 {{ ending_names[trans.target_scene_id] }}</span>
+                                        {% elif scene_names and trans.target_scene_id in scene_names %}
+                                        <span class="text-indigo-300">{{ scene_names[trans.target_scene_id] }}</span>
+                                        {% else %}
+                                        <span class="text-gray-300">{{ trans.target_scene_id }}</span>
+                                        {% endif %}
+                                        <span class="text-gray-500">:</span>
+                                        <span class="text-green-300">{{ trans.trigger or trans.condition or "자유 행동" }}</span>
+                                    </li>
+                                {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
                         </div>
                         {% endfor %}
                     </div>
@@ -274,15 +345,34 @@
                     </summary>
                     <div class="p-4 border-t border-gray-800 grid grid-cols-1 md:grid-cols-2 gap-4">
                         {% for ending in scenario.endings %}
-                        <div class="bg-red-900/10 p-4 rounded border border-red-900/30 hover:border-red-500/30 transition-colors">
+                        <div class="bg-red-900/10 p-4 rounded border {% if current_scene_id == ending.ending_id %}border-cyan-400 shadow-lg shadow-cyan-500/20{% else %}border-red-900/30 hover:border-red-500/30{% endif %} transition-colors {% if current_scene_id == ending.ending_id %}relative{% endif %}">
+                            {% if current_scene_id == ending.ending_id %}
+                            <div class="absolute -top-2 -right-2 bg-cyan-400 text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg">
+                                <i data-lucide="map-pin" class="w-3 h-3"></i>
+                                현재 위치
+                            </div>
+                            {% endif %}
                             <div class="font-bold text-red-300 text-sm mb-1 flex justify-between">
                                 <span>{{ ending.title }}</span>
                                 <span class="text-xs text-red-900 bg-red-900/20 px-1.5 py-0.5 rounded">{{ ending.ending_id }}</span>
                             </div>
-                            <div class="text-xs text-gray-400 mb-2">{{ ending.description }}</div>
-                            <div class="text-[10px] text-red-400/70 border-t border-red-900/20 pt-2">
-                                조건: {{ ending.condition }}
+                            <div class="text-xs text-gray-400 line-clamp-3 mb-2">{{ ending.description }}</div>
+
+                            {% if ending_incoming_conditions and ending_incoming_conditions[ending.ending_id] %}
+                            <div class="text-[10px] border-t border-red-900/20 pt-2 mt-2">
+                                <span class="text-gray-500">이 엔딩에 도달하는 조건:</span>
+                                <ul class="mt-1 space-y-1">
+                                {% for cond in ending_incoming_conditions[ending.ending_id] %}
+                                    <li class="flex items-start gap-1">
+                                        <span class="text-pink-400">←</span>
+                                        <span class="text-indigo-300">{{ cond.from_title }}</span>
+                                        <span class="text-gray-500">에서</span>
+                                        <span class="text-green-300">"{{ cond.condition }}"</span>
+                                    </li>
+                                {% endfor %}
+                                </ul>
                             </div>
+                            {% endif %}
                         </div>
                         {% endfor %}
                     </div>
@@ -330,12 +420,83 @@
                     svg.style.maxWidth = 'none';
                     svg.style.height = 'auto';
                 }
+
+                // 현재 씬 하이라이트 처리
+                highlightCurrentScene();
             } catch (err) {
                 console.error("Mermaid Render Failed:", err);
                 element.innerHTML = `<div class='text-red-500'>그래프 렌더링 실패<br><small>${err}</small></div>`;
                 element.classList.remove('opacity-0');
             }
         }
+    }
+
+    // 현재 씬을 Mermaid 그래프에서 하이라이트
+    function highlightCurrentScene() {
+        const currentSceneId = '{{ current_scene_id }}';
+        if (!currentSceneId) return;
+
+        console.log('[Highlight] Current Scene ID:', currentSceneId);
+
+        // Mermaid 그래프에서 현재 씬 노드 찾기
+        const svg = document.querySelector('#mermaid-graph svg');
+        if (!svg) return;
+
+        // 모든 노드 그룹 확인
+        const allNodes = svg.querySelectorAll('.node');
+        console.log('[Highlight] Total nodes found:', allNodes.length);
+
+        allNodes.forEach(node => {
+            // 노드의 ID 확인 (Mermaid는 flowchart-{원본ID}-{숫자} 형식으로 생성)
+            const nodeId = node.getAttribute('id') || '';
+
+            // nodeId에서 실제 scene_id 추출 (여러 패턴 시도)
+            // 형식: "flowchart-scene_1-123" 또는 "flowchart-PROLOGUE-123"
+            // 언더스코어가 여러 개인 경우: "flowchart-scene_name_1-123"
+            let extractedId = '';
+
+            // 패턴 1: 마지막 하이픈과 숫자를 제거
+            const lastDashIndex = nodeId.lastIndexOf('-');
+            if (lastDashIndex > 0) {
+                const afterLastDash = nodeId.substring(lastDashIndex + 1);
+                if (/^\d+$/.test(afterLastDash)) {
+                    // 마지막이 숫자면, "flowchart-" 부분 제거
+                    extractedId = nodeId.substring(0, lastDashIndex).replace(/^flowchart-/, '');
+                }
+            }
+
+            // 패턴 2: 정규식으로 추출 (fallback)
+            if (!extractedId) {
+                const match = nodeId.match(/flowchart-(.+)-\d+$/);
+                extractedId = match ? match[1] : '';
+            }
+
+            console.log('[Highlight] Node ID:', nodeId, '→ Extracted:', extractedId);
+
+            // 프롤로그 체크
+            const isPrologueNode = extractedId.toUpperCase() === 'PROLOGUE';
+            const isCurrentPrologue = currentSceneId.toLowerCase() === 'prologue' && isPrologueNode;
+
+            // 정확한 매칭 (부분 문자열이 아닌 완전 일치)
+            const isCurrentScene = extractedId === currentSceneId;
+
+            if (isCurrentPrologue || isCurrentScene) {
+                console.log('[Highlight] ✅ MATCHED! Node:', nodeId, 'Scene:', currentSceneId);
+                node.classList.add('current-scene-node');
+
+                // 현재 씬에 깜빡이는 애니메이션 추가
+                const animate = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+                animate.setAttribute('attributeName', 'opacity');
+                animate.setAttribute('values', '1;0.5;1');
+                animate.setAttribute('dur', '2s');
+                animate.setAttribute('repeatCount', 'indefinite');
+
+                const rect = node.querySelector('rect') || node.querySelector('polygon');
+                if (rect) {
+                    rect.appendChild(animate);
+                }
+            }
+        });
     }
 
     window.updateTransform = function() {
@@ -397,12 +558,14 @@
     (function() {
         const sidebar = document.querySelector('.sidebar');
         const SIDEBAR_STATE_KEY = 'sidebar_expanded';
+        let isRestoredState = false;
 
         // 페이지 로드 시 저장된 상태 복원
         if (sessionStorage.getItem(SIDEBAR_STATE_KEY) === 'true') {
             // transition 일시 비활성화 (깜빡임 방지)
             sidebar.style.transition = 'none';
             sidebar.classList.add('expanded');
+            isRestoredState = true;
             // 상태키 즉시 제거 (다음 페이지 이동을 위해)
             sessionStorage.removeItem(SIDEBAR_STATE_KEY);
             // 다음 프레임에서 transition 복원
@@ -411,6 +574,23 @@
                     sidebar.style.transition = '';
                 });
             });
+        }
+
+        // 페이지 로드 완료 후 마우스 위치 확인하여 사이드바 닫기
+        if (isRestoredState) {
+            // 약간의 지연 후 마우스 위치 체크
+            setTimeout(() => {
+                const checkMousePosition = (e) => {
+                    const rect = sidebar.getBoundingClientRect();
+                    const isInsideSidebar = e.clientX >= rect.left && e.clientX <= rect.right &&
+                                           e.clientY >= rect.top && e.clientY <= rect.bottom;
+                    if (!isInsideSidebar) {
+                        sidebar.classList.remove('expanded');
+                    }
+                    document.removeEventListener('mousemove', checkMousePosition);
+                };
+                document.addEventListener('mousemove', checkMousePosition, { once: true });
+            }, 100);
         }
 
         // 사이드바 내 링크 클릭 시 상태 저장
