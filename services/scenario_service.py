@@ -1,113 +1,108 @@
-"""
-시나리오 로드/저장 서비스
-"""
-import os
 import json
 import time
 import logging
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
-from config import DB_FOLDER, DEFAULT_PLAYER_VARS
-from core.utils import sanitize_filename, ensure_directory
+from config import DEFAULT_PLAYER_VARS
+from models import db, Scenario
 
 logger = logging.getLogger(__name__)
 
 
 class ScenarioService:
-    """시나리오 파일 관리 서비스"""
+    """시나리오 DB 관리 서비스"""
 
     @staticmethod
-    def list_scenarios(sort_order: str = 'newest') -> List[Dict[str, Any]]:
+    def list_scenarios(sort_order: str = 'newest', user_id: str = None, filter_mode: str = 'public',
+                       limit: int = None) -> List[Dict[str, Any]]:
         """
-        시나리오 목록 조회
-
-        Args:
-            sort_order: 정렬 기준 (newest, oldest, name_asc, name_desc)
-
-        Returns:
-            시나리오 정보 리스트
+        시나리오 목록 조회 (DB 기반)
+        limit: 반환할 시나리오 최대 개수 (대시보드용)
         """
-        ensure_directory(DB_FOLDER)
+        query = Scenario.query
 
-        files = [f for f in os.listdir(DB_FOLDER) if f.endswith('.json')]
+        # 필터링 로직
+        if filter_mode == 'my' and user_id:
+            query = query.filter_by(author_id=user_id)
+        elif filter_mode == 'public':
+            query = query.filter_by(is_public=True)
+        else:  # all (공개 + 내 것)
+            if user_id:
+                query = query.filter((Scenario.is_public == True) | (Scenario.author_id == user_id))
+            else:
+                query = query.filter_by(is_public=True)
 
+        # 정렬 로직
+        if sort_order == 'oldest':
+            query = query.order_by(Scenario.created_at.asc())
+        elif sort_order == 'name_asc':
+            query = query.order_by(Scenario.title.asc())
+        elif sort_order == 'name_desc':
+            query = query.order_by(Scenario.title.desc())
+        else:  # newest
+            query = query.order_by(Scenario.created_at.desc())
+
+        # [CRITICAL] 개수 제한 (Limit) 적용
+        if limit:
+            query = query.limit(limit)
+
+        scenarios = query.all()
         file_infos = []
-        for f in files:
-            file_path = os.path.join(DB_FOLDER, f)
-            title = f.replace('.json', '')
-            desc = "저장된 시나리오"
 
-            try:
-                created_time = os.path.getctime(file_path)
-            except:
-                created_time = 0
+        for s in scenarios:
+            s_data = s.data
+            # DB 데이터 구조 호환성 체크
+            if 'scenario' in s_data:
+                s_data = s_data['scenario']
 
-            try:
-                with open(file_path, 'r', encoding='utf-8') as jf:
-                    data = json.load(jf)
-                    s_data = data.get('scenario', data)
-                    title = s_data.get('title', title)
-                    p_text = s_data.get('prologue', s_data.get('prologue_text', ''))
-                    if p_text:
-                        desc = p_text[:60] + "..."
-            except:
-                pass
+            p_text = s_data.get('prologue', s_data.get('prologue_text', ''))
+            desc = (p_text[:60] + "...") if p_text else "저장된 시나리오"
 
             file_infos.append({
-                'filename': f,
-                'path': file_path,
-                'created_time': created_time,
-                'title': title,
-                'desc': desc
+                'filename': str(s.id),  # DB ID를 filename처럼 사용
+                'id': s.id,
+                'created_time': s.created_at.timestamp(),
+                'title': s.title,
+                'desc': desc,
+                'is_public': s.is_public,
+                'is_owner': (user_id is not None) and (s.author_id == user_id),
+                'author': s.author_id or "System/Anonymous"
             })
-
-        # 정렬
-        if sort_order == 'oldest':
-            file_infos.sort(key=lambda x: x['created_time'])
-        elif sort_order == 'name_asc':
-            file_infos.sort(key=lambda x: x['title'].lower())
-        elif sort_order == 'name_desc':
-            file_infos.sort(key=lambda x: x['title'].lower(), reverse=True)
-        else:  # newest
-            file_infos.sort(key=lambda x: x['created_time'], reverse=True)
 
         return file_infos
 
     @staticmethod
-    def load_scenario(filename: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    def load_scenario(scenario_id: str, user_id: str = None) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """
-        시나리오 파일 로드
-
-        Returns:
-            (scenario_data, error_message)
+        시나리오 로드 (DB ID 기반)
         """
-        if not filename:
-            return None, "파일명 누락"
-
-        file_path = os.path.join(DB_FOLDER, filename)
-
-        if not os.path.exists(file_path):
-            return None, f"파일을 찾을 수 없습니다: {filename}"
+        if not scenario_id:
+            return None, "ID 누락"
 
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                full_data = json.load(f)
+            # 숫자형 ID 변환
+            db_id = int(scenario_id)
+            scenario = Scenario.query.get(db_id)
 
-            scenario = full_data.get('scenario', full_data)
-            initial_vars = full_data.get('player_vars', scenario.get('initial_state', {}))
+            if not scenario:
+                return None, "시나리오를 찾을 수 없습니다."
 
-            # global variables 초기값 병합
-            raw_vars = scenario.get('variables', [])
-            if isinstance(raw_vars, list):
-                for g_var in raw_vars:
-                    if isinstance(g_var, dict):
-                        v_name = g_var.get('name')
-                        if v_name and v_name not in initial_vars:
-                            initial_vars[v_name] = g_var.get('initial_value', 0)
-                    elif isinstance(g_var, str):
-                        if g_var not in initial_vars:
-                            initial_vars[g_var] = 0
+            # 접근 권한 체크 (공개 or 작성자 본인 or 익명작성)
+            is_accessible = False
+            if scenario.is_public:
+                is_accessible = True
+            elif scenario.author_id is None:
+                is_accessible = True
+            elif user_id and scenario.author_id == user_id:
+                is_accessible = True
+
+            if not is_accessible:
+                return None, "비공개 시나리오입니다. (접근 권한 없음)"
+
+            full_data = scenario.data
+            s_content = full_data.get('scenario', full_data)
+            initial_vars = full_data.get('player_vars', s_content.get('initial_state', {}))
 
             # 기본값 보장
             for key, value in DEFAULT_PLAYER_VARS.items():
@@ -115,90 +110,112 @@ class ScenarioService:
                     initial_vars[key] = value
 
             return {
-                'scenario': scenario,
+                'scenario': s_content,
                 'player_vars': initial_vars
             }, None
 
+        except ValueError:
+            return None, "잘못된 시나리오 ID 형식입니다."
         except Exception as e:
             logger.error(f"Load Error: {e}", exc_info=True)
             return None, str(e)
 
     @staticmethod
-    def save_scenario(scenario_json: Dict[str, Any], player_vars: Dict[str, Any] = None) -> Tuple[Optional[str], Optional[str]]:
+    def save_scenario(scenario_json: Dict[str, Any], player_vars: Dict[str, Any] = None, user_id: str = None) -> Tuple[
+        Optional[str], Optional[str]]:
         """
-        시나리오 저장
-
-        Returns:
-            (saved_filename, error_message)
+        시나리오 저장 (DB Insert/Update)
         """
         try:
             title = scenario_json.get('title', 'Untitled_Scenario')
-            safe_title = sanitize_filename(title, 'scenario')
-
-            ensure_directory(DB_FOLDER)
 
             if player_vars is None:
-                player_vars = {}
-                variables = scenario_json.get('variables', [])
-                if isinstance(variables, list):
-                    for v in variables:
-                        if isinstance(v, dict):
-                            player_vars[v.get('name', 'unknown')] = v.get('initial_value', 0)
+                player_vars = DEFAULT_PLAYER_VARS.copy()
 
-                for key, value in DEFAULT_PLAYER_VARS.items():
-                    if key not in player_vars:
-                        player_vars[key] = value
+            full_data = {
+                "scenario": scenario_json,
+                "player_vars": player_vars
+            }
 
-            save_path = os.path.join(DB_FOLDER, f"{safe_title}.json")
+            # 익명(비로그인) 생성 시 자동으로 '공개' 설정 (나중에 접근 가능하도록)
+            is_public_setting = False
+            if user_id is None:
+                is_public_setting = True
 
-            with open(save_path, 'w', encoding='utf-8') as f:
-                json.dump({
-                    "scenario": scenario_json,
-                    "player_vars": player_vars
-                }, f, ensure_ascii=False, indent=2)
+            # 신규 생성
+            new_scenario = Scenario(
+                title=title,
+                author_id=user_id,
+                data=full_data,
+                is_public=is_public_setting
+            )
 
-            return f"{safe_title}.json", None
+            db.session.add(new_scenario)
+            db.session.commit()
+
+            return str(new_scenario.id), None
 
         except Exception as e:
+            db.session.rollback()
             logger.error(f"Save Error: {e}", exc_info=True)
             return None, str(e)
 
     @staticmethod
-    def delete_scenario(filename: str) -> Tuple[bool, Optional[str]]:
-        """
-        시나리오 삭제
-
-        Returns:
-            (success, error_message)
-        """
-        if not filename:
-            return False, "파일명이 없습니다."
-
-        # 보안: 경로 조작 방지
-        if '..' in filename or '/' in filename or '\\' in filename:
-            return False, "잘못된 파일명입니다."
-
-        file_path = os.path.join(DB_FOLDER, filename)
-
-        if not os.path.exists(file_path):
-            return False, "파일을 찾을 수 없습니다."
+    def delete_scenario(scenario_id: str, user_id: str) -> Tuple[bool, Optional[str]]:
+        """시나리오 삭제"""
+        if not scenario_id or not user_id:
+            return False, "권한이 없습니다."
 
         try:
-            os.remove(file_path)
+            db_id = int(scenario_id)
+            scenario = Scenario.query.get(db_id)
+
+            if not scenario:
+                return False, "시나리오를 찾을 수 없습니다."
+
+            if scenario.author_id != user_id:
+                return False, "삭제 권한이 없습니다."
+
+            db.session.delete(scenario)
+            db.session.commit()
             return True, None
+
+        except ValueError:
+            return False, "잘못된 ID입니다."
         except Exception as e:
+            db.session.rollback()
+            return False, str(e)
+
+    @staticmethod
+    def publish_scenario(scenario_id: str, user_id: str) -> Tuple[bool, Optional[str]]:
+        """시나리오 공개 전환"""
+        try:
+            db_id = int(scenario_id)
+            scenario = Scenario.query.get(db_id)
+
+            if not scenario:
+                return False, "시나리오를 찾을 수 없습니다."
+
+            if scenario.author_id != user_id:
+                return False, "권한이 없습니다."
+
+            # 토글 방식 (공개 <-> 비공개)
+            scenario.is_public = not scenario.is_public
+            db.session.commit()
+
+            status = "공개" if scenario.is_public else "비공개"
+            return True, f"{status} 설정 완료"
+
+        except Exception as e:
+            db.session.rollback()
             return False, str(e)
 
     @staticmethod
     def is_recently_created(created_time: float, threshold_seconds: int = 600) -> bool:
-        """생성된지 threshold_seconds 이내인지 확인 (기본 10분)"""
         return (time.time() - created_time) < threshold_seconds
 
     @staticmethod
     def format_time(timestamp: float) -> str:
-        """타임스탬프를 포맷된 문자열로 변환"""
-        if timestamp <= 0:
-            return ""
+        if timestamp <= 0: return ""
         dt = datetime.fromtimestamp(timestamp)
         return dt.strftime('%Y-%m-%d %H:%M')
-
