@@ -1,0 +1,12 @@
+crewai
+openai
+langchain-openai
+langgraph
+chromadb
+python-dotenv
+flask
+litellm
+fastapi
+uvicorn
+python-multipart
+gunicorn
