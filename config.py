@@ -15,8 +15,15 @@ SQLALCHEMY_TRACK_MODIFICATIONS = False
 LOG_FORMAT = '[%(asctime)s] %(levelname)s in %(module)s: %(message)s'
 LOG_DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
-# 레거시 호환용 (필요 시 사용)
+# 레거시 파일 시스템 호환용
 DB_FOLDER = os.path.join(BASE_DIR, 'DB')
+
+# [CRITICAL FIX] state.py 오류 방지용 기본 설정
+DEFAULT_CONFIG = {
+    "title": "New TRPG Scenario",
+    "genre": "Adventure",
+    "model": "openai/tngtech/deepseek-r1t2-chimera:free"
+}
 
 DEFAULT_PLAYER_VARS = {
     "hp": 100,
@@ -24,3 +31,7 @@ DEFAULT_PLAYER_VARS = {
     "inventory": [],
     "gold": 0
 }
+
+# [ADD] views.py 호환용 버전 함수
+def get_full_version():
+    return "v1.0.0 (Railway)"
