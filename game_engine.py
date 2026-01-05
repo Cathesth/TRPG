@@ -245,6 +245,7 @@ def rule_node(state: PlayerState):
 def npc_node(state: PlayerState):
     """
     Node 3: NPC 챗봇 (유저가 채팅을 시도했을 때)
+    [개선] 대화 내역(History)을 프롬프트에 주입해서 문맥 파악 가능하게 변경
     """
     if state.get('parsed_intent') != 'chat':
         state['npc_output'] = ""
@@ -266,16 +267,23 @@ def npc_node(state: PlayerState):
     target_npc_name = npc_names[0]
     npc_info = f"Name: {target_npc_name}"
 
-    # 시나리오 전체 NPC 목록에서 정보 찾기
     for npc in scenario.get('npcs', []):
         if npc.get('name') == target_npc_name:
             npc_info += f"\nPersonality: {npc.get('personality')}\nTone: {npc.get('dialogue_style')}"
             break
 
+    # [추가됨] 대화 내역 가져오기 (최근 5턴)
+    history = state.get('history', [])
+    history_context = "\n".join(history[-5:]) if history else "No previous conversation."
+
     prompt = f"""
     [ROLE] Act as the NPC '{target_npc_name}' in a TRPG.
     [SCENE] Current Location: {curr_scene.get('title')}
     [PROFILE] {npc_info}
+
+    [CONVERSATION HISTORY]
+    {history_context}
+
     [USER SAID] "{user_text}"
     [INSTRUCTION] Respond naturally in character. Keep it short (1-2 sentences). Use Korean.
     """
@@ -285,6 +293,12 @@ def npc_node(state: PlayerState):
         llm = LLMFactory.get_llm(api_key=api_key, model_name="openai/tngtech/deepseek-r1t2-chimera:free")
         response = llm.invoke(prompt).content.strip()
         state['npc_output'] = response
+
+        # [추가됨] 대화 내역 저장
+        if 'history' not in state: state['history'] = []
+        state['history'].append(f"User: {user_text}")
+        state['history'].append(f"NPC({target_npc_name}): {response}")
+
     except Exception as e:
         logger.error(f"NPC LLM Error: {e}")
         state['npc_output'] = "..."

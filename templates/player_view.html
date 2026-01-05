@@ -399,6 +399,10 @@
 </div>
 
 <script>
+    const serverHasState = {{ 'true' if vars else 'false' }};
+    if (serverHasState) {
+        sessionStorage.setItem('trpg_scenario_loaded', 'true');
+    }
     // 스트리밍 모드 사용 여부
     const USE_STREAMING = true;
 
