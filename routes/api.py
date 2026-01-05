@@ -9,6 +9,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from core.state import game_state
 from core.utils import parse_request_data, pick_start_scene_id
 from services.scenario_service import ScenarioService
+from services.preset_service import PresetService
 from services.user_service import UserService
 from game_engine import create_game_graph
 
@@ -263,3 +264,121 @@ def init_game():
         logger.error(f"Init Error: {e}")
         update_build_progress(status="error", detail=str(e))
         return jsonify({"error": str(e)}), 500
+
+
+# --- [프리셋 관리 (DB 기반)] ---
+
+@api_bp.route('/presets', methods=['GET'])
+def list_presets():
+    sort_order = request.args.get('sort', 'newest')
+    limit = request.args.get('limit', type=int)
+
+    user_id = current_user.id if current_user.is_authenticated else None
+
+    file_infos = PresetService.list_presets(sort_order, user_id, limit)
+
+    if not file_infos:
+        return '<div class="col-span-1 md:col-span-2 text-center text-gray-500 py-8">표시할 프리셋이 없습니다.</div>'
+
+    html = ""
+    for info in file_infos:
+        fid = info['filename']
+        title = info['title']
+        desc = info['desc']
+        author = info['author']
+        is_owner = info['is_owner']
+
+        action_buttons = ""
+        if is_owner:
+            action_buttons += f"""
+            <button onclick="deletePreset('{fid}', this)" 
+                    class="text-gray-500 hover:text-red-400 p-1" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+            """
+
+        html += f"""
+        <div class="bg-dark-800 p-5 rounded-lg border border-white/5 hover:border-brand-purple/50 transition-colors flex flex-col justify-between h-full group relative">
+            <div>
+                <div class="flex justify-between items-start mb-2">
+                    <h4 class="font-bold text-white text-lg flex items-center">{title}</h4>
+                    <div class="opacity-0 group-hover:opacity-100 transition-opacity flex">{action_buttons}</div>
+                </div>
+                <div class="flex justify-between items-center text-xs text-gray-500 mb-1">
+                    <span>{author}</span>
+                </div>
+                <p class="text-sm text-gray-400 mb-4 line-clamp-2">{desc}</p>
+            </div>
+            <button hx-post="/api/load_preset" hx-vals='{{"filename": "{fid}"}}' hx-target="#init-result"
+                    class="w-full bg-brand-purple/10 hover:bg-brand-purple/20 text-brand-light py-2 rounded text-sm font-bold flex justify-center gap-2 border border-brand-purple/30 transition-all">
+                <i data-lucide="play" class="w-4 h-4"></i> 적용하기
+            </button>
+        </div>
+        """
+    html += '<script>lucide.createIcons();</script>'
+    return html
+
+
+@api_bp.route('/save_preset', methods=['POST'])
+@login_required
+def save_preset():
+    """프리셋 저장 API"""
+    data = request.get_json(force=True, silent=True) or {}
+
+    user_id = current_user.id if current_user.is_authenticated else None
+
+    fid, error = PresetService.save_preset(data, user_id=user_id)
+
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+
+    return jsonify({"success": True, "filename": fid, "message": "프리셋이 저장되었습니다."})
+
+
+@api_bp.route('/load_preset', methods=['POST'])
+def load_preset():
+    fid = request.form.get('filename')  # DB ID
+    user_id = current_user.id if current_user.is_authenticated else None
+
+    result, error = PresetService.load_preset(fid, user_id)
+    if error: return f'<div class="bg-red-500/10 text-red-400 p-4 rounded-lg border border-red-500/20 shadow-lg fixed bottom-4 right-4 z-50">로드 실패: {error}</div>'
+
+    preset = result['preset']
+
+    game_state.config['title'] = preset.get('title', 'Loaded Preset')
+    game_state.state = {
+        "scenario": preset.get('scenario'),
+        "current_scene_id": "prologue",
+        "start_scene_id": "prologue",
+        "player_vars": preset.get('player_vars', {}),
+        "history": [], "last_user_choice_idx": -1, "system_message": "Loaded Preset", "npc_output": "", "narrator_output": ""
+    }
+    game_state.game_graph = create_game_graph()
+
+    return f'''
+    <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 animate-bounce-in">
+        <div class="bg-green-900/90 border border-green-500/30 text-green-100 px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-4">
+            <div class="bg-green-500/20 p-2 rounded-full">
+                <i data-lucide="check" class="w-6 h-6 text-green-400"></i>
+            </div>
+            <div>
+                <div class="font-bold text-lg">프리셋 로드 완료!</div>
+                <div class="text-sm text-green-300/80">"{preset.get('title')}"</div>
+            </div>
+        </div>
+        <a href="/views/player" 
+           class="bg-brand-purple hover:bg-brand-light text-white py-4 px-6 rounded-xl font-bold text-lg shadow-xl shadow-brand-purple/20 transition-all flex items-center justify-center gap-3 transform hover:scale-[1.02]">
+            <i data-lucide="play-circle" class="w-6 h-6"></i>
+            게임 시작하기
+        </a>
+    </div>
+    <script>lucide.createIcons();</script>
+    '''
+
+
+@api_bp.route('/delete_preset', methods=['POST'])
+@login_required
+def delete_preset():
+    data = request.get_json(force=True, silent=True) or {}
+    fid = data.get('filename')
+    success, msg = PresetService.delete_preset(fid, current_user.id)
+    if success: return jsonify({"success": True, "message": "삭제 완료"})
+    return jsonify({"success": False, "error": msg}), 400
