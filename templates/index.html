@@ -267,6 +267,8 @@
 
                 // 성공하면 플레이어 페이지로 이동
                 if (res.ok) {
+                    // [추가됨] 세션 스토리지에 로드 상태 박아줘야 함
+                    sessionStorage.setItem('trpg_scenario_loaded', 'true');
                     window.location.href = '/views/player';
                 } else {
                     const text = await res.text();

@@ -1186,7 +1186,15 @@
                         <Modal isOpen={resultModal.open} type={resultModal.type} title={resultModal.title} onClose={() => setResultModal({ ...resultModal, open: false })}>
                             <div className="whitespace-pre-wrap">{resultModal.message}</div>
                             <div className="mt-6 flex justify-end gap-2">
-                                {resultModal.type === 'success' && resultModal.showPlayButton && <a href="/views/player" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold">플레이하러 가기</a>}
+                                {resultModal.type === 'success' && resultModal.showPlayButton && (
+                                        <a
+                                            href="/views/player"
+                                            onClick={() => sessionStorage.setItem('trpg_scenario_loaded', 'true')} // [추가됨] 클릭 시 세션 저장
+                                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold"
+                                        >
+                                            플레이하러 가기
+                                        </a>
+                                    )}
                                 <button onClick={() => setResultModal({ ...resultModal, open: false })} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white">확인</button>
                             </div>
                         </Modal>
