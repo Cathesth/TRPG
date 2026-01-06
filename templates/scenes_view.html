@@ -79,17 +79,26 @@
 
         /* 현재 씬 하이라이트 스타일 */
         .current-scene-node {
-            filter: drop-shadow(0 0 8px #22d3ee) drop-shadow(0 0 12px #06b6d4);
+            animation: pulse 2s ease-in-out infinite;
         }
-        .current-scene-node rect,
-        .current-scene-node polygon {
-            stroke: #22d3ee !important;
-            stroke-width: 3px !important;
-            fill: #164e63 !important;
+
+        /* 버전 정보 스타일 */
+        .version-badge {
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            font-size: 10px;
+            color: #6b7280;
+            font-family: 'Courier New', monospace;
+            z-index: 1000;
+            pointer-events: none;
+            user-select: none;
         }
-        .current-scene-node .nodeLabel {
-            color: #67e8f9 !important;
-            font-weight: bold !important;
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
         }
     </style>
 
@@ -619,6 +628,11 @@
         });
     })();
 </script>
+
+<!-- 버전 정보 배지 -->
+<div class="version-badge">
+    v{{ version }}
+</div>
 
 </body>
 </html>

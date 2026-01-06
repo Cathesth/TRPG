@@ -138,6 +138,19 @@
             border-color: #6366f1;
             box-shadow: 0 0 0 1px #6366f1;
         }
+
+        /* 버전 정보 스타일 */
+        .version-badge {
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            font-size: 10px;
+            color: #6b7280;
+            font-family: 'Courier New', monospace;
+            z-index: 1000;
+            pointer-events: none;
+            user-select: none;
+        }
     </style>
 
     <script>
@@ -996,6 +1009,11 @@
         }
     });
 </script>
+
+<!-- 버전 정보 배지 -->
+<div class="version-badge">
+    v{{ version }}
+</div>
 
 </body>
 </html>
