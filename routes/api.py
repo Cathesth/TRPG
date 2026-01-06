@@ -4,7 +4,7 @@ import logging
 import time
 import threading
 from flask import Blueprint, request, jsonify, Response, stream_with_context
-from flask_login import login_user, logout_user, login_required, current_user
+from flask_login import login_user, logout_user, login_required, current_user, UserMixin
 
 
 from core.state import game_state
@@ -12,12 +12,17 @@ from core.utils import parse_request_data, pick_start_scene_id
 from services.scenario_service import ScenarioService
 from services.preset_service import PresetService
 from services.user_service import UserService
-from services.preset_service import PresetService  # [추가] 이거 없어서 에러 난 거임
+#from services.preset_service import PresetService  # [추가] 이거 없어서 에러 난 거임
 from game_engine import create_game_graph
 
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+# [추가] Flask-Login용 임시 User 클래스 (DB 없이 작동시키기 위함)
+class User(UserMixin):
+    def __init__(self, id):
+        self.id = id
 
 
 # --- [인증 API] --- (생략 - 기존과 동일)
@@ -34,11 +39,18 @@ def register():
 @api_bp.route('/auth/login', methods=['POST'])
 def login():
     data = parse_request_data(request)
-    user = UserService.verify_user(data.get('username'), data.get('password'))
-    if user:
-        login_user(user)
+    username = data.get('username')
+    password = data.get('password')
+
+    # [수정] 테스트 계정 하드코딩 (test / 1234)
+    TEST_ID = 'test'
+    TEST_PW = '1234'
+
+    if username == TEST_ID and password == TEST_PW:
+        user = User(id=username)
+        login_user(user)  # Flask-Login 세션 생성
         return jsonify({"success": True})
-    return jsonify({"success": False, "error": "로그인 실패"}), 401
+    return jsonify({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}), 401
 
 
 @api_bp.route('/auth/logout', methods=['POST'])

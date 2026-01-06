@@ -22,19 +22,15 @@
         .htmx-request .htmx-indicator { display: flex; pointer-events: auto; }
         .htmx-request.htmx-indicator { display: flex; pointer-events: auto; }
 
-        .glass-panel {
-            background: rgba(28, 28, 28, 0.6);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
+         /* 브랜드 그라데이션 */
 
         .brand-gradient {
             background: linear-gradient(135deg, #6E47E6 0%, #818cf8 100%);
         }
-        .text-gradient {
-            background: linear-gradient(135deg, #c084fc 0%, #818cf8 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        /* 로그인/회원가입용 그라데이션 (기존 html 파일 디자인) */
+        .auth-gradient {
+            background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+
         }
 
         /* 사이드바 스타일 */
@@ -62,6 +58,24 @@
         /* 모달 스타일 */
         .modal { transition: opacity 0.25s ease; }
         body.modal-active { overflow-x: hidden; overflow-y: hidden !important; }
+
+        /* 버전 정보 스타일 */
+        .version-badge {
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            background: rgba(28, 28, 28, 0.8);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #9ca3af;
+            font-family: 'Courier New', monospace;
+            z-index: 1000;
+            transition: all 0.2s ease;
+        }
+
     </style>
 
     <script>
@@ -114,9 +128,7 @@
         <div class="p-3 border-t border-white/5">
             {% if user.is_authenticated %}
             <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors" onclick="logout()">
-                <div class="w-8 h-8 rounded-full bg-brand-purple flex items-center justify-center text-white text-xs font-bold shrink-0">
-                    {{ user.id[:2].upper() }}
-                </div>
+                <img src="{{ user.profile_img }}" alt="Profile" class="w-8 h-8 rounded-full border border-gray-600 bg-gray-700">
                 <div class="user-info flex-1 min-w-0">
                     <p class="text-sm font-medium text-white truncate">{{ user.id }}</p>
                     <p class="text-[11px] text-brand-light truncate">로그아웃</p>
@@ -129,10 +141,18 @@
                     <i data-lucide="user" class="w-4 h-4 text-gray-400"></i>
                 </div>
                 <div class="user-info flex-1 min-w-0">
-                    <p class="text-sm font-medium text-white truncate">게스트</p>
-                    <p class="text-[11px] text-gray-500 truncate">로그인 필요</p>
+                    <p class="text-sm font-medium text-white truncate">로그인</p>
+                    <p class="text-[11px] text-gray-500 truncate">계정 접속</p>
                 </div>
-                <i data-lucide="log-in" class="user-chevron w-4 h-4 text-gray-500"></i>
+            </div>
+            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors mt-1" onclick="openModal('register-modal')">
+                <div class="w-8 h-8 rounded-full bg-brand-purple/20 flex items-center justify-center shrink-0">
+                    <i data-lucide="user-plus" class="w-4 h-4 text-brand-light"></i>
+                </div>
+                <div class="user-info flex-1 min-w-0">
+                    <p class="text-sm font-medium text-white truncate">회원가입</p>
+                    <p class="text-[11px] text-gray-500 truncate">계정 생성</p>
+                </div>
             </div>
             {% endif %}
         </div>
@@ -210,33 +230,125 @@
     <!-- 모달들 -->
     <div id="login-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
         <div class="modal-overlay absolute w-full h-full bg-black/70 backdrop-blur-sm" onclick="closeModal('login-modal')"></div>
-        <div class="modal-container bg-dark-800 w-11/12 md:max-w-sm mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-white/10 transform transition-all scale-95 opacity-0 duration-300">
-            <div class="p-6">
-                <div class="flex justify-between items-center mb-6"><h3 class="text-xl font-bold text-white">로그인</h3><button onclick="closeModal('login-modal')" class="text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button></div>
-                <form onsubmit="handleLogin(event)" class="space-y-4">
-                    <div><label class="block text-gray-400 text-xs font-bold mb-1 ml-1">아이디</label><input type="text" name="username" required class="w-full bg-dark-900 text-white border border-white/10 rounded-lg py-2.5 px-4 focus:outline-none focus:border-brand-purple transition-all"></div>
-                    <div><label class="block text-gray-400 text-xs font-bold mb-1 ml-1">비밀번호</label><input type="password" name="password" required class="w-full bg-dark-900 text-white border border-white/10 rounded-lg py-2.5 px-4 focus:outline-none focus:border-brand-purple transition-all"></div>
+        <div class="modal-container bg-gray-800/90 w-11/12 md:max-w-md mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-white/10 transform transition-all scale-95 opacity-0 duration-300 relative">
+
+            <div class="absolute top-[-50px] left-[-50px] w-40 h-40 bg-purple-600/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="absolute bottom-[-50px] right-[-50px] w-40 h-40 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
+
+
+            <div class="p-8 relative z-10">
+
+
+                <button onclick="closeModal('login-modal')" class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
+
+                <div class="flex flex-col items-center mb-8">
+                    <div class="w-12 h-12 auth-gradient rounded-xl flex items-center justify-center text-white shadow-lg shadow-purple-500/20 mb-4">
+
+                        <i data-lucide="dice-5" class="w-6 h-6 fill-current"></i>
+                    </div>
+                    <h1 class="text-2xl font-bold text-white tracking-tight">TRPG Studio</h1>
+                    <p class="text-gray-400 text-sm mt-1">모험을 시작하려면 로그인하세요</p>
+                </div>
+
+                <form onsubmit="handleLogin(event)" class="space-y-5">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1.5">아이디</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="user" class="h-5 w-5 text-gray-500"></i></div>
+                            <input type="text" name="username" placeholder="아이디를 입력하세요" required class="w-full pl-10 pr-4 py-3 bg-gray-900/50 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label class="block text-sm font-medium text-gray-400">비밀번호</label>
+                            <a href="#" class="text-xs text-purple-400 hover:text-purple-300 transition-colors">비밀번호를 잊으셨나요?</a>
+                        </div>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="lock" class="h-5 w-5 text-gray-500"></i></div>
+                            <input type="password" name="password" placeholder="비밀번호를 입력하세요" required class="w-full pl-10 pr-4 py-3 bg-gray-900/50 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
+
+                        </div>
+                    </div>
                     <div id="login-error" class="text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20 hidden"></div>
-                    <button type="submit" class="w-full bg-brand-gradient hover:opacity-90 text-white font-bold py-3 px-4 rounded-lg shadow-lg mt-2">시작하기</button>
+                    <button type="submit" class="w-full py-3.5 px-4 auth-gradient hover:opacity-90 rounded-lg text-white font-semibold shadow-lg shadow-purple-500/25 transition-all transform hover:-translate-y-0.5">로그인</button>
                 </form>
+
+                <div class="mt-8 text-center border-t border-white/10 pt-6">
+                    <p class="text-gray-400 text-sm">계정이 없으신가요? <button onclick="closeModal('login-modal'); openModal('register-modal')" class="text-purple-400 hover:text-purple-300 font-medium ml-1 transition-colors">회원가입하기</button></p>
+                </div>
             </div>
         </div>
     </div>
 
+
+
     <div id="register-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
         <div class="modal-overlay absolute w-full h-full bg-black/70 backdrop-blur-sm" onclick="closeModal('register-modal')"></div>
-        <div class="modal-container bg-dark-800 w-11/12 md:max-w-sm mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-white/10 transform transition-all scale-95 opacity-0 duration-300">
-            <div class="p-6">
-                <div class="flex justify-between items-center mb-6"><h3 class="text-xl font-bold text-white">회원가입</h3><button onclick="closeModal('register-modal')" class="text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button></div>
+        <div class="modal-container bg-gray-800/90 w-11/12 md:max-w-md mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-white/10 transform transition-all scale-95 opacity-0 duration-300 relative">
+
+            <div class="absolute top-[-50px] left-[-50px] w-40 h-40 bg-purple-600/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="absolute bottom-[-50px] right-[-50px] w-40 h-40 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="p-8 relative z-10">
+                <button onclick="closeModal('register-modal')" class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
+
+                <div class="flex flex-col items-center mb-8">
+                    <div class="w-12 h-12 auth-gradient rounded-xl flex items-center justify-center text-white shadow-lg shadow-purple-500/20 mb-4">
+
+                        <i data-lucide="dice-5" class="w-6 h-6 fill-current"></i>
+                    </div>
+                    <h1 class="text-2xl font-bold text-white tracking-tight">회원가입</h1>
+                    <p class="text-gray-400 text-sm mt-1">TRPG Studio의 멤버가 되어보세요</p>
+
+                </div>
+
                 <form onsubmit="handleRegister(event)" class="space-y-4">
-                    <div><label class="block text-gray-400 text-xs font-bold mb-1 ml-1">아이디</label><input type="text" name="username" required class="w-full bg-dark-900 text-white border border-white/10 rounded-lg py-2.5 px-4 focus:outline-none focus:border-brand-purple transition-all"></div>
-                    <div><label class="block text-gray-400 text-xs font-bold mb-1 ml-1">비밀번호</label><input type="password" name="password" required class="w-full bg-dark-900 text-white border border-white/10 rounded-lg py-2.5 px-4 focus:outline-none focus:border-brand-purple transition-all"></div>
+                    <div>
+
+                        <label class="block text-sm font-medium text-gray-400 mb-1.5">아이디</label>
+
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="user" class="h-5 w-5 text-gray-500"></i></div>
+                            <input type="text" name="username" placeholder="사용할 아이디를 입력하세요" required class="w-full pl-10 pr-4 py-3 bg-gray-900/50 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
+                        </div>
+
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1.5">이메일</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="mail" class="h-5 w-5 text-gray-500"></i></div>
+                            <input type="email" name="email" placeholder="example@email.com" required class="w-full pl-10 pr-4 py-3 bg-gray-900/50 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1.5">비밀번호</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="lock" class="h-5 w-5 text-gray-500"></i></div>
+                            <input type="password" name="password" placeholder="비밀번호를 입력하세요" required class="w-full pl-10 pr-4 py-3 bg-gray-900/50 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1.5">비밀번호 확인</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="check-circle" class="h-5 w-5 text-gray-500"></i></div>
+                            <input type="password" name="confirm_password" placeholder="비밀번호를 다시 입력하세요" required class="w-full pl-10 pr-4 py-3 bg-gray-900/50 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
+                        </div>
+                    </div>
                     <div id="register-error" class="text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20 hidden"></div>
-                    <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg mt-2">가입 완료</button>
+                    <button type="submit" class="w-full py-3.5 px-4 auth-gradient hover:opacity-90 rounded-lg text-white font-semibold shadow-lg shadow-purple-500/25 transition-all transform hover:-translate-y-0.5 mt-2">계정 생성하기</button>
+
                 </form>
+
+                <div class="mt-8 text-center border-t border-white/10 pt-6">
+                    <p class="text-gray-400 text-sm">이미 계정이 있으신가요? <button onclick="closeModal('register-modal'); openModal('login-modal')" class="text-purple-400 hover:text-purple-300 font-medium ml-1 transition-colors">로그인하기</button></p>
+                </div>
             </div>
         </div>
     </div>
+
+    <div class="version-badge">v{{ version }}</div>
 
     <script>
         lucide.createIcons();
@@ -314,39 +426,121 @@
             }, 300); // duration-300이랑 맞춤
         }
 
+        // 로그인 처리 (fetch)
         async function handleLogin(e) {
             e.preventDefault(); const form = e.target;
             try {
-                const res = await fetch('/api/auth/login', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: form.username.value, password: form.password.value}) });
+                const res = await fetch('/api/auth/login', {
+
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: form.username.value, password: form.password.value})
+                });
                 const data = await res.json();
                 if (data.success) window.location.reload();
-                else { document.getElementById('login-error').innerText = data.error; document.getElementById('login-error').classList.remove('hidden'); }
+                else {
+
+                    document.getElementById('login-error').innerText = data.error;
+                    document.getElementById('login-error').classList.remove('hidden');
+
+                }
+
             } catch(e) {}
+
         }
 
+
+        // 회원가입 처리 (fetch - email 포함)
         async function handleRegister(e) {
             e.preventDefault(); const form = e.target;
             try {
-                const res = await fetch('/api/auth/register', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: form.username.value, password: form.password.value}) });
+
+                const res = await fetch('/api/auth/register', {
+
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        username: form.username.value,
+                        password: form.password.value,
+                        email: form.email.value
+                    })
+                });
                 const data = await res.json();
-                if (data.success) { alert('가입 성공!'); closeModal('register-modal'); openModal('login-modal'); }
-                else { document.getElementById('register-error').innerText = data.error; document.getElementById('register-error').classList.remove('hidden'); }
+                if (data.success) {
+                    alert('가입 성공!');
+                    closeModal('register-modal');
+                    openModal('login-modal');
+                }
+                else {
+                    document.getElementById('register-error').innerText = data.error;
+                    document.getElementById('register-error').classList.remove('hidden');
+                }
             } catch(e) {}
         }
 
-        async function logout() { if(confirm('로그아웃 하시겠습니까?')) { await fetch('/api/auth/logout', {method:'POST'}); window.location.reload(); } }
+        async function logout() {
+            if(confirm('로그아웃 하시겠습니까?')) {
+                await fetch('/api/auth/logout', {method:'POST'});
+                window.location.reload();
+            }
 
-        async function deleteScenario(fname, btn) {
-            if(!confirm('삭제하시겠습니까?')) return;
-            await fetch('/api/delete_scenario', { method: 'POST', body: JSON.stringify({filename: fname}) });
-            btn.closest('.group').remove();
         }
 
-        async function publishScenario(fname, btn) {
-            if(!confirm('공개 상태 변경?')) return;
-            await fetch('/api/publish_scenario', { method: 'POST', body: JSON.stringify({filename: fname}) });
-            htmx.trigger('#scenario-grid', 'load');
-        }
+
+        // 사이드바 상태 관리
+        (function() {
+            const sidebar = document.querySelector('.sidebar');
+            const SIDEBAR_STATE_KEY = 'sidebar_expanded';
+            let isRestoredState = false;
+
+            if (sessionStorage.getItem(SIDEBAR_STATE_KEY) === 'true') {
+                sidebar.style.transition = 'none';
+                sidebar.classList.add('expanded');
+                isRestoredState = true;
+                sessionStorage.removeItem(SIDEBAR_STATE_KEY);
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        sidebar.style.transition = '';
+                    });
+                });
+            }
+
+            if (isRestoredState) {
+                setTimeout(() => {
+                    const checkMousePosition = (e) => {
+                        const rect = sidebar.getBoundingClientRect();
+                        const isInsideSidebar = e.clientX >= rect.left && e.clientX <= rect.right &&
+                                               e.clientY >= rect.top && e.clientY <= rect.bottom;
+                        if (!isInsideSidebar) {
+                            sidebar.classList.remove('expanded');
+                        }
+                        document.removeEventListener('mousemove', checkMousePosition);
+                    };
+                    document.addEventListener('mousemove', checkMousePosition, { once: true });
+                }, 100);
+            }
+
+            sidebar.querySelectorAll('a[href], button').forEach(link => {
+                link.addEventListener('click', function(e) {
+                    if (this.tagName === 'A' && this.href) {
+                        sessionStorage.setItem(SIDEBAR_STATE_KEY, 'true');
+                        sidebar.classList.add('expanded');
+                    }
+                });
+            });
+
+            const logoArea = sidebar.querySelector('.p-4.h-16 .flex.items-center.gap-2');
+            if (logoArea) {
+                logoArea.addEventListener('click', function(e) {
+                    sessionStorage.setItem(SIDEBAR_STATE_KEY, 'true');
+                    sidebar.classList.add('expanded');
+                });
+            }
+
+            sidebar.addEventListener('mouseleave', function() {
+                sidebar.classList.remove('expanded');
+            });
+        })();
     </script>
 </body>
 </html>
