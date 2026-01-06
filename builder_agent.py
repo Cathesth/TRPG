@@ -1,5 +1,5 @@
-import os
 import json
+import os
 from typing import TypedDict, List, Annotated, Optional, Dict, Any
 import logging
 from langchain_openai import ChatOpenAI
@@ -29,12 +29,8 @@ def report_progress(status, step, detail, progress):
         _progress_callback(status=status, step=step, detail=detail, progress=progress)
 
 
-# --- [유틸리티] JSON 파싱 헬퍼 (백업에서 복원) ---
+# --- [유틸리티] JSON 파싱 헬퍼 ---
 def parse_json_garbage(text: str) -> dict:
-    """
-    LLM 응답에서 JSON을 안전하게 추출
-    마크다운 코드블록, 이중 인코딩 등을 처리
-    """
     if isinstance(text, dict):
         return text
     if not text:
@@ -67,8 +63,10 @@ def parse_json_garbage(text: str) -> dict:
 # --- 데이터 모델 ---
 
 class ScenarioSummary(BaseModel):
-    title: str
-    summary: str
+    title: str = Field(description="시나리오 제목")
+    summary: str = Field(description="시나리오 전체 줄거리 요약")
+    player_prologue: str = Field(description="[공개] 게임 시작 시 플레이어에게 화면에 보여줄 서사적 도입부 텍스트. 분위기 있고 몰입감 있게 작성.")
+    gm_notes: str = Field(description="[비공개] 플레이어에게는 비밀로 하고 GM(시스템)이 알아야 할 숨겨진 설정, 진실, 혹은 트릭.")
 
 
 class World(BaseModel):
@@ -110,7 +108,6 @@ class SceneData(BaseModel):
     endings: List[GameEnding]
 
 
-# [New Models for Fast Patch]
 class EndingPatch(BaseModel):
     ending_id: str = Field(description="수정할 엔딩의 ID")
     description: str = Field(description="새로 작성된 엔딩 설명")
@@ -178,28 +175,41 @@ def parse_graph_to_blueprint(state: BuilderState):
 
 
 def refine_scenario_info(state: BuilderState):
-    report_progress("building", "2/5", "개요 작성 중...", 30)
+    report_progress("building", "2/5", "개요 및 설정 기획 중...", 30)
     llm = LLMFactory.get_llm(state.get("model_name"))
     parser = JsonOutputParser(pydantic_object=ScenarioSummary)
+
+    # [수정] 프롤로그(공개)와 GM노트(비공개)를 명확히 구분하여 작성하도록 지시
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "TRPG 시나리오 작가입니다. JSON으로 작성하세요.\n{format_instructions}"),
+        ("system",
+         "당신은 TRPG 시나리오 작가입니다. JSON 형식으로 응답하세요.\n"
+         "설계도(Blueprint)를 바탕으로 시나리오의 전체적인 개요를 작성해주세요.\n"
+         "특히 'player_prologue'(플레이어에게 처음에 보여줄 공개 텍스트)와 "
+         "'gm_notes'(플레이어에게 숨길 반전, 트릭, 진실 등)을 명확히 구분해서 작성해야 합니다.\n"
+         "{format_instructions}"),
         ("user", "{blueprint}")
     ])
+
     try:
         res = (prompt | llm | parser).invoke({
             "blueprint": state["blueprint"],
             "format_instructions": parser.get_format_instructions()
         })
         return {"scenario": res}
-    except:
-        return {"scenario": {"title": "Untitled", "summary": ""}}
+    except Exception as e:
+        logger.error(f"Refine Error: {e}")
+        return {"scenario": {
+            "title": "Untitled",
+            "summary": "",
+            "player_prologue": "",
+            "gm_notes": ""
+        }}
 
 
 def generate_full_content(state: BuilderState):
-    report_progress("building", "3/5", "장면 생성 중...", 60)
+    report_progress("building", "3/5", "장면 및 세부 요소 생성 중...", 60)
     llm = LLMFactory.get_llm(state.get("model_name"))
 
-    # 블루프린트에서 시나리오 정보 추출
     blueprint = state.get("blueprint", "")
 
     # NPC
@@ -212,30 +222,25 @@ def generate_full_content(state: BuilderState):
             | llm | npc_parser
     )
 
-    # World - 프롤로그 세계관 반영 강화
+    # World
     world_parser = JsonOutputParser(pydantic_object=WorldList)
     world_chain = (
             ChatPromptTemplate.from_messages([
                 ("system",
                  "설계도에 명시된 세계관/배경 설정을 정확히 반영하여 배경 장소 3곳을 묘사하세요.\n"
-                 "설계도의 '개요'에 적힌 시대, 장르, 분위기를 반드시 따르세요.\n"
-                 "예: 개요가 '사이버펑크'라면 미래 도시를, '1930년대'라면 그 시대 배경을 만드세요.\n"
                  "{format_instructions}"),
                 ("user", "{blueprint}")
             ]).partial(format_instructions=world_parser.get_format_instructions())
             | llm | world_parser
     )
 
-    # Scene (초안) - 설계도 반영 강화
+    # Scene
     scene_parser = JsonOutputParser(pydantic_object=SceneData)
     scene_prompt = ChatPromptTemplate.from_messages([
         ("system",
          "설계도를 바탕으로 씬 데이터를 생성하세요.\n"
-         "중요: 설계도에 명시된 세계관, 시대적 배경, 분위기를 정확히 반영하세요.\n"
          "ID는 절대 변경하지 마세요.\n"
-         "연결(Transition) 생성 시 '이동한다' 같은 표현 대신 '문을 연다', '살펴본다' 등 구체적인 행동을 만드세요.\n"
-         "각 씬의 description은 이전 씬과 자연스럽게 연결되어야 합니다.\n"
-         "엔딩 설명이 비어있으면 창작해서 채우세요.\n"
+         "연결(Transition) 생성 시 구체적인 행동(문을 연다, 살펴본다 등)을 만드세요.\n"
          "{format_instructions}"),
         ("user", "{blueprint}")
     ]).partial(format_instructions=scene_parser.get_format_instructions())
@@ -258,68 +263,52 @@ def generate_full_content(state: BuilderState):
 
 
 def polish_content(state: BuilderState):
-    """
-    [Validator Node - Fast Patch 방식]
-    전체를 재생성하지 않고, 문제가 발견된 항목만 부분적으로 수정(Patch)하여 반영함.
-    """
-    report_progress("building", "4/5", "품질 검수 및 부분 수정 중...", 80)
+    report_progress("building", "4/5", "품질 검수 및 보정 중...", 80)
     llm = LLMFactory.get_llm(state.get("model_name"))
 
     scenes = state["scenes"]
     endings = state["endings"]
     scenario_title = state["scenario"].get("title", "")
 
-    # 1. 수정 대상 식별
     items_to_fix = []
 
-    # 엔딩 검사 (설명이 비었거나 너무 짧으면 보강)
+    # 엔딩 검사
     for end in endings:
         if not end.get("description") or len(end.get("description")) < 10:
-            items_to_fix.append(f"[엔딩 보강] ID '{end.get('ending_id')}' ({end.get('title')}): 설명이 비어있거나 너무 짧음.")
+            items_to_fix.append(f"[엔딩 보강] ID '{end.get('ending_id')}': 설명이 너무 짧음.")
 
-    # 트리거 검사 (너무 단순한 트리거 수정)
+    # 트리거 검사
     for scene in scenes:
         for trans in scene.get("transitions", []):
             trig = trans.get("trigger", "")
-            # "이동한다", "Move" 같은 단순한 트리거는 수정 대상
             if "이동" in trig or "Move" in trig or len(trig) < 2:
                 items_to_fix.append(
-                    f"[트리거 수정] Scene '{scene.get('scene_id')}' -> '{trans.get('target_scene_id')}': 현재 '{trig}'는 너무 밋밋함. 구체적 행동으로 변경.")
+                    f"[트리거 수정] Scene '{scene.get('scene_id')}' -> '{trans.get('target_scene_id')}': '{trig}'를 구체적 행동으로 변경.")
 
-    # 수정할 게 없으면 바로 리턴 (시간 절약)
     if not items_to_fix:
         return state
 
-    # 2. LLM에게 부분 수정 요청 (Patch)
+    # LLM Patch
     prompt = ChatPromptTemplate.from_messages([
         ("system",
-         "당신은 TRPG 시나리오 에디터입니다. 지적된 문제점들을 해결하여 '수정된 데이터만' JSON으로 출력하세요.\n"
-         "전체 데이터를 다시 쓰지 말고, 변경이 필요한 항목만 리스트에 담아주세요.\n"
-         "{format_instructions}"),
+         "문제점들을 해결하여 '수정된 데이터만' JSON으로 출력하세요.\n{format_instructions}"),
         ("user",
-         f"시나리오 제목: {scenario_title}\n\n"
-         f"수정 요청 사항:\n" + "\n".join(items_to_fix) + "\n\n"
-                                                    "위 항목들에 대해 창의적인 내용을 채워서 응답하세요.")
+         f"제목: {scenario_title}\n수정 요청:\n" + "\n".join(items_to_fix))
     ])
 
     parser = JsonOutputParser(pydantic_object=PatchResult)
     chain = prompt | llm | parser
 
     try:
-        # format_instructions을 invoke 시점에 전달
         patch_data = chain.invoke({"format_instructions": parser.get_format_instructions()})
 
-        # 3. 원본 데이터에 패치 적용 (In-place Update)
-
-        # 엔딩 업데이트
+        # Apply Patch
         updates_endings = {p['ending_id']: p['description'] for p in patch_data.get('endings', [])}
         if updates_endings:
             for end in endings:
                 if end['ending_id'] in updates_endings:
                     end['description'] = updates_endings[end['ending_id']]
-                    logger.info(f"Patched Ending: {end['ending_id']}")
 
-        # 트랜지션 업데이트
         updates_transitions = {(p['scene_id'], p['target_scene_id']): p['new_trigger'] for p in
                                patch_data.get('transitions', [])}
         if updates_transitions:
@@ -328,21 +317,16 @@ def polish_content(state: BuilderState):
                     key = (scene['scene_id'], trans['target_scene_id'])
                     if key in updates_transitions:
                         trans['trigger'] = updates_transitions[key]
-                        logger.info(f"Patched Transition: {key} -> {trans['trigger']}")
 
-        # 상태 업데이트
-        return {
-            "scenes": scenes,
-            "endings": endings
-        }
+        return {"scenes": scenes, "endings": endings}
 
     except Exception as e:
-        logger.error(f"Polish Patch Error: {e}")
-        return state  # 에러 나면 그냥 원본 유지
+        logger.error(f"Polish Error: {e}")
+        return state
 
 
 def finalize_build(state: BuilderState):
-    report_progress("building", "5/5", "완료!", 100)
+    report_progress("building", "5/5", "최종 마무리 중...", 100)
     data = state["graph_data"]
     start_id = None
 
@@ -355,78 +339,65 @@ def finalize_build(state: BuilderState):
     if not start_id and state["scenes"]:
         start_id = state["scenes"][0]["scene_id"]
 
-    # 프롤로그 연결 설정
     prologue_connects = []
     if start_node:
         for edge in data.get("edges", []):
             if edge["source"] == start_node["id"]:
                 prologue_connects.append(edge["target"])
 
-    # 프롤로그 텍스트 분리: 표시용(prologue)과 내부 설정(world_settings)
+    # [수정] 프롤로그와 히든 설정 분리 로직 개선
+    # 1순위: refine_scenario_info에서 생성된 구조적 데이터 사용
+    scenario_data = state.get("scenario", {})
+
+    generated_prologue = scenario_data.get("player_prologue", "")
+    generated_hidden = scenario_data.get("gm_notes", "")
+
+    # 2순위: 기존 start_node description 파싱 (백업용)
     full_description = start_node.get("data", {}).get("description", "") if start_node else ""
+    parsed_prologue = full_description
+    parsed_hidden = ""
 
-    # 설정 구분자가 있으면 분리, 없으면 전체를 프롤로그로 사용
-    # 구분자: "---", "===", "[설정]", "[내부설정]" 등
-    prologue_text = full_description
-    world_settings = ""
-
-    separators = ["---", "===", "[설정]", "[내부설정]", "[SETTINGS]", "### 설정 ###"]
+    separators = ["---", "===", "[설정]", "[내부설정]", "[SETTINGS]"]
     for sep in separators:
         if sep in full_description:
             parts = full_description.split(sep, 1)
-            prologue_text = parts[0].strip()
-            world_settings = parts[1].strip() if len(parts) > 1 else ""
+            parsed_prologue = parts[0].strip()
+            parsed_hidden = parts[1].strip() if len(parts) > 1 else ""
             break
 
-    # 플레이어 초기 상태 생성 (NPC 정보 기반)
+    # 최종 결정: 생성된 값이 있으면 우선 사용, 없으면 파싱된 값 사용
+    final_prologue = generated_prologue if generated_prologue else parsed_prologue
+    final_hidden = generated_hidden if generated_hidden else parsed_hidden
+
+    # 플레이어 초기 상태
     initial_player_state = {
         "hp": 100,
         "max_hp": 100,
         "inventory": []
     }
 
-    # 시나리오에서 플레이어 관련 변수 추출 (있는 경우)
-    scenario_title = state["scenario"].get("title", "")
-
-    # 장르에 따른 기본 스탯 설정
-    if any(keyword in scenario_title.lower() for keyword in ["던전", "rpg", "모험", "전투", "용사"]):
-        initial_player_state.update({
-            "hp": 100,
-            "mp": 50,
-            "attack": 10,
-            "defense": 5
-        })
-    elif any(keyword in scenario_title.lower() for keyword in ["공포", "호러", "미스터리"]):
-        initial_player_state.update({
-            "sanity": 100,
-            "stress": 0
-        })
-    elif any(keyword in scenario_title.lower() for keyword in ["직장", "회사", "사무실"]):
-        initial_player_state.update({
-            "stamina": 100,
-            "stress": 0,
-            "reputation": 50
-        })
+    scenario_title = scenario_data.get("title", "Untitled")
+    if any(k in scenario_title.lower() for k in ["던전", "모험", "전투"]):
+        initial_player_state.update({"mp": 50, "attack": 10})
+    elif any(k in scenario_title.lower() for k in ["공포", "호러"]):
+        initial_player_state.update({"sanity": 100})
 
     final_data = {
-        "title": state["scenario"].get("title", "Untitled"),
-        "desc": state["scenario"].get("summary", ""),
-        "prologue": prologue_text,  # 플레이어에게 보여줄 프롤로그
-        "prologue_text": prologue_text,  # 호환성
-        "world_settings": world_settings,  # 내부 설정 (GM용, 플레이어에게 미표시)
+        "title": scenario_title,
+        "desc": scenario_data.get("summary", ""),
+        "prologue": final_prologue,  # 공개
+        "world_settings": final_hidden,  # 비공개
         "prologue_connects_to": prologue_connects,
-        "scenario": state["scenario"],
+        "scenario": scenario_data,
         "worlds": state["worlds"],
         "npcs": state["characters"],
         "scenes": state["scenes"],
-        "events": state["scenes"],  # 호환성
         "endings": state["endings"],
         "start_scene_id": start_id,
-        "initial_state": initial_player_state,  # 플레이어 초기 상태
+        "initial_state": initial_player_state,
         "raw_graph": state["graph_data"]
     }
 
-    # 씬 번호 재정렬 (BFS 순서로)
     final_data = renumber_scenes_bfs(final_data)
 
     return {"final_data": final_data}
@@ -437,19 +408,18 @@ def build_builder_graph():
     workflow.add_node("parse", parse_graph_to_blueprint)
     workflow.add_node("refine", refine_scenario_info)
     workflow.add_node("generate", generate_full_content)
-    workflow.add_node("polish", polish_content)  # [추가된 Validator 노드 (Patch 방식)]
+    workflow.add_node("polish", polish_content)
     workflow.add_node("finalize", finalize_build)
 
     workflow.set_entry_point("parse")
     workflow.add_edge("parse", "refine")
     workflow.add_edge("refine", "generate")
-    workflow.add_edge("generate", "polish")  # generate -> polish
-    workflow.add_edge("polish", "finalize")  # polish -> finalize
+    workflow.add_edge("generate", "polish")
+    workflow.add_edge("polish", "finalize")
     workflow.add_edge("finalize", END)
     return workflow.compile()
 
 
-# ... (generate_scenario_from_graph 등 하단 함수는 동일하므로 생략하지 않고 그대로 유지해야 함) ...
 def generate_scenario_from_graph(api_key, user_data, model_name=None):
     app = build_builder_graph()
     if not model_name and 'model' in user_data:
@@ -457,7 +427,13 @@ def generate_scenario_from_graph(api_key, user_data, model_name=None):
     initial_state = {
         "graph_data": user_data,
         "model_name": model_name,
-        "blueprint": "", "scenario": {}, "worlds": [], "characters": [], "scenes": [], "endings": [], "final_data": {}
+        "blueprint": "",
+        "scenario": {},
+        "worlds": [],
+        "characters": [],
+        "scenes": [],
+        "endings": [],
+        "final_data": {}
     }
     return app.invoke(initial_state)['final_data']
 
@@ -470,4 +446,3 @@ def generate_single_npc(scenario_title, scenario_summary, user_request="", model
         ("user", f"제목:{scenario_title}\n요청:{user_request}")
     ]).partial(format_instructions=parser.get_format_instructions())
     return (prompt | llm | parser).invoke({})
-
