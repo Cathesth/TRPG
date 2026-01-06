@@ -55,7 +55,7 @@ class MermaidService:
 
         # 매핑 생성
         ending_names = {e.get('ending_id'): e.get('title', e.get('ending_id')) for e in endings}
-        scene_names = {s.get('scene_id'): s.get('title', s.get('scene_id')) for s in filtered_scenes}
+        scene_names = {s.get('scene_id'): s.get('title') or s.get('name') or s.get('scene_id') for s in filtered_scenes}
 
         # 표시용 ID 생성 (Scene-1, Scene-2, ... / Ending-1, Ending-2, ...)
         scene_display_ids = {}
@@ -120,7 +120,8 @@ class MermaidService:
         # 씬 노드들
         for scene in filtered_scenes:
             scene_id = scene['scene_id']
-            scene_title = scene.get('title', scene_id).replace('"', "'")
+            # title 또는 name 필드 사용, 없으면 scene_id 사용
+            scene_title = (scene.get('title') or scene.get('name') or scene_id).replace('"', "'")
 
             # Scene title을 노드 레이블로 사용
             mermaid_lines.append(f'    {scene_id}["{scene_title}"]:::sceneStyle')
