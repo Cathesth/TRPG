@@ -72,6 +72,28 @@
         @keyframes dash {
             to { stroke-dashoffset: -12; }
         }
+
+        /* 버전 정보 스타일 */
+        .version-badge {
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            background: rgba(28, 28, 28, 0.8);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #9ca3af;
+            font-family: 'Courier New', monospace;
+            z-index: 1000;
+            transition: all 0.2s ease;
+        }
+        .version-badge:hover {
+            background: rgba(28, 28, 28, 0.95);
+            color: #818cf8;
+            border-color: rgba(129, 140, 248, 0.3);
+        }
     </style>
 
     <script>
@@ -1211,5 +1233,11 @@
         }
     </script>
     {% endraw %}
+
+    <!-- 버전 정보 배지 -->
+    <div class="version-badge">
+        v{{ version }}
+    </div>
+
 </body>
 </html>
