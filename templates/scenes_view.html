@@ -9,6 +9,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
         body { font-family: 'Pretendard', sans-serif; }
@@ -99,6 +100,11 @@
             0% { transform: scale(1); }
             50% { transform: scale(1.05); }
             100% { transform: scale(1); }
+        }
+
+        /* Noto Sans 폰트 스타일 */
+        .noto-sans-font {
+            font-family: 'Noto Sans KR', 'Pretendard', sans-serif;
         }
     </style>
 
@@ -280,7 +286,7 @@
                         <span class="flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4 text-yellow-500"></i> 프롤로그 (Prologue)</span>
                         <i data-lucide="chevron-down" class="transition-transform group-open:rotate-180"></i>
                     </summary>
-                    <div class="p-6 border-t border-gray-800 text-gray-300 leading-relaxed italic bg-gray-900/50">
+                    <div class="p-6 border-t border-gray-800 text-gray-300 leading-relaxed bg-gray-900/50 noto-sans-font">
                         {{ scenario.prologue or scenario.prologue_text or "프롤로그 없음" }}
                     </div>
                 </details>
@@ -365,7 +371,7 @@
                                 <span>{{ ending.title }}</span>
                                 <span class="text-xs text-red-900 bg-red-900/20 px-1.5 py-0.5 rounded">{{ ending_display_ids.get(ending.ending_id, ending.ending_id) }}</span>
                             </div>
-                            <div class="text-xs text-gray-400 line-clamp-3 mb-2">{{ ending.description }}</div>
+                            <div class="text-xs text-gray-400 line-clamp-3 mb-2 noto-sans-font">{{ ending.description }}</div>
 
                             {% if ending_incoming_conditions and ending_incoming_conditions[ending.ending_id] %}
                             <div class="text-[10px] border-t border-red-900/20 pt-2 mt-2">
