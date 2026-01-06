@@ -18,7 +18,7 @@ def index():
 @login_required
 def view_builder():
     """빌더 뷰"""
-    return render_template('builder_view.html', user=current_user)
+    return render_template('builder_view.html', version=get_full_version(), user=current_user)
 
 
 @views_bp.route('/views/player')
@@ -27,7 +27,7 @@ def view_player():
     p_vars = {}
     if game_state.state:
         p_vars = game_state.state.get('player_vars', {})
-    return render_template('player_view.html', vars=p_vars, user=current_user)
+    return render_template('player_view.html', vars=p_vars, version=get_full_version(), user=current_user)
 
 
 @views_bp.route('/views/scenes')
@@ -40,6 +40,7 @@ def view_scenes():
                                scenes=[],
                                current_scene_id=None,
                                mermaid_code="graph TD\n    A[시나리오를 먼저 로드하세요]",
+                               version=get_full_version(),
                                user=current_user)
 
     scenario = game_state.state['scenario']
@@ -61,6 +62,7 @@ def view_scenes():
                            scene_names=chart_data['scene_names'],
                            current_scene_id=current_scene_id,
                            mermaid_code=chart_data['mermaid_code'],
+                           version=get_full_version(),
                            user=current_user)
 
 

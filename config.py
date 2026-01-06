@@ -1,6 +1,9 @@
 import os
 import subprocess
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -37,7 +40,7 @@ DEFAULT_PLAYER_VARS = {
 }
 
 # 버전 정보 설정
-VERSION_NUMBER = 0  # 수동으로 증가시킬 넘버
+VERSION_NUMBER = 1  # 수동으로 증가시킬 넘버
 
 def get_git_commit_hash():
     """Git 커밋 해시 가져오기 (짧은 버전)"""

@@ -725,7 +725,8 @@
                                         currentContent += data.content;
                                         contentDiv.innerHTML = currentContent + '<span class="streaming-cursor">▌</span>';
                                     }
-                                    chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: 'smooth' });
+                                    // GM 답변에 따른 자동 스크롤
+                                    scrollToBottom(true);
                                     break;
 
                                 case 'section_end':

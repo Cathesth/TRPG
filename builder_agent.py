@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from llm_factory import LLMFactory
 from schemas import NPC
+from core.utils import renumber_scenes_bfs
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +164,9 @@ def generate_full_content(state: BuilderState):
     report_progress("building", "3/5", "장면 생성 중...", 60)
     llm = LLMFactory.get_llm(state.get("model_name"))
 
+    # 블루프린트에서 시나리오 정보 추출
+    blueprint = state.get("blueprint", "")
+
     # NPC
     npc_parser = JsonOutputParser(pydantic_object=NPCList)
     npc_chain = (
@@ -173,22 +177,29 @@ def generate_full_content(state: BuilderState):
             | llm | npc_parser
     )
 
-    # World
+    # World - 프롤로그 세계관 반영 강화
     world_parser = JsonOutputParser(pydantic_object=WorldList)
     world_chain = (
             ChatPromptTemplate.from_messages([
-                ("system", "배경 장소 3곳을 묘사하세요.\n{format_instructions}"),
+                ("system",
+                 "설계도에 명시된 세계관/배경 설정을 정확히 반영하여 배경 장소 3곳을 묘사하세요.\n"
+                 "설계도의 '개요'에 적힌 시대, 장르, 분위기를 반드시 따르세요.\n"
+                 "예: 개요가 '사이버펑크'라면 미래 도시를, '1930년대'라면 그 시대 배경을 만드세요.\n"
+                 "{format_instructions}"),
                 ("user", "{blueprint}")
             ]).partial(format_instructions=world_parser.get_format_instructions())
             | llm | world_parser
     )
 
-    # Scene (초안)
+    # Scene (초안) - 설계도 반영 강화
     scene_parser = JsonOutputParser(pydantic_object=SceneData)
     scene_prompt = ChatPromptTemplate.from_messages([
         ("system",
-         "설계도를 바탕으로 씬 데이터를 생성하세요. ID는 절대 변경하지 마세요.\n"
+         "설계도를 바탕으로 씬 데이터를 생성하세요.\n"
+         "중요: 설계도에 명시된 세계관, 시대적 배경, 분위기를 정확히 반영하세요.\n"
+         "ID는 절대 변경하지 마세요.\n"
          "연결(Transition) 생성 시 '이동한다' 같은 표현 대신 '문을 연다', '살펴본다' 등 구체적인 행동을 만드세요.\n"
+         "각 씬의 description은 이전 씬과 자연스럽게 연결되어야 합니다.\n"
          "엔딩 설명이 비어있으면 창작해서 채우세요.\n"
          "{format_instructions}"),
         ("user", "{blueprint}")
@@ -309,9 +320,19 @@ def finalize_build(state: BuilderState):
     if not start_id and state["scenes"]:
         start_id = state["scenes"][0]["scene_id"]
 
+    # 프롤로그 연결 설정
+    prologue_connects = []
+    if start_node:
+        for edge in data.get("edges", []):
+            if edge["source"] == start_node["id"]:
+                prologue_connects.append(edge["target"])
+
     final_data = {
         "title": state["scenario"].get("title", "Untitled"),
         "desc": state["scenario"].get("summary", ""),
+        "prologue": start_node.get("data", {}).get("description", "") if start_node else "",
+        "prologue_text": start_node.get("data", {}).get("description", "") if start_node else "",
+        "prologue_connects_to": prologue_connects,
         "scenario": state["scenario"],
         "worlds": state["worlds"],
         "npcs": state["characters"],
@@ -321,6 +342,10 @@ def finalize_build(state: BuilderState):
         "start_scene_id": start_id,
         "raw_graph": state["graph_data"]
     }
+
+    # 씬 번호 재정렬 (BFS 순서로)
+    final_data = renumber_scenes_bfs(final_data)
+
     return {"final_data": final_data}
 
 
@@ -362,3 +387,4 @@ def generate_single_npc(scenario_title, scenario_summary, user_request="", model
         ("user", f"제목:{scenario_title}\n요청:{user_request}")
     ]).partial(format_instructions=parser.get_format_instructions())
     return (prompt | llm | parser).invoke({})
+

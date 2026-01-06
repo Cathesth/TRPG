@@ -3,7 +3,8 @@
 """
 import json
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
+from collections import deque
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +42,22 @@ def pick_start_scene_id(scenario: dict) -> str:
     """
     시나리오 시작 씬을 결정
     우선순위:
-      1) prologue_connects_to 중 실제 존재하는 씬
-      2) 어떤 씬에서도 target으로 등장하지 않는 'root' 씬
-      3) scenes[0]
-      4) 'start'
+      1) start_scene_id가 명시적으로 지정된 경우
+      2) prologue_connects_to 중 실제 존재하는 씬
+      3) 어떤 씬에서도 target으로 등장하지 않는 'root' 씬
+      4) scenes[0]
+      5) 'start'
     """
     if not isinstance(scenario, dict):
         return "start"
+
+    # 명시적으로 start_scene_id가 지정된 경우 우선
+    explicit_start = scenario.get('start_scene_id')
+    if explicit_start and isinstance(explicit_start, str):
+        scenes = scenario.get('scenes', [])
+        scene_ids = {s.get('scene_id') for s in scenes if isinstance(s, dict) and s.get('scene_id')}
+        if explicit_start in scene_ids:
+            return explicit_start
 
     scenes = scenario.get('scenes', [])
     if not isinstance(scenes, list) or not scenes:
@@ -74,15 +84,111 @@ def pick_start_scene_id(scenario: dict) -> str:
                 if isinstance(tid, str) and tid:
                     targets.add(tid)
 
+    # Scene-1 패턴의 씬이 있으면 우선 선택
+    for sid in scene_ids:
+        if sid and sid.lower() in ('scene-1', 'scene_1', 'scene1'):
+            return str(sid)
+
     for sid in scene_ids:
         if sid and sid not in targets and sid not in ('start', 'PROLOGUE'):
-            return sid
+            return str(sid)
 
     # 3) fallback
     first = scenes[0]
     if isinstance(first, dict) and first.get('scene_id'):
         return str(first.get('scene_id'))
     return "start"
+
+
+def renumber_scenes_bfs(scenario: dict) -> dict:
+    """
+    BFS 순서대로 씬에 번호를 다시 매김 (위에서 아래, 왼쪽에서 오른쪽)
+    프롤로그 바로 아래가 Scene-1이 되도록 함
+    """
+    if not isinstance(scenario, dict):
+        return scenario
+
+    scenes = scenario.get('scenes', [])
+    if not scenes:
+        return scenario
+
+    # 시작점 찾기
+    start_id = pick_start_scene_id(scenario)
+
+    # 씬 ID -> 씬 객체 매핑
+    scene_map = {s['scene_id']: s for s in scenes if isinstance(s, dict) and s.get('scene_id')}
+
+    # 인접 리스트 생성
+    adjacency = {}
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            continue
+        sid = scene.get('scene_id')
+        transitions = scene.get('transitions', []) or []
+        adjacency[sid] = [t.get('target_scene_id') for t in transitions if isinstance(t, dict) and t.get('target_scene_id')]
+
+    # BFS로 순회하며 순서 결정
+    visited = set()
+    order = []
+    queue = deque([start_id])
+
+    while queue:
+        current = queue.popleft()
+        if current in visited or current not in scene_map:
+            continue
+        visited.add(current)
+        order.append(current)
+
+        # 자식 노드들을 큐에 추가
+        for next_id in adjacency.get(current, []):
+            if next_id not in visited and next_id in scene_map:
+                queue.append(next_id)
+
+    # 방문하지 않은 씬도 추가
+    for sid in scene_map:
+        if sid not in visited:
+            order.append(sid)
+
+    # 새로운 ID 매핑 생성
+    id_mapping = {}
+    for idx, old_id in enumerate(order):
+        new_id = f"Scene-{idx + 1}"
+        id_mapping[old_id] = new_id
+
+    # 씬 업데이트
+    new_scenes = []
+    for old_id in order:
+        scene = scene_map[old_id].copy()
+        old_scene_id = scene['scene_id']
+        scene['scene_id'] = id_mapping.get(old_scene_id, old_scene_id)
+
+        # 트랜지션의 target_scene_id도 업데이트
+        if scene.get('transitions'):
+            new_transitions = []
+            for trans in scene['transitions']:
+                new_trans = trans.copy()
+                old_target = trans.get('target_scene_id')
+                if old_target in id_mapping:
+                    new_trans['target_scene_id'] = id_mapping[old_target]
+                new_transitions.append(new_trans)
+            scene['transitions'] = new_transitions
+
+        new_scenes.append(scene)
+
+    # 엔딩의 incoming transition도 업데이트
+    endings = scenario.get('endings', [])
+    # 엔딩 ID는 유지 (엔딩은 씬이 아님)
+
+    scenario['scenes'] = new_scenes
+    if start_id in id_mapping:
+        scenario['start_scene_id'] = id_mapping[start_id]
+
+    # prologue_connects_to 업데이트
+    connects = scenario.get('prologue_connects_to', [])
+    if connects:
+        scenario['prologue_connects_to'] = [id_mapping.get(c, c) for c in connects]
+
+    return scenario
 
 
 def sanitize_filename(name: str, default_prefix: str = "file") -> str:

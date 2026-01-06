@@ -306,6 +306,72 @@ def npc_node(state: PlayerState):
     return state
 
 
+def check_npc_appearance(state: PlayerState) -> str:
+    """
+    씬에 등장해야 하는 NPC가 있는지 확인하고 등장 대사를 생성
+    """
+    scenario = state['scenario']
+    curr_id = state['current_scene_id']
+
+    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
+    curr_scene = all_scenes.get(curr_id)
+
+    if not curr_scene:
+        return ""
+
+    npc_names = curr_scene.get('npcs', [])
+    if not npc_names:
+        return ""
+
+    # 이미 이 씬에서 NPC를 만났는지 확인
+    history = state.get('history', [])
+    scene_history_key = f"npc_appeared_{curr_id}"
+
+    # 플레이어 변수에서 이미 등장했는지 확인
+    player_vars = state.get('player_vars', {})
+    if player_vars.get(scene_history_key):
+        return ""
+
+    # NPC 등장 표시
+    state['player_vars'][scene_history_key] = True
+
+    # NPC 정보 가져오기
+    npc_introductions = []
+    for npc_name in npc_names:
+        npc_data = None
+        for npc in scenario.get('npcs', []):
+            if npc.get('name') == npc_name:
+                npc_data = npc
+                break
+
+        if npc_data:
+            # NPC 등장 대사 생성
+            try:
+                api_key = os.getenv("OPENROUTER_API_KEY")
+                llm = LLMFactory.get_llm(api_key=api_key, model_name="openai/tngtech/deepseek-r1t2-chimera:free")
+
+                prompt = f"""
+                [TASK] Generate a brief introduction line for an NPC appearing in a scene.
+                [NPC NAME] {npc_name}
+                [NPC ROLE] {npc_data.get('role', 'Unknown')}
+                [NPC PERSONALITY] {npc_data.get('personality', 'Neutral')}
+                [SCENE] {curr_scene.get('title', 'Unknown Scene')}
+                
+                [INSTRUCTION] Write a single Korean sentence (1-2 lines) that the NPC would say when first appearing.
+                Keep it natural and in-character. Just the dialogue, no narration.
+                """
+
+                response = llm.invoke(prompt).content.strip()
+                npc_introductions.append(f"<div class='npc-intro text-green-300 italic my-2'>💬 <span class='font-bold'>{npc_name}</span>: \"{response}\"</div>")
+            except Exception as e:
+                logger.error(f"NPC Intro Error: {e}")
+                npc_introductions.append(f"<div class='npc-intro text-green-300 italic my-2'>💬 <span class='font-bold'>{npc_name}</span>이(가) 나타났다.</div>")
+        else:
+            npc_introductions.append(f"<div class='npc-intro text-green-300 italic my-2'>💬 <span class='font-bold'>{npc_name}</span>이(가) 나타났다.</div>")
+
+    return "\n".join(npc_introductions)
+
+
 def narrator_node(state: PlayerState):
     """나레이터 노드 (실제 생성은 스트리밍 함수에서 처리하므로 여기선 패스)"""
     return state
@@ -346,13 +412,22 @@ def scene_stream_generator(state: PlayerState):
     scene_desc = curr_scene.get('description', '')
     npc_names = curr_scene.get('npcs', [])
 
+    # NPC 등장 확인 및 대사 생성
+    npc_intro = check_npc_appearance(state)
+    if npc_intro:
+        yield npc_intro + "<br><br>"
+
     # 힌트용 트리거 정보 (출력용 아님, AI 힌트용)
     transitions = curr_scene.get('transitions', []) if curr_scene else []
     trigger_hints = [t.get('trigger', '') for t in transitions if t.get('trigger')]
 
     last_action = state.get('last_user_input', '')
 
-    # 나레이션 프롬프트
+    # 이전 씬 정보 가져오기 (연결성 강화)
+    history = state.get('history', [])
+    previous_context = "\n".join(history[-3:]) if history else "Game just started."
+
+    # 나레이션 프롬프트 - 씬 연결성 강화
     prompt = f"""
     You are a Game Master narrating a TRPG scene.
 
@@ -361,20 +436,24 @@ def scene_stream_generator(state: PlayerState):
     Description: {scene_desc}
     Last Action Player Took: "{last_action}"
     NPCs Here: {', '.join(npc_names)}
+    
+    [PREVIOUS STORY CONTEXT]
+    {previous_context}
 
     [AVAILABLE HIDDEN ACTIONS (Do not list these directly!)]
     {trigger_hints}
 
     [INSTRUCTIONS]
-    1. Describe the scene vividly. Start by describing the result of the 'Last Action'.
-    2. Naturally weave **subtle hints** about the 'Available Hidden Actions' into the environment description.
+    1. Start by describing the result of the 'Last Action' and smoothly connect it to the current scene.
+    2. Describe the scene vividly, maintaining consistency with the previous story context.
+    3. Naturally weave **subtle hints** about the 'Available Hidden Actions' into the environment description.
        - Use HTML <mark>keyword</mark> to slightly highlight interactable objects if needed.
        - Example: "You see a <mark>rusty key</mark> on the table." (Implying user can take it)
-    3. **CRITICAL: DO NOT LIST CHOICES.** - Never write "1. Open door", "2. Run away".
+    4. **CRITICAL: DO NOT LIST CHOICES.** - Never write "1. Open door", "2. Run away".
        - Never ask "What do you want to do?".
        - Just describe the situation and let the player type their action.
-    4. Language: Korean (한국어).
-    5. Length: 3-4 sentences.
+    5. Language: Korean (한국어).
+    6. Length: 3-5 sentences.
     """
 
     try:
