@@ -7,10 +7,10 @@ logger = logging.getLogger(__name__)
 
 class UserService:
     @staticmethod
-    def create_user(username, password) -> bool:
+    def create_user(username, password, email=None) -> bool:
         try:
             password_hash = generate_password_hash(password)
-            new_user = User(id=username, password_hash=password_hash)
+            new_user = User(id=username, password_hash=password_hash, email=email)
             db.session.add(new_user)
             db.session.commit()
             return True

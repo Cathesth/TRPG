@@ -670,25 +670,36 @@
                         // [추가] 에이전트 생성 데이터 디버깅용 로그
                         console.log("Server Response (Agent Data):", data);
 
-                        // 생성된 제목 추출 (filename에서 .json 제거)
-                        if (data.filename) {
-                            const titleFromFilename = data.filename.replace('.json', '').replace(/_/g, ' ');
-                            setGeneratedTitle(titleFromFilename);
+                        // 생성된 제목 추출 - start 노드의 label 사용 또는 서버 응답에서 가져오기
+                        let scenarioTitle = '';
+                        const startNode = nodes.find(n => n.id === 'start');
 
-                            // 자동 제목 사용 시 start 노드의 label 업데이트
-                            if (useAutoTitle) {
-                                setNodes(prev => prev.map(n =>
-                                    n.id === 'start'
-                                        ? { ...n, data: { ...n.data, label: titleFromFilename } }
-                                        : n
-                                ));
-                            }
+                        // 우선순위: 1) 서버 응답의 title, 2) start 노드 label, 3) filename에서 추출
+                        if (data.title) {
+                            scenarioTitle = data.title;
+                        } else if (startNode?.data?.label && startNode.data.label !== '시나리오 설정 & 프롤로그') {
+                            scenarioTitle = startNode.data.label;
+                        } else if (data.filename) {
+                            scenarioTitle = data.filename.replace('.json', '').replace(/_/g, ' ');
+                        } else {
+                            scenarioTitle = '새 시나리오';
                         }
 
-                        // [수정됨] data 전체를 모달에 넘겨서 상세 내용을 표시하도록 함
+                        setGeneratedTitle(scenarioTitle);
+
+                        // 자동 제목 사용 시 start 노드의 label 업데이트
+                        if (useAutoTitle && scenarioTitle) {
+                            setNodes(prev => prev.map(n =>
+                                n.id === 'start'
+                                    ? { ...n, data: { ...n.data, label: scenarioTitle } }
+                                    : n
+                            ));
+                        }
+
+                        // [수정됨] 시나리오 제목이 제대로 표시되도록 수정
                         setResultModal({
                             open: true, type: 'success', title: '생성 완료!',
-                            message: `${data.message}\n이제 플레이어 모드에서 게임을 즐겨보세요.`,
+                            message: `"${scenarioTitle}" 시나리오가 생성되었습니다.\n이제 플레이어 모드에서 게임을 즐겨보세요.`,
                             data: data, // 에이전트 생성 데이터 전체 전달
                             showPlayButton: true
                         });

@@ -36,8 +36,9 @@ def register():
     data = parse_request_data(request)
     username = data.get('username')
     password = data.get('password')
+    email = data.get('email')  # 이메일 추가
     if not username or not password: return jsonify({"success": False, "error": "입력값 부족"}), 400
-    if UserService.create_user(username, password): return jsonify({"success": True})
+    if UserService.create_user(username, password, email): return jsonify({"success": True})
     return jsonify({"success": False, "error": "이미 존재하는 아이디"}), 400
 
 

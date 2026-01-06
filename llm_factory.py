@@ -81,8 +81,10 @@ class OpenRouterLLM(ChatOpenAI):
 class LLMFactory:
     @staticmethod
     def get_llm(model_name: str, api_key: str = None, temperature: float = 0.7, streaming: bool = False):
-        # 모델 유효성 검사
-        if model_name not in AVAILABLE_MODELS:
+        # 모델 유효성 검사 - None 처리 추가
+        if not model_name or model_name == 'None':
+            model_name = DEFAULT_MODEL
+        elif model_name not in AVAILABLE_MODELS:
             print(f"[경고] 알 수 없는 모델 '{model_name}', 기본 모델 '{DEFAULT_MODEL}' 사용")
             model_name = DEFAULT_MODEL
 
