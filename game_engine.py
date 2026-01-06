@@ -38,24 +38,33 @@ def normalize_text(text: str) -> str:
 # --- Nodes ---
 
 def intent_parser_node(state: PlayerState):
-    """
-    Node 1: 유저 입력 의도 파악
-    - Fast-Track: 단순 선택이나 키워드 매칭 시 LLM 없이 즉시 처리
-    - Slow-Path: 애매한 입력은 LLM이 판단
-    """
+    """의도 파서 - 예외 처리 강화"""
     user_input = state.get('last_user_input', '').strip()
     norm_input = normalize_text(user_input)
     logger.info(f"🟢 [USER INPUT]: {user_input}")
 
-    # 1. 시스템적으로 이미 선택된 경우 (UI 클릭 등)
+    # 입력이 없는 경우 처리
+    if not user_input:
+        state['parsed_intent'] = 'chat'
+        state['system_message'] = "행동을 입력해주세요."
+        return state
+
+    # 1. 시스템적으로 이미 선택된 경우
     if state.get('last_user_choice_idx', -1) != -1:
         state['parsed_intent'] = 'transition'
         return state
 
     scenario = state['scenario']
     curr_scene_id = state['current_scene_id']
-    scenes = {s['scene_id']: s for s in scenario['scenes']}
+    scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
+
+    # 🔥 수정: 씬이 없을 때 처리
     curr_scene = scenes.get(curr_scene_id)
+    if not curr_scene:
+        logger.warning(f"Current scene not found: {curr_scene_id}")
+        state['parsed_intent'] = 'chat'
+        state['system_message'] = "현재 위치를 파악할 수 없습니다."
+        return state
 
     # 2. 엔딩 체크
     endings = {e['ending_id']: e for e in scenario.get('endings', [])}
@@ -63,7 +72,7 @@ def intent_parser_node(state: PlayerState):
         state['parsed_intent'] = 'ending'
         return state
 
-    transitions = curr_scene.get('transitions', []) if curr_scene else []
+    transitions = curr_scene.get('transitions', [])
 
     # 트랜지션 없으면 무조건 채팅
     if not transitions:
@@ -395,18 +404,41 @@ def prologue_stream_generator(state: PlayerState):
 
 
 def scene_stream_generator(state: PlayerState):
-    """
-    씬 묘사 스트리밍 (핵심: 선택지 미노출 + 힌트 은유적 포함)
-    """
+    """씬 묘사 스트리밍 - 예외 처리 강화"""
     scenario = state['scenario']
     curr_id = state['current_scene_id']
 
     all_scenes = {s['scene_id']: s for s in scenario['scenes']}
+    all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
+
+    # 🔥 수정: 엔딩 체크 추가
+    if curr_id in all_endings:
+        ending = all_endings[curr_id]
+        yield f"""
+        <div class="ending-scene">
+            <h3>🎉 {ending.get('title', 'ENDING')} 🎉</h3>
+            <p>{ending.get('description', '이야기가 끝났습니다.')}</p>
+        </div>
+        """
+        return
+
     curr_scene = all_scenes.get(curr_id)
 
+    # 🔥 수정: 씬이 없을 때 더 나은 fallback
     if not curr_scene:
-        yield "알 수 없는 장면입니다."
-        return
+        logger.warning(f"Scene not found: {curr_id}")
+        # 시작 씬으로 리다이렉트 시도
+        start_scene_id = scenario.get('start_scene_id')
+        if start_scene_id and start_scene_id in all_scenes:
+            state['current_scene_id'] = start_scene_id
+            yield "잠시 혼란스러웠지만, 정신을 차렸다...<br><br>"
+            # 재귀 호출로 시작 씬 출력
+            for chunk in scene_stream_generator(state):
+                yield chunk
+            return
+        else:
+            yield "어둠 속에서 길을 잃었다. 이야기를 처음부터 시작해야 할 것 같다."
+            return
 
     scene_title = curr_scene.get('title', 'Untitled')
     scene_desc = curr_scene.get('description', '')
@@ -417,63 +449,79 @@ def scene_stream_generator(state: PlayerState):
     if npc_intro:
         yield npc_intro + "<br><br>"
 
-    # 힌트용 트리거 정보 (출력용 아님, AI 힌트용)
     transitions = curr_scene.get('transitions', []) if curr_scene else []
     trigger_hints = [t.get('trigger', '') for t in transitions if t.get('trigger')]
 
     last_action = state.get('last_user_input', '')
-
-    # 이전 씬 정보 가져오기 (연결성 강화)
     history = state.get('history', [])
     previous_context = "\n".join(history[-3:]) if history else "Game just started."
 
-    # 나레이션 프롬프트 - 씬 연결성 강화
+    # 🔥 수정: builder description을 기반으로 톤만 조정
     prompt = f"""
     You are a Game Master narrating a TRPG scene.
 
+    [BASE DESCRIPTION FROM BUILDER]
+    {scene_desc}
+
     [CONTEXT]
     Title: {scene_title}
-    Description: {scene_desc}
-    Last Action Player Took: "{last_action}"
-    NPCs Here: {', '.join(npc_names)}
-    
-    [PREVIOUS STORY CONTEXT]
-    {previous_context}
+    Last Action: "{last_action}"
+    NPCs Present: {', '.join(npc_names)}
+    Previous Story: {previous_context}
 
-    [AVAILABLE HIDDEN ACTIONS (Do not list these directly!)]
+    [HIDDEN TRIGGERS (hint these subtly)]
     {trigger_hints}
 
     [INSTRUCTIONS]
-    1. Start by describing the result of the 'Last Action' and smoothly connect it to the current scene.
-    2. Describe the scene vividly, maintaining consistency with the previous story context.
-    3. Naturally weave **subtle hints** about the 'Available Hidden Actions' into the environment description.
-       - Use HTML <mark>keyword</mark> to slightly highlight interactable objects if needed.
-       - Example: "You see a <mark>rusty key</mark> on the table." (Implying user can take it)
-    4. **CRITICAL: DO NOT LIST CHOICES.** - Never write "1. Open door", "2. Run away".
-       - Never ask "What do you want to do?".
-       - Just describe the situation and let the player type their action.
-    5. Language: Korean (한국어).
-    6. Length: 3-5 sentences.
+    1. **Use the BASE DESCRIPTION as your foundation** - keep the core content and atmosphere.
+    2. If there was a 'Last Action', describe its immediate result first, then flow into the scene.
+    3. Add subtle hints about interactable objects/actions using <mark>tags.
+       - Example: "테이블 위에 <mark>녹슨 열쇠</mark>가 놓여있다."
+    4. **CRITICAL: NEVER list choices** (no "1. 문 열기" or "What do you want to do?")
+    5. Adjust the tone to be immersive and cinematic, but preserve the builder's original content.
+    6. Language: Korean
+    7. Length: Keep similar to original description length (3-6 sentences)
     """
 
     try:
         api_key = os.getenv("OPENROUTER_API_KEY")
-        # 스트리밍 지원 모델 사용
         llm = LLMFactory.get_llm(
             api_key=api_key,
             model_name="openai/tngtech/deepseek-r1t2-chimera:free",
             streaming=True
         )
 
+        accumulated_text = ""
         for chunk in llm.stream(prompt):
             if chunk.content:
+                accumulated_text += chunk.content
                 yield chunk.content
+
+        # 🔥 추가: 스트리밍 완료 후 키워드 하이라이트 보정
+        # (이미 <mark>가 있으면 건너뛰고, 없으면 추가)
+        if "<mark>" not in accumulated_text:
+            highlighted = auto_highlight_triggers(accumulated_text, trigger_hints)
+            # 차이나는 부분만 추가 전송 (또는 전체 재전송)
+            # SSE 특성상 이미 보낸 텍스트는 수정 불가하므로
+            # 프롬프트에서 <mark> 사용을 더 강제하는 게 나음
+            pass
 
     except Exception as e:
         logger.error(f"Scene Streaming Error: {e}")
-        # 오류 시 기본 설명이라도 출력
-        yield scene_desc if scene_desc else "..."
+        yield scene_desc if scene_desc else "장면을 불러올 수 없습니다."
 
+def auto_highlight_triggers(text: str, triggers: List[str]) -> str:
+    """
+    트리거 키워드를 자동으로 <mark> 태그로 감싸기
+    (LLM이 놓친 경우 백업용)
+    """
+    for trigger in triggers:
+        # 트리거에서 핵심 키워드 추출 (예: "문을 연다" -> "문")
+        keywords = re.findall(r'\b\w{2,}\b', trigger)
+        for kw in keywords:
+            if kw in text and f"<mark>{kw}</mark>" not in text:
+                text = text.replace(kw, f"<mark>{kw}</mark>", 1)  # 첫 등장만
+    return text
 
 # --- Graph Construction ---
 
