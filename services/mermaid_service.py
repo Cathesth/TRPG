@@ -107,34 +107,22 @@ class MermaidService:
                     incoming_conditions[target_id].append(condition_info)
 
         # Mermaid 코드 생성
+        # 1단계: 모든 노드 선언
         if prologue_text:
             # 현재 위치가 프롤로그인 경우 하이라이트 스타일 적용
             prologue_style = "currentStyle" if current_scene_id == 'prologue' else "prologueStyle"
             mermaid_lines.append(f'    PROLOGUE["📖 Prologue"]:::{prologue_style}')
 
-        # 프롤로그 -> 연결된 씬들
-        if prologue_text and prologue_connects_to:
-            for target_id in prologue_connects_to:
-                if any(s.get('scene_id') == target_id for s in filtered_scenes):
-                    mermaid_lines.append(f'    PROLOGUE --> {target_id}')
-
-        # 씬 노드들
+        # 씬 노드들 선언
         for scene in filtered_scenes:
             scene_id = scene['scene_id']
             scene_title = scene.get('title', scene_id).replace('"', "'")
-            display_id = scene_display_ids.get(scene_id, scene_id)
 
             # 현재 씬인 경우 하이라이트 스타일 적용
             style_class = "currentStyle" if current_scene_id == scene_id else "sceneStyle"
             mermaid_lines.append(f'    {scene_id}["{scene_title}"]:::{style_class}')
 
-            for trans in scene.get('transitions', []):
-                next_id = trans.get('target_scene_id')
-                trigger = trans.get('trigger', 'action').replace('"', "'")
-                if next_id and next_id != 'start':
-                    mermaid_lines.append(f'    {scene_id} -->|"{trigger}"| {next_id}')
-
-        # 엔딩 노드들
+        # 엔딩 노드들 선언
         for ending in endings:
             ending_id = ending['ending_id']
             ending_title = ending.get('title', '엔딩').replace('"', "'")
@@ -142,6 +130,23 @@ class MermaidService:
             # 현재 위치가 엔딩인 경우 하이라이트 스타일 적용
             style_class = "currentStyle" if current_scene_id == ending_id else "endingStyle"
             mermaid_lines.append(f'    {ending_id}["🏁 {ending_title}"]:::{style_class}')
+
+        # 2단계: 모든 연결 추가
+        # 프롤로그 -> 연결된 씬들
+        if prologue_text and prologue_connects_to:
+            for target_id in prologue_connects_to:
+                if any(s.get('scene_id') == target_id for s in filtered_scenes):
+                    mermaid_lines.append(f'    PROLOGUE --> {target_id}')
+
+        # 씬 간 transitions
+        for scene in filtered_scenes:
+            scene_id = scene['scene_id']
+
+            for trans in scene.get('transitions', []):
+                next_id = trans.get('target_scene_id')
+                trigger = trans.get('trigger', 'action').replace('"', "'")
+                if next_id and next_id != 'start':
+                    mermaid_lines.append(f'    {scene_id} -->|"{trigger}"| {next_id}')
 
         # 스타일 정의
         mermaid_lines.append("    classDef prologueStyle fill:#0f766e,stroke:#14b8a6,color:#fff")
