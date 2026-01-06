@@ -4,7 +4,7 @@ import logging
 import time
 import threading
 from flask import Blueprint, request, jsonify, Response, stream_with_context
-from flask_login import login_user, logout_user, login_required, current_user
+from flask_login import login_user, logout_user, login_required, current_user, UserMixin
 
 # builder_agent에서 필요한 함수들 임포트
 from builder_agent import (
@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
+# [추가] Flask-Login용 임시 User 클래스 (DB 없이 작동시키기 위함)
+class User(UserMixin):
+    def __init__(self, id):
+        self.id = id
+
 
 # --- [인증 API] ---
 @api_bp.route('/auth/register', methods=['POST'])
@@ -39,11 +44,18 @@ def register():
 @api_bp.route('/auth/login', methods=['POST'])
 def login():
     data = parse_request_data(request)
-    user = UserService.verify_user(data.get('username'), data.get('password'))
-    if user:
-        login_user(user)
+    username = data.get('username')
+    password = data.get('password')
+
+    # [수정] 테스트 계정 하드코딩 (test / 1234)
+    TEST_ID = 'test'
+    TEST_PW = '1234'
+
+    if username == TEST_ID and password == TEST_PW:
+        user = User(id=username)
+        login_user(user)  # Flask-Login 세션 생성
         return jsonify({"success": True})
-    return jsonify({"success": False, "error": "로그인 실패"}), 401
+    return jsonify({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}), 401
 
 
 @api_bp.route('/auth/logout', methods=['POST'])
