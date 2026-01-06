@@ -29,6 +29,41 @@ def report_progress(status, step, detail, progress):
         _progress_callback(status=status, step=step, detail=detail, progress=progress)
 
 
+# --- [유틸리티] JSON 파싱 헬퍼 (백업에서 복원) ---
+def parse_json_garbage(text: str) -> dict:
+    """
+    LLM 응답에서 JSON을 안전하게 추출
+    마크다운 코드블록, 이중 인코딩 등을 처리
+    """
+    if isinstance(text, dict):
+        return text
+    if not text:
+        return {}
+    try:
+        text = text.strip()
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0]
+        elif "```" in text:
+            text = text.split("```")[1].split("```")[0]
+
+        parsed = json.loads(text)
+        if isinstance(parsed, str):
+            try:
+                parsed = json.loads(parsed)
+            except:
+                pass
+        return parsed if isinstance(parsed, dict) else {}
+    except:
+        try:
+            start = text.find('{')
+            end = text.rfind('}') + 1
+            if start != -1 and end > start:
+                return json.loads(text[start:end])
+        except:
+            pass
+        return {}
+
+
 # --- 데이터 모델 ---
 
 class ScenarioSummary(BaseModel):
@@ -327,11 +362,58 @@ def finalize_build(state: BuilderState):
             if edge["source"] == start_node["id"]:
                 prologue_connects.append(edge["target"])
 
+    # 프롤로그 텍스트 분리: 표시용(prologue)과 내부 설정(world_settings)
+    full_description = start_node.get("data", {}).get("description", "") if start_node else ""
+
+    # 설정 구분자가 있으면 분리, 없으면 전체를 프롤로그로 사용
+    # 구분자: "---", "===", "[설정]", "[내부설정]" 등
+    prologue_text = full_description
+    world_settings = ""
+
+    separators = ["---", "===", "[설정]", "[내부설정]", "[SETTINGS]", "### 설정 ###"]
+    for sep in separators:
+        if sep in full_description:
+            parts = full_description.split(sep, 1)
+            prologue_text = parts[0].strip()
+            world_settings = parts[1].strip() if len(parts) > 1 else ""
+            break
+
+    # 플레이어 초기 상태 생성 (NPC 정보 기반)
+    initial_player_state = {
+        "hp": 100,
+        "max_hp": 100,
+        "inventory": []
+    }
+
+    # 시나리오에서 플레이어 관련 변수 추출 (있는 경우)
+    scenario_title = state["scenario"].get("title", "")
+
+    # 장르에 따른 기본 스탯 설정
+    if any(keyword in scenario_title.lower() for keyword in ["던전", "rpg", "모험", "전투", "용사"]):
+        initial_player_state.update({
+            "hp": 100,
+            "mp": 50,
+            "attack": 10,
+            "defense": 5
+        })
+    elif any(keyword in scenario_title.lower() for keyword in ["공포", "호러", "미스터리"]):
+        initial_player_state.update({
+            "sanity": 100,
+            "stress": 0
+        })
+    elif any(keyword in scenario_title.lower() for keyword in ["직장", "회사", "사무실"]):
+        initial_player_state.update({
+            "stamina": 100,
+            "stress": 0,
+            "reputation": 50
+        })
+
     final_data = {
         "title": state["scenario"].get("title", "Untitled"),
         "desc": state["scenario"].get("summary", ""),
-        "prologue": start_node.get("data", {}).get("description", "") if start_node else "",
-        "prologue_text": start_node.get("data", {}).get("description", "") if start_node else "",
+        "prologue": prologue_text,  # 플레이어에게 보여줄 프롤로그
+        "prologue_text": prologue_text,  # 호환성
+        "world_settings": world_settings,  # 내부 설정 (GM용, 플레이어에게 미표시)
         "prologue_connects_to": prologue_connects,
         "scenario": state["scenario"],
         "worlds": state["worlds"],
@@ -340,6 +422,7 @@ def finalize_build(state: BuilderState):
         "events": state["scenes"],  # 호환성
         "endings": state["endings"],
         "start_scene_id": start_id,
+        "initial_state": initial_player_state,  # 플레이어 초기 상태
         "raw_graph": state["graph_data"]
     }
 

@@ -802,10 +802,23 @@
         }
     }
 
-    // 스탯 업데이트 함수
+    // 스탯 업데이트 함수 (개선됨)
     function updateStats(statsData) {
         const statsArea = document.getElementById('player-stats-area');
         if (!statsArea) return;
+
+        // 스탯 타입별 아이콘 및 색상 매핑
+        const statConfig = {
+            'hp': { icon: 'heart', color: 'red', isBar: true, max: 'max_hp' },
+            'mp': { icon: 'zap', color: 'blue', isBar: true, max: 'max_mp' },
+            'sanity': { icon: 'brain', color: 'purple', isBar: true, max: 100 },
+            'stamina': { icon: 'battery', color: 'green', isBar: true, max: 100 },
+            'stress': { icon: 'alert-circle', color: 'orange', isBar: true, max: 100, inverse: true },
+            'attack': { icon: 'sword', color: 'red' },
+            'defense': { icon: 'shield', color: 'blue' },
+            'reputation': { icon: 'star', color: 'yellow', isBar: true, max: 100 },
+            'gold': { icon: 'coins', color: 'yellow' },
+        };
 
         let html = `
         <div class="bg-[#1a1e2e] rounded-lg p-4 border border-[#2d2d35] shadow-sm mb-4 fade-in">
@@ -813,26 +826,63 @@
                 <span class="text-xs font-bold text-gray-400 uppercase">Status</span>
                 <i data-lucide="activity" class="w-3 h-3 text-red-500"></i>
             </div>
-            <div class="text-xs text-gray-400 mb-2 font-mono">`;
+            <div class="space-y-2">`;
 
         for (const [k, v] of Object.entries(statsData)) {
-            if (k !== 'inventory') {
-                html += `
-                <div class="flex justify-between border-b border-gray-800 py-1">
-                    <span>${k.toUpperCase()}</span>
-                    <span class="text-white font-bold">${v}</span>
-                </div>`;
+            if (k !== 'inventory' && !k.startsWith('max_')) {
+                const config = statConfig[k.toLowerCase()] || { icon: 'circle', color: 'gray' };
+                const colorClass = `text-${config.color}-400`;
+                const bgColorClass = `bg-${config.color}-500`;
+
+                if (config.isBar) {
+                    // 바 형태 스탯
+                    let maxVal = typeof config.max === 'string' ? (statsData[config.max] || 100) : (config.max || 100);
+                    let percentage = Math.min(100, Math.max(0, (v / maxVal) * 100));
+                    if (config.inverse) {
+                        percentage = 100 - percentage;
+                    }
+
+                    html += `
+                    <div class="mb-2">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-xs text-gray-400 flex items-center gap-1">
+                                <i data-lucide="${config.icon}" class="w-3 h-3 ${colorClass}"></i>
+                                ${k.toUpperCase()}
+                            </span>
+                            <span class="text-xs font-bold text-white">${v}${typeof config.max === 'string' ? '/' + maxVal : ''}</span>
+                        </div>
+                        <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                            <div class="${bgColorClass} h-full transition-all duration-300 rounded-full" style="width: ${percentage}%"></div>
+                        </div>
+                    </div>`;
+                } else {
+                    // 숫자 형태 스탯
+                    html += `
+                    <div class="flex justify-between items-center border-b border-gray-800 py-1.5">
+                        <span class="text-xs text-gray-400 flex items-center gap-1">
+                            <i data-lucide="${config.icon}" class="w-3 h-3 ${colorClass}"></i>
+                            ${k.toUpperCase()}
+                        </span>
+                        <span class="text-white font-bold text-sm">${v}</span>
+                    </div>`;
+                }
             }
         }
         html += '</div>';
 
         if (statsData.inventory && statsData.inventory.length > 0) {
             html += `
-            <div class="border-t border-gray-700 pt-2 mt-2">
-                <div class="text-[10px] text-gray-500 mb-1">INVENTORY</div>
+            <div class="border-t border-gray-700 pt-3 mt-3">
+                <div class="text-[10px] text-gray-500 mb-2 flex items-center gap-1">
+                    <i data-lucide="backpack" class="w-3 h-3"></i>
+                    INVENTORY
+                </div>
                 <div class="flex flex-wrap gap-1">`;
             for (const item of statsData.inventory) {
-                html += `<span class="bg-gray-800 px-2 py-0.5 rounded text-[10px] text-indigo-300 border border-gray-700">${item}</span>`;
+                html += `<span class="bg-gray-800 px-2 py-1 rounded text-[10px] text-indigo-300 border border-gray-700 flex items-center gap-1">
+                    <i data-lucide="box" class="w-2.5 h-2.5"></i>
+                    ${item}
+                </span>`;
             }
             html += '</div></div>';
         }

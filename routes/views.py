@@ -40,6 +40,8 @@ def view_scenes():
                                scenes=[],
                                current_scene_id=None,
                                mermaid_code="graph TD\n    A[시나리오를 먼저 로드하세요]",
+                               scene_display_ids={},
+                               ending_display_ids={},
                                version=get_full_version(),
                                user=current_user)
 
@@ -49,8 +51,8 @@ def view_scenes():
     # 현재 씬 ID 가져오기
     current_scene_id = game_state.state.get('current_scene_id', None)
 
-    # Mermaid 서비스로 차트 생성
-    chart_data = MermaidService.generate_chart(scenario)
+    # Mermaid 서비스로 차트 생성 (현재 씬 ID 전달)
+    chart_data = MermaidService.generate_chart(scenario, current_scene_id)
 
     return render_template('scenes_view.html',
                            title=title,
@@ -60,6 +62,8 @@ def view_scenes():
                            ending_incoming_conditions=chart_data['ending_incoming_conditions'],
                            ending_names=chart_data['ending_names'],
                            scene_names=chart_data['scene_names'],
+                           scene_display_ids=chart_data['scene_display_ids'],
+                           ending_display_ids=chart_data['ending_display_ids'],
                            current_scene_id=current_scene_id,
                            mermaid_code=chart_data['mermaid_code'],
                            version=get_full_version(),

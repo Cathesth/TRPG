@@ -20,6 +20,7 @@ class User(UserMixin, db.Model):
 
     id = db.Column(db.String(50), primary_key=True)  # username을 id로 사용
     password_hash = db.Column(db.String(255), nullable=False)
+    email = db.Column(db.String(120), nullable=True)  # 이메일 필드 추가
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     # 관계 설정 (유저가 삭제되면 시나리오도 삭제될지, 유지될지는 정책에 따라 설정 가능)

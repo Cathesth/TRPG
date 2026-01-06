@@ -76,6 +76,7 @@ class ScenarioService:
     def load_scenario(scenario_id: str, user_id: str = None) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """
         시나리오 로드 (DB ID 기반)
+        로그인한 사용자는 자신의 비공개 시나리오도 플레이 가능
         """
         if not scenario_id:
             return None, "ID 누락"
@@ -88,13 +89,16 @@ class ScenarioService:
             if not scenario:
                 return None, "시나리오를 찾을 수 없습니다."
 
-            # 접근 권한 체크 (공개 or 작성자 본인 or 익명작성)
+            # 접근 권한 체크 (공개 or 작성자 본인 or 익명작성 or 로그인 사용자)
             is_accessible = False
             if scenario.is_public:
                 is_accessible = True
             elif scenario.author_id is None:
                 is_accessible = True
             elif user_id and scenario.author_id == user_id:
+                is_accessible = True
+            elif user_id:
+                # 로그인한 사용자는 모든 시나리오 플레이 가능 (비공개 포함)
                 is_accessible = True
 
             if not is_accessible:

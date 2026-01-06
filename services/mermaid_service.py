@@ -8,7 +8,7 @@ class MermaidService:
     """시나리오를 Mermaid 다이어그램으로 변환"""
 
     @staticmethod
-    def generate_chart(scenario: Dict[str, Any]) -> Dict[str, Any]:
+    def generate_chart(scenario: Dict[str, Any], current_scene_id: str = None) -> Dict[str, Any]:
         """
         시나리오 데이터로부터 Mermaid 차트와 관련 정보 생성
 
@@ -19,7 +19,9 @@ class MermaidService:
                 'incoming_conditions': Dict,
                 'ending_incoming_conditions': Dict,
                 'ending_names': Dict,
-                'scene_names': Dict
+                'scene_names': Dict,
+                'scene_display_ids': Dict,  # scene_id -> Scene-1, Scene-2, ...
+                'ending_display_ids': Dict  # ending_id -> Ending-1, Ending-2, ...
             }
         """
         scenes = scenario.get('scenes', [])
@@ -54,6 +56,15 @@ class MermaidService:
         # 매핑 생성
         ending_names = {e.get('ending_id'): e.get('title', e.get('ending_id')) for e in endings}
         scene_names = {s.get('scene_id'): s.get('title', s.get('scene_id')) for s in filtered_scenes}
+
+        # 표시용 ID 생성 (Scene-1, Scene-2, ... / Ending-1, Ending-2, ...)
+        scene_display_ids = {}
+        for idx, scene in enumerate(filtered_scenes):
+            scene_display_ids[scene.get('scene_id')] = f"Scene-{idx + 1}"
+
+        ending_display_ids = {}
+        for idx, ending in enumerate(endings):
+            ending_display_ids[ending.get('ending_id')] = f"Ending-{idx + 1}"
 
         # incoming conditions 계산
         incoming_conditions = {}
@@ -97,7 +108,9 @@ class MermaidService:
 
         # Mermaid 코드 생성
         if prologue_text:
-            mermaid_lines.append('    PROLOGUE["📖 Prologue"]:::prologueStyle')
+            # 현재 위치가 프롤로그인 경우 하이라이트 스타일 적용
+            prologue_style = "currentStyle" if current_scene_id == 'prologue' else "prologueStyle"
+            mermaid_lines.append(f'    PROLOGUE["📖 Prologue"]:::{prologue_style}')
 
         # 프롤로그 -> 연결된 씬들
         if prologue_text and prologue_connects_to:
@@ -109,7 +122,11 @@ class MermaidService:
         for scene in filtered_scenes:
             scene_id = scene['scene_id']
             scene_title = scene.get('title', scene_id).replace('"', "'")
-            mermaid_lines.append(f'    {scene_id}["{scene_title}"]:::sceneStyle')
+            display_id = scene_display_ids.get(scene_id, scene_id)
+
+            # 현재 씬인 경우 하이라이트 스타일 적용
+            style_class = "currentStyle" if current_scene_id == scene_id else "sceneStyle"
+            mermaid_lines.append(f'    {scene_id}["{scene_title}"]:::{style_class}')
 
             for trans in scene.get('transitions', []):
                 next_id = trans.get('target_scene_id')
@@ -121,12 +138,17 @@ class MermaidService:
         for ending in endings:
             ending_id = ending['ending_id']
             ending_title = ending.get('title', '엔딩').replace('"', "'")
-            mermaid_lines.append(f'    {ending_id}["🏁 {ending_title}"]:::endingStyle')
+
+            # 현재 위치가 엔딩인 경우 하이라이트 스타일 적용
+            style_class = "currentStyle" if current_scene_id == ending_id else "endingStyle"
+            mermaid_lines.append(f'    {ending_id}["🏁 {ending_title}"]:::{style_class}')
 
         # 스타일 정의
         mermaid_lines.append("    classDef prologueStyle fill:#0f766e,stroke:#14b8a6,color:#fff")
         mermaid_lines.append("    classDef sceneStyle fill:#312e81,stroke:#6366f1,color:#fff")
         mermaid_lines.append("    classDef endingStyle fill:#831843,stroke:#ec4899,color:#fff")
+        # 현재 씬 하이라이트 스타일 (시안색 테두리, 애니메이션 효과)
+        mermaid_lines.append("    classDef currentStyle fill:#164e63,stroke:#22d3ee,stroke-width:3px,color:#fff")
 
         return {
             'mermaid_code': "\n".join(mermaid_lines),
@@ -134,6 +156,7 @@ class MermaidService:
             'incoming_conditions': incoming_conditions,
             'ending_incoming_conditions': ending_incoming_conditions,
             'ending_names': ending_names,
-            'scene_names': scene_names
+            'scene_names': scene_names,
+            'scene_display_ids': scene_display_ids,
+            'ending_display_ids': ending_display_ids
         }
-
