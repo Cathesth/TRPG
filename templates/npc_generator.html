@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NPC 생성기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white h-screen flex flex-col p-4 overflow-hidden">
+
+    <!-- 헤더 -->
+    <div class="flex justify-between items-center mb-4 pb-4 border-b border-gray-700">
+        <h2 class="text-xl font-bold text-green-400"><i class="fas fa-user-plus mr-2"></i>NPC 생성기</h2>
+        <span id="status-badge" class="px-2 py-1 text-xs rounded bg-gray-700 text-gray-400">대기 중</span>
+    </div>
+
+    <!-- 입력 폼 -->
+    <div class="flex-none space-y-3 mb-4">
+        <div>
+            <label class="block text-sm text-gray-400 mb-1">어떤 NPC를 만들까요?</label>
+            <textarea id="npc-prompt" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-green-500 focus:outline-none resize-none h-20" placeholder="예: 무뚝뚝하지만 실력 좋은 대장장이, 뒷골목 정보상, 사악한 귀족..."></textarea>
+        </div>
+        <button id="btn-generate" onclick="generateNPC()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition flex justify-center items-center">
+            <span>생성하기</span>
+        </button>
+    </div>
+
+    <!-- 결과 표시 영역 -->
+    <div class="flex-1 overflow-y-auto bg-gray-800 rounded-lg p-4 border border-gray-700 relative">
+        <div id="loading-spinner" class="hidden absolute inset-0 bg-gray-800/80 flex flex-col items-center justify-center z-10">
+            <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-green-500 mb-2"></div>
+            <p class="text-green-400 text-sm animate-pulse">NPC를 소환하는 중...</p>
+        </div>
+
+        <div id="result-container" class="hidden space-y-3">
+            <div>
+                <span class="text-xs text-green-500 font-bold uppercase tracking-wider">Name</span>
+                <h3 id="res-name" class="text-xl font-bold"></h3>
+            </div>
+            <div>
+                <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">Role</span>
+                <p id="res-role" class="text-gray-300"></p>
+            </div>
+            <div>
+                <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">Personality</span>
+                <p id="res-personality" class="text-gray-300 text-sm"></p>
+            </div>
+            <div>
+                <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">Description</span>
+                <p id="res-description" class="text-gray-300 text-sm whitespace-pre-line"></p>
+            </div>
+            <div>
+                <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">Dialogue Style</span>
+                <p id="res-dialogue" class="text-gray-400 text-sm italic"></p>
+            </div>
+        </div>
+
+        <div id="empty-state" class="flex h-full items-center justify-center text-gray-500 text-sm">
+            생성 버튼을 눌러보세요.
+        </div>
+    </div>
+
+    <!-- 하단 액션 버튼 -->
+    <div id="action-buttons" class="hidden flex-none mt-4 pt-4 border-t border-gray-700 flex gap-2">
+        <button onclick="addToBuilder()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded transition">
+            <i class="fas fa-plus mr-1"></i> 추가하기
+        </button>
+        <button onclick="generateNPC()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 rounded transition">
+            <i class="fas fa-redo mr-1"></i> 다시 생성
+        </button>
+    </div>
+
+    <script>
+        let scenarioData = null;
+        let currentNPC = null;
+
+        // 부모 창과 통신 준비
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'SCENARIO_INFO') {
+                scenarioData = event.data.payload;
+                document.getElementById('status-badge').innerText = '연결됨';
+                document.getElementById('status-badge').classList.replace('text-gray-400', 'text-green-400');
+            }
+        });
+
+        // 로드 시 부모에게 준비 신호
+        window.onload = () => {
+            if (window.opener) {
+                window.opener.postMessage({ type: 'GENERATOR_READY' }, '*');
+            }
+        };
+
+        async function generateNPC() {
+            if (!scenarioData) {
+                alert("시나리오 정보를 불러오지 못했습니다. 창을 닫고 다시 시도해주세요.");
+                return;
+            }
+
+            const prompt = document.getElementById('npc-prompt').value;
+            const btn = document.getElementById('btn-generate');
+            const spinner = document.getElementById('loading-spinner');
+            const resultContainer = document.getElementById('result-container');
+            const emptyState = document.getElementById('empty-state');
+            const actionButtons = document.getElementById('action-buttons');
+
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            spinner.classList.remove('hidden');
+            resultContainer.classList.add('hidden');
+            emptyState.classList.add('hidden');
+            actionButtons.classList.add('hidden');
+
+            try {
+                const response = await fetch('/api/builder/generate-npc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        scenario_title: scenarioData.title,
+                        scenario_summary: scenarioData.summary,
+                        user_request: prompt
+                    })
+                });
+
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+
+                currentNPC = data;
+                document.getElementById('res-name').innerText = data.name || '이름 없음';
+                document.getElementById('res-role').innerText = data.role || '역할 미정';
+                document.getElementById('res-personality').innerText = data.personality || '';
+                document.getElementById('res-description').innerText = data.description || '';
+                document.getElementById('res-dialogue').innerText = data.dialogue_style || '';
+
+                resultContainer.classList.remove('hidden');
+                actionButtons.classList.remove('hidden');
+
+            } catch (err) {
+                alert("생성 실패: " + err.message);
+                emptyState.classList.remove('hidden');
+                emptyState.innerText = "오류가 발생했습니다.";
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                spinner.classList.add('hidden');
+            }
+        }
+
+        function addToBuilder() {
+            if (!currentNPC || !window.opener) return;
+            window.opener.postMessage({ type: 'ADD_NPC', payload: currentNPC }, '*');
+            const btn = event.target;
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i> 추가됨!';
+            btn.classList.replace('bg-blue-600', 'bg-green-600');
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+                btn.classList.replace('bg-green-600', 'bg-blue-600');
+                document.getElementById('npc-prompt').value = '';
+                document.getElementById('npc-prompt').focus();
+            }, 1000);
+        }
+    </script>
+</body>
+</html>

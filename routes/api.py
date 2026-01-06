@@ -6,13 +6,18 @@ import threading
 from flask import Blueprint, request, jsonify, Response, stream_with_context
 from flask_login import login_user, logout_user, login_required, current_user
 
+# builder_agent에서 필요한 함수들 임포트
+from builder_agent import (
+    generate_scenario_from_graph,
+    set_progress_callback,
+    generate_single_npc
+)
 
 from core.state import game_state
 from core.utils import parse_request_data, pick_start_scene_id
 from services.scenario_service import ScenarioService
-from services.preset_service import PresetService
 from services.user_service import UserService
-from services.preset_service import PresetService  # [추가] 이거 없어서 에러 난 거임
+from services.preset_service import PresetService  # 중복 제거 및 유지
 from game_engine import create_game_graph
 
 logger = logging.getLogger(__name__)
@@ -20,7 +25,7 @@ logger = logging.getLogger(__name__)
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 
-# --- [인증 API] --- (생략 - 기존과 동일)
+# --- [인증 API] ---
 @api_bp.route('/auth/register', methods=['POST'])
 def register():
     data = parse_request_data(request)
@@ -54,7 +59,7 @@ def get_current_user():
                     "username": current_user.id if current_user.is_authenticated else None})
 
 
-# --- [빌드 진행률] --- (생략 - 기존과 동일)
+# --- [빌드 진행률] ---
 build_progress = {"status": "idle", "progress": 0}
 build_lock = threading.Lock()
 
@@ -113,7 +118,6 @@ def list_scenarios():
             <button onclick="publishScenario('{fid}', this)" class="text-gray-500 hover:text-green-400 p-1 ml-1"><i data-lucide="share-2" class="w-4 h-4"></i></button>
             """
 
-        # [수정] 플레이 버튼에 onclick 이벤트 적용
         html += f"""
         <div class="bg-dark-800 p-5 rounded-lg border border-white/5 hover:border-brand-purple/50 transition-colors flex flex-col justify-between h-full group relative">
             <div>
@@ -157,7 +161,6 @@ def load_scenario():
     }
     game_state.game_graph = create_game_graph()
 
-    # AJAX 요청이므로 JSON 성공 응답만 보내면 됨 (화면 이동은 JS에서 처리)
     return jsonify({"success": True})
 
 
@@ -181,7 +184,6 @@ def delete_scenario():
 
 @api_bp.route('/init_game', methods=['POST'])
 def init_game():
-    # (기존 코드 유지)
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key: return jsonify({"error": "API Key 없음"}), 400
 
@@ -191,7 +193,6 @@ def init_game():
     update_build_progress(status="building", step="0/5", detail="준비 중...", progress=0)
 
     try:
-        from builder_agent import generate_scenario_from_graph, set_progress_callback
         set_progress_callback(update_build_progress)
 
         scenario_json = generate_scenario_from_graph(api_key, react_flow_data, model_name=selected_model)
@@ -222,6 +223,25 @@ def init_game():
         return jsonify({"error": str(e)}), 500
 
 
+# --- [빌더 도구 API] (신규 추가) ---
+@api_bp.route('/builder/generate-npc', methods=['POST'])
+def generate_npc_api():
+    """NPC 생성 팝업에서 호출"""
+    data = request.json
+    scenario_title = data.get('scenario_title', '')
+    scenario_summary = data.get('scenario_summary', '')
+    user_request = data.get('user_request', '')
+
+    if not scenario_title:
+        return jsonify({"error": "시나리오 정보가 필요합니다."}), 400
+
+    try:
+        npc_data = generate_single_npc(scenario_title, scenario_summary, user_request)
+        return jsonify(npc_data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # --- [프리셋 관리 (DB 기반)] ---
 
 @api_bp.route('/presets', methods=['GET'])
@@ -241,33 +261,21 @@ def list_presets():
 @api_bp.route('/presets/save', methods=['POST'])
 @login_required
 def save_preset():
-    """프리셋 저장 API"""
     data = request.get_json(force=True, silent=True) or {}
-
     user_id = current_user.id if current_user.is_authenticated else None
-
     fid, error = PresetService.save_preset(data, user_id=user_id)
-
-    if error:
-        return jsonify({"success": False, "error": error}), 400
-
+    if error: return jsonify({"success": False, "error": error}), 400
     return jsonify({"success": True, "filename": fid, "message": "프리셋이 저장되었습니다."})
 
 
 @api_bp.route('/presets/load', methods=['POST'])
-def load_preset():
-    """프리셋 로드 API"""
+def load_preset_api():
     data = request.get_json(force=True, silent=True) or {}
     filename = data.get('filename')
-
     user_id = current_user.id if current_user.is_authenticated else None
-
     result, error = PresetService.load_preset(filename, user_id)
-    if error:
-        return jsonify({"success": False, "error": error}), 400
-
+    if error: return jsonify({"success": False, "error": error}), 400
     preset = result['preset']
-
     return jsonify({
         "success": True,
         "data": preset,
@@ -278,7 +286,6 @@ def load_preset():
 @api_bp.route('/presets/delete', methods=['POST'])
 @login_required
 def delete_preset():
-    """프리셋 삭제 API"""
     data = request.get_json(force=True, silent=True) or {}
     fid = data.get('filename')
     success, msg = PresetService.delete_preset(fid, current_user.id)
@@ -288,8 +295,7 @@ def delete_preset():
 
 @api_bp.route('/load_preset', methods=['POST'])
 def load_preset_old():
-    """레거시 프리셋 로드 (HTMX용)"""
-    fid = request.form.get('filename')  # DB ID
+    fid = request.form.get('filename')
     user_id = current_user.id if current_user.is_authenticated else None
 
     result, error = PresetService.load_preset(fid, user_id)
@@ -303,7 +309,8 @@ def load_preset_old():
         "current_scene_id": "prologue",
         "start_scene_id": "prologue",
         "player_vars": preset.get('player_vars', {}),
-        "history": [], "last_user_choice_idx": -1, "system_message": "Loaded Preset", "npc_output": "", "narrator_output": ""
+        "history": [], "last_user_choice_idx": -1, "system_message": "Loaded Preset", "npc_output": "",
+        "narrator_output": ""
     }
     game_state.game_graph = create_game_graph()
 
