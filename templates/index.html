@@ -404,6 +404,16 @@
             const modal = document.getElementById(id);
             const container = modal.querySelector('.modal-container');
 
+            // [추가] 모달 열 때 폼과 에러 메시지 리셋
+            const form = modal.querySelector('form');
+            if (form) form.reset(); // 입력값 초기화
+
+            const errorMsg = modal.querySelector('[id$="-error"]'); // id가 -error로 끝나는 요소 찾기
+            if (errorMsg) {
+                errorMsg.innerText = '';
+                errorMsg.classList.add('hidden'); // 에러 메시지 숨김
+            }
+
             // 1. 배경 보이기
             modal.classList.remove('opacity-0', 'pointer-events-none');
             document.body.classList.add('modal-active');
@@ -443,8 +453,8 @@
                 if (data.success) window.location.reload();
                 else {
 
-                    document.getElementById('login-error').innerText = data.error;
-                    document.getElementById('login-error').classList.remove('hidden');
+                    errorMsg.innerText = data.error;
+                    errorMsg.classList.remove('hidden');
 
                 }
 
