@@ -1046,6 +1046,79 @@
         }
     }
 
+    // 시나리오 플레이 함수 (플레이어 모드에서 바로 로드)
+    async function playScenario(filename, btn) {
+        // 버튼 로딩 상태
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 로딩...';
+        btn.disabled = true;
+        lucide.createIcons();
+
+        try {
+            const formData = new FormData();
+            formData.append('filename', filename);
+
+            const res = await fetch('/api/load_scenario', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (res.ok) {
+                // 모달 닫기
+                closeLoadModal();
+
+                // 채팅 로그 초기화
+                clearChatLog();
+                isGameEnded = false;
+                enableGameUI();
+
+                const chatLog = document.getElementById('chat-log');
+                // init-result와 ai-loading 제외 초기화
+                Array.from(chatLog.children).forEach(child => {
+                    if (child.id !== 'init-result' && child.id !== 'ai-loading') child.remove();
+                });
+
+                // 초기 안내 메시지 제거
+                const intro = document.getElementById('intro-message');
+                if (intro) intro.remove();
+
+                // 성공 메시지 표시
+                const initResult = document.getElementById('init-result');
+                initResult.innerHTML = `
+                <div class="bg-green-900/30 border border-green-800 text-green-400 p-4 rounded-lg flex items-center gap-3 fade-in mt-4">
+                    <i data-lucide="check-circle" class="w-6 h-6"></i>
+                    <div>
+                        <div class="font-bold">로드 완료!</div>
+                        <div class="text-sm opacity-80">아래 버튼을 클릭하거나 채팅창에 "시작"을 입력하세요.</div>
+                    </div>
+                </div>
+                <button onclick="submitGameAction('시작')"
+                        class="mt-3 w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shadow-lg">
+                    <i data-lucide="play" class="w-5 h-5"></i>
+                    게임 시작하기
+                </button>
+                `;
+                lucide.createIcons();
+
+                // 서버에서 스탯 가져오기 (htmx로 교체하거나 JSON API 호출 가능)
+                // 현재는 게임 시작 후 첫 응답에서 스탯을 받게 됨
+
+            } else {
+                const errorData = await res.json();
+                alert('로드 실패: ' + (errorData.error || '알 수 없는 오류'));
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                lucide.createIcons();
+            }
+        } catch (e) {
+            console.error(e);
+            alert('오류가 발생했습니다: ' + e.message);
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            lucide.createIcons();
+        }
+    }
+
     let isInternalNavigation = false;
     document.querySelectorAll('a[href^="/"]').forEach(link => {
         link.addEventListener('click', () => isInternalNavigation = true);
