@@ -70,6 +70,7 @@ class EventList(BaseModel):
 # --- 상태 정의 (State) ---
 class BuilderState(TypedDict):
     user_request: str
+    model_name: str  # [추가] 선택된 LLM 모델 이름 저장
     scenario: dict  # ScenarioSummary dict
     worlds: List[dict]  # World dict list
     characters: List[dict]  # NPC dict list
@@ -86,7 +87,9 @@ def parse_request(state: BuilderState):
 
 def generate_scenario(state: BuilderState):
     report_progress("building", "2/5", "시나리오 개요 생성 중...", 30)
-    llm = LLMFactory.get_llm()
+    # [수정] state에 저장된 model_name 사용
+    llm = LLMFactory.get_llm(state.get("model_name"))
+
     # [수정] 내부 정의한 ScenarioSummary 사용
     parser = JsonOutputParser(pydantic_object=ScenarioSummary)
 
@@ -116,7 +119,9 @@ def generate_scenario(state: BuilderState):
 def generate_parallel_details(state: BuilderState):
     """세계관과 캐릭터(NPC)를 동시에 생성 (병렬 처리)"""
     report_progress("building", "3/5", "세계관 및 등장인물 생성 중...", 50)
-    llm = LLMFactory.get_llm()
+    # [수정] state에 저장된 model_name 사용
+    llm = LLMFactory.get_llm(state.get("model_name"))
+
     scenario = state["scenario"]
     scenario_text = f"제목: {scenario.get('title')}\n개요: {scenario.get('summary')}"
 
@@ -172,7 +177,9 @@ def generate_parallel_details(state: BuilderState):
 
 def generate_events(state: BuilderState):
     report_progress("building", "4/5", "주요 사건 구성 중...", 70)
-    llm = LLMFactory.get_llm()
+    # [수정] state에 저장된 model_name 사용
+    llm = LLMFactory.get_llm(state.get("model_name"))
+
     parser = JsonOutputParser(pydantic_object=EventList)
 
     context = (
@@ -247,6 +254,7 @@ def generate_scenario_from_graph(api_key, user_data, model_name=None):
 
     initial_state = {
         "user_request": user_prompt,
+        "model_name": model_name,  # [수정] model_name 초기 상태에 주입
         "scenario": {}, "worlds": [], "characters": [], "events": [], "final_data": {}
     }
 
@@ -254,9 +262,11 @@ def generate_scenario_from_graph(api_key, user_data, model_name=None):
     return result['final_data']
 
 
-def generate_single_npc(scenario_title: str, scenario_summary: str, user_request: str = ""):
+def generate_single_npc(scenario_title: str, scenario_summary: str, user_request: str = "", model_name: str = None):
     """단일 NPC 생성 함수 (팝업용)"""
-    llm = LLMFactory.get_llm()
+    # [수정] model_name 인자 받아서 전달
+    llm = LLMFactory.get_llm(model_name)
+
     # [수정] schemas.NPC 객체를 직접 사용하여 파싱 유도
     parser = JsonOutputParser(pydantic_object=NPC)
 
