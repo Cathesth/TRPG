@@ -308,7 +308,36 @@ def prologue_stream_generator(state: PlayerState):
     yield prologue_text
 
 
-def scene_stream_generator(state: PlayerState):
+def get_narrative_fallback_message(scenario: Dict[str, Any]) -> str:
+    """
+    세계관에 맞는 내러티브 폴백 메시지 생성
+    """
+    genre = scenario.get('genre', '').lower()
+    world_setting = scenario.get('world_setting', '').lower()
+
+    # 세계관별 폴백 메시지
+    fallback_messages = {
+        'cyberpunk': "⚠️ 신경 신호가 불안정하여 시야가 일시적으로 차단되었습니다. 잠시 후 다시 시도하십시오.",
+        'sf': "⚠️ 통신 간섭이 감지되었습니다. 신호가 안정화될 때까지 대기해 주세요.",
+        'fantasy': "⚠️ 마력의 흐름이 일시적으로 혼란스럽습니다. 잠시 정신을 가다듬어 주세요.",
+        'horror': "⚠️ 알 수 없는 힘이 시야를 가립니다... 잠시 후 다시 시도해 주세요.",
+        'modern': "⚠️ 잠시 정신이 혼미해집니다. 심호흡을 하고 다시 시도해 주세요.",
+        'medieval': "⚠️ 갑작스러운 현기증이 엄습합니다. 잠시 쉬었다가 다시 시도해 주세요.",
+        'apocalypse': "⚠️ 방사능 간섭으로 인해 감각이 일시적으로 마비되었습니다. 잠시 후 다시 시도하십시오.",
+        'workplace': "⚠️ 과로로 인해 잠시 멍해졌습니다. 커피를 마시고 다시 시도해 주세요.",
+        'martial': "⚠️ 내공의 흐름이 일시적으로 막혔습니다. 기를 가다듬고 다시 시도하십시오."
+    }
+
+    # 장르나 세계관 키워드로 매칭
+    for key, message in fallback_messages.items():
+        if key in genre or key in world_setting:
+            return message
+
+    # 기본 폴백 메시지
+    return "⚠️ 잠시 상황 파악이 어렵습니다. 심호흡을 하고 다시 시도해 주세요."
+
+
+def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries: int = 2):
     """
     나레이션 스트리밍
     [MODE 1] 힌트 모드 (이동 X) -> 빠른 반응, 힌트 제공
@@ -322,6 +351,7 @@ def scene_stream_generator(state: PlayerState):
     all_scenes = {s['scene_id']: s for s in scenario['scenes']}
     all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
 
+    # 엔딩 체크
     if curr_id in all_endings:
         ending = all_endings[curr_id]
         yield f"""
@@ -333,8 +363,29 @@ def scene_stream_generator(state: PlayerState):
         return
 
     curr_scene = all_scenes.get(curr_id)
+
+    # 씬을 찾을 수 없는 경우
     if not curr_scene:
-        yield "길을 잃었습니다."
+        logger.warning(f"Scene not found: {curr_id}")
+
+        # 재시도 가능한 경우
+        if retry_count < max_retries:
+            # 재시도 신호 전송 (JavaScript에서 처리)
+            yield f"__RETRY_SIGNAL__"
+            return
+
+        # 재시도 실패 시 내러티브 폴백
+        fallback_msg = get_narrative_fallback_message(scenario)
+        yield f"""
+        <div class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4 my-2">
+            <div class="text-yellow-400 serif-font">{fallback_msg}</div>
+        </div>
+        """
+
+        # 시작 씬으로 리다이렉트 시도
+        start_scene_id = scenario.get('start_scene_id')
+        if start_scene_id and start_scene_id in all_scenes:
+            state['current_scene_id'] = start_scene_id
         return
 
     scene_title = curr_scene.get('title', 'Untitled')
@@ -397,12 +448,51 @@ def scene_stream_generator(state: PlayerState):
 
     try:
         api_key = os.getenv("OPENROUTER_API_KEY")
-        llm = LLMFactory.get_llm(api_key=api_key, model_name="openai/tngtech/deepseek-r1t2-chimera:free",
-                                 streaming=True)
+        llm = LLMFactory.get_llm(
+            api_key=api_key,
+            model_name="openai/tngtech/deepseek-r1t2-chimera:free",
+            streaming=True
+        )
+
+        accumulated_text = ""
+        has_content = False
+
         for chunk in llm.stream(prompt):
-            if chunk.content: yield chunk.content
-    except Exception:
-        yield scene_desc
+            if chunk.content:
+                accumulated_text += chunk.content
+                has_content = True
+                yield chunk.content
+
+        # 응답이 비어있거나 너무 짧은 경우 재시도
+        if not has_content or len(accumulated_text.strip()) < 10:
+            raise Exception("Empty or insufficient response from LLM")
+
+    except Exception as e:
+        logger.error(f"Scene Streaming Error (attempt {retry_count + 1}): {e}")
+
+        # 재시도 가능한 경우
+        if retry_count < max_retries:
+            yield f"__RETRY_SIGNAL__"
+            return
+
+        # 재시도 실패 시 내러티브 폴백
+        fallback_msg = get_narrative_fallback_message(scenario)
+
+        # 기본 씬 설명이 있으면 함께 표시
+        if scene_desc:
+            yield f"""
+            <div class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4 my-2">
+                <div class="text-yellow-400 serif-font mb-2">{fallback_msg}</div>
+            </div>
+            <div class="text-gray-300 serif-font">{scene_desc}</div>
+            """
+        else:
+            yield f"""
+            <div class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4 my-2">
+                <div class="text-yellow-400 serif-font">{fallback_msg}</div>
+            </div>
+            """
+
 
 
 def create_game_graph():
