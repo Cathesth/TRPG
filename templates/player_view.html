@@ -296,7 +296,7 @@
 
                     <div class="flex-1 overflow-y-auto p-6 bg-gray-900">
                         <div id="scenario-list-container"
-                             hx-get="/api/scenarios?sort=newest"
+                             hx-get="/api/scenarios?sort=newest&filter=all"
                              hx-trigger="revealed"
                              class="grid gap-4 grid-cols-1 md:grid-cols-2">
                             <div class="col-span-1 md:col-span-2 text-center text-gray-500 py-12">
@@ -987,7 +987,7 @@
             // 정렬 선택값 가져와서 API 호출
             const sortSelect = document.getElementById('scenario-sort');
             const sortValue = sortSelect ? sortSelect.value : 'newest';
-            htmx.ajax('GET', `/api/scenarios?sort=${sortValue}`, {target: '#scenario-list-container', swap: 'innerHTML'});
+            htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, {target: '#scenario-list-container', swap: 'innerHTML'});
         }
     }
 
@@ -1003,7 +1003,7 @@
     function reloadScenarioList() {
         const sortSelect = document.getElementById('scenario-sort');
         const sortValue = sortSelect ? sortSelect.value : 'newest';
-        htmx.ajax('GET', `/api/scenarios?sort=${sortValue}`, {target: '#scenario-list-container', swap: 'innerHTML'});
+        htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, {target: '#scenario-list-container', swap: 'innerHTML'});
     }
 
     // 시나리오 삭제 함수
