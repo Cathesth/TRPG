@@ -453,13 +453,37 @@
         }
 
 
-        // 회원가입 처리 (fetch - email 포함)
+        // 회원가입 처리 (수정완료: 비밀번호 일치 확인 로직 추가)
         async function handleRegister(e) {
-            e.preventDefault(); const form = e.target;
+            e.preventDefault();
+            const form = e.target;
+            const errorMsg = document.getElementById('register-error'); // 에러 메시지 표시 요소
+
+            // ---------------------------------------------------------
+            // [로직 추가 1] 비밀번호와 비밀번호 확인이 일치하는지 검사
+            // ---------------------------------------------------------
+            if (form.password.value !== form.confirm_password.value) {
+                errorMsg.innerText = "비밀번호가 일치하지 않습니다.";
+                errorMsg.classList.remove('hidden'); // 에러 메시지 보이기
+                form.confirm_password.focus();       // 확인 칸으로 커서 이동
+                return;                              // 서버로 전송하지 않고 함수 종료
+            }
+
+            // ---------------------------------------------------------
+            // [로직 추가 2] 비밀번호 길이 검사 (예: 4자리 미만 차단)
+            // ---------------------------------------------------------
+            if (form.password.value.length < 4) {
+                errorMsg.innerText = "비밀번호는 최소 4자리 이상이어야 합니다.";
+                errorMsg.classList.remove('hidden');
+                form.password.focus();
+                return;
+            }
+
+            // 검사를 통과했으면 에러 메시지 숨김
+            errorMsg.classList.add('hidden');
+
             try {
-
                 const res = await fetch('/api/auth/register', {
-
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -468,17 +492,23 @@
                         email: form.email.value
                     })
                 });
+
                 const data = await res.json();
+
                 if (data.success) {
                     alert('가입 성공!');
                     closeModal('register-modal');
-                    openModal('login-modal');
+                    openModal('login-modal'); // 가입 성공 시 로그인 창 띄우기
+                } else {
+                    // 서버에서 보낸 에러 메시지 (예: 이미 존재하는 아이디 등) 표시
+                    errorMsg.innerText = data.error;
+                    errorMsg.classList.remove('hidden');
                 }
-                else {
-                    document.getElementById('register-error').innerText = data.error;
-                    document.getElementById('register-error').classList.remove('hidden');
-                }
-            } catch(e) {}
+            } catch(e) {
+                console.error(e);
+                errorMsg.innerText = "서버 통신 중 오류가 발생했습니다.";
+                errorMsg.classList.remove('hidden');
+            }
         }
 
         async function logout() {
