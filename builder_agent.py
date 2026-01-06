@@ -148,9 +148,26 @@ def parse_graph_to_blueprint(state: BuilderState):
 
     blueprint = "### 시나리오 구조 명세서 ###\n\n"
 
+    # [수정] start 노드에서 prologue와 gm_notes 파싱 추가
     start_node = next((n for n in nodes if n["type"] == "start"), None)
     if start_node:
-        blueprint += f"[설정]\n제목: {start_node['data'].get('label', '')}\n개요: {start_node['data'].get('description', '')}\n\n"
+        title = start_node['data'].get('label', '')
+
+        # 사용자가 직접 입력한 값 확인
+        prologue = start_node['data'].get('prologue', '')
+        gm_notes = start_node['data'].get('gm_notes', '')
+
+        # 없다면 기존 description 필드에서 파싱 시도 (호환성)
+        desc = start_node['data'].get('description', '')
+        if not prologue and not gm_notes and desc:
+            prologue = desc
+
+        blueprint += f"[설정]\n제목: {title}\n"
+        if prologue:
+            blueprint += f"프롤로그(공개): {prologue}\n"
+        if gm_notes:
+            blueprint += f"시스템 설정(비공개): {gm_notes}\n"
+        blueprint += "\n"
 
     blueprint += "[등장인물]\n"
     for npc in raw_npcs:
@@ -180,14 +197,14 @@ def refine_scenario_info(state: BuilderState):
     llm = LLMFactory.get_llm(state.get("model_name"))
     parser = JsonOutputParser(pydantic_object=ScenarioSummary)
 
-    # [수정] 프롤로그와 전체 설정 분리 명시
     prompt = ChatPromptTemplate.from_messages([
         ("system",
          "당신은 TRPG 시나리오 작가입니다. JSON 형식으로 응답하세요.\n"
          "설계도(Blueprint)를 바탕으로 시나리오의 전체적인 개요를 작성해주세요.\n"
+         "설계도에 이미 '프롤로그'나 '시스템 설정'이 작성되어 있다면, 그 내용을 최대한 유지하면서 문장을 다듬어주세요.\n"
          "다음 두 가지를 반드시 구분해서 작성해야 합니다:\n"
          "1. 'player_prologue': 게임 시작 시 플레이어 화면에 출력될 공개 텍스트 (분위기 조성용)\n"
-         "2. 'gm_notes': 플레이어에게는 숨겨진 전체 설정, 세계관의 진실, 시스템 내부 로직. (나중에 Player Status 정보로도 활용됨)\n"
+         "2. 'gm_notes': 플레이어에게는 숨겨진 전체 설정, 세계관의 진실, 시스템 내부 로직.\n"
          "{format_instructions}"),
         ("user", "{blueprint}")
     ])
@@ -243,6 +260,7 @@ def generate_full_content(state: BuilderState):
          "설계도를 바탕으로 씬 데이터를 생성하세요.\n"
          "ID는 절대 변경하지 마세요.\n"
          "연결(Transition) 생성 시 구체적인 행동(문을 연다, 살펴본다 등)을 만드세요.\n"
+         "중요: 각 씬의 내용은 설계도의 '프롤로그' 및 '설정'과 자연스럽게 이어져야 합니다.\n"
          "{format_instructions}"),
         ("user", "{blueprint}")
     ]).partial(format_instructions=scene_parser.get_format_instructions())
@@ -265,6 +283,9 @@ def generate_full_content(state: BuilderState):
 
 
 def polish_content(state: BuilderState):
+    # [검증 로직 작동 확인용 로그]
+    logger.info("Validator(polish_content) started...")
+
     report_progress("building", "4/5", "품질 검수 및 보정 중...", 80)
     llm = LLMFactory.get_llm(state.get("model_name"))
 
@@ -277,17 +298,21 @@ def polish_content(state: BuilderState):
     # 엔딩 검사
     for end in endings:
         if not end.get("description") or len(end.get("description")) < 10:
-            items_to_fix.append(f"[엔딩 보강] ID '{end.get('ending_id')}': 설명이 너무 짧음.")
+            msg = f"[엔딩 보강] ID '{end.get('ending_id')}': 설명이 너무 짧음."
+            items_to_fix.append(msg)
+            logger.warning(msg)
 
     # 트리거 검사
     for scene in scenes:
         for trans in scene.get("transitions", []):
             trig = trans.get("trigger", "")
             if "이동" in trig or "Move" in trig or len(trig) < 2:
-                items_to_fix.append(
-                    f"[트리거 수정] Scene '{scene.get('scene_id')}' -> '{trans.get('target_scene_id')}': '{trig}'를 구체적 행동으로 변경.")
+                msg = f"[트리거 수정] Scene '{scene.get('scene_id')}' -> '{trans.get('target_scene_id')}': '{trig}'를 구체적 행동으로 변경."
+                items_to_fix.append(msg)
+                logger.warning(msg)
 
     if not items_to_fix:
+        logger.info("Validator passed: No issues found.")
         return state
 
     # LLM Patch
@@ -347,28 +372,19 @@ def finalize_build(state: BuilderState):
             if edge["source"] == start_node["id"]:
                 prologue_connects.append(edge["target"])
 
-    # [수정] 프롤로그와 전체 설정(Player Status) 매핑 로직
+    # [수정] 프롤로그와 전체 설정(Player Status) 매핑 로직 강화
     scenario_data = state.get("scenario", {})
 
+    # 1. 생성된 값 우선 사용
     generated_prologue = scenario_data.get("player_prologue", "")
     generated_hidden = scenario_data.get("gm_notes", "")
 
-    # 백업 로직 (기존 파싱)
-    full_description = start_node.get("data", {}).get("description", "") if start_node else ""
-    parsed_prologue = full_description
-    parsed_hidden = ""
+    # 2. 만약 생성된 값이 비어있다면, 사용자가 입력한 raw data 사용 (fallback)
+    raw_prologue = start_node.get("data", {}).get("prologue", "") if start_node else ""
+    raw_gm_notes = start_node.get("data", {}).get("gm_notes", "") if start_node else ""
 
-    separators = ["---", "===", "[설정]", "[내부설정]", "[SETTINGS]"]
-    for sep in separators:
-        if sep in full_description:
-            parts = full_description.split(sep, 1)
-            parsed_prologue = parts[0].strip()
-            parsed_hidden = parts[1].strip() if len(parts) > 1 else ""
-            break
-
-    # 최종 결정
-    final_prologue = generated_prologue if generated_prologue else parsed_prologue
-    final_hidden = generated_hidden if generated_hidden else parsed_hidden
+    final_prologue = generated_prologue if generated_prologue else raw_prologue
+    final_hidden = generated_hidden if generated_hidden else raw_gm_notes
 
     # 플레이어 초기 상태
     initial_player_state = {
@@ -388,7 +404,7 @@ def finalize_build(state: BuilderState):
         "desc": scenario_data.get("summary", ""),
         "prologue": final_prologue,  # 공개 프롤로그
         "world_settings": final_hidden,  # 내부 설정
-        "player_status": final_hidden,  # [추가] 전체 설정을 Player Status로 활용 (요청사항 반영)
+        "player_status": final_hidden,  # 전체 설정을 Player Status로 활용
         "prologue_connects_to": prologue_connects,
         "scenario": scenario_data,
         "worlds": state["worlds"],
