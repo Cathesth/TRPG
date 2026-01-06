@@ -437,11 +437,11 @@ def finalize_build(state: BuilderState):
         "title": scenario_title,
         "desc": scenario_data.get("summary", ""),
         "prologue": final_prologue,
-        "world_settings": final_hidden,
-        "player_status": final_hidden,
+        "world_settings": final_hidden, # GM Note (Engine에서 사용)
+        "player_status": final_hidden,  # Legacy
         "prologue_connects_to": prologue_connects,
         "scenario": scenario_data,
-        "worlds": state["worlds"],
+        "worlds": state["worlds"], # Global World Info (Engine에서 사용)
         "npcs": state["characters"],
         "scenes": state["scenes"],
         "endings": state["endings"],
