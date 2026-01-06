@@ -150,11 +150,16 @@ class MermaidService:
         orphaned_scenes = []
         for scene in filtered_scenes:
             scene_id = scene.get('scene_id')
-            if scene_id not in all_connected_scenes and scene_id not in prologue_connects_to:
+            # prologue_connects_to에도 없고, 다른 씬의 target으로도 등장하지 않는 씬
+            if scene_id not in all_connected_scenes and scene_id not in (prologue_connects_to or []):
                 orphaned_scenes.append(scene_id)
+                # 프롤로그가 있으면 프롤로그와 연결, 없으면 첫 번째 연결된 씬과 연결
                 if prologue_text:
-                    # 점선 연결로 표시 (데이터 불일치 표시)
-                    mermaid_lines.append(f'    PROLOGUE -.-> {scene_id}')
+                    mermaid_lines.append(f'    PROLOGUE -.->|"(고립된 씬)"| {scene_id}')
+                elif prologue_connects_to:
+                    # 프롤로그가 없으면 첫 번째 root 씬과 연결
+                    first_root = prologue_connects_to[0]
+                    mermaid_lines.append(f'    {first_root} -.->|"(고립된 씬)"| {scene_id}')
 
         # 씬 간 transitions
         for scene in filtered_scenes:

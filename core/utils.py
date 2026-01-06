@@ -42,16 +42,22 @@ def pick_start_scene_id(scenario: dict) -> str:
     """
     시나리오 시작 씬을 결정
     우선순위:
-      1) start_scene_id가 명시적으로 지정된 경우
-      2) prologue_connects_to 중 실제 존재하는 씬
-      3) 어떤 씬에서도 target으로 등장하지 않는 'root' 씬
-      4) scenes[0]
-      5) 'start'
+      1) prologue가 있으면 무조건 'prologue' 반환
+      2) start_scene_id가 명시적으로 지정된 경우
+      3) prologue_connects_to 중 실제 존재하는 씬
+      4) 어떤 씬에서도 target으로 등장하지 않는 'root' 씬
+      5) scenes[0]
+      6) 'start'
     """
     if not isinstance(scenario, dict):
         return "start"
 
-    # 명시적으로 start_scene_id가 지정된 경우 우선
+    # 1) 프롤로그가 있으면 무조건 프롤로그부터 시작
+    prologue_text = scenario.get('prologue') or scenario.get('prologue_text', '')
+    if prologue_text and prologue_text.strip():
+        return 'prologue'
+
+    # 2) 명시적으로 start_scene_id가 지정된 경우
     explicit_start = scenario.get('start_scene_id')
     if explicit_start and isinstance(explicit_start, str):
         scenes = scenario.get('scenes', [])
@@ -66,14 +72,14 @@ def pick_start_scene_id(scenario: dict) -> str:
     scene_ids = [s.get('scene_id') for s in scenes if isinstance(s, dict) and s.get('scene_id')]
     valid_ids = set(scene_ids)
 
-    # 1) prologue_connects_to 우선
+    # 3) prologue_connects_to 우선
     connects = scenario.get('prologue_connects_to', [])
     if isinstance(connects, list):
         for sid in connects:
             if isinstance(sid, str) and sid in valid_ids:
                 return sid
 
-    # 2) root scene 자동 탐지 (target으로 한 번도 등장하지 않는 씬)
+    # 4) root scene 자동 탐지 (target으로 한 번도 등장하지 않는 씬)
     targets = set()
     for s in scenes:
         if not isinstance(s, dict):
@@ -84,16 +90,11 @@ def pick_start_scene_id(scenario: dict) -> str:
                 if isinstance(tid, str) and tid:
                     targets.add(tid)
 
-    # Scene-1 패턴의 씬이 있으면 우선 선택
-    for sid in scene_ids:
-        if sid and sid.lower() in ('scene-1', 'scene_1', 'scene1'):
-            return str(sid)
-
     for sid in scene_ids:
         if sid and sid not in targets and sid not in ('start', 'PROLOGUE'):
             return str(sid)
 
-    # 3) fallback
+    # 5) fallback
     first = scenes[0]
     if isinstance(first, dict) and first.get('scene_id'):
         return str(first.get('scene_id'))
