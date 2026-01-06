@@ -336,13 +336,13 @@
                     </div>
                     <div class="flex-1">
                         <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
-                        <div class="bg-[#1a1a1e]/50 border border-gray-700/50 p-3 rounded-lg text-gray-400 text-sm flex items-center gap-2">
+                        <div id="loading-message" class="bg-[#1a1a1e]/50 border border-gray-700/50 p-3 rounded-lg text-gray-400 text-sm flex items-center gap-2">
                             <div class="flex gap-1">
                                 <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full typing-dot"></div>
                                 <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full typing-dot"></div>
                                 <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full typing-dot"></div>
                             </div>
-                            <span class="text-xs">답변을 생성하고 있습니다...</span>
+                            <span id="loading-text" class="text-xs">답변을 생성하고 있습니다...</span>
                         </div>
                     </div>
                 </div>
@@ -749,6 +749,25 @@
                                     narratorText = '';
                                     break;
 
+                                case 'retry':
+                                    // 재생성 중 - 로딩 메시지 변경
+                                    const loadingText = document.getElementById('loading-text');
+                                    if (loadingText) {
+                                        loadingText.textContent = `답변을 재생성하고 있습니다... (${data.attempt}/${data.max})`;
+                                        loadingText.classList.add('text-yellow-400');
+                                    }
+                                    // 기존 콘텐츠 초기화 (재생성 시작)
+                                    currentContent = '';
+                                    narratorText = '';
+                                    contentDiv.innerHTML = '<span class="text-yellow-400 text-xs">🔄 답변 재생성 중...</span><span class="streaming-cursor">▌</span>';
+                                    break;
+
+                                case 'fallback':
+                                    // 폴백 메시지 표시
+                                    currentContent = data.content;
+                                    contentDiv.innerHTML = currentContent;
+                                    break;
+
                                 case 'game_ended':
                                     disableInput();
                                     break;
@@ -759,6 +778,12 @@
 
                                 case 'done':
                                     contentDiv.innerHTML = contentDiv.innerHTML.replace('<span class="streaming-cursor">▌</span>', '');
+                                    // 로딩 메시지 초기화
+                                    const loadingTextReset = document.getElementById('loading-text');
+                                    if (loadingTextReset) {
+                                        loadingTextReset.textContent = '답변을 생성하고 있습니다...';
+                                        loadingTextReset.classList.remove('text-yellow-400');
+                                    }
                                     break;
 
                                 case 'error':

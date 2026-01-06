@@ -6,12 +6,15 @@ from flask_login import login_required, current_user
 
 from core.state import game_state
 # [CRITICAL] process_before_narrator 제거, scene_stream_generator 등만 import
-from game_engine import scene_stream_generator, prologue_stream_generator
+from game_engine import scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
 
 game_bp = Blueprint('game', __name__, url_prefix='/game')
+
+# 최대 재시도 횟수
+MAX_RETRIES = 2
 
 @game_bp.route('/act', methods=['POST'])
 def game_act():
@@ -108,9 +111,9 @@ def game_act_stream():
                 game_state.state = processed_state
                 logger.info(f"🎮 [PROLOGUE -> SCENE] Moving to: {first_scene_id}")
 
-                # 첫 씬 묘사
-                for chunk in scene_stream_generator(processed_state):
-                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+                # 첫 씬 묘사 (재시도 로직 포함)
+                for result in stream_scene_with_retry(processed_state):
+                    yield result
 
             # D. 엔딩
             elif is_ending:
@@ -118,10 +121,10 @@ def game_act_stream():
                 yield f"data: {json.dumps({'type': 'ending_start', 'content': ending_html})}\n\n"
                 yield f"data: {json.dumps({'type': 'game_ended', 'content': True})}\n\n"
 
-            # E. 일반 씬 진행 (나레이션)
+            # E. 일반 씬 진행 (나레이션) - 재시도 로직 포함
             else:
-                for chunk in scene_stream_generator(processed_state):
-                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+                for result in stream_scene_with_retry(processed_state):
+                    yield result
 
             # F. 스탯 업데이트 및 완료
             stats_data = processed_state.get('player_vars', {})
@@ -137,3 +140,42 @@ def game_act_stream():
         mimetype='text/event-stream',
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
     )
+
+
+def stream_scene_with_retry(state):
+    """씬 스트리밍 with 재시도 로직"""
+    retry_count = 0
+
+    while retry_count <= MAX_RETRIES:
+        buffer = ""
+        need_retry = False
+
+        for chunk in scene_stream_generator(state, retry_count=retry_count, max_retries=MAX_RETRIES):
+            # 재시도 신호 감지
+            if "__RETRY_SIGNAL__" in chunk:
+                need_retry = True
+                break
+
+            buffer += chunk
+            yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+
+        if need_retry:
+            retry_count += 1
+            if retry_count <= MAX_RETRIES:
+                # 재생성 알림 전송
+                logger.info(f"🔄 [RETRY] Attempt {retry_count}/{MAX_RETRIES}")
+                yield f"data: {json.dumps({'type': 'retry', 'attempt': retry_count, 'max': MAX_RETRIES})}\n\n"
+            else:
+                # 최대 재시도 초과 - 폴백 메시지 전송
+                logger.warning(f"⚠️ [FALLBACK] Max retries exceeded")
+                fallback_msg = get_narrative_fallback_message(state.get('scenario', {}))
+                fallback_html = f"""
+                <div class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4 my-2">
+                    <div class="text-yellow-400 serif-font">{fallback_msg}</div>
+                </div>
+                """
+                yield f"data: {json.dumps({'type': 'fallback', 'content': fallback_html})}\n\n"
+                break
+        else:
+            # 성공적으로 완료
+            break
