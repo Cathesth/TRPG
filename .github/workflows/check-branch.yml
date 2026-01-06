@@ -1,25 +1,25 @@
-name: Master Guard
-
+name: Strict Branch Flow
 on:
   pull_request:
-    branches:
-      - master
+    branches: [master, develop]
 
 jobs:
-  check-master-source:
+  check-flow:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify master source
+      - name: Verify merge order
         run: |
           BASE="${{ github.base_ref }}"
           HEAD="${{ github.head_ref }}"
           
-          echo "Target branch: $BASE"
-          echo "Source branch: $HEAD"
-          
           if [[ "$BASE" == "master" && "$HEAD" != "develop" ]]; then
-            echo "에러: master는 무조건 develop에서만 머지해라. 딴 데서 기어오지 말고."
+            echo "에러: master는 develop에서만 머지해라."
             exit 1
           fi
           
-          echo "결과: develop에서 온 거 확인됨. 통과."
+          if [[ "$BASE" == "develop" ]]; then
+            if [[ "$HEAD" != "ajh" && "$HEAD" != "ksy" && "$HEAD" != "jjw" ]]; then
+              echo "에러: develop은 팀원 브랜치(ajh, ksy, jjw)에서만 머지해라."
+              exit 1
+            fi
+          fi
