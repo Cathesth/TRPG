@@ -15,7 +15,7 @@ from schemas import NPC
 # 로깅 설정
 logger = logging.getLogger(__name__)
 
-# --- 전역 콜백 (진행 상황 공유용) ---
+# --- 전역 콜백 ---
 _progress_callback = None
 
 
@@ -48,7 +48,7 @@ class World(BaseModel):
 class GameScene(BaseModel):
     """실제 게임에서 사용될 씬 정보"""
     id: str = Field(description="씬의 고유 ID (노드 ID와 동일하게)")
-    title: str = Field(description="씬 제목")
+    name: str = Field(description="씬 제목 (기존 호환성을 위해 title 대신 name 사용)")
     description: str = Field(description="씬의 상황 묘사 및 전개 내용")
     type: str = Field(description="씬 타입 (start, scene, ending 등)")
     npcs: List[str] = Field(description="이 씬에 등장하는 NPC 이름 목록")
@@ -69,17 +69,16 @@ class SceneList(BaseModel):
 
 # --- 상태 정의 (State) ---
 class BuilderState(TypedDict):
-    graph_data: Dict[str, Any]  # nodes, edges, npcs 원본 데이터
+    graph_data: Dict[str, Any]
     model_name: str
 
-    # 처리된 데이터
-    blueprint: str  # 그래프를 텍스트로 변환한 명세서
-    scenario: dict  # 타이틀/요약
-    worlds: List[dict]  # 세계관
-    characters: List[dict]  # NPC 리스트 (상세)
-    scenes: List[dict]  # 씬 리스트 (그래프 구조 반영)
+    blueprint: str
+    scenario: dict
+    worlds: List[dict]
+    characters: List[dict]
+    scenes: List[dict]
 
-    final_data: dict  # 최종 결과
+    final_data: dict
 
 
 # ---------------------------------------------------------
@@ -87,10 +86,7 @@ class BuilderState(TypedDict):
 # ---------------------------------------------------------
 
 def parse_graph_to_blueprint(state: BuilderState):
-    """
-    프론트엔드에서 받은 그래프 데이터(nodes, edges)를
-    LLM이 이해할 수 있는 텍스트 명세서(Blueprint)로 변환
-    """
+    """그래프 데이터를 텍스트 명세서로 변환"""
     report_progress("building", "1/5", "시나리오 구조 분석 중...", 10)
 
     data = state["graph_data"]
@@ -117,6 +113,7 @@ def parse_graph_to_blueprint(state: BuilderState):
         if node["type"] == "start": continue
 
         node_id = node["id"]
+        # 기존 title을 name으로 매핑하기 위한 준비
         title = node["data"].get("title", "제목 없음")
         desc = node["data"].get("description", "")
         node_npcs = node["data"].get("npcs", [])
@@ -125,7 +122,7 @@ def parse_graph_to_blueprint(state: BuilderState):
         connected_ids = [e["target"] for e in edges if e["source"] == node_id]
 
         blueprint += f"ID: {node_id} ({node['type']})\n"
-        blueprint += f"제목: {title}\n"
+        blueprint += f"제목(Name): {title}\n"
         blueprint += f"내용: {desc}\n"
         blueprint += f"등장 NPC: {', '.join(node_npcs) if node_npcs else '없음'}\n"
         blueprint += f"다음 연결: {connected_ids}\n"
@@ -136,7 +133,6 @@ def parse_graph_to_blueprint(state: BuilderState):
 
 
 def refine_scenario_info(state: BuilderState):
-    """Start 노드 정보를 바탕으로 시나리오 제목과 요약을 다듬음"""
     report_progress("building", "2/5", "시나리오 개요 다듬는 중...", 30)
 
     llm = LLMFactory.get_llm(state.get("model_name"))
@@ -145,7 +141,6 @@ def refine_scenario_info(state: BuilderState):
     prompt = ChatPromptTemplate.from_messages([
         ("system",
          "당신은 TRPG 시나리오 에디터입니다. 주어진 '시나리오 설정'을 바탕으로 매력적인 제목과 요약을 작성하세요.\n"
-         "- 입력된 내용이 부실하면 살을 붙여서 완성하세요.\n"
          "- JSON 형식으로 출력하세요.\n"
          "{format_instructions}"),
         ("user", "{blueprint}")
@@ -157,9 +152,7 @@ def refine_scenario_info(state: BuilderState):
             "format_instructions": parser.get_format_instructions()
         })
         return {"scenario": result}
-    except Exception as e:
-        logger.error(f"Scenario refine error: {e}")
-        # 실패 시 그래프 데이터 그대로 사용
+    except Exception:
         nodes = state["graph_data"].get("nodes", [])
         start_node = next((n for n in nodes if n["type"] == "start"), None)
         return {"scenario": {
@@ -169,41 +162,31 @@ def refine_scenario_info(state: BuilderState):
 
 
 def generate_details_and_scenes(state: BuilderState):
-    """세계관, NPC 상세, 그리고 씬 내용을 동시에 생성"""
     report_progress("building", "3/5", "상세 설정 및 장면 생성 중...", 60)
 
     llm = LLMFactory.get_llm(state.get("model_name"))
 
-    # 1. 세계관 & NPC 생성 체인
-    # 이미 사용자가 입력한 NPC 정보(raw_npcs)가 있지만, LLM을 통해 스탯 등을 채워넣음
+    # NPC 상세 생성
     npc_parser = JsonOutputParser(pydantic_object=NPCList)
     npc_prompt = ChatPromptTemplate.from_messages([
-        ("system",
-         "주어진 '등장인물 목록'과 '시나리오 설정'을 참고하여, 등장하는 모든 NPC의 상세 설정(스탯 포함)을 생성하세요.\n"
-         "- 목록에 없는 NPC를 임의로 추가하지 마세요.\n"
-         "- 각 캐릭터의 특징을 시나리오 분위기에 맞게 구체화하세요.\n"
-         "{format_instructions}"),
+        ("system", "주어진 목록의 NPC 상세 설정을 생성하세요.\n{format_instructions}"),
         ("user", "{blueprint}")
     ])
 
+    # 세계관 생성
     world_parser = JsonOutputParser(pydantic_object=WorldList)
     world_prompt = ChatPromptTemplate.from_messages([
-        ("system",
-         "시나리오의 배경이 되는 장소(World) 3~4곳을 설정하세요.\n"
-         "- 시나리오의 분위기에 맞는 장소들을 묘사하세요.\n"
-         "{format_instructions}"),
+        ("system", "시나리오 배경이 되는 장소 3~4곳을 묘사하세요.\n{format_instructions}"),
         ("user", "{blueprint}")
     ])
 
-    # 2. 씬 상세 생성 체인 (가장 중요)
-    # 그래프의 노드 구조를 유지하면서 내용을 풍성하게 만듦
+    # 씬 상세 생성 (GameScene 구조 사용: name 필드 중요)
     scene_parser = JsonOutputParser(pydantic_object=SceneList)
     scene_prompt = ChatPromptTemplate.from_messages([
         ("system",
-         "주어진 '장면 흐름' 명세서를 바탕으로 실제 게임에서 사용될 씬 데이터를 생성하세요.\n"
-         "- ID는 명세서에 있는 것을 **반드시 그대로** 유지해야 합니다.\n"
-         "- '내용'을 플레이어에게 보여줄 생동감 넘치는 묘사로 확장하세요.\n"
-         "- 'next_scenes' 연결 관계도 명세서 그대로 유지하세요.\n"
+         "주어진 '장면 흐름' 명세서를 바탕으로 씬 데이터를 생성하세요.\n"
+         "- ID와 next_scenes는 명세서 그대로 유지하세요.\n"
+         "- '제목'은 'name' 필드에 저장하세요.\n"
          "{format_instructions}"),
         ("user", "{blueprint}")
     ])
@@ -217,10 +200,9 @@ def generate_details_and_scenes(state: BuilderState):
     try:
         results = parallel_chain.invoke({
             "blueprint": state["blueprint"],
-            "format_instructions": "JSON format only."  # 간단하게 처리 (각 parser가 알아서 함)
+            "format_instructions": "JSON format only."
         })
 
-        # 결과 처리
         npcs = results['npcs'].get('npcs', []) if isinstance(results['npcs'], dict) else results['npcs']
         worlds = results['worlds'].get('worlds', []) if isinstance(results['worlds'], dict) else results['worlds']
         scenes = results['scenes'].get('scenes', []) if isinstance(results['scenes'], dict) else results['scenes']
@@ -233,20 +215,39 @@ def generate_details_and_scenes(state: BuilderState):
 
 
 def finalize_build(state: BuilderState):
-    """최종 데이터 조립"""
     report_progress("building", "5/5", "최종 데이터 병합 중...", 95)
 
-    # 씬 리스트를 딕셔너리나 더 사용하기 편한 구조로 변환할 수도 있음
-    # 여기서는 리스트 그대로 유지하되, Start 노드 정보도 Scene에 포함되어 있는지 확인
+    # 1. 시작 씬 ID 계산 (start_scene_id)
+    # Start 노드와 연결된 첫 번째 씬을 찾아야 게임이 시작됨
+    nodes = state["graph_data"].get("nodes", [])
+    edges = state["graph_data"].get("edges", [])
+
+    start_node = next((n for n in nodes if n["type"] == "start"), None)
+    start_scene_id = None
+
+    if start_node:
+        # Start 노드에서 나가는 엣지 찾기
+        start_edge = next((e for e in edges if e["source"] == start_node["id"]), None)
+        if start_edge:
+            start_scene_id = start_edge["target"]
+
+    # 연결된 씬 없으면 노드 리스트 중 첫 번째 Scene 타입 노드 사용 (비상용)
+    if not start_scene_id:
+        first_scene_node = next((n for n in nodes if n["type"] == "scene"), None)
+        if first_scene_node:
+            start_scene_id = first_scene_node["id"]
 
     final_data = {
         "title": state["scenario"].get("title", "Untitled"),
-        "scenario_info": state["scenario"],  # {title, summary}
+        "scenario_info": state["scenario"],
         "worlds": state["worlds"],
-        "npcs": state["characters"],  # 플레이어 뷰에서 'npcs' 키를 기대할 수 있음
-        "scenes": state["scenes"],  # 'events' 대신 'scenes' 사용 (그래프 구조 반영)
+        "npcs": state["characters"],
 
-        # 그래프 원본 데이터도 백업용으로 포함
+        # [중요] 호환성 필드
+        "scenes": state["scenes"],  # 최신 코드용
+        "events": state["scenes"],  # 레거시 코드 호환용 (이름만 다르고 내용은 같음)
+        "start_scene_id": start_scene_id,  # [필수] 게임 엔진 초기화용
+
         "raw_graph": state["graph_data"]
     }
 
@@ -254,44 +255,31 @@ def finalize_build(state: BuilderState):
 
 
 # ---------------------------------------------------------
-# 그래프 빌드
+# 그래프 빌드 및 실행 함수 (변동 없음)
 # ---------------------------------------------------------
 
 def build_builder_graph():
     workflow = StateGraph(BuilderState)
-
     workflow.add_node("parse_graph", parse_graph_to_blueprint)
     workflow.add_node("refine_info", refine_scenario_info)
     workflow.add_node("generate_content", generate_details_and_scenes)
     workflow.add_node("finalize", finalize_build)
 
     workflow.set_entry_point("parse_graph")
-
     workflow.add_edge("parse_graph", "refine_info")
     workflow.add_edge("refine_info", "generate_content")
     workflow.add_edge("generate_content", "finalize")
     workflow.add_edge("finalize", END)
-
     return workflow.compile()
 
 
-# ---------------------------------------------------------
-# 외부 호출 함수
-# ---------------------------------------------------------
-
 def generate_scenario_from_graph(api_key, user_data, model_name=None):
-    """
-    api.py의 init_game에서 호출됨.
-    user_data는 {nodes: [], edges: [], npcs: [], model: ...} 형태임.
-    """
     app = build_builder_graph()
-
-    # model_name이 user_data에 있을 수도 있음 (builder_view에서 보냄)
     if not model_name and 'model' in user_data:
         model_name = user_data['model']
 
     initial_state = {
-        "graph_data": user_data,  # 전체 데이터를 graph_data로 넘김
+        "graph_data": user_data,
         "model_name": model_name,
         "blueprint": "",
         "scenario": {},
@@ -300,27 +288,22 @@ def generate_scenario_from_graph(api_key, user_data, model_name=None):
         "scenes": [],
         "final_data": {}
     }
-
     result = app.invoke(initial_state)
     return result['final_data']
 
 
 def generate_single_npc(scenario_title: str, scenario_summary: str, user_request: str = "", model_name: str = None):
-    """단일 NPC 생성 함수 (팝업용) - 기존 유지"""
     llm = LLMFactory.get_llm(model_name)
     parser = JsonOutputParser(pydantic_object=NPC)
-
     prompt_text = (
         f"시나리오: {scenario_title}\n{scenario_summary}\n\n"
         f"요청: {user_request if user_request else '어울리는 NPC 1명'}\n\n"
         "위 설정에 맞는 NPC 1명을 JSON으로 생성하세요."
     )
-
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "당신은 TRPG 캐릭터 디자이너입니다. 다음 JSON 스키마를 정확히 준수하여 응답하세요.\n{format_instructions}"),
+        ("system", "당신은 TRPG 캐릭터 디자이너입니다. JSON 스키마를 준수하세요.\n{format_instructions}"),
         ("user", "{prompt_text}")
     ])
-
     chain = prompt | llm | parser
     try:
         return chain.invoke({
