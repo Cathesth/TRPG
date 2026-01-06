@@ -1,4 +1,6 @@
 import os
+import subprocess
+from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -34,6 +36,25 @@ DEFAULT_PLAYER_VARS = {
     "gold": 0
 }
 
-# [ADD] views.py 호환용 버전 함수
+# 버전 정보 설정
+VERSION_NUMBER = 0  # 수동으로 증가시킬 넘버
+
+def get_git_commit_hash():
+    """Git 커밋 해시 가져오기 (짧은 버전)"""
+    try:
+        hash_val = subprocess.check_output(
+            ['git', 'rev-parse', '--short=8', 'HEAD'],
+            cwd=BASE_DIR,
+            stderr=subprocess.DEVNULL
+        ).decode('ascii').strip()
+        return hash_val
+    except:
+        return 'unknown'
+
 def get_full_version():
-    return "v1.0.0 (Railway)"
+    """전체 버전 문자열 생성: 년.월일.넘버.해시"""
+    now = datetime.now()
+    year = now.year
+    month_day = now.strftime('%m%d')
+    commit_hash = get_git_commit_hash()
+    return f"{year}.{month_day}.{VERSION_NUMBER}.{commit_hash}"
