@@ -47,12 +47,12 @@ def login():
     username = data.get('username')
     password = data.get('password')
 
-    # [수정] 테스트 계정 하드코딩 (test / 1234)
-    TEST_ID = 'test'
-    TEST_PW = '1234'
+    if not username or not password:
+        return jsonify({"success": False, "error": "입력값 부족"}), 400
 
-    if username == TEST_ID and password == TEST_PW:
-        user = User(id=username)
+    # DB에서 사용자 조회
+    user = UserService.verify_user(username, password)
+    if user:
         login_user(user)  # Flask-Login 세션 생성
         return jsonify({"success": True})
     return jsonify({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}), 401
@@ -112,6 +112,10 @@ def list_scenarios():
     if not file_infos:
         return '<div class="col-span-1 md:col-span-2 text-center text-gray-500 py-8">표시할 시나리오가 없습니다.</div>'
 
+    import time
+    current_time = time.time()
+    NEW_THRESHOLD = 24 * 60 * 60  # 24시간 이내면 NEW 배지
+
     html = ""
     for info in file_infos:
         fid = info['filename']
@@ -120,6 +124,19 @@ def list_scenarios():
         author = info['author']
         is_owner = info['is_owner']
         is_public = info['is_public']
+        created_time = info.get('created_time', 0)
+
+        # 생성 시간 포맷
+        from datetime import datetime
+        if created_time:
+            created_dt = datetime.fromtimestamp(created_time)
+            time_str = created_dt.strftime('%Y-%m-%d %H:%M')
+        else:
+            time_str = "알 수 없음"
+
+        # NEW 배지 (24시간 이내 생성)
+        is_new = (current_time - created_time) < NEW_THRESHOLD if created_time else False
+        new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
         status_badge = '<span class="ml-2 text-[10px] bg-green-900 text-green-300 px-1 rounded">PUBLIC</span>' if is_public else '<span class="ml-2 text-[10px] bg-gray-700 text-gray-300 px-1 rounded">PRIVATE</span>'
 
@@ -134,11 +151,12 @@ def list_scenarios():
         <div class="bg-dark-800 p-5 rounded-lg border border-white/5 hover:border-brand-purple/50 transition-colors flex flex-col justify-between h-full group relative">
             <div>
                 <div class="flex justify-between items-start mb-2">
-                    <h4 class="font-bold text-white text-lg flex items-center">{title} {status_badge if is_owner else ''}</h4>
+                    <h4 class="font-bold text-white text-lg flex items-center">{title} {new_badge} {status_badge if is_owner else ''}</h4>
                     <div class="opacity-0 group-hover:opacity-100 transition-opacity flex">{action_buttons}</div>
                 </div>
                 <div class="flex justify-between items-center text-xs text-gray-500 mb-1">
                     <span>{author}</span>
+                    <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
                 </div>
                 <p class="text-sm text-gray-400 mb-4 line-clamp-2">{desc}</p>
             </div>
