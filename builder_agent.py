@@ -29,6 +29,41 @@ def report_progress(status, step, detail, progress):
         _progress_callback(status=status, step=step, detail=detail, progress=progress)
 
 
+# --- [유틸리티] JSON 파싱 헬퍼 (백업에서 복원) ---
+def parse_json_garbage(text: str) -> dict:
+    """
+    LLM 응답에서 JSON을 안전하게 추출
+    마크다운 코드블록, 이중 인코딩 등을 처리
+    """
+    if isinstance(text, dict):
+        return text
+    if not text:
+        return {}
+    try:
+        text = text.strip()
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0]
+        elif "```" in text:
+            text = text.split("```")[1].split("```")[0]
+
+        parsed = json.loads(text)
+        if isinstance(parsed, str):
+            try:
+                parsed = json.loads(parsed)
+            except:
+                pass
+        return parsed if isinstance(parsed, dict) else {}
+    except:
+        try:
+            start = text.find('{')
+            end = text.rfind('}') + 1
+            if start != -1 and end > start:
+                return json.loads(text[start:end])
+        except:
+            pass
+        return {}
+
+
 # --- 데이터 모델 ---
 
 class ScenarioSummary(BaseModel):
