@@ -83,7 +83,7 @@ def game_act_stream():
 
                 # 프롤로그가 있으면 출력
                 if prologue_text and prologue_text.strip():
-                    prologue_html = '<div class="mb-6 p-4 bg-indigo-900/20 rounded-xl border border-indigo-500/30"><div class="text-indigo-400 font-bold text-sm mb-3 uppercase tracking-wider">[ Prologue ]</div><div class="text-gray-200 leading-relaxed font-serif italic text-lg">'
+                    prologue_html = '<div class="mb-6 p-4 bg-indigo-900/20 rounded-xl border border-indigo-500/30"><div class="text-indigo-400 font-bold text-sm mb-3 uppercase tracking-wider">[ Prologue ]</div><div class="text-gray-200 leading-relaxed serif-font text-lg">'
                     yield f"data: {json.dumps({'type': 'prefix', 'content': prologue_html})}\n\n"
 
                     for chunk in prologue_stream_generator(processed_state):

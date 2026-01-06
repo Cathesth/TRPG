@@ -232,7 +232,7 @@ def rule_node(state: PlayerState):
             <h3 class="text-3xl font-black text-yellow-400 mb-4 tracking-[0.2em] uppercase drop-shadow-md">🎉 ENDING 🎉</h3>
             <div class="w-16 h-1 bg-yellow-500 mx-auto mb-6 rounded-full"></div>
             <div class="text-2xl font-bold text-white mb-4 drop-shadow-sm">"{ending.get('title')}"</div>
-            <p class="text-gray-200 leading-relaxed text-lg font-serif italic">
+            <p class="text-gray-200 leading-relaxed text-lg serif-font">
                 {ending.get('description')}
             </p>
         </div>
