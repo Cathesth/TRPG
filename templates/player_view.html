@@ -629,6 +629,7 @@
         const chatLog = document.getElementById('chat-log');
         const loadingIndicator = document.getElementById('ai-loading');
         const input = form.querySelector('input[name="action"]');
+        const scenesBtn = document.getElementById('scenes-btn');
 
         // 게임 시작 시 초기 안내 메시지 제거
         const introMsg = document.getElementById('intro-message');
@@ -638,6 +639,12 @@
         form.classList.add('streaming');
         input.readOnly = true;
         chatLog.classList.add('processing');
+
+        // 전체 씬 보기 버튼 비활성화 (스트리밍 중)
+        if (scenesBtn && !scenesBtn.disabled) {
+            scenesBtn.disabled = true;
+            scenesBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
 
         // 플레이어 메시지 추가 (오른쪽 정렬)
         const playerMsgHtml = `
@@ -777,6 +784,12 @@
                 input.readOnly = false;
                 input.value = '';
                 input.focus();
+            }
+
+            // 전체 씬 보기 버튼 다시 활성화 (스트리밍 완료)
+            if (scenesBtn && isScenarioLoaded) {
+                scenesBtn.disabled = false;
+                scenesBtn.classList.remove('opacity-50', 'cursor-not-allowed');
             }
 
             chatLog.classList.remove('processing');
