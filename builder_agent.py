@@ -52,10 +52,10 @@ class Transition(BaseModel):
 class GameScene(BaseModel):
     """Playable Scene"""
     scene_id: str = Field(description="씬 ID (노드 ID)")
-    title: str = Field(description="씬 제목")
-    description: str = Field(description="상황 묘사")
+    name: str = Field(description="씬 제목 (기존 호환성을 위해 title 대신 name 사용)")
+    description: str = Field(description="씬의 상황 묘사 및 전개 내용")
     type: str = Field(description="항상 'scene' 값")
-    npcs: List[str] = Field(description="등장 NPC 이름 목록")
+    npcs: List[str] = Field(description="이 씬에 등장하는 NPC 이름 목록")
     transitions: List[Transition] = Field(description="다음 씬으로 이동하기 위한 행동 목록")
 
 
@@ -199,27 +199,29 @@ def generate_full_content(state: BuilderState):
     llm = LLMFactory.get_llm(state.get("model_name"))
 
     # 1. NPC 생성
-    npc_chain = (
-            ChatPromptTemplate.from_messages([
-                ("system", "설계도에 있는 NPC들의 상세 설정(성격, 말투 등)을 생성하세요.\n{format_instructions}"),
-                ("user", "{blueprint}")
-            ])
-            | llm
-            | JsonOutputParser(pydantic_object=NPCList)
-    )
+    npc_parser = JsonOutputParser(pydantic_object=NPCList)
+    npc_prompt = ChatPromptTemplate.from_messages([
+        ("system",
+         "설계도의 [등장인물(NPC)] 목록에 있는 NPC들의 상세 설정(성격, 말투 등)을 생성하세요.\n"
+         "**중요: 설계도에 없는 NPC를 절대 추가하지 마세요.**\n"
+         "{format_instructions}"),
+        ("user", "{blueprint}")
+    ]).partial(format_instructions=npc_parser.get_format_instructions())
+
+    npc_chain = npc_prompt | llm | npc_parser
 
     # 2. 세계관 생성
-    world_chain = (
-            ChatPromptTemplate.from_messages([
-                ("system", "시나리오 배경 장소 3~4곳을 분위기 있게 묘사하세요.\n{format_instructions}"),
-                ("user", "{blueprint}")
-            ])
-            | llm
-            | JsonOutputParser(pydantic_object=WorldList)
-    )
+    world_parser = JsonOutputParser(pydantic_object=WorldList)
+    world_prompt = ChatPromptTemplate.from_messages([
+        ("system", "시나리오 배경 장소 3~4곳을 분위기 있게 묘사하세요.\n{format_instructions}"),
+        ("user", "{blueprint}")
+    ]).partial(format_instructions=world_parser.get_format_instructions())
+
+    world_chain = world_prompt | llm | world_parser
 
     # 3. 씬 & 엔딩 통합 생성 (가장 중요)
     # 그래프 구조를 유지하면서 내용을 채워야 함
+    scene_parser = JsonOutputParser(pydantic_object=SceneData)
     scene_prompt = ChatPromptTemplate.from_messages([
         ("system",
          "당신은 게임 레벨 디자이너입니다. 설계도(Blueprint)를 바탕으로 실제 플레이 가능한 씬 데이터를 JSON으로 생성하세요.\n"
@@ -230,19 +232,20 @@ def generate_full_content(state: BuilderState):
          "3. 엔딩(ending) 노드도 빠짐없이 생성하세요.\n"
          "{format_instructions}"),
         ("user", "{blueprint}")
-    ])
+    ]).partial(format_instructions=scene_parser.get_format_instructions())
+
+    scene_chain = scene_prompt | llm | scene_parser
 
     # 병렬 실행
     chain = RunnableParallel(
-        npcs=npc_chain.partial(format_instructions=JsonOutputParser(pydantic_object=NPCList).get_format_instructions()),
-        worlds=world_chain.partial(
-            format_instructions=JsonOutputParser(pydantic_object=WorldList).get_format_instructions()),
-        content=(scene_prompt | llm | JsonOutputParser(pydantic_object=SceneData))
+        npcs=npc_chain,
+        worlds=world_chain,
+        content=scene_chain
     )
 
     try:
-        results = chain.invoke({"blueprint": state["blueprint"], "format_instructions": JsonOutputParser(
-            pydantic_object=SceneData).get_format_instructions()})
+        # invoke에는 blueprint만 넘기면 됨
+        results = chain.invoke({"blueprint": state["blueprint"]})
 
         # 결과 파싱
         npcs = results['npcs'].get('npcs', []) if isinstance(results['npcs'], dict) else results['npcs']
