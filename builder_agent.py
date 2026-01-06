@@ -65,8 +65,9 @@ def parse_json_garbage(text: str) -> dict:
 class ScenarioSummary(BaseModel):
     title: str = Field(description="시나리오 제목")
     summary: str = Field(description="시나리오 전체 줄거리 요약")
-    player_prologue: str = Field(description="[공개] 게임 시작 시 플레이어에게 화면에 보여줄 서사적 도입부 텍스트. 분위기 있고 몰입감 있게 작성.")
-    gm_notes: str = Field(description="[비공개] 플레이어에게는 비밀로 하고 GM(시스템)이 알아야 할 숨겨진 설정, 진실, 혹은 트릭.")
+    player_prologue: str = Field(description="[공개용 프롤로그] 게임 시작 시 화면에 출력되어 플레이어가 읽게 될 도입부 텍스트. 분위기 있고 흥미롭게 작성.")
+    gm_notes: str = Field(
+        description="[시스템 내부 설정] 플레이어에게는 비밀로 하고 시스템(GM)이 관리할 전체 설정, 진실, 트릭, 히든 스탯 등. 이 내용은 Player Status로도 활용됨.")
 
 
 class World(BaseModel):
@@ -179,13 +180,14 @@ def refine_scenario_info(state: BuilderState):
     llm = LLMFactory.get_llm(state.get("model_name"))
     parser = JsonOutputParser(pydantic_object=ScenarioSummary)
 
-    # [수정] 프롤로그(공개)와 GM노트(비공개)를 명확히 구분하여 작성하도록 지시
+    # [수정] 프롤로그와 전체 설정 분리 명시
     prompt = ChatPromptTemplate.from_messages([
         ("system",
          "당신은 TRPG 시나리오 작가입니다. JSON 형식으로 응답하세요.\n"
          "설계도(Blueprint)를 바탕으로 시나리오의 전체적인 개요를 작성해주세요.\n"
-         "특히 'player_prologue'(플레이어에게 처음에 보여줄 공개 텍스트)와 "
-         "'gm_notes'(플레이어에게 숨길 반전, 트릭, 진실 등)을 명확히 구분해서 작성해야 합니다.\n"
+         "다음 두 가지를 반드시 구분해서 작성해야 합니다:\n"
+         "1. 'player_prologue': 게임 시작 시 플레이어 화면에 출력될 공개 텍스트 (분위기 조성용)\n"
+         "2. 'gm_notes': 플레이어에게는 숨겨진 전체 설정, 세계관의 진실, 시스템 내부 로직. (나중에 Player Status 정보로도 활용됨)\n"
          "{format_instructions}"),
         ("user", "{blueprint}")
     ])
@@ -345,14 +347,13 @@ def finalize_build(state: BuilderState):
             if edge["source"] == start_node["id"]:
                 prologue_connects.append(edge["target"])
 
-    # [수정] 프롤로그와 히든 설정 분리 로직 개선
-    # 1순위: refine_scenario_info에서 생성된 구조적 데이터 사용
+    # [수정] 프롤로그와 전체 설정(Player Status) 매핑 로직
     scenario_data = state.get("scenario", {})
 
     generated_prologue = scenario_data.get("player_prologue", "")
     generated_hidden = scenario_data.get("gm_notes", "")
 
-    # 2순위: 기존 start_node description 파싱 (백업용)
+    # 백업 로직 (기존 파싱)
     full_description = start_node.get("data", {}).get("description", "") if start_node else ""
     parsed_prologue = full_description
     parsed_hidden = ""
@@ -365,7 +366,7 @@ def finalize_build(state: BuilderState):
             parsed_hidden = parts[1].strip() if len(parts) > 1 else ""
             break
 
-    # 최종 결정: 생성된 값이 있으면 우선 사용, 없으면 파싱된 값 사용
+    # 최종 결정
     final_prologue = generated_prologue if generated_prologue else parsed_prologue
     final_hidden = generated_hidden if generated_hidden else parsed_hidden
 
@@ -385,8 +386,9 @@ def finalize_build(state: BuilderState):
     final_data = {
         "title": scenario_title,
         "desc": scenario_data.get("summary", ""),
-        "prologue": final_prologue,  # 공개
-        "world_settings": final_hidden,  # 비공개
+        "prologue": final_prologue,  # 공개 프롤로그
+        "world_settings": final_hidden,  # 내부 설정
+        "player_status": final_hidden,  # [추가] 전체 설정을 Player Status로 활용 (요청사항 반영)
         "prologue_connects_to": prologue_connects,
         "scenario": scenario_data,
         "worlds": state["worlds"],
