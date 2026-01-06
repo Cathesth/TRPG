@@ -1,10 +1,7 @@
 name: Strict Branch Flow
-
 on:
   pull_request:
-    branches:
-      - master
-      - develop
+    branches: [master, develop]
 
 jobs:
   check-flow:
@@ -15,26 +12,14 @@ jobs:
           BASE="${{ github.base_ref }}"
           HEAD="${{ github.head_ref }}"
           
-          echo "Target branch (BASE): $BASE"
-          echo "Source branch (HEAD): $HEAD"
-          
-          # 1. master 수문장: 오직 develop만 통과 가능
           if [[ "$BASE" == "master" && "$HEAD" != "develop" ]]; then
-            echo "에러: 감히 어디서 master로 바로 기어오냐? develop 거쳐서 와라."
+            echo "에러: master는 develop에서만 머지해라."
             exit 1
           fi
           
-          # 2. develop 수문장: 팀원들 브랜치랑 최신화용 master만 허용
           if [[ "$BASE" == "develop" ]]; then
-            case "$HEAD" in
-              ajh|ksy|jjw|master)
-                echo "통과: $HEAD 브랜치에서 develop으로 머지를 시작한다."
-                ;;
-              *)
-                echo "에러: develop에는 팀원 브랜치나 master만 들어올 수 있다. ($HEAD 는 안됨)"
-                exit 1
-                ;;
-            esac
+            if [[ "$HEAD" != "ajh" && "$HEAD" != "ksy" && "$HEAD" != "jjw" ]]; then
+              echo "에러: develop은 팀원 브랜치(ajh, ksy, jjw)에서만 머지해라."
+              exit 1
+            fi
           fi
-          
-          echo "결과: 브랜치 순서 검사 통과. 머지 진행해라."
