@@ -37,6 +37,15 @@
         }
         @keyframes shine { 100% { transform: translateX(100%); } }
 
+        /* [추가] 로딩 인디케이터 발광 효과 */
+        .glow-effect {
+            box-shadow: 0 0 12px 2px rgba(96, 165, 250, 0.8);
+        }
+
+        /* [추가] 모달 내 스크롤바 스타일 */
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 2px; }
+
         #global-error {
             display: none;
             position: fixed;
@@ -50,7 +59,6 @@
             font-family: monospace;
         }
 
-        /* 연결선이 더 잘 보이도록 스타일 개선 */
         .connection-line {
             stroke: #6b7280;
             stroke-width: 3;
@@ -73,7 +81,6 @@
             to { stroke-dashoffset: -12; }
         }
 
-        /* 버전 정보 스타일 */
         .version-badge {
             position: fixed;
             bottom: 16px;
@@ -139,7 +146,7 @@
                 const colors = type === 'error' ? 'red' : type === 'success' ? 'green' : 'gray';
                 return (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-                        <div className={`bg-gray-900 border border-${colors}-500/50 w-full max-w-md rounded-xl shadow-2xl overflow-hidden`}>
+                        <div className={`bg-gray-900 border border-${colors}-500/50 w-full max-w-lg rounded-xl shadow-2xl overflow-hidden`}>
                             <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/5">
                                 <h3 className={`text-lg font-bold text-${colors === 'gray' ? 'white' : colors + '-400'} flex items-center gap-2`}>
                                     {type === 'success' && <Icon name="check-circle" />}
@@ -157,7 +164,6 @@
             const LoadingOverlay = ({ isOpen, progress, buildStatus }) => {
                 if (!isOpen) return null;
 
-                // 단계별 아이콘 및 색상
                 const phaseConfig = {
                     'initializing': { icon: 'settings', color: 'gray', label: '준비 중' },
                     'parsing': { icon: 'settings', color: 'blue', label: '그래프 분석' },
@@ -178,17 +184,14 @@
                         <div className="w-full max-w-xl text-center p-8 rounded-2xl bg-gray-900/50 border border-white/10 shadow-2xl relative overflow-hidden">
                             <div className={`absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 ${isError ? 'bg-red-600/20' : 'bg-blue-600/20'} blur-[100px] rounded-full pointer-events-none`}></div>
                             <div className="relative z-10">
-                                {/* 아이콘 */}
                                 <div className={`mb-6 inline-block p-4 rounded-full ${isError ? 'bg-red-500/10 border-red-500/20' : 'bg-blue-500/10 border-blue-500/20'} border`}>
                                     <Icon name={isError ? 'alert-triangle' : 'loader-2'} size={48} className={`${isError ? 'text-red-400' : 'animate-spin text-blue-400'}`} />
                                 </div>
 
-                                {/* 제목 */}
                                 <h3 className="text-2xl font-bold text-white mb-2">
                                     {isError ? '생성 오류 발생' : '시나리오 생성 중...'}
                                 </h3>
 
-                                {/* 현재 단계 표시 */}
                                 <div className="flex items-center justify-center gap-2 mb-4">
                                     <span className={`px-3 py-1 rounded-full text-xs font-bold bg-${currentPhase.color}-500/20 text-${currentPhase.color}-400 border border-${currentPhase.color}-500/30`}>
                                         {buildStatus.step || '0/5'}
@@ -196,12 +199,11 @@
                                     <span className="text-gray-300 font-medium">{currentPhase.label}</span>
                                 </div>
 
-                                {/* 상세 정보 */}
                                 <p className={`text-sm mb-6 ${isError ? 'text-red-300' : 'text-gray-400'}`}>
                                     {buildStatus.detail || 'AI 작가가 세계관을 창조하고 있습니다...'}
                                 </p>
 
-                                {/* 씬 생성 진행률 (씬 생성 단계일 때만) */}
+                                {/* 씬 생성 진행률 (요청사항 반영) */}
                                 {buildStatus.current_phase === 'scene_generation' && buildStatus.total_scenes > 0 && (
                                     <div className="mb-4 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
                                         <div className="flex justify-between text-xs text-gray-400 mb-2">
@@ -217,7 +219,6 @@
                                     </div>
                                 )}
 
-                                {/* 메인 프로그레스 바 */}
                                 <div className="w-full bg-gray-800 rounded-full h-4 mb-3 overflow-hidden border border-white/5 relative">
                                     <div
                                         className={`h-full transition-all duration-500 ease-out relative ${isError ? 'bg-red-600' : 'bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500'}`}
@@ -227,7 +228,6 @@
                                     </div>
                                 </div>
 
-                                {/* 진행률 텍스트 */}
                                 <div className="flex justify-between text-xs font-mono text-gray-500 px-1">
                                     <span className={`font-bold ${isError ? 'text-red-400' : 'text-blue-400'}`}>
                                         {Math.round(progress)}% {isError ? '실패' : '완료'}
@@ -237,8 +237,8 @@
                                     )}
                                 </div>
 
-                                {/* 단계 인디케이터 */}
-                                <div className="mt-6 flex justify-center gap-2">
+                                {/* 단계 인디케이터 (요청사항: 불 들어오게 수정) */}
+                                <div className="mt-6 flex justify-center gap-3">
                                     {['parsing', 'worldbuilding', 'scene_generation', 'validation', 'finalizing'].map((phase, idx) => {
                                         const phaseOrder = ['parsing', 'worldbuilding', 'scene_generation', 'validation', 'finalizing', 'refining', 'done'];
                                         const currentIdx = phaseOrder.indexOf(buildStatus.current_phase);
@@ -249,9 +249,9 @@
                                         return (
                                             <div
                                                 key={phase}
-                                                className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                                                    isActive ? 'bg-blue-400 scale-150' :
-                                                    isCompleted ? 'bg-green-500' : 'bg-gray-600'
+                                                className={`w-3 h-3 rounded-full transition-all duration-500 ${
+                                                    isActive ? 'bg-blue-400 scale-125 glow-effect' : // 활성 상태일 때 glow 효과
+                                                    isCompleted ? 'bg-blue-500' : 'bg-gray-700'
                                                 }`}
                                                 title={phaseConfig[phase]?.label}
                                             ></div>
@@ -273,36 +273,26 @@
                 const [selectedNodeId, setSelectedNodeId] = useState(null);
                 const [globalNpcs, setGlobalNpcs] = useState([]);
 
-                // Undo/Redo를 위한 히스토리 관리
                 const [history, setHistory] = useState([]);
                 const [historyIndex, setHistoryIndex] = useState(-1);
-
-                // 프리셋 불러오기 플래그
                 const [isLoadingPreset, setIsLoadingPreset] = useState(false);
 
-                // 히스토리에 현재 상태 저장
                 const saveToHistory = () => {
                     const newState = {
                         nodes: JSON.parse(JSON.stringify(nodes)),
                         connections: JSON.parse(JSON.stringify(connections)),
                         globalNpcs: JSON.parse(JSON.stringify(globalNpcs))
                     };
-
-                    // 현재 인덱스 이후의 히스토리 삭제하고 새 상태 추가
                     const newHistory = history.slice(0, historyIndex + 1);
                     newHistory.push(newState);
-
-                    // 히스토리 최대 50개로 제한
                     if (newHistory.length > 50) {
                         newHistory.shift();
                     } else {
                         setHistoryIndex(historyIndex + 1);
                     }
-
                     setHistory(newHistory);
                 };
 
-                // Undo 실행
                 const handleUndo = () => {
                     if (historyIndex > 0) {
                         const newIndex = historyIndex - 1;
@@ -314,7 +304,6 @@
                     }
                 };
 
-                // Redo 실행
                 const handleRedo = () => {
                     if (historyIndex < history.length - 1) {
                         const newIndex = historyIndex + 1;
@@ -326,7 +315,6 @@
                     }
                 };
 
-                // 키보드 단축키 (Ctrl+Z, Ctrl+Y)
                 useEffect(() => {
                     const handleKeyDown = (e) => {
                         if (e.ctrlKey && e.key === 'z') {
@@ -341,14 +329,12 @@
                     return () => window.removeEventListener('keydown', handleKeyDown);
                 }, [historyIndex, history]);
 
-                // 초기 상태를 히스토리에 저장
                 useEffect(() => {
                     if (history.length === 0) {
                         saveToHistory();
                     }
                 }, []);
 
-                // 프리셋 불러온 후 state가 업데이트되면 히스토리에 저장
                 useEffect(() => {
                     if (isLoadingPreset) {
                         saveToHistory();
@@ -356,7 +342,6 @@
                     }
                 }, [nodes, connections, globalNpcs, isLoadingPreset]);
 
-                // 프리셋 관련 state
                 const [presetModalOpen, setPresetModalOpen] = useState(false);
                 const [presetSaveModalOpen, setPresetSaveModalOpen] = useState(false);
                 const [presets, setPresets] = useState([]);
@@ -364,7 +349,6 @@
                 const [presetDescription, setPresetDescription] = useState('');
                 const [loadingPresets, setLoadingPresets] = useState(false);
 
-                // 모델 제공사 및 버전 정보
                 const MODEL_PROVIDERS = {
                     'google': {
                         name: 'Google',
@@ -447,7 +431,6 @@
                 const [selectedProvider, setSelectedProvider] = useState('deepseek');
                 const [selectedModel, setSelectedModel] = useState('openai/tngtech/deepseek-r1t2-chimera:free');
 
-                // 제공사 변경 시 첫 번째 모델로 자동 선택
                 const handleProviderChange = (provider) => {
                     setSelectedProvider(provider);
                     const models = MODEL_PROVIDERS[provider]?.models;
@@ -456,14 +439,12 @@
                     }
                 };
 
-                // 현재 선택된 모델 정보
                 const getSelectedModelInfo = () => {
                     const provider = MODEL_PROVIDERS[selectedProvider];
                     if (!provider) return null;
                     return provider.models.find(m => m.id === selectedModel);
                 };
 
-                // [수정] npcModalOpen 삭제
                 const [resultModal, setResultModal] = useState({ open: false, type: 'info', title: '', message: '', showPlayButton: false });
                 const [isLoading, setIsLoading] = useState(false);
                 const [progress, setProgress] = useState(0);
@@ -477,7 +458,6 @@
                     current_phase: 'initializing'
                 });
 
-                // 자동 제목 기능
                 const [useAutoTitle, setUseAutoTitle] = useState(true);
                 const [generatedTitle, setGeneratedTitle] = useState('');
 
@@ -486,7 +466,6 @@
                 const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
                 const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
-                // 줌 기능 state 추가
                 const [zoom, setZoom] = useState(1);
                 const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
                 const [isPanning, setIsPanning] = useState(false);
@@ -494,9 +473,6 @@
 
                 const canvasRef = useRef(null);
 
-                // [삭제됨] 안 쓰는 timerRef 제거
-
-                // [추가] 외부 NPC 생성기 팝업 열기
                 const openExternalNpcGenerator = () => {
                     const width = 500;
                     const height = 700;
@@ -505,7 +481,6 @@
                     window.open('/builder/npc-generator', 'NPCGenerator', `width=${width},height=${height},top=${top},left=${left},resizable=yes`);
                 };
 
-                // [추가] 외부 NPC 생성기 메시지 리스너
                 useEffect(() => {
                     const handleMessage = (event) => {
                         if (event.data.type === 'GENERATOR_READY') {
@@ -522,37 +497,30 @@
                         } else if (event.data.type === 'ADD_NPC') {
                             const newNpc = event.data.payload;
                             setGlobalNpcs(prev => {
-                                // 이름 중복 체크
                                 if (prev.some(n => n.name === newNpc.name)) return prev;
 
                                 const updated = [...prev, {
                                     name: newNpc.name,
                                     role: newNpc.role,
-                                    trait: newNpc.description, // description을 trait로 매핑
-                                    ...newNpc // 나머지 속성도 포함
+                                    trait: newNpc.description,
+                                    ...newNpc
                                 }];
 
                                 return updated;
                             });
 
-                            // 히스토리에 저장 (약간의 지연 필요)
                             setTimeout(() => {
-                                // 주의: 여기서는 saveToHistory가 클로저로 이전 상태를 캡처할 수 있으므로
-                                // 실제로는 useEffect[globalNpcs] 등을 활용하는 것이 좋지만,
-                                // 기존 코드 패턴(setTimeout)을 유지합니다.
                             }, 100);
                         }
                     };
 
                     window.addEventListener('message', handleMessage);
                     return () => window.removeEventListener('message', handleMessage);
-                }, [nodes]); // nodes 변경 시 리스너 갱신 (최신 시나리오 정보 제공 위해)
+                }, [nodes]);
 
-                // 줌 제한
                 const MIN_ZOOM = 0.25;
                 const MAX_ZOOM = 2;
 
-                // 마우스 휠 줌 핸들러
                 const handleWheel = (e) => {
                     e.preventDefault();
                     const delta = e.deltaY * -0.001;
@@ -560,7 +528,6 @@
                     setZoom(newZoom);
                 };
 
-                // 줌 버튼 핸들러
                 const handleZoomIn = () => {
                     setZoom(prev => Math.min(prev + 0.1, MAX_ZOOM));
                 };
@@ -574,9 +541,7 @@
                     setPanOffset({ x: 0, y: 0 });
                 };
 
-                // 캔버스 마우스 다운 (패닝 시작)
                 const handleCanvasMouseDown = (e) => {
-                    // 스페이스바를 누르거나 중간 마우스 버튼으로 패닝
                     if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
                         e.preventDefault();
                         setIsPanning(true);
@@ -603,15 +568,12 @@
                     setNodes(p => p.map(n => n.id === selectedNodeId ? { ...n, data: { ...n.data, [key]: value } } : n));
                 };
 
-                // [수정] addGlobalNpc 삭제 (팝업 사용으로 대체)
-
                 const handleGenerate = async () => {
                     if (nodes.length < 2) {
                         setResultModal({ open: true, type: 'error', title: '생성 불가', message: '최소한 하나의 장면 노드가 추가되어야 합니다.' });
                         return;
                     }
 
-                    // 초기화
                     setProgress(0);
                     setIsLoading(true);
                     setBuildStatus({
@@ -624,7 +586,6 @@
                         current_phase: 'initializing'
                     });
 
-                    // SSE 연결로 진행률 실시간 수신
                     const eventSource = new EventSource('/api/build_progress');
 
                     eventSource.onmessage = (event) => {
@@ -633,7 +594,6 @@
                             setBuildStatus(data);
                             setProgress(data.progress || 0);
 
-                            // 완료 또는 에러 시 SSE 연결 종료
                             if (data.status === 'completed' || data.status === 'error') {
                                 eventSource.close();
                             }
@@ -654,7 +614,6 @@
                             body: JSON.stringify({ nodes, edges: connections, npcs: globalNpcs, model: selectedModel })
                         });
 
-                        // SSE 연결 종료 (이미 종료되었을 수 있음)
                         eventSource.close();
 
                         setProgress(100);
@@ -666,15 +625,11 @@
                         }
 
                         const data = await response.json();
-
-                        // [추가] 에이전트 생성 데이터 디버깅용 로그
                         console.log("Server Response (Agent Data):", data);
 
-                        // 생성된 제목 추출 - start 노드의 label 사용 또는 서버 응답에서 가져오기
                         let scenarioTitle = '';
                         const startNode = nodes.find(n => n.id === 'start');
 
-                        // 우선순위: 1) 서버 응답의 title, 2) start 노드 label, 3) filename에서 추출
                         if (data.title) {
                             scenarioTitle = data.title;
                         } else if (startNode?.data?.label && startNode.data.label !== '시나리오 설정 & 프롤로그') {
@@ -687,7 +642,6 @@
 
                         setGeneratedTitle(scenarioTitle);
 
-                        // 자동 제목 사용 시 start 노드의 label 업데이트
                         if (useAutoTitle && scenarioTitle) {
                             setNodes(prev => prev.map(n =>
                                 n.id === 'start'
@@ -696,11 +650,10 @@
                             ));
                         }
 
-                        // [수정됨] 시나리오 제목이 제대로 표시되도록 수정
                         setResultModal({
                             open: true, type: 'success', title: '생성 완료!',
                             message: `"${scenarioTitle}" 시나리오가 생성되었습니다.\n이제 플레이어 모드에서 게임을 즐겨보세요.`,
-                            data: data, // 에이전트 생성 데이터 전체 전달
+                            data: data,
                             showPlayButton: true
                         });
 
@@ -714,7 +667,6 @@
                     }
                 };
 
-                // [수정됨] 누락되었던 배경 클릭 핸들러 추가
                 const handleBackgroundClick = (e) => {
                     if (e.target === canvasRef.current || e.target.id === 'svg-layer') {
                         setSelectedNodeId(null);
@@ -768,11 +720,9 @@
                     setIsPanning(false);
                 };
 
-                // 노드 크기 상수
                 const NODE_WIDTH = 200;
                 const NODE_HEIGHT = 80;
 
-                // 두 노드 간 최적의 연결점 계산
                 const getConnectionPoints = (sourceNode, targetNode) => {
                     const sCenterX = sourceNode.x + NODE_WIDTH / 2;
                     const sCenterY = sourceNode.y + NODE_HEIGHT / 2;
@@ -784,31 +734,25 @@
 
                     let sx, sy, tx, ty;
 
-                    // 수평 거리가 수직 거리보다 크면 좌우 연결
                     if (Math.abs(dx) > Math.abs(dy)) {
                         if (dx > 0) {
-                            // 타겟이 오른쪽에 있음: 소스 오른쪽 → 타겟 왼쪽
                             sx = sourceNode.x + NODE_WIDTH;
                             sy = sourceNode.y + NODE_HEIGHT / 2;
                             tx = targetNode.x;
                             ty = targetNode.y + NODE_HEIGHT / 2;
                         } else {
-                            // 타겟이 왼쪽에 있음: 소스 왼쪽 → 타겟 오른쪽
                             sx = sourceNode.x;
                             sy = sourceNode.y + NODE_HEIGHT / 2;
                             tx = targetNode.x + NODE_WIDTH;
                             ty = targetNode.y + NODE_HEIGHT / 2;
                         }
                     } else {
-                        // 수직 거리가 더 크면 상하 연결
                         if (dy > 0) {
-                            // 타겟이 아래에 있음: 소스 하단 → 타겟 상단
                             sx = sourceNode.x + NODE_WIDTH / 2;
                             sy = sourceNode.y + NODE_HEIGHT;
                             tx = targetNode.x + NODE_WIDTH / 2;
                             ty = targetNode.y;
                         } else {
-                            // 타겟이 위에 있음: 소스 상단 → 타겟 하단
                             sx = sourceNode.x + NODE_WIDTH / 2;
                             sy = sourceNode.y;
                             tx = targetNode.x + NODE_WIDTH / 2;
@@ -819,19 +763,16 @@
                     return { sx, sy, tx, ty };
                 };
 
-                // 베지어 커브 경로 생성 (연결 방향에 따라 제어점 조정)
                 const createPath = (sx, sy, tx, ty) => {
                     const dx = tx - sx;
                     const dy = ty - sy;
 
-                    // 수평 연결인 경우
                     if (Math.abs(dx) > Math.abs(dy)) {
                         const cpOffset = Math.abs(dx) * 0.4;
                         const cp1x = sx + (dx > 0 ? cpOffset : -cpOffset);
                         const cp2x = tx + (dx > 0 ? -cpOffset : cpOffset);
                         return `M ${sx} ${sy} C ${cp1x} ${sy}, ${cp2x} ${ty}, ${tx} ${ty}`;
                     } else {
-                        // 수직 연결인 경우
                         const cpOffset = Math.abs(dy) * 0.4;
                         const cp1y = sy + (dy > 0 ? cpOffset : -cpOffset);
                         const cp2y = ty + (dy > 0 ? -cpOffset : cpOffset);
@@ -839,7 +780,6 @@
                     }
                 };
 
-                // 프리셋 목록 불러오기
                 const fetchPresets = async () => {
                     setLoadingPresets(true);
                     try {
@@ -854,7 +794,6 @@
                     }
                 };
 
-                // 프리셋 저장
                 const handleSavePreset = async () => {
                     if (!presetName.trim()) {
                         setResultModal({ open: true, type: 'error', title: '저장 실패', message: '프리셋 이름을 입력하세요.' });
@@ -884,13 +823,12 @@
                         setPresetName('');
                         setPresetDescription('');
                         setPresetSaveModalOpen(false);
-                        fetchPresets(); // 목록 새로고침
+                        fetchPresets();
                     } catch (error) {
                         setResultModal({ open: true, type: 'error', title: '저장 실패', message: error.message });
                     }
                 };
 
-                // 프리셋 불러오기
                 const handleLoadPreset = async (preset) => {
                     try {
                         const response = await fetch('/api/presets/load', {
@@ -904,7 +842,6 @@
 
                         const presetData = data.data;
 
-                        // 프리셋 불러오기 플래그 설정
                         setIsLoadingPreset(true);
 
                         setNodes(presetData.nodes || []);
@@ -922,7 +859,6 @@
                     }
                 };
 
-                // 프리셋 삭제
                 const handleDeletePreset = async (filename) => {
                     if (!confirm('정말 이 프리셋을 삭제하시겠습니까?')) return;
 
@@ -936,7 +872,7 @@
                         const data = await response.json();
                         if (!data.success) throw new Error(data.error || '삭제 실패');
 
-                        fetchPresets(); // 목록 새로고침
+                        fetchPresets();
                     } catch (error) {
                         setResultModal({ open: true, type: 'error', title: '삭제 실패', message: error.message });
                     }
@@ -961,7 +897,6 @@
                                 <button onClick={() => addNode('ending')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-red-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-red-500 rounded-full"></div> 엔딩 추가</button>
                                 <button onClick={openExternalNpcGenerator} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-green-300 flex items-center justify-center gap-2"><Icon name="users" size={16} /> NPC 관리</button>
 
-                                {/* 프리셋 버튼 */}
                                 <button onClick={() => { setPresetModalOpen(true); fetchPresets(); }} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-yellow-300 flex items-center justify-center gap-2">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                         <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
@@ -1009,7 +944,6 @@
                             onMouseMove={handleCanvasMouseMove} onMouseUp={handleCanvasMouseUp} onClick={handleBackgroundClick}
                             onWheel={handleWheel} onMouseDown={handleCanvasMouseDown}>
 
-                            {/* 줌 및 히스토리 컨트롤 UI (수정됨) */}
                             <div className="absolute top-4 right-4 z-30 flex flex-col gap-2 bg-gray-900/90 backdrop-blur-sm rounded-lg p-2 border border-gray-700 shadow-xl">
                                 <button
                                     onClick={handleZoomIn}
@@ -1041,7 +975,6 @@
                                         <line x1="8" y1="11" x2="14" y2="11"></line>
                                     </svg>
                                 </button>
-                                {/* [추가됨] 실행 취소/다시 실행 버튼 */}
                                 <div className="h-px bg-gray-700 my-1"></div>
                                 <button onClick={handleUndo} className="w-10 h-10 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center justify-center text-white transition-colors border border-gray-600 hover:border-gray-500" title="실행 취소 (Ctrl+Z)">
                                     <Icon name="undo" size={18} />
@@ -1051,7 +984,6 @@
                                 </button>
                             </div>
 
-                            {/* 조작 가이드 */}
                             <div className="absolute bottom-4 left-4 z-30 bg-gray-900/80 backdrop-blur-sm rounded-lg px-3 py-2 border border-gray-700 text-xs text-gray-400">
                                 <div className="flex items-center gap-2">
                                     <span className="text-white font-bold">조작법:</span>
@@ -1065,7 +997,6 @@
                                 </div>
                             </div>
 
-                            {/* transform 적용된 컨테이너 */}
                             <div style={{
                                 transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
                                 transformOrigin: '0 0',
@@ -1083,7 +1014,6 @@
                                     {connectingSourceId && (() => {
                                         const s = nodes.find(n => n.id === connectingSourceId);
                                         if (!s) return null;
-                                        // 연결 중인 선: 소스 노드 중심에서 마우스 위치까지
                                         const sx = s.x + NODE_WIDTH / 2;
                                         const sy = s.y + NODE_HEIGHT / 2;
                                         return <path d={createPath(sx, sy, mousePos.x, mousePos.y)} className="connecting-line" />;
@@ -1093,12 +1023,9 @@
                                     <div key={node.id} style={{ left: node.x, top: node.y }} onMouseDown={(e) => handleMouseDownNode(e, node.id)}
                                         className={`absolute w-[200px] rounded-lg shadow-xl border-2 group select-none transition-shadow ${selectedNodeId === node.id ? 'border-white z-20 ring-2 ring-blue-500/50' : node.type === 'start' ? 'border-blue-600 bg-gray-900 z-10' : node.type === 'ending' ? 'border-red-600 bg-gray-900 z-10' : 'border-indigo-600 bg-gray-900 z-10'} ${connectingSourceId && connectingSourceId !== node.id ? 'hover:scale-105 cursor-pointer' : 'cursor-grab active:cursor-grabbing'}`}>
 
-                                        {/* 헤더 영역 */}
                                         <div className={`p-2 rounded-t-md text-sm font-bold flex justify-between items-center ${node.type === 'start' ? 'bg-blue-900/50 text-blue-200' : node.type === 'ending' ? 'bg-red-900/50 text-red-200' : 'bg-indigo-900/50 text-indigo-200'}`}>
-                                            {/* 타입 라벨 (왼쪽 여백 추가해서 삭제 버튼이랑 안 겹치게) */}
                                             <span className="truncate pl-2">{node.type === 'start' ? '설정' : node.type === 'scene' ? 'Scene' : 'Ending'}</span>
 
-                                            {/* 연결 버튼 (우측 유지, 스타일 개선) */}
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); setConnectingSourceId(node.id); setSelectedNodeId(node.id); }}
                                                 className={`p-1 rounded hover:bg-white/20 transition-colors ${connectingSourceId === node.id ? 'bg-white/30 text-white animate-pulse' : 'text-white/70 hover:text-white'}`}
@@ -1108,12 +1035,10 @@
                                             </button>
                                         </div>
 
-                                        {/* 본문 영역 */}
                                         <div className="p-3 text-xs text-gray-300 min-h-[60px] relative">
                                             <div className="font-bold mb-1 truncate">{node.data.title || '제목 없음'}</div>
                                             <div className="text-gray-500 line-clamp-2">{node.data.description || '내용 없음'}</div>
 
-                                            {/* 삭제 버튼 (왼쪽 상단 모서리로 이동) */}
                                             {node.id !== 'start' && selectedNodeId === node.id && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }}
@@ -1137,7 +1062,6 @@
                                     <div className="p-6 space-y-6">
                                         <h2 className="text-lg font-bold border-b border-gray-700 pb-2">속성 편집 <span className="text-xs bg-gray-800 px-2 py-0.5 rounded text-gray-400">{node.type}</span></h2>
                                         <div className="space-y-3">
-                                            {/* start 노드일 경우 자동 제목 체크박스 표시 */}
                                             {node.type === 'start' && (
                                                 <div className="bg-blue-900/20 border border-blue-800/50 rounded-lg p-3 space-y-2">
                                                     <label className="flex items-center gap-2 cursor-pointer">
@@ -1147,7 +1071,6 @@
                                                             checked={useAutoTitle}
                                                             onChange={(e) => {
                                                                 setUseAutoTitle(e.target.checked);
-                                                                // 자동 제목 활성화 시 생성된 제목으로 업데이트
                                                                 if (e.target.checked && generatedTitle) {
                                                                     setNodes(prev => prev.map(n =>
                                                                         n.id === 'start'
@@ -1196,7 +1119,6 @@
                             })() : <div className="flex flex-col items-center justify-center h-full text-gray-600"><Icon name="settings" size={48} className="mb-4 opacity-50" /><p className="text-sm">노드를 선택하세요</p></div>}
                         </div>
 
-                        {/* 프리셋 관련 모달 */}
                         <Modal isOpen={presetModalOpen} title="프리셋 관리" onClose={() => setPresetModalOpen(false)}>
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center">
@@ -1272,31 +1194,53 @@
                         </Modal>
 
                         <Modal isOpen={resultModal.open} type={resultModal.type} title={resultModal.title} onClose={() => setResultModal({ ...resultModal, open: false })}>
-                            <div className="whitespace-pre-wrap">{resultModal.message}</div>
+                            <div className="whitespace-pre-wrap text-base font-medium text-white mb-4">{resultModal.message}</div>
 
-                            {/* [추가됨] 생성된 데이터(세계관, 사건 등) 요약 표시 */}
+                            {/* [추가] 생성된 데이터 상세 보기 (프롤로그 및 설정 분리) */}
                             {resultModal.data && (
-                                <div className="mt-4 bg-gray-800 rounded p-3 text-xs max-h-60 overflow-y-auto border border-gray-700">
-                                    {resultModal.data.worlds && resultModal.data.worlds.length > 0 && (
-                                        <div className="mb-3">
-                                            <h4 className="font-bold text-purple-400 mb-1">🌎 생성된 세계관</h4>
-                                            <ul className="list-disc pl-4 space-y-1 text-gray-300">
-                                                {resultModal.data.worlds.map((w, i) => (
-                                                    <li key={i}><span className="font-bold">{w.name}:</span> {w.description}</li>
-                                                ))}
-                                            </ul>
+                                <div className="space-y-3">
+                                    {/* 1. 공개 프롤로그 */}
+                                    {(resultModal.data.prologue || resultModal.data.desc) && (
+                                        <div className="bg-gray-800 border border-indigo-500/30 rounded-lg p-3">
+                                            <h4 className="text-sm font-bold text-indigo-300 mb-2 flex items-center gap-2">
+                                                <Icon name="play" size={14} /> 공개 프롤로그
+                                            </h4>
+                                            <div className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto custom-scrollbar">
+                                                {resultModal.data.prologue || resultModal.data.desc}
+                                            </div>
                                         </div>
                                     )}
-                                    {resultModal.data.events && resultModal.data.events.length > 0 && (
-                                        <div>
-                                            <h4 className="font-bold text-indigo-400 mb-1">📜 주요 사건</h4>
-                                            <ul className="list-disc pl-4 space-y-1 text-gray-300">
-                                                {resultModal.data.events.map((e, i) => (
-                                                    <li key={i}><span className="font-bold">{e.name}:</span> {e.description}</li>
-                                                ))}
-                                            </ul>
+
+                                    {/* 2. 비공개 설정 (GM Notes) */}
+                                    {(resultModal.data.world_settings || resultModal.data.gm_notes) && (
+                                        <div className="bg-gray-900 border border-red-500/30 rounded-lg p-3">
+                                            <h4 className="text-sm font-bold text-red-400 mb-2 flex items-center gap-2">
+                                                <Icon name="settings" size={14} /> GM 전용 설정 (비공개)
+                                            </h4>
+                                            <div className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed italic max-h-40 overflow-y-auto custom-scrollbar">
+                                                {resultModal.data.world_settings || resultModal.data.gm_notes}
+                                            </div>
                                         </div>
                                     )}
+
+                                    <div className="grid grid-cols-2 gap-2 mt-2">
+                                        {resultModal.data.worlds && resultModal.data.worlds.length > 0 && (
+                                            <div className="bg-gray-800/50 p-2 rounded border border-gray-700">
+                                                <h5 className="text-xs font-bold text-gray-400 mb-1">🌎 세계관 ({resultModal.data.worlds.length})</h5>
+                                                <ul className="list-disc pl-3 text-[10px] text-gray-500">
+                                                    {resultModal.data.worlds.slice(0, 3).map((w, i) => <li key={i} className="truncate">{w.name}</li>)}
+                                                </ul>
+                                            </div>
+                                        )}
+                                        {resultModal.data.scenes && resultModal.data.scenes.length > 0 && (
+                                            <div className="bg-gray-800/50 p-2 rounded border border-gray-700">
+                                                <h5 className="text-xs font-bold text-gray-400 mb-1">🎬 장면 ({resultModal.data.scenes.length})</h5>
+                                                <ul className="list-disc pl-3 text-[10px] text-gray-500">
+                                                    {resultModal.data.scenes.slice(0, 3).map((s, i) => <li key={i} className="truncate">{s.name || s.title}</li>)}
+                                                </ul>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 
@@ -1327,11 +1271,9 @@
     </script>
     {% endraw %}
 
-<!-- 버전 정보 배지 -->
 <div class="version-badge">
     v{{ version }}
 </div>
 
 </body>
 </html>
-
