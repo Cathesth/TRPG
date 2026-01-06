@@ -108,9 +108,8 @@ class MermaidService:
 
         # Mermaid 코드 생성
         if prologue_text:
-            # 현재 위치가 프롤로그인 경우 하이라이트 스타일 적용
-            prologue_style = "currentStyle" if current_scene_id == 'prologue' else "prologueStyle"
-            mermaid_lines.append(f'    PROLOGUE["📖 Prologue"]:::{prologue_style}')
+            # 프롤로그는 기본 스타일만 적용 (JavaScript에서 하이라이트 처리)
+            mermaid_lines.append(f'    PROLOGUE["📖 Prologue"]:::prologueStyle')
 
         # 프롤로그 -> 연결된 씬들
         if prologue_text and prologue_connects_to:
@@ -123,9 +122,8 @@ class MermaidService:
             scene_id = scene['scene_id']
             scene_title = scene.get('title', scene_id).replace('"', "'")
 
-            # 현재 씬인 경우 하이라이트 스타일 적용
-            style_class = "currentStyle" if current_scene_id == scene_id else "sceneStyle"
-            mermaid_lines.append(f'    {scene_id}["{scene_title}"]:::{style_class}')
+            # 기본 스타일만 적용 (JavaScript에서 하이라이트 처리)
+            mermaid_lines.append(f'    {scene_id}["{scene_title}"]:::sceneStyle')
 
             for trans in scene.get('transitions', []):
                 next_id = trans.get('target_scene_id')
@@ -138,16 +136,13 @@ class MermaidService:
             ending_id = ending['ending_id']
             ending_title = ending.get('title', '엔딩').replace('"', "'")
 
-            # 현재 위치가 엔딩인 경우 하이라이트 스타일 적용
-            style_class = "currentStyle" if current_scene_id == ending_id else "endingStyle"
-            mermaid_lines.append(f'    {ending_id}["🏁 {ending_title}"]:::{style_class}')
+            # 기본 스타일만 적용 (JavaScript에서 하이라이트 처리)
+            mermaid_lines.append(f'    {ending_id}["🏁 {ending_title}"]:::endingStyle')
 
         # 스타일 정의
         mermaid_lines.append("    classDef prologueStyle fill:#0f766e,stroke:#14b8a6,color:#fff")
         mermaid_lines.append("    classDef sceneStyle fill:#312e81,stroke:#6366f1,color:#fff")
         mermaid_lines.append("    classDef endingStyle fill:#831843,stroke:#ec4899,color:#fff")
-        # 현재 씬 하이라이트 스타일 (시안색 테두리, 애니메이션 효과)
-        mermaid_lines.append("    classDef currentStyle fill:#164e63,stroke:#22d3ee,stroke-width:3px,color:#fff")
 
         return {
             'mermaid_code': "\n".join(mermaid_lines),

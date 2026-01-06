@@ -79,9 +79,7 @@
 
         /* 현재 씬 하이라이트 스타일 */
         .current-scene-node {
-            animation: pulse 2s ease-in-out infinite;
-            transform-box: fill-box;
-            transform-origin: center;
+            /* transform 애니메이션 제거 - SVG에서 opacity만 사용 */
         }
 
         /* 버전 정보 스타일 */
@@ -461,22 +459,16 @@
             // 노드의 ID 확인 (Mermaid는 flowchart-{원본ID}-{숫자} 형식으로 생성)
             const nodeId = node.getAttribute('id') || '';
 
-            // nodeId에서 실제 scene_id 추출 (여러 패턴 시도)
-            // 형식: "flowchart-scene_1-123" 또는 "flowchart-PROLOGUE-123"
-            // 언더스코어가 여러 개인 경우: "flowchart-scene_name_1-123"
+            // nodeId에서 실제 scene_id 추출
             let extractedId = '';
-
-            // 패턴 1: 마지막 하이픈과 숫자를 제거
             const lastDashIndex = nodeId.lastIndexOf('-');
             if (lastDashIndex > 0) {
                 const afterLastDash = nodeId.substring(lastDashIndex + 1);
                 if (/^\d+$/.test(afterLastDash)) {
-                    // 마지막이 숫자면, "flowchart-" 부분 제거
                     extractedId = nodeId.substring(0, lastDashIndex).replace(/^flowchart-/, '');
                 }
             }
 
-            // 패턴 2: 정규식으로 추출 (fallback)
             if (!extractedId) {
                 const match = nodeId.match(/flowchart-(.+)-\d+$/);
                 extractedId = match ? match[1] : '';
@@ -493,17 +485,21 @@
 
             if (isCurrentPrologue || isCurrentScene) {
                 console.log('[Highlight] ✅ MATCHED! Node:', nodeId, 'Scene:', currentSceneId);
-                node.classList.add('current-scene-node');
 
-                // 현재 씬에 깜빡이는 애니메이션 추가
-                const animate = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
-                animate.setAttribute('attributeName', 'opacity');
-                animate.setAttribute('values', '1;0.5;1');
-                animate.setAttribute('dur', '2s');
-                animate.setAttribute('repeatCount', 'indefinite');
-
+                // rect나 polygon 요소 찾기
                 const rect = node.querySelector('rect') || node.querySelector('polygon');
                 if (rect) {
+                    // 현재 씬 하이라이트 스타일 직접 적용 (SVG 속성으로)
+                    rect.setAttribute('stroke', '#22d3ee');
+                    rect.setAttribute('stroke-width', '3');
+                    rect.setAttribute('fill', '#164e63');
+
+                    // opacity 애니메이션 추가 (깜빡임 효과)
+                    const animate = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+                    animate.setAttribute('attributeName', 'opacity');
+                    animate.setAttribute('values', '1;0.6;1');
+                    animate.setAttribute('dur', '2s');
+                    animate.setAttribute('repeatCount', 'indefinite');
                     rect.appendChild(animate);
                 }
             }
