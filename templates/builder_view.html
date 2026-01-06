@@ -170,7 +170,7 @@
             const LoadingOverlay = ({ isOpen, progress, buildStatus }) => {
                 if (!isOpen) return null;
 
-                const phaseOrder = ['parsing', 'worldbuilding', 'scene_generation', 'validation', 'finalizing', 'refining', 'done'];
+                const phaseOrder = ['initializing', 'parsing', 'worldbuilding', 'scene_generation', 'validation', 'finalizing', 'done'];
                 const currentPhase = buildStatus.current_phase || 'initializing';
                 const isError = buildStatus.status === 'error';
 
