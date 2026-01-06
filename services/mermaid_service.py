@@ -122,7 +122,7 @@ class MermaidService:
             scene_id = scene['scene_id']
             scene_title = scene.get('title', scene_id).replace('"', "'")
 
-            # 기본 스타일만 적용 (JavaScript에서 하이라이트 처리)
+            # Scene title을 노드 레이블로 사용
             mermaid_lines.append(f'    {scene_id}["{scene_title}"]:::sceneStyle')
 
             for trans in scene.get('transitions', []):
