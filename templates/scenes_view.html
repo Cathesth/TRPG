@@ -9,6 +9,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
         body { font-family: 'Pretendard', sans-serif; }
@@ -79,7 +80,7 @@
 
         /* 현재 씬 하이라이트 스타일 */
         .current-scene-node {
-            animation: pulse 2s ease-in-out infinite;
+            /* transform 애니메이션 제거 - SVG에서 opacity만 사용 */
         }
 
         /* 버전 정보 스타일 */
@@ -99,6 +100,11 @@
             0% { transform: scale(1); }
             50% { transform: scale(1.05); }
             100% { transform: scale(1); }
+        }
+
+        /* Noto Sans 폰트 스타일 */
+        .noto-sans-font {
+            font-family: 'Noto Sans KR', 'Pretendard', sans-serif;
         }
     </style>
 
@@ -280,7 +286,7 @@
                         <span class="flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4 text-yellow-500"></i> 프롤로그 (Prologue)</span>
                         <i data-lucide="chevron-down" class="transition-transform group-open:rotate-180"></i>
                     </summary>
-                    <div class="p-6 border-t border-gray-800 text-gray-300 leading-relaxed italic bg-gray-900/50">
+                    <div class="p-6 border-t border-gray-800 text-gray-300 leading-relaxed bg-gray-900/50 noto-sans-font">
                         {{ scenario.prologue or scenario.prologue_text or "프롤로그 없음" }}
                     </div>
                 </details>
@@ -292,7 +298,7 @@
                     </summary>
                     <div class="p-4 border-t border-gray-800 grid grid-cols-1 md:grid-cols-2 gap-4">
                         {% for scene in scenes %}
-                        <div class="bg-gray-800/50 p-4 rounded border {% if current_scene_id == scene.scene_id %}border-cyan-400 shadow-lg shadow-cyan-500/20{% else %}border-gray-700/50 hover:border-blue-500/30{% endif %} transition-colors {% if current_scene_id == scene.scene_id %}relative{% endif %}">
+                        <div class="bg-indigo-900/10 p-4 rounded border {% if current_scene_id == scene.scene_id %}border-cyan-400 shadow-lg shadow-cyan-500/20{% else %}border-indigo-900/30 hover:border-indigo-500/30{% endif %} transition-colors {% if current_scene_id == scene.scene_id %}relative{% endif %}">
                             {% if current_scene_id == scene.scene_id %}
                             <div class="absolute -top-2 -right-2 bg-cyan-400 text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg">
                                 <i data-lucide="map-pin" class="w-3 h-3"></i>
@@ -300,10 +306,10 @@
                             </div>
                             {% endif %}
                             <div class="font-bold {% if current_scene_id == scene.scene_id %}text-cyan-300{% else %}text-indigo-300{% endif %} text-sm mb-1 flex justify-between">
-                                <span>{{ scene.title }}</span>
-                                <span class="text-xs text-gray-600 bg-gray-900 px-1.5 py-0.5 rounded">{{ scene_display_ids.get(scene.scene_id, scene.scene_id) }}</span>
+                                <span>{{ scene.title or scene.name or scene.scene_id }}</span>
+                                <span class="text-xs text-indigo-900 bg-indigo-900/20 px-1.5 py-0.5 rounded">{{ scene_display_ids.get(scene.scene_id, scene.scene_id) }}</span>
                             </div>
-                            <div class="text-xs text-gray-400 line-clamp-3 mb-2">{{ scene.description }}</div>
+                            <div class="text-xs text-gray-400 line-clamp-3 mb-2 noto-sans-font">{{ scene.description }}</div>
 
                             {% if incoming_conditions and incoming_conditions[scene.scene_id] %}
                             <div class="text-[10px] border-t border-gray-700/50 pt-2 mt-2">
@@ -365,7 +371,7 @@
                                 <span>{{ ending.title }}</span>
                                 <span class="text-xs text-red-900 bg-red-900/20 px-1.5 py-0.5 rounded">{{ ending_display_ids.get(ending.ending_id, ending.ending_id) }}</span>
                             </div>
-                            <div class="text-xs text-gray-400 line-clamp-3 mb-2">{{ ending.description }}</div>
+                            <div class="text-xs text-gray-400 line-clamp-3 mb-2 noto-sans-font">{{ ending.description }}</div>
 
                             {% if ending_incoming_conditions and ending_incoming_conditions[ending.ending_id] %}
                             <div class="text-[10px] border-t border-red-900/20 pt-2 mt-2">
@@ -459,22 +465,16 @@
             // 노드의 ID 확인 (Mermaid는 flowchart-{원본ID}-{숫자} 형식으로 생성)
             const nodeId = node.getAttribute('id') || '';
 
-            // nodeId에서 실제 scene_id 추출 (여러 패턴 시도)
-            // 형식: "flowchart-scene_1-123" 또는 "flowchart-PROLOGUE-123"
-            // 언더스코어가 여러 개인 경우: "flowchart-scene_name_1-123"
+            // nodeId에서 실제 scene_id 추출
             let extractedId = '';
-
-            // 패턴 1: 마지막 하이픈과 숫자를 제거
             const lastDashIndex = nodeId.lastIndexOf('-');
             if (lastDashIndex > 0) {
                 const afterLastDash = nodeId.substring(lastDashIndex + 1);
                 if (/^\d+$/.test(afterLastDash)) {
-                    // 마지막이 숫자면, "flowchart-" 부분 제거
                     extractedId = nodeId.substring(0, lastDashIndex).replace(/^flowchart-/, '');
                 }
             }
 
-            // 패턴 2: 정규식으로 추출 (fallback)
             if (!extractedId) {
                 const match = nodeId.match(/flowchart-(.+)-\d+$/);
                 extractedId = match ? match[1] : '';
@@ -491,17 +491,21 @@
 
             if (isCurrentPrologue || isCurrentScene) {
                 console.log('[Highlight] ✅ MATCHED! Node:', nodeId, 'Scene:', currentSceneId);
-                node.classList.add('current-scene-node');
 
-                // 현재 씬에 깜빡이는 애니메이션 추가
-                const animate = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
-                animate.setAttribute('attributeName', 'opacity');
-                animate.setAttribute('values', '1;0.5;1');
-                animate.setAttribute('dur', '2s');
-                animate.setAttribute('repeatCount', 'indefinite');
-
+                // rect나 polygon 요소 찾기
                 const rect = node.querySelector('rect') || node.querySelector('polygon');
                 if (rect) {
+                    // 현재 씬 하이라이트 스타일 직접 적용 (SVG 속성으로)
+                    rect.setAttribute('stroke', '#22d3ee');
+                    rect.setAttribute('stroke-width', '3');
+                    rect.setAttribute('fill', '#164e63');
+
+                    // opacity 애니메이션 추가 (깜빡임 효과)
+                    const animate = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+                    animate.setAttribute('attributeName', 'opacity');
+                    animate.setAttribute('values', '1;0.6;1');
+                    animate.setAttribute('dur', '2s');
+                    animate.setAttribute('repeatCount', 'indefinite');
                     rect.appendChild(animate);
                 }
             }

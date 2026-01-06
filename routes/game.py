@@ -78,17 +78,36 @@ def game_act_stream():
 
             # C. 프롤로그 (게임 시작 시)
             if is_game_start:
-                prologue_html = '<div class="mb-6 p-4 bg-indigo-900/20 rounded-xl border border-indigo-500/30"><div class="text-indigo-400 font-bold text-sm mb-3 uppercase tracking-wider">[ Prologue ]</div><div class="text-gray-200 leading-relaxed font-serif italic text-lg">'
-                yield f"data: {json.dumps({'type': 'prefix', 'content': prologue_html})}\n\n"
+                scenario = processed_state['scenario']
+                prologue_text = scenario.get('prologue') or scenario.get('prologue_text', '')
 
-                for chunk in prologue_stream_generator(processed_state):
-                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+                # 프롤로그가 있으면 출력
+                if prologue_text and prologue_text.strip():
+                    prologue_html = '<div class="mb-6 p-4 bg-indigo-900/20 rounded-xl border border-indigo-500/30"><div class="text-indigo-400 font-bold text-sm mb-3 uppercase tracking-wider">[ Prologue ]</div><div class="text-gray-200 leading-relaxed serif-font text-lg">'
+                    yield f"data: {json.dumps({'type': 'prefix', 'content': prologue_html})}\n\n"
 
-                yield f"data: {json.dumps({'type': 'section_end', 'content': '</div></div>'})}\n\n"
-                
-                # 프롤로그 후 첫 씬 구분선
-                yield f"data: {json.dumps({'type': 'prefix', 'content': '<hr class=\"border-gray-800 my-6\">'})}\n\n"
-                
+                    for chunk in prologue_stream_generator(processed_state):
+                        yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+
+                    yield f"data: {json.dumps({'type': 'section_end', 'content': '</div></div>'})}\n\n"
+
+                    # 프롤로그 후 구분선
+                    yield f"data: {json.dumps({'type': 'prefix', 'content': '<hr class=\"border-gray-800 my-6\">'})}\n\n"
+
+                # 프롤로그 후 첫 씬으로 이동
+                prologue_connects_to = scenario.get('prologue_connects_to', [])
+                if prologue_connects_to and len(prologue_connects_to) > 0:
+                    first_scene_id = prologue_connects_to[0]
+                else:
+                    # prologue_connects_to가 없으면 첫 번째 씬 선택
+                    scenes = scenario.get('scenes', [])
+                    first_scene_id = scenes[0]['scene_id'] if scenes else 'start'
+
+                # current_scene_id를 첫 씬으로 변경
+                processed_state['current_scene_id'] = first_scene_id
+                game_state.state = processed_state
+                logger.info(f"🎮 [PROLOGUE -> SCENE] Moving to: {first_scene_id}")
+
                 # 첫 씬 묘사
                 for chunk in scene_stream_generator(processed_state):
                     yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"

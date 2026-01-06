@@ -8,7 +8,7 @@ class MermaidService:
     """시나리오를 Mermaid 다이어그램으로 변환"""
 
     @staticmethod
-    def generate_chart(scenario: Dict[str, Any], current_scene_id: str = None) -> Dict[str, Any]:
+    def generate_chart(scenario: Dict[str, Any]) -> Dict[str, Any]:
         """
         시나리오 데이터로부터 Mermaid 차트와 관련 정보 생성
 
@@ -19,9 +19,7 @@ class MermaidService:
                 'incoming_conditions': Dict,
                 'ending_incoming_conditions': Dict,
                 'ending_names': Dict,
-                'scene_names': Dict,
-                'scene_display_ids': Dict,  # scene_id -> Scene-1, Scene-2, ...
-                'ending_display_ids': Dict  # ending_id -> Ending-1, Ending-2, ...
+                'scene_names': Dict
             }
         """
         scenes = scenario.get('scenes', [])
@@ -55,16 +53,7 @@ class MermaidService:
 
         # 매핑 생성
         ending_names = {e.get('ending_id'): e.get('title', e.get('ending_id')) for e in endings}
-        scene_names = {s.get('scene_id'): s.get('title') or s.get('name') or s.get('scene_id') for s in filtered_scenes}
-
-        # 표시용 ID 생성 (Scene-1, Scene-2, ... / Ending-1, Ending-2, ...)
-        scene_display_ids = {}
-        for idx, scene in enumerate(filtered_scenes):
-            scene_display_ids[scene.get('scene_id')] = f"Scene-{idx + 1}"
-
-        ending_display_ids = {}
-        for idx, ending in enumerate(endings):
-            ending_display_ids[ending.get('ending_id')] = f"Ending-{idx + 1}"
+        scene_names = {s.get('scene_id'): s.get('title', s.get('scene_id')) for s in filtered_scenes}
 
         # incoming conditions 계산
         incoming_conditions = {}
@@ -108,8 +97,7 @@ class MermaidService:
 
         # Mermaid 코드 생성
         if prologue_text:
-            # 프롤로그는 기본 스타일만 적용 (JavaScript에서 하이라이트 처리)
-            mermaid_lines.append(f'    PROLOGUE["📖 Prologue"]:::prologueStyle')
+            mermaid_lines.append('    PROLOGUE["📖 Prologue"]:::prologueStyle')
 
         # 프롤로그 -> 연결된 씬들
         if prologue_text and prologue_connects_to:
@@ -120,10 +108,7 @@ class MermaidService:
         # 씬 노드들
         for scene in filtered_scenes:
             scene_id = scene['scene_id']
-            # title 또는 name 필드 사용, 없으면 scene_id 사용
-            scene_title = (scene.get('title') or scene.get('name') or scene_id).replace('"', "'")
-
-            # Scene title을 노드 레이블로 사용
+            scene_title = scene.get('title', scene_id).replace('"', "'")
             mermaid_lines.append(f'    {scene_id}["{scene_title}"]:::sceneStyle')
 
             for trans in scene.get('transitions', []):
@@ -136,8 +121,6 @@ class MermaidService:
         for ending in endings:
             ending_id = ending['ending_id']
             ending_title = ending.get('title', '엔딩').replace('"', "'")
-
-            # 기본 스타일만 적용 (JavaScript에서 하이라이트 처리)
             mermaid_lines.append(f'    {ending_id}["🏁 {ending_title}"]:::endingStyle')
 
         # 스타일 정의
@@ -151,7 +134,6 @@ class MermaidService:
             'incoming_conditions': incoming_conditions,
             'ending_incoming_conditions': ending_incoming_conditions,
             'ending_names': ending_names,
-            'scene_names': scene_names,
-            'scene_display_ids': scene_display_ids,
-            'ending_display_ids': ending_display_ids
+            'scene_names': scene_names
         }
+
