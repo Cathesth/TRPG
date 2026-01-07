@@ -94,7 +94,8 @@ async def game_act_stream(
                         yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
 
                     yield f"data: {json.dumps({'type': 'section_end', 'content': '</div></div>'})}\n\n"
-                    yield f"data: {json.dumps({'type': 'prefix', 'content': '<hr class=\"border-gray-800 my-6\">'})}\n\n"
+                    hr_content = '<hr class="border-gray-800 my-6">'
+                    yield f"data: {json.dumps({'type': 'prefix', 'content': hr_content})}\n\n"
 
                 # 프롤로그 후 첫 씬으로 이동
                 prologue_connects_to = scenario.get('prologue_connects_to', [])
