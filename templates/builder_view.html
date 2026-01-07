@@ -425,64 +425,81 @@
 
                     setProgress(0);
                     setIsLoading(true);
+                    // 초기 상태 메시지 명확화
                     setBuildStatus({
-                        status: 'building', step: '0/5', detail: '구조 검증 및 빌드 준비 중...', progress: 0
+                        status: 'building', step: '0/5', detail: '서버와 연결 중...', progress: 0
                     });
 
-                    // 서버 측 빌드 상태 초기화 (SSE 연결 전)
+                    // 1. 진행률 초기화 요청
                     try {
                         await fetch('/api/reset_build_progress', { method: 'POST' });
                     } catch (e) {
-                        console.warn('Failed to reset build progress:', e);
+                        console.warn('진행률 초기화 실패 (무시 가능):', e);
                     }
 
-                    // SSE 연결
+                    // 2. SSE 연결 설정
                     const eventSource = new EventSource('/api/build_progress');
-                    let sseTimeout = setTimeout(() => {
-                        console.warn('SSE timeout - closing connection');
+
+                    // [추가] 타임아웃 안전장치 (5분)
+                    // 서버가 응답이 없어도 무한 대기하지 않도록 강제 종료 타이머 설정
+                    const sseTimeout = setTimeout(() => {
+                        console.warn('SSE 타임아웃: 연결을 종료합니다.');
                         eventSource.close();
-                    }, 310000); // 5분 10초 타임아웃
+                        // 타임아웃 시에도 UI가 멈추지 않도록 에러 처리
+                        setBuildStatus(prev => ({ ...prev, status: 'error', detail: '서버 응답 시간이 초과되었습니다.' }));
+                        setIsLoading(false);
+                    }, 300000);
 
                     eventSource.onmessage = (event) => {
                         try {
                             const data = JSON.parse(event.data);
-                            console.log('SSE received:', data);
                             setBuildStatus(data);
                             setProgress(data.progress || 0);
+
+                            // 완료되거나 에러가 나면 연결 즉시 종료
                             if (data.status === 'completed' || data.status === 'error') {
                                 clearTimeout(sseTimeout);
                                 eventSource.close();
                             }
                         } catch (e) {
-                            console.error('SSE parse error:', e);
+                            console.error('SSE 데이터 파싱 오류:', e);
                         }
                     };
+
                     eventSource.onerror = (err) => {
-                        console.error('SSE error:', err);
-                        clearTimeout(sseTimeout);
-                        eventSource.close();
+                        // [중요] 연결 에러가 나도 바로 닫지 않고, 재시도하거나 메인 로직(init_game)의 응답을 기다립니다.
+                        // 다만 브라우저 콘솔에 로그는 남깁니다.
+                        console.log('SSE 연결 상태 변경 (일시적일 수 있음):', err);
                     };
 
                     try {
+                        // 3. 게임 생성 요청 (비동기)
+                        // api.py가 async여도 클라이언트는 await으로 응답을 기다려야 합니다.
                         const response = await fetch('/api/init_game', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ nodes, edges: connections, npcs: [...globalNpcs, ...globalEnemies], model: selectedModel })
+                            body: JSON.stringify({
+                                nodes,
+                                edges: connections,
+                                npcs: [...globalNpcs, ...globalEnemies],
+                                model: selectedModel
+                            })
                         });
 
+                        // 요청이 끝나면 SSE는 확실히 정리
                         eventSource.close();
+                        clearTimeout(sseTimeout);
 
                         if (!response.ok) {
                             const errData = await response.json();
-                            throw new Error(errData.error || '서버 오류가 발생했습니다.');
+                            throw new Error(errData.error || '서버 내부 오류가 발생했습니다.');
                         }
-
-                        setProgress(100);
-                        await new Promise(r => setTimeout(r, 300));
 
                         const data = await response.json();
 
-                        // 결과 모달 표시
+                        // 100% 강제 설정 (SSE가 마지막 메시지를 놓쳤을 경우 대비)
+                        setProgress(100);
+
                         setResultModal({
                             open: true, type: 'success', title: '생성 완료!',
                             message: `"${data.title || '새 시나리오'}" 생성이 완료되었습니다.`,
@@ -491,6 +508,7 @@
 
                     } catch (error) {
                         eventSource.close();
+                        clearTimeout(sseTimeout);
                         setBuildStatus(prev => ({ ...prev, status: 'error', detail: error.message }));
                         setResultModal({ open: true, type: 'error', title: '생성 실패', message: error.message });
                     } finally {
