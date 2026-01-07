@@ -141,10 +141,13 @@ def list_scenarios():
 
         status_badge = '<span class="ml-2 text-[10px] bg-green-900 text-green-300 px-1 rounded">PUBLIC</span>' if is_public else '<span class="ml-2 text-[10px] bg-gray-700 text-gray-300 px-1 rounded">PRIVATE</span>'
 
+        # HTML 엔티티 이스케이프 (XSS 방지 및 JavaScript 문자열 안전성)
+        title_escaped = title.replace("'", "\\'").replace('"', '&quot;')
+
         action_buttons = ""
         if is_owner:
             action_buttons += f"""
-            <button onclick="deleteScenario('{fid}', this)" class="text-gray-500 hover:text-red-400 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+            <button onclick="deleteScenario('{fid}', '{title_escaped}', this)" class="text-gray-500 hover:text-red-400 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
             <button onclick="publishScenario('{fid}', this)" class="text-gray-500 hover:text-green-400 p-1 ml-1"><i data-lucide="share-2" class="w-4 h-4"></i></button>
             """
 
