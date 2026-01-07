@@ -343,9 +343,15 @@
                 <i data-lucide="check-circle" class="w-6 h-6"></i>
                 <div>
                     <div class="font-bold">로드 완료!</div>
-                    <div class="text-sm opacity-80">"시작"을 입력하여 이야기를 시작하세요.</div>
+                    <div class="text-sm opacity-80">아래 버튼을 클릭하거나 채팅창에 "시작"을 입력하세요.</div>
                 </div>
-            </div>`;
+            </div>
+            <button onclick="submitGameAction('시작')"
+                    class="mt-3 w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shadow-lg">
+                <i data-lucide="play" class="w-5 h-5"></i>
+                게임 시작하기
+            </button>
+            `;
             lucide.createIcons();
         }
 
@@ -859,3 +865,4 @@
 
 </body>
 </html>
+
