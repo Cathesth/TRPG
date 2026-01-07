@@ -9,7 +9,7 @@ import copy
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
-from models import db, ScenarioHistory, Scenario, TempScenario
+from models import SessionLocal, ScenarioHistory, Scenario, TempScenario
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +38,10 @@ class HistoryService:
         Returns:
             (success, error_message)
         """
+        db = SessionLocal()
         try:
             # 기존 이력 확인
-            existing = ScenarioHistory.query.filter_by(
+            existing = db.query(ScenarioHistory).filter_by(
                 scenario_id=scenario_id,
                 editor_id=editor_id
             ).first()
@@ -60,15 +61,17 @@ class HistoryService:
                 is_current=True
             )
 
-            db.session.add(history_entry)
-            db.session.commit()
+            db.add(history_entry)
+            db.commit()
 
             return True, None
 
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             logger.error(f"History initialize error: {e}", exc_info=True)
             return False, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def add_history(
@@ -92,9 +95,10 @@ class HistoryService:
         Returns:
             (success, error_message)
         """
+        db = SessionLocal()
         try:
             # 현재 위치 찾기
-            current_entry = ScenarioHistory.query.filter_by(
+            current_entry = db.query(ScenarioHistory).filter_by(
                 scenario_id=scenario_id,
                 editor_id=editor_id,
                 is_current=True
@@ -102,7 +106,7 @@ class HistoryService:
 
             if current_entry:
                 # 현재 위치 이후의 이력 삭제 (Redo 스택 초기화)
-                ScenarioHistory.query.filter(
+                db.query(ScenarioHistory).filter(
                     ScenarioHistory.scenario_id == scenario_id,
                     ScenarioHistory.editor_id == editor_id,
                     ScenarioHistory.sequence > current_entry.sequence
@@ -125,32 +129,34 @@ class HistoryService:
                 is_current=True
             )
 
-            db.session.add(new_entry)
+            db.add(new_entry)
 
             # 이력 개수 제한 (오래된 이력 삭제)
-            total_count = ScenarioHistory.query.filter_by(
+            total_count = db.query(ScenarioHistory).filter_by(
                 scenario_id=scenario_id,
                 editor_id=editor_id
             ).count()
 
             if total_count > MAX_HISTORY_SIZE:
                 # 가장 오래된 이력들 삭제
-                oldest_entries = ScenarioHistory.query.filter_by(
+                oldest_entries = db.query(ScenarioHistory).filter_by(
                     scenario_id=scenario_id,
                     editor_id=editor_id
                 ).order_by(ScenarioHistory.sequence.asc()).limit(total_count - MAX_HISTORY_SIZE).all()
 
                 for entry in oldest_entries:
-                    db.session.delete(entry)
+                    db.delete(entry)
 
-            db.session.commit()
+            db.commit()
 
             return True, None
 
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             logger.error(f"History add error: {e}", exc_info=True)
             return False, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def undo(
@@ -167,9 +173,10 @@ class HistoryService:
         Returns:
             (복원된 시나리오 데이터, error_message)
         """
+        db = SessionLocal()
         try:
             # 현재 위치 찾기
-            current_entry = ScenarioHistory.query.filter_by(
+            current_entry = db.query(ScenarioHistory).filter_by(
                 scenario_id=scenario_id,
                 editor_id=editor_id,
                 is_current=True
@@ -182,7 +189,7 @@ class HistoryService:
                 return None, "더 이상 되돌릴 수 없습니다."
 
             # 이전 이력 찾기
-            prev_entry = ScenarioHistory.query.filter_by(
+            prev_entry = db.query(ScenarioHistory).filter_by(
                 scenario_id=scenario_id,
                 editor_id=editor_id,
                 sequence=current_entry.sequence - 1
@@ -196,7 +203,7 @@ class HistoryService:
             prev_entry.is_current = True
 
             # Draft도 업데이트
-            draft = TempScenario.query.filter_by(
+            draft = db.query(TempScenario).filter_by(
                 original_scenario_id=scenario_id,
                 editor_id=editor_id
             ).first()
@@ -205,14 +212,16 @@ class HistoryService:
                 draft.data = copy.deepcopy(prev_entry.snapshot_data)
                 draft.updated_at = datetime.utcnow()
 
-            db.session.commit()
+            db.commit()
 
             return prev_entry.snapshot_data, None
 
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             logger.error(f"Undo error: {e}", exc_info=True)
             return None, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def redo(
@@ -229,9 +238,10 @@ class HistoryService:
         Returns:
             (복원된 시나리오 데이터, error_message)
         """
+        db = SessionLocal()
         try:
             # 현재 위치 찾기
-            current_entry = ScenarioHistory.query.filter_by(
+            current_entry = db.query(ScenarioHistory).filter_by(
                 scenario_id=scenario_id,
                 editor_id=editor_id,
                 is_current=True
@@ -241,7 +251,7 @@ class HistoryService:
                 return None, "이력이 없습니다."
 
             # 다음 이력 찾기
-            next_entry = ScenarioHistory.query.filter_by(
+            next_entry = db.query(ScenarioHistory).filter_by(
                 scenario_id=scenario_id,
                 editor_id=editor_id,
                 sequence=current_entry.sequence + 1
@@ -255,7 +265,7 @@ class HistoryService:
             next_entry.is_current = True
 
             # Draft도 업데이트
-            draft = TempScenario.query.filter_by(
+            draft = db.query(TempScenario).filter_by(
                 original_scenario_id=scenario_id,
                 editor_id=editor_id
             ).first()
@@ -264,14 +274,16 @@ class HistoryService:
                 draft.data = copy.deepcopy(next_entry.snapshot_data)
                 draft.updated_at = datetime.utcnow()
 
-            db.session.commit()
+            db.commit()
 
             return next_entry.snapshot_data, None
 
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             logger.error(f"Redo error: {e}", exc_info=True)
             return None, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def restore_to_point(
@@ -290,9 +302,10 @@ class HistoryService:
         Returns:
             (복원된 시나리오 데이터, error_message)
         """
+        db = SessionLocal()
         try:
             # 대상 이력 찾기
-            target_entry = ScenarioHistory.query.filter_by(
+            target_entry = db.query(ScenarioHistory).filter_by(
                 id=history_id,
                 scenario_id=scenario_id,
                 editor_id=editor_id
@@ -302,7 +315,7 @@ class HistoryService:
                 return None, "이력을 찾을 수 없습니다."
 
             # 현재 위치 해제
-            ScenarioHistory.query.filter_by(
+            db.query(ScenarioHistory).filter_by(
                 scenario_id=scenario_id,
                 editor_id=editor_id,
                 is_current=True
@@ -312,7 +325,7 @@ class HistoryService:
             target_entry.is_current = True
 
             # Draft도 업데이트
-            draft = TempScenario.query.filter_by(
+            draft = db.query(TempScenario).filter_by(
                 original_scenario_id=scenario_id,
                 editor_id=editor_id
             ).first()
@@ -321,14 +334,16 @@ class HistoryService:
                 draft.data = copy.deepcopy(target_entry.snapshot_data)
                 draft.updated_at = datetime.utcnow()
 
-            db.session.commit()
+            db.commit()
 
             return target_entry.snapshot_data, None
 
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             logger.error(f"Restore error: {e}", exc_info=True)
             return None, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def get_history_list(
@@ -345,8 +360,9 @@ class HistoryService:
         Returns:
             (이력 목록, 현재 위치 sequence, error_message)
         """
+        db = SessionLocal()
         try:
-            entries = ScenarioHistory.query.filter_by(
+            entries = db.query(ScenarioHistory).filter_by(
                 scenario_id=scenario_id,
                 editor_id=editor_id
             ).order_by(ScenarioHistory.sequence.desc()).all()
@@ -364,6 +380,8 @@ class HistoryService:
         except Exception as e:
             logger.error(f"Get history list error: {e}", exc_info=True)
             return [], -1, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def get_undo_redo_status(
@@ -380,8 +398,9 @@ class HistoryService:
         Returns:
             {'can_undo': bool, 'can_redo': bool, 'current_sequence': int, 'total_count': int}
         """
+        db = SessionLocal()
         try:
-            current_entry = ScenarioHistory.query.filter_by(
+            current_entry = db.query(ScenarioHistory).filter_by(
                 scenario_id=scenario_id,
                 editor_id=editor_id,
                 is_current=True
@@ -399,13 +418,13 @@ class HistoryService:
             can_undo = current_entry.sequence > 0
 
             # Redo 가능 여부 (현재 위치 이후에 이력이 있으면 가능)
-            next_exists = ScenarioHistory.query.filter_by(
+            next_exists = db.query(ScenarioHistory).filter_by(
                 scenario_id=scenario_id,
                 editor_id=editor_id,
                 sequence=current_entry.sequence + 1
             ).first() is not None
 
-            total_count = ScenarioHistory.query.filter_by(
+            total_count = db.query(ScenarioHistory).filter_by(
                 scenario_id=scenario_id,
                 editor_id=editor_id
             ).count()
@@ -425,6 +444,8 @@ class HistoryService:
                 'current_sequence': -1,
                 'total_count': 0
             }
+        finally:
+            db.close()
 
     @staticmethod
     def clear_history(
@@ -441,18 +462,19 @@ class HistoryService:
         Returns:
             (success, error_message)
         """
+        db = SessionLocal()
         try:
-            ScenarioHistory.query.filter_by(
+            db.query(ScenarioHistory).filter_by(
                 scenario_id=scenario_id,
                 editor_id=editor_id
             ).delete()
 
-            db.session.commit()
-
+            db.commit()
             return True, None
 
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             logger.error(f"Clear history error: {e}", exc_info=True)
             return False, str(e)
-
+        finally:
+            db.close()

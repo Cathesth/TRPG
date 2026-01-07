@@ -1,1 +1,2 @@
-web: gunicorn app:app --worker-class gthread --threads 4 --timeout 600 --bind 0.0.0.0:$PORT
+web: uvicorn app:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 600
+

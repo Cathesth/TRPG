@@ -1,36 +1,40 @@
 import logging
 import json
 import traceback
-from flask import Blueprint, request, Response, stream_with_context, jsonify
-from flask_login import login_required, current_user
+from fastapi import APIRouter, Request, Form, Depends
+from fastapi.responses import StreamingResponse, JSONResponse
 
 from core.state import game_state
-# [CRITICAL] process_before_narrator 제거, scene_stream_generator 등만 import
 from game_engine import scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message
+from routes.auth import get_current_user_optional, CurrentUser
 
-# 로깅 설정
 logger = logging.getLogger(__name__)
 
-game_bp = Blueprint('game', __name__, url_prefix='/game')
+game_router = APIRouter(prefix="/game", tags=["game"])
 
 # 최대 재시도 횟수
 MAX_RETRIES = 2
 
-@game_bp.route('/act', methods=['POST'])
-def game_act():
+
+@game_router.post('/act')
+async def game_act():
     """HTMX Fallback (사용 안함)"""
     return "Please use streaming mode."
 
-@game_bp.route('/act_stream', methods=['POST'])
-def game_act_stream():
+
+@game_router.post('/act_stream')
+async def game_act_stream(
+    request: Request,
+    action: str = Form(default=''),
+    user: CurrentUser = Depends(get_current_user_optional)
+):
     """스트리밍 방식 - SSE (LangGraph 기반)"""
     if not game_state.state or not game_state.game_graph:
-        return Response(
-            "data: " + json.dumps({'type': 'error', 'content': '먼저 게임을 로드해주세요.'}) + "\n\n",
-            mimetype='text/event-stream'
-        )
+        def error_gen():
+            yield f"data: {json.dumps({'type': 'error', 'content': '먼저 게임을 로드해주세요.'})}\n\n"
+        return StreamingResponse(error_gen(), media_type='text/event-stream')
 
-    action_text = request.form.get('action', '').strip()
+    action_text = action.strip()
     current_state = game_state.state
 
     # 1. 사용자 입력 저장
@@ -53,11 +57,9 @@ def game_act_stream():
                 logger.info(f"🎮 [GAME START] Start Scene: {start_scene_id}")
                 current_state['current_scene_id'] = start_scene_id
                 current_state['system_message'] = 'Game Started'
-                # 시작 시점에는 그래프를 돌리지 않음 (프롤로그 출력)
             else:
                 # 일반 턴: LangGraph 실행
                 logger.info(f"🎮 Action: {action_text}")
-                # invoke를 통해 상태 갱신
                 processed_state = game_state.game_graph.invoke(current_state)
                 game_state.state = processed_state
 
@@ -84,7 +86,6 @@ def game_act_stream():
                 scenario = processed_state['scenario']
                 prologue_text = scenario.get('prologue') or scenario.get('prologue_text', '')
 
-                # 프롤로그가 있으면 출력
                 if prologue_text and prologue_text.strip():
                     prologue_html = '<div class="mb-6 p-4 bg-indigo-900/20 rounded-xl border border-indigo-500/30"><div class="text-indigo-400 font-bold text-sm mb-3 uppercase tracking-wider">[ Prologue ]</div><div class="text-gray-200 leading-relaxed serif-font text-lg">'
                     yield f"data: {json.dumps({'type': 'prefix', 'content': prologue_html})}\n\n"
@@ -93,8 +94,6 @@ def game_act_stream():
                         yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
 
                     yield f"data: {json.dumps({'type': 'section_end', 'content': '</div></div>'})}\n\n"
-
-                    # 프롤로그 후 구분선
                     yield f"data: {json.dumps({'type': 'prefix', 'content': '<hr class=\"border-gray-800 my-6\">'})}\n\n"
 
                 # 프롤로그 후 첫 씬으로 이동
@@ -102,11 +101,9 @@ def game_act_stream():
                 if prologue_connects_to and len(prologue_connects_to) > 0:
                     first_scene_id = prologue_connects_to[0]
                 else:
-                    # prologue_connects_to가 없으면 첫 번째 씬 선택
                     scenes = scenario.get('scenes', [])
                     first_scene_id = scenes[0]['scene_id'] if scenes else 'start'
 
-                # current_scene_id를 첫 씬으로 변경
                 processed_state['current_scene_id'] = first_scene_id
                 game_state.state = processed_state
                 logger.info(f"🎮 [PROLOGUE -> SCENE] Moving to: {first_scene_id}")
@@ -135,9 +132,9 @@ def game_act_stream():
             logger.error(f"Stream Error: {e}", exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
 
-    return Response(
-        stream_with_context(generate()),
-        mimetype='text/event-stream',
+    return StreamingResponse(
+        generate(),
+        media_type='text/event-stream',
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
     )
 
@@ -162,11 +159,9 @@ def stream_scene_with_retry(state):
         if need_retry:
             retry_count += 1
             if retry_count <= MAX_RETRIES:
-                # 재생성 알림 전송
                 logger.info(f"🔄 [RETRY] Attempt {retry_count}/{MAX_RETRIES}")
                 yield f"data: {json.dumps({'type': 'retry', 'attempt': retry_count, 'max': MAX_RETRIES})}\n\n"
             else:
-                # 최대 재시도 초과 - 폴백 메시지 전송
                 logger.warning(f"⚠️ [FALLBACK] Max retries exceeded")
                 fallback_msg = get_narrative_fallback_message(state.get('scenario', {}))
                 fallback_html = f"""

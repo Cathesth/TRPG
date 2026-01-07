@@ -1,11 +1,12 @@
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import UserMixin
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, create_engine
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import JSON
 from datetime import datetime
 import os
 
-db = SQLAlchemy()
+# SQLAlchemy Base
+Base = declarative_base()
 
 # 환경에 따라 JSON 타입 결정 (SQLite는 JSONB 미지원, PostgreSQL은 JSONB 사용)
 db_uri = os.getenv('DATABASE_URL', '')
@@ -14,32 +15,71 @@ if 'postgresql' in db_uri or 'postgres' in db_uri:
 else:
     JSON_TYPE = JSON
 
+# Database URL 처리 (postgres:// -> postgresql://)
+DATABASE_URL = os.getenv('DATABASE_URL', f'sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), "trpg.db")}')
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-class User(UserMixin, db.Model):
+# Engine 및 Session 생성
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+# Dependency - DB Session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+class User(Base):
     __tablename__ = 'users'
 
-    id = db.Column(db.String(50), primary_key=True)  # username을 id로 사용
-    password_hash = db.Column(db.String(255), nullable=False)
-    email = db.Column(db.String(120), nullable=True)  # 이메일 필드 추가
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    id = Column(String(50), primary_key=True)  # username을 id로 사용
+    password_hash = Column(String(255), nullable=False)
+    email = Column(String(120), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-    # 관계 설정 (유저가 삭제되면 시나리오도 삭제될지, 유지될지는 정책에 따라 설정 가능)
-    scenarios = db.relationship('Scenario', backref='owner', lazy=True)
+    # 관계 설정
+    scenarios = relationship('Scenario', back_populates='owner')
+
+    # Flask-Login 호환 속성
+    @property
+    def is_authenticated(self):
+        return True
+
+    @property
+    def is_active(self):
+        return True
+
+    @property
+    def is_anonymous(self):
+        return False
+
+    def get_id(self):
+        return self.id
 
 
-class Scenario(db.Model):
+class Scenario(Base):
     __tablename__ = 'scenarios'
 
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(100), nullable=False)
-    author_id = db.Column(db.String(50), db.ForeignKey('users.id'), nullable=True)  # null이면 익명/시스템
+    id = Column(Integer, primary_key=True)
+    title = Column(String(100), nullable=False)
+    author_id = Column(String(50), ForeignKey('users.id'), nullable=True)
 
     # 시나리오 전체 데이터 (scenes, endings, variables 등 구조화된 JSON)
-    data = db.Column(JSON_TYPE, nullable=False)
+    data = Column(JSON_TYPE, nullable=False)
 
-    is_public = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_public = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 관계 설정
+    owner = relationship('User', back_populates='scenarios')
+    drafts = relationship('TempScenario', back_populates='original_scenario')
+    history_entries = relationship('ScenarioHistory', back_populates='scenario')
 
     def to_dict(self):
         return {
@@ -48,24 +88,24 @@ class Scenario(db.Model):
             'author': self.author_id or 'Anonymous',
             'data': self.data,
             'is_public': self.is_public,
-            'created_at': self.created_at.timestamp(),
-            'updated_at': self.updated_at.timestamp()
+            'created_at': self.created_at.timestamp() if self.created_at else None,
+            'updated_at': self.updated_at.timestamp() if self.updated_at else None
         }
 
 
-class Preset(db.Model):
+class Preset(Base):
     __tablename__ = 'presets'
 
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    description = db.Column(db.Text, default='')
-    author_id = db.Column(db.String(50), db.ForeignKey('users.id'), nullable=True)
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text, default='')
+    author_id = Column(String(50), ForeignKey('users.id'), nullable=True)
 
     # 프리셋 전체 데이터 (nodes, connections, globalNpcs, settings 등)
-    data = db.Column(JSON_TYPE, nullable=False)
+    data = Column(JSON_TYPE, nullable=False)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self):
         return {
@@ -74,31 +114,31 @@ class Preset(db.Model):
             'description': self.description,
             'author': self.author_id or 'Anonymous',
             'data': self.data,
-            'created_at': self.created_at.timestamp(),
-            'updated_at': self.updated_at.timestamp()
+            'created_at': self.created_at.timestamp() if self.created_at else None,
+            'updated_at': self.updated_at.timestamp() if self.updated_at else None
         }
 
 
-class TempScenario(db.Model):
+class TempScenario(Base):
     """
     Draft 시스템: 편집 중인 시나리오의 임시 저장용 테이블
     최종 반영 전까지 이 테이블에서만 데이터를 수정
     """
     __tablename__ = 'temp_scenarios'
 
-    id = db.Column(db.Integer, primary_key=True)
-    original_scenario_id = db.Column(db.Integer, db.ForeignKey('scenarios.id'), nullable=False)
-    editor_id = db.Column(db.String(50), db.ForeignKey('users.id'), nullable=False)
+    id = Column(Integer, primary_key=True)
+    original_scenario_id = Column(Integer, ForeignKey('scenarios.id'), nullable=False)
+    editor_id = Column(String(50), ForeignKey('users.id'), nullable=False)
 
     # 편집 중인 시나리오 데이터
-    data = db.Column(JSON_TYPE, nullable=False)
+    data = Column(JSON_TYPE, nullable=False)
 
     # 메타 정보
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # 관계 설정
-    original_scenario = db.relationship('Scenario', backref='drafts')
+    original_scenario = relationship('Scenario', back_populates='drafts')
 
     def to_dict(self):
         return {
@@ -111,21 +151,17 @@ class TempScenario(db.Model):
         }
 
 
-# [신규 추가] NPC/Enemy 저장을 위한 모델
-class CustomNPC(db.Model):
+class CustomNPC(Base):
+    """NPC/Enemy 저장을 위한 모델"""
     __tablename__ = 'custom_npcs'
 
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    # npc 또는 enemy 구분
-    type = db.Column(db.String(50), default='npc')
-    # 상세 데이터 (성격, 배경, 스탯 등 JSON 통째로 저장)
-    data = db.Column(JSON_TYPE, nullable=False)
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    type = Column(String(50), default='npc')  # npc 또는 enemy 구분
+    data = Column(JSON_TYPE, nullable=False)  # 상세 데이터 JSON
 
-    # 소유자 (로그인 유저가 만든 경우)
-    author_id = db.Column(db.String(50), db.ForeignKey('users.id'), nullable=True)
-
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    author_id = Column(String(50), ForeignKey('users.id'), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
     def to_dict(self):
         return {
@@ -134,11 +170,11 @@ class CustomNPC(db.Model):
             'type': self.type,
             'data': self.data,
             'author': self.author_id,
-            'created_at': self.created_at.timestamp()
+            'created_at': self.created_at.timestamp() if self.created_at else None
         }
 
 
-class ScenarioHistory(db.Model):
+class ScenarioHistory(Base):
     """
     시나리오 변경 이력 테이블
     - Undo/Redo 기능을 위한 스냅샷 저장
@@ -146,27 +182,27 @@ class ScenarioHistory(db.Model):
     """
     __tablename__ = 'scenario_history'
 
-    id = db.Column(db.Integer, primary_key=True)
-    scenario_id = db.Column(db.Integer, db.ForeignKey('scenarios.id'), nullable=False)
-    editor_id = db.Column(db.String(50), db.ForeignKey('users.id'), nullable=False)
+    id = Column(Integer, primary_key=True)
+    scenario_id = Column(Integer, ForeignKey('scenarios.id'), nullable=False)
+    editor_id = Column(String(50), ForeignKey('users.id'), nullable=False)
 
     # 변경 이력 정보
-    action_type = db.Column(db.String(50), nullable=False)  # 'scene_edit', 'scene_add', 'scene_delete', 'ending_edit', 'reorder', 'prologue_edit' 등
-    action_description = db.Column(db.String(255), nullable=False)  # 사용자에게 보여줄 설명
+    action_type = Column(String(50), nullable=False)
+    action_description = Column(String(255), nullable=False)
 
-    # 스냅샷 데이터 (해당 시점의 전체 시나리오 데이터)
-    snapshot_data = db.Column(JSON_TYPE, nullable=False)
+    # 스냅샷 데이터
+    snapshot_data = Column(JSON_TYPE, nullable=False)
 
-    # 이력 순서 (같은 시나리오 내에서의 순서)
-    sequence = db.Column(db.Integer, nullable=False)
+    # 이력 순서
+    sequence = Column(Integer, nullable=False)
 
-    # 현재 위치 표시 (Undo/Redo 시 현재 위치)
-    is_current = db.Column(db.Boolean, default=False)
+    # 현재 위치 표시
+    is_current = Column(Boolean, default=False)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
     # 관계 설정
-    scenario = db.relationship('Scenario', backref='history_entries')
+    scenario = relationship('Scenario', back_populates='history_entries')
 
     def to_dict(self):
         return {
@@ -179,3 +215,8 @@ class ScenarioHistory(db.Model):
             'is_current': self.is_current,
             'created_at': self.created_at.timestamp() if self.created_at else None
         }
+
+
+# 테이블 생성 함수
+def create_tables():
+    Base.metadata.create_all(bind=engine)

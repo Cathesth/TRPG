@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
 from config import DEFAULT_PLAYER_VARS
-from models import db, Scenario
+from models import SessionLocal, Scenario
 
 logger = logging.getLogger(__name__)
 
@@ -16,80 +16,76 @@ class ScenarioService:
     @staticmethod
     def list_scenarios(sort_order: str = 'newest', user_id: str = None, filter_mode: str = 'public',
                        limit: int = None) -> List[Dict[str, Any]]:
-        """
-        시나리오 목록 조회 (DB 기반)
-        limit: 반환할 시나리오 최대 개수 (대시보드용)
-        """
-        query = Scenario.query
+        """시나리오 목록 조회 (DB 기반)"""
+        db = SessionLocal()
+        try:
+            query = db.query(Scenario)
 
-        # 필터링 로직
-        if filter_mode == 'my' and user_id:
-            query = query.filter_by(author_id=user_id)
-        elif filter_mode == 'public':
-            query = query.filter_by(is_public=True)
-        else:  # all (공개 + 내 것)
-            if user_id:
-                query = query.filter((Scenario.is_public == True) | (Scenario.author_id == user_id))
-            else:
-                query = query.filter_by(is_public=True)
+            # 필터링 로직
+            if filter_mode == 'my' and user_id:
+                query = query.filter(Scenario.author_id == user_id)
+            elif filter_mode == 'public':
+                query = query.filter(Scenario.is_public == True)
+            else:  # all
+                if user_id:
+                    query = query.filter((Scenario.is_public == True) | (Scenario.author_id == user_id))
+                else:
+                    query = query.filter(Scenario.is_public == True)
 
-        # 정렬 로직
-        if sort_order == 'oldest':
-            query = query.order_by(Scenario.created_at.asc())
-        elif sort_order == 'name_asc':
-            query = query.order_by(Scenario.title.asc())
-        elif sort_order == 'name_desc':
-            query = query.order_by(Scenario.title.desc())
-        else:  # newest
-            query = query.order_by(Scenario.created_at.desc())
+            # 정렬 로직
+            if sort_order == 'oldest':
+                query = query.order_by(Scenario.created_at.asc())
+            elif sort_order == 'name_asc':
+                query = query.order_by(Scenario.title.asc())
+            elif sort_order == 'name_desc':
+                query = query.order_by(Scenario.title.desc())
+            else:  # newest
+                query = query.order_by(Scenario.created_at.desc())
 
-        # [CRITICAL] 개수 제한 (Limit) 적용
-        if limit:
-            query = query.limit(limit)
+            if limit:
+                query = query.limit(limit)
 
-        scenarios = query.all()
-        file_infos = []
+            scenarios = query.all()
+            file_infos = []
 
-        for s in scenarios:
-            s_data = s.data
-            # DB 데이터 구조 호환성 체크
-            if 'scenario' in s_data:
-                s_data = s_data['scenario']
+            for s in scenarios:
+                s_data = s.data
+                if 'scenario' in s_data:
+                    s_data = s_data['scenario']
 
-            p_text = s_data.get('prologue', s_data.get('prologue_text', ''))
-            desc = (p_text[:60] + "...") if p_text else "저장된 시나리오"
+                p_text = s_data.get('prologue', s_data.get('prologue_text', ''))
+                desc = (p_text[:60] + "...") if p_text else "저장된 시나리오"
 
-            file_infos.append({
-                'filename': str(s.id),  # DB ID를 filename처럼 사용
-                'id': s.id,
-                'created_time': s.created_at.timestamp(),
-                'title': s.title,
-                'desc': desc,
-                'is_public': s.is_public,
-                'is_owner': (user_id is not None) and (s.author_id == user_id),
-                'author': s.author_id or "System/Anonymous"
-            })
+                file_infos.append({
+                    'filename': str(s.id),
+                    'id': s.id,
+                    'created_time': s.created_at.timestamp() if s.created_at else 0,
+                    'title': s.title,
+                    'desc': desc,
+                    'is_public': s.is_public,
+                    'is_owner': (user_id is not None) and (s.author_id == user_id),
+                    'author': s.author_id or "System/Anonymous"
+                })
 
-        return file_infos
+            return file_infos
+        finally:
+            db.close()
 
     @staticmethod
     def load_scenario(scenario_id: str, user_id: str = None) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-        """
-        시나리오 로드 (DB ID 기반)
-        로그인한 사용자는 자신의 비공개 시나리오도 플레이 가능
-        """
+        """시나리오 로드 (DB ID 기반)"""
         if not scenario_id:
             return None, "ID 누락"
 
+        db = SessionLocal()
         try:
-            # 숫자형 ID 변환
             db_id = int(scenario_id)
-            scenario = Scenario.query.get(db_id)
+            scenario = db.query(Scenario).filter(Scenario.id == db_id).first()
 
             if not scenario:
                 return None, "시나리오를 찾을 수 없습니다."
 
-            # 접근 권한 체크 (공개 or 작성자 본인 or 익명작성 or 로그인 사용자)
+            # 접근 권한 체크
             is_accessible = False
             if scenario.is_public:
                 is_accessible = True
@@ -98,7 +94,6 @@ class ScenarioService:
             elif user_id and scenario.author_id == user_id:
                 is_accessible = True
             elif user_id:
-                # 로그인한 사용자는 모든 시나리오 플레이 가능 (비공개 포함)
                 is_accessible = True
 
             if not is_accessible:
@@ -108,7 +103,6 @@ class ScenarioService:
             s_content = full_data.get('scenario', full_data)
             initial_vars = full_data.get('player_vars', s_content.get('initial_state', {}))
 
-            # 기본값 보장
             for key, value in DEFAULT_PLAYER_VARS.items():
                 if key not in initial_vars:
                     initial_vars[key] = value
@@ -123,13 +117,13 @@ class ScenarioService:
         except Exception as e:
             logger.error(f"Load Error: {e}", exc_info=True)
             return None, str(e)
+        finally:
+            db.close()
 
     @staticmethod
-    def save_scenario(scenario_json: Dict[str, Any], player_vars: Dict[str, Any] = None, user_id: str = None) -> Tuple[
-        Optional[str], Optional[str]]:
-        """
-        시나리오 저장 (DB Insert/Update)
-        """
+    def save_scenario(scenario_json: Dict[str, Any], player_vars: Dict[str, Any] = None, user_id: str = None) -> Tuple[Optional[str], Optional[str]]:
+        """시나리오 저장 (DB Insert)"""
+        db = SessionLocal()
         try:
             title = scenario_json.get('title', 'Untitled_Scenario')
 
@@ -141,12 +135,10 @@ class ScenarioService:
                 "player_vars": player_vars
             }
 
-            # 익명(비로그인) 생성 시 자동으로 '공개' 설정 (나중에 접근 가능하도록)
             is_public_setting = False
             if user_id is None:
                 is_public_setting = True
 
-            # 신규 생성
             new_scenario = Scenario(
                 title=title,
                 author_id=user_id,
@@ -154,15 +146,18 @@ class ScenarioService:
                 is_public=is_public_setting
             )
 
-            db.session.add(new_scenario)
-            db.session.commit()
+            db.add(new_scenario)
+            db.commit()
+            db.refresh(new_scenario)
 
             return str(new_scenario.id), None
 
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             logger.error(f"Save Error: {e}", exc_info=True)
             return None, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def delete_scenario(scenario_id: str, user_id: str) -> Tuple[bool, Optional[str]]:
@@ -170,9 +165,10 @@ class ScenarioService:
         if not scenario_id or not user_id:
             return False, "권한이 없습니다."
 
+        db = SessionLocal()
         try:
             db_id = int(scenario_id)
-            scenario = Scenario.query.get(db_id)
+            scenario = db.query(Scenario).filter(Scenario.id == db_id).first()
 
             if not scenario:
                 return False, "시나리오를 찾을 수 없습니다."
@@ -180,22 +176,25 @@ class ScenarioService:
             if scenario.author_id != user_id:
                 return False, "삭제 권한이 없습니다."
 
-            db.session.delete(scenario)
-            db.session.commit()
+            db.delete(scenario)
+            db.commit()
             return True, None
 
         except ValueError:
             return False, "잘못된 ID입니다."
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             return False, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def publish_scenario(scenario_id: str, user_id: str) -> Tuple[bool, Optional[str]]:
         """시나리오 공개 전환"""
+        db = SessionLocal()
         try:
             db_id = int(scenario_id)
-            scenario = Scenario.query.get(db_id)
+            scenario = db.query(Scenario).filter(Scenario.id == db_id).first()
 
             if not scenario:
                 return False, "시나리오를 찾을 수 없습니다."
@@ -203,29 +202,28 @@ class ScenarioService:
             if scenario.author_id != user_id:
                 return False, "권한이 없습니다."
 
-            # 토글 방식 (공개 <-> 비공개)
             scenario.is_public = not scenario.is_public
-            db.session.commit()
+            db.commit()
 
             status = "공개" if scenario.is_public else "비공개"
             return True, f"{status} 설정 완료"
 
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             return False, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def update_scenario(scenario_id: str, updated_data: Dict[str, Any], user_id: str) -> Tuple[bool, Optional[str]]:
-        """
-        시나리오 업데이트 (편집 모드에서 사용)
-        updated_data: 전체 시나리오 JSON 또는 부분 업데이트 데이터
-        """
+        """시나리오 업데이트"""
         if not scenario_id or not user_id:
             return False, "권한이 없습니다."
 
+        db = SessionLocal()
         try:
             db_id = int(scenario_id)
-            scenario = Scenario.query.get(db_id)
+            scenario = db.query(Scenario).filter(Scenario.id == db_id).first()
 
             if not scenario:
                 return False, "시나리오를 찾을 수 없습니다."
@@ -233,51 +231,46 @@ class ScenarioService:
             if scenario.author_id != user_id:
                 return False, "수정 권한이 없습니다."
 
-            # 현재 데이터 가져오기
             current_data = scenario.data
             current_scenario = current_data.get('scenario', current_data)
 
-            # updated_data가 전체 시나리오인지 부분 업데이트인지 확인
             if 'scenes' in updated_data or 'endings' in updated_data or 'prologue' in updated_data:
-                # 부분 업데이트: 특정 필드만 업데이트
                 for key, value in updated_data.items():
                     current_scenario[key] = value
             else:
-                # 전체 교체
                 current_scenario = updated_data
 
-            # title 업데이트 시 Scenario 모델도 업데이트
             if 'title' in updated_data:
                 scenario.title = updated_data['title']
 
-            # DB에 저장
             scenario.data = {
                 "scenario": current_scenario,
                 "player_vars": current_data.get('player_vars', DEFAULT_PLAYER_VARS.copy())
             }
             scenario.updated_at = datetime.utcnow()
 
-            db.session.commit()
+            db.commit()
             return True, None
 
         except ValueError:
             return False, "잘못된 ID입니다."
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             logger.error(f"Update Error: {e}", exc_info=True)
             return False, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def get_scenario_for_edit(scenario_id: str, user_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-        """
-        편집용 시나리오 로드 (작성자만 가능)
-        """
+        """편집용 시나리오 로드"""
         if not scenario_id or not user_id:
             return None, "권한이 없습니다."
 
+        db = SessionLocal()
         try:
             db_id = int(scenario_id)
-            scenario = Scenario.query.get(db_id)
+            scenario = db.query(Scenario).filter(Scenario.id == db_id).first()
 
             if not scenario:
                 return None, "시나리오를 찾을 수 없습니다."
@@ -300,6 +293,8 @@ class ScenarioService:
         except Exception as e:
             logger.error(f"Get for Edit Error: {e}", exc_info=True)
             return None, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def is_recently_created(created_time: float, threshold_seconds: int = 600) -> bool:

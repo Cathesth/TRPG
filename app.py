@@ -1,25 +1,19 @@
 import os
 import logging
-from flask import Flask
-from flask_login import LoginManager
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request, Depends
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 
-from config import LOG_FORMAT, LOG_DATE_FORMAT, SQLALCHEMY_DATABASE_URI, SQLALCHEMY_TRACK_MODIFICATIONS
-from models import db, User, Scenario, Preset, TempScenario, CustomNPC, ScenarioHistory
+from config import LOG_FORMAT, LOG_DATE_FORMAT
+from models import create_tables
 
 # 환경 변수 로드
 load_dotenv()
-
-# Flask 앱 초기화
-app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
-
-# DB 설정
-app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = SQLALCHEMY_TRACK_MODIFICATIONS
-
-# DB 초기화
-db.init_app(app)
 
 # 로깅 설정
 logging.basicConfig(
@@ -27,38 +21,72 @@ logging.basicConfig(
     format=LOG_FORMAT,
     datefmt=LOG_DATE_FORMAT
 )
+logger = logging.getLogger(__name__)
 
-# Flask-Login 설정
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'views.index'
 
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(user_id)
-
-# 앱 컨텍스트 내에서 테이블 생성 (Railway 배포 시 최초 1회 실행됨)
-# 주의: 프로덕션에서는 Flask-Migrate를 사용하는 것이 좋지만, 간편한 배포를 위해 create_all 사용
-with app.app_context():
+# Lifespan 컨텍스트 (앱 시작/종료 시 실행)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 앱 시작 시 DB 테이블 생성
     try:
-        db.create_all()
-        logging.info("DB Tables created successfully.")
+        create_tables()
+        logger.info("DB Tables created successfully.")
     except Exception as e:
-        logging.error(f"DB Creation Failed: {e}")
+        logger.error(f"DB Creation Failed: {e}")
+    yield
+    # 앱 종료 시 처리 (필요 시)
 
-@app.after_request
-def add_header(response):
+
+# FastAPI 앱 초기화
+app = FastAPI(
+    title="TRPG Studio",
+    description="TRPG 시나리오 빌더 및 플레이어",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# 세션 미들웨어 (쿠키 기반 세션)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SECRET_KEY", "dev-secret-key-change-me"),
+    max_age=86400 * 7  # 7일
+)
+
+# CORS 설정
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# 캐시 방지 미들웨어
+@app.middleware("http")
+async def add_no_cache_header(request: Request, call_next):
+    response = await call_next(request)
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '-1'
     return response
 
-# Blueprint 라우트 등록
-from routes import views_bp, api_bp, game_bp
 
-app.register_blueprint(views_bp)
-app.register_blueprint(api_bp)
-app.register_blueprint(game_bp)
+# 정적 파일 서빙 (static 폴더가 있는 경우)
+if os.path.exists(os.path.join(os.path.dirname(__file__), 'static')):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 템플릿 설정
+templates = Jinja2Templates(directory="templates")
+
+# 라우터 등록
+from routes import api_router, game_router, views_router
+
+app.include_router(views_router)
+app.include_router(api_router)
+app.include_router(game_router)
+
 
 if __name__ == '__main__':
-    app.run(debug=True, use_reloader=False, port=5001)
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=5001, reload=True)
