@@ -34,7 +34,7 @@ def report_progress(status, step, detail, progress, phase=None):
             "step": step,
             "detail": detail,
             "progress": progress,
-            "current_phase": phase or "initializing"  # 프론트엔드가 기대하는 키 추가
+            "current_phase": phase or "initializing"
         }
         _progress_callback(**payload)
 
@@ -119,20 +119,7 @@ class SceneData(BaseModel):
     endings: List[GameEnding]
 
 
-class EndingPatch(BaseModel):
-    ending_id: str = Field(description="수정할 엔딩의 ID")
-    description: str = Field(description="새로 작성된 엔딩 설명")
-
-
-class TransitionPatch(BaseModel):
-    scene_id: str = Field(description="트랜지션이 있는 씬 ID")
-    target_scene_id: str = Field(description="목적지 씬 ID")
-    new_trigger: str = Field(description="수정된 행동(Trigger)")
-
-
-class PatchResult(BaseModel):
-    endings: List[EndingPatch] = Field(description="수정된 엔딩 목록")
-    transitions: List[TransitionPatch] = Field(description="수정된 트랜지션 목록")
+# LLM Patch 관련 모델 삭제 (더 이상 사용하지 않음)
 
 
 class BuilderState(TypedDict):
@@ -316,73 +303,89 @@ def generate_full_content(state: BuilderState):
 
 
 def polish_content(state: BuilderState):
-    logger.info("Validator(polish_content) checking...")
-    # phase 명시: 'validation'
-    report_progress("building", "4/5", "품질 검수 및 보정 중...", 80, phase="validation")
-    llm = LLMFactory.get_llm(state.get("model_name"))
+    """
+    [수정됨] LLM 제거 및 Python 기반의 구조적 무결성 검사
+    노드의 연결 상태를 검사하여 규칙에 위배되면 즉시 에러를 반환합니다.
+    """
+    logger.info("Validator(polish_content) checking structure...")
+    report_progress("building", "4/5", "구조 및 연결 검증 중...", 80, phase="validation")
 
-    scenes = state["scenes"]
-    endings = state["endings"]
-    scenario_title = state["scenario"].get("title", "")
+    graph_data = state["graph_data"]
+    nodes = graph_data.get("nodes", [])
+    edges = graph_data.get("edges", [])
 
-    items_to_fix = []
+    # 1. 빠른 조회를 위한 매핑 생성
+    node_map = {n["id"]: n for n in nodes}
+    edge_map = {n["id"]: {"in": [], "out": []} for n in nodes}
 
-    # 엔딩 검사
-    for end in endings:
-        if not end.get("description") or len(end.get("description")) < 10:
-            items_to_fix.append(f"[엔딩 보강] ID '{end.get('ending_id')}': 설명이 너무 짧거나 비어있음.")
+    # 2. 엣지 연결 정보 구축
+    for edge in edges:
+        src = edge["source"]
+        tgt = edge["target"]
+        if src in edge_map:
+            edge_map[src]["out"].append(tgt)
+        if tgt in edge_map:
+            edge_map[tgt]["in"].append(src)
 
-    # 씬 검사
-    for scene in scenes:
-        if not scene.get("description"):
-            items_to_fix.append(f"[장면 보강] ID '{scene.get('scene_id')}': 설명(description)이 비어있음. 세계관을 활용해 채워넣을 것.")
+    # 3. 노드별 규칙 검사
+    for node in nodes:
+        nid = node["id"]
+        ntype = node["type"]
+        # 노드 제목 (에러 메시지용)
+        title = node["data"].get("label") if ntype == "start" else node["data"].get("title", "제목 없음")
 
-    # 트리거 검사
-    for scene in scenes:
-        for trans in scene.get("transitions", []):
-            trig = trans.get("trigger", "")
-            if "이동" in trig or "Move" in trig or len(trig) < 2:
-                items_to_fix.append(
-                    f"[트리거 수정] Scene '{scene.get('scene_id')}' -> '{trans.get('target_scene_id')}': '{trig}'를 구체적 행동으로 변경.")
+        # Rule 1: 프롤로그 (Start Node)
+        if ntype == "start":
+            # 뒤에 'scene' 타입의 노드가 연결되어 있어야 함
+            has_valid_next = False
+            for target_id in edge_map[nid]["out"]:
+                target_node = node_map.get(target_id)
+                if target_node and target_node["type"] == "scene":
+                    has_valid_next = True
+                    break
 
-    if not items_to_fix:
-        return state
+            if not has_valid_next:
+                raise ValueError("프롤로그에 다음 장면을 연결해주세요.")
 
-    # LLM Patch
-    prompt = ChatPromptTemplate.from_messages([
-        ("system",
-         "지적된 문제점들을 해결하여 '수정된 데이터만' JSON으로 출력하세요.\n{format_instructions}"),
-        ("user",
-         f"제목: {scenario_title}\n수정 요청:\n" + "\n".join(items_to_fix))
-    ])
+        # Rule 2: 장면 (Scene Node)
+        elif ntype == "scene":
+            # [Input Check] 앞이 Start(프롤로그)나 Scene이어야 함
+            has_valid_prev = False
+            for prev_id in edge_map[nid]["in"]:
+                prev_node = node_map.get(prev_id)
+                if prev_node and prev_node["type"] in ["start", "scene"]:
+                    has_valid_prev = True
+                    break
 
-    parser = JsonOutputParser(pydantic_object=PatchResult)
-    chain = prompt | llm | parser
+            if not has_valid_prev:
+                raise ValueError(f"'{title}' 장면의 앞의 장면을 올바르게 연결해주세요.")
 
-    try:
-        patch_data = chain.invoke({"format_instructions": parser.get_format_instructions()})
+            # [Output Check] 뒤가 Scene이나 Ending이어야 함
+            has_valid_next = False
+            for target_id in edge_map[nid]["out"]:
+                target_node = node_map.get(target_id)
+                if target_node and target_node["type"] in ["scene", "ending"]:
+                    has_valid_next = True
+                    break
 
-        # Apply Patch
-        updates_endings = {p['ending_id']: p['description'] for p in patch_data.get('endings', [])}
-        if updates_endings:
-            for end in endings:
-                if end['ending_id'] in updates_endings:
-                    end['description'] = updates_endings[end['ending_id']]
+            if not has_valid_next:
+                raise ValueError(f"'{title}' 장면의 뒤의 장면을 올바르게 연결해주세요.")
 
-        updates_transitions = {(p['scene_id'], p['target_scene_id']): p['new_trigger'] for p in
-                               patch_data.get('transitions', [])}
-        if updates_transitions:
-            for scene in scenes:
-                for trans in scene.get('transitions', []):
-                    key = (scene['scene_id'], trans['target_scene_id'])
-                    if key in updates_transitions:
-                        trans['trigger'] = updates_transitions[key]
+        # Rule 3: 엔딩 (Ending Node)
+        elif ntype == "ending":
+            # [Input Check] 앞이 Scene이어야 함
+            has_valid_prev = False
+            for prev_id in edge_map[nid]["in"]:
+                prev_node = node_map.get(prev_id)
+                if prev_node and prev_node["type"] == "scene":
+                    has_valid_prev = True
+                    break
 
-        return {"scenes": scenes, "endings": endings}
+            if not has_valid_prev:
+                raise ValueError(f"'{title}' 엔딩 앞의 장면을 연결해주세요.")
 
-    except Exception as e:
-        logger.error(f"Polish Error: {e}")
-        return state
+    # 모든 검사를 통과하면 상태 그대로 반환 (LLM 수정 없음)
+    return state
 
 
 class InitialStateExtractor(BaseModel):
