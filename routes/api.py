@@ -176,11 +176,11 @@ async def reset_build_progress():
 
 @api_router.get('/scenarios', response_class=HTMLResponse)
 async def list_scenarios(
-    request: Request,
-    sort: str = 'newest',
-    filter: str = 'public',
-    limit: Optional[int] = None,
-    user: CurrentUser = Depends(get_current_user_optional)
+        request: Request,
+        sort: str = 'newest',
+        filter: str = 'public',
+        limit: Optional[int] = None,
+        user: CurrentUser = Depends(get_current_user_optional)
 ):
     user_id = user.id if user.is_authenticated else None
     file_infos = ScenarioService.list_scenarios(sort, user_id, filter, limit)
@@ -249,8 +249,8 @@ async def list_scenarios(
 
 @api_router.post('/load_scenario')
 async def load_scenario(
-    filename: str = Form(...),
-    user: CurrentUser = Depends(get_current_user_optional)
+        filename: str = Form(...),
+        user: CurrentUser = Depends(get_current_user_optional)
 ):
     user_id = user.id if user.is_authenticated else None
 
@@ -276,8 +276,8 @@ async def load_scenario(
 
 @api_router.post('/publish_scenario')
 async def publish_scenario(
-    data: ScenarioIdRequest,
-    user: CurrentUser = Depends(get_current_user)
+        data: ScenarioIdRequest,
+        user: CurrentUser = Depends(get_current_user)
 ):
     success, msg = ScenarioService.publish_scenario(data.filename, user.id)
     return {"success": success, "message": msg, "error": msg}
@@ -285,8 +285,8 @@ async def publish_scenario(
 
 @api_router.post('/delete_scenario')
 async def delete_scenario(
-    data: ScenarioIdRequest,
-    user: CurrentUser = Depends(get_current_user)
+        data: ScenarioIdRequest,
+        user: CurrentUser = Depends(get_current_user)
 ):
     success, msg = ScenarioService.delete_scenario(data.filename, user.id)
     return {"success": success, "message": msg, "error": msg}
@@ -360,7 +360,14 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
 @api_router.post('/npc/generate')
 async def generate_npc_api(data: NPCGenerateRequest):
     try:
-        npc_data = generate_single_npc(data.scenario_title, data.scenario_summary, data.request, data.model)
+        # [수정] run_in_threadpool 적용 (LLM 호출 비동기 처리)
+        npc_data = await run_in_threadpool(
+            generate_single_npc,
+            data.scenario_title,
+            data.scenario_summary,
+            data.request,
+            data.model
+        )
         return {"success": True, "data": npc_data}
     except Exception as e:
         logger.error(f"NPC Generation Error: {e}")
@@ -390,9 +397,9 @@ async def save_npc(request: Request, user: CurrentUser = Depends(get_current_use
 
 @api_router.get('/presets')
 async def list_presets(
-    sort: str = 'newest',
-    limit: Optional[int] = None,
-    user: CurrentUser = Depends(get_current_user_optional)
+        sort: str = 'newest',
+        limit: Optional[int] = None,
+        user: CurrentUser = Depends(get_current_user_optional)
 ):
     user_id = user.id if user.is_authenticated else None
     file_infos = PresetService.list_presets(sort, user_id, limit)
@@ -437,14 +444,15 @@ async def delete_preset(request: Request, user: CurrentUser = Depends(get_curren
 
 @api_router.post('/load_preset')
 async def load_preset_old(
-    filename: str = Form(...),
-    user: CurrentUser = Depends(get_current_user_optional)
+        filename: str = Form(...),
+        user: CurrentUser = Depends(get_current_user_optional)
 ):
     user_id = user.id if user.is_authenticated else None
 
     result, error = PresetService.load_preset(filename, user_id)
     if error:
-        return HTMLResponse(f'<div class="bg-red-500/10 text-red-400 p-4 rounded-lg border border-red-500/20 shadow-lg fixed bottom-4 right-4 z-50">로드 실패: {error}</div>')
+        return HTMLResponse(
+            f'<div class="bg-red-500/10 text-red-400 p-4 rounded-lg border border-red-500/20 shadow-lg fixed bottom-4 right-4 z-50">로드 실패: {error}</div>')
 
     preset = result['preset']
 
@@ -581,7 +589,8 @@ async def reorder_scene_ids(scenario_id: int, user: CurrentUser = Depends(get_cu
 
 
 @api_router.post('/draft/{scenario_id}/check-references')
-async def check_scene_references(scenario_id: int, data: DraftSceneRequest, user: CurrentUser = Depends(get_current_user)):
+async def check_scene_references(scenario_id: int, data: DraftSceneRequest,
+                                 user: CurrentUser = Depends(get_current_user)):
     if not data.scene_id:
         return JSONResponse({"success": False, "error": "scene_id가 필요합니다."}, status_code=400)
 
@@ -694,7 +703,7 @@ async def delete_ending(scenario_id: int, data: DraftEndingRequest, user: Curren
     }
 
 
-# --- [AI 서사 일관성 검사 API] ---
+# --- [AI 서사 일관성 검사 API (run_in_threadpool 적용)] ---
 
 @api_router.post('/draft/{scenario_id}/ai-audit')
 async def ai_audit_scene(scenario_id: int, data: AuditRequest, user: CurrentUser = Depends(get_current_user)):
@@ -707,22 +716,38 @@ async def ai_audit_scene(scenario_id: int, data: AuditRequest, user: CurrentUser
 
     scenario_data = result['scenario']
 
+    # [수정] run_in_threadpool로 감싸서 서버 멈춤 방지
     if data.audit_type == 'coherence':
-        audit_result = AIAuditService.audit_scene_coherence(scenario_data, data.scene_id, data.model)
+        audit_result = await run_in_threadpool(
+            AIAuditService.audit_scene_coherence,
+            scenario_data,
+            data.scene_id,
+            data.model
+        )
         return {
             "success": audit_result.success,
             "audit_type": "coherence",
             "result": audit_result.to_dict()
         }
     elif data.audit_type == 'trigger':
-        audit_result = AIAuditService.audit_trigger_consistency(scenario_data, data.scene_id, data.model)
+        audit_result = await run_in_threadpool(
+            AIAuditService.audit_trigger_consistency,
+            scenario_data,
+            data.scene_id,
+            data.model
+        )
         return {
             "success": audit_result.success,
             "audit_type": "trigger",
             "result": audit_result.to_dict()
         }
     else:  # full
-        full_result = AIAuditService.full_audit(scenario_data, data.scene_id, data.model)
+        full_result = await run_in_threadpool(
+            AIAuditService.full_audit,
+            scenario_data,
+            data.scene_id,
+            data.model
+        )
         return {
             "success": full_result.get('success', False),
             "audit_type": "full",
@@ -746,12 +771,20 @@ async def ai_audit_all_scenes(scenario_id: int, request: Request, user: CurrentU
     total_issues = 0
     has_errors = False
 
+    # [참고] 반복문 + LLM 호출은 시간이 걸리므로 클라이언트 타임아웃 주의 필요
     for scene in scenes:
         scene_id = scene.get('scene_id')
         if not scene_id:
             continue
 
-        audit_result = AIAuditService.full_audit(scenario_data, scene_id, model_name)
+        # [수정] 비동기 실행으로 변경
+        audit_result = await run_in_threadpool(
+            AIAuditService.full_audit,
+            scenario_data,
+            scene_id,
+            model_name
+        )
+
         all_results.append({
             'scene_id': scene_id,
             'scene_title': scene.get('title') or scene.get('name') or scene_id,
@@ -769,6 +802,32 @@ async def ai_audit_all_scenes(scenario_id: int, request: Request, user: CurrentU
         "has_errors": has_errors,
         "results": all_results
     }
+
+
+@api_router.post('/draft/{scenario_id}/audit-recommend')
+async def recommend_audit_targets_api(scenario_id: int, request: Request,
+                                      user: CurrentUser = Depends(get_current_user)):
+    """[신규] AI 검수 추천 API"""
+    data = await request.json() if await request.body() else {}
+    model_name = data.get('model')
+
+    result, error = DraftService.get_draft(scenario_id, user.id)
+    if error:
+        return JSONResponse({"success": False, "error": error}, status_code=403)
+
+    scenario_data = result['scenario']
+
+    # [수정] 서비스 호출 비동기 처리
+    recommendation_result = await run_in_threadpool(
+        AIAuditService.recommend_audit_targets,
+        scenario_data,
+        model_name
+    )
+
+    if not recommendation_result.get("success"):
+        return JSONResponse(recommendation_result, status_code=500)
+
+    return recommendation_result
 
 
 # --- [변경 이력 관리 API] ---
