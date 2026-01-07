@@ -49,7 +49,9 @@ app = FastAPI(
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SECRET_KEY", "dev-secret-key-change-me"),
-    max_age=86400 * 7  # 7일
+    max_age=86400 * 7,  # 7일
+    same_site="lax",
+    https_only=os.getenv("RAILWAY_ENVIRONMENT") is not None  # Railway에서는 HTTPS 강제
 )
 
 # CORS 설정
@@ -87,6 +89,13 @@ app.include_router(api_router)
 app.include_router(game_router)
 
 
+# Health check 엔드포인트 (Railway 모니터링용)
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "TRPG Studio"}
+
+
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=5001, reload=True)
+    port = int(os.getenv("PORT", 5001))
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
