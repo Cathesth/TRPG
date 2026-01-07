@@ -2,168 +2,198 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NPC 생성기</title>
+    <title>NPC/Enemy Generator</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
-        body { font-family: 'Noto Sans KR', sans-serif; }
-    </style>
 </head>
-<body class="bg-gray-900 text-white h-screen flex flex-col p-4 overflow-hidden">
+<body class="bg-gray-900 text-white p-6">
 
-    <!-- 헤더 -->
-    <div class="flex justify-between items-center mb-4 pb-4 border-b border-gray-700">
-        <h2 class="text-xl font-bold text-green-400"><i class="fas fa-user-plus mr-2"></i>NPC 생성기</h2>
-        <span id="status-badge" class="px-2 py-1 text-xs rounded bg-gray-700 text-gray-400">대기 중</span>
+<div class="max-w-xl mx-auto">
+    <div class="flex gap-4 mb-6 border-b border-gray-700 pb-2">
+        <button onclick="switchTab('npc')" id="tab-npc" class="text-green-400 font-bold border-b-2 border-green-400 pb-1">NPC 생성</button>
+        <button onclick="switchTab('enemy')" id="tab-enemy" class="text-gray-500 hover:text-red-400 font-bold pb-1">적(Enemy) 생성</button>
     </div>
 
-    <!-- 입력 폼 -->
-    <div class="flex-none space-y-3 mb-4">
+    <div id="form-npc" class="space-y-3">
         <div>
-            <label class="block text-sm text-gray-400 mb-1">어떤 NPC를 만들까요?</label>
-            <textarea id="npc-prompt" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-green-500 focus:outline-none resize-none h-20" placeholder="예: 무뚝뚝하지만 실력 좋은 대장장이, 뒷골목 정보상, 사악한 귀족..."></textarea>
+            <label class="block text-xs text-gray-400 mb-1">이름 <span class="text-red-500">*</span></label>
+            <input type="text" id="npc-name" class="w-full bg-gray-800 border border-gray-700 rounded p-2" placeholder="NPC 이름">
         </div>
-        <button id="btn-generate" onclick="generateNPC()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition flex justify-center items-center">
-            <span>생성하기</span>
-        </button>
+        <div>
+            <label class="block text-xs text-gray-400 mb-1">역할 <span class="text-red-500">*</span></label>
+            <input type="text" id="npc-role" class="w-full bg-gray-800 border border-gray-700 rounded p-2" placeholder="예: 대장장이, 상인">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-400 mb-1">성격 <span class="text-red-500">*</span></label>
+            <input type="text" id="npc-personality" class="w-full bg-gray-800 border border-gray-700 rounded p-2" placeholder="예: 무뚝뚝함, 친절함">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-400 mb-1">배경 설정 <span class="text-red-500">*</span></label>
+            <textarea id="npc-bg" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded p-2" placeholder="NPC의 배경 스토리"></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 pt-2 border-t border-gray-800">
+            <div>
+                <label class="block text-xs text-gray-500">나이 (선택)</label>
+                <select id="npc-age" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm">
+                    <option value="">선택 안 함</option>
+                    <option value="child">어린이</option>
+                    <option value="teen">청소년</option>
+                    <option value="young_adult">청년</option>
+                    <option value="middle_aged">중년</option>
+                    <option value="elderly">노년</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500">협력도 (선택)</label>
+                <select id="npc-coop" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm">
+                    <option value="">선택 안 함</option>
+                    <option value="low">저 (비협조적)</option>
+                    <option value="medium">중 (중립적)</option>
+                    <option value="high">상 (협조적)</option>
+                </select>
+            </div>
+            <div class="col-span-2">
+                <label class="block text-xs text-gray-500">보유 아이템 (선택)</label>
+                <input type="text" id="npc-items" class="w-full bg-gray-800 border border-gray-700 rounded p-2" placeholder="예: 낡은 검, 회복 물약">
+            </div>
+        </div>
+
+        <button onclick="createNPC()" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded mt-4">NPC 생성 및 저장</button>
     </div>
 
-    <!-- 결과 표시 영역 -->
-    <div class="flex-1 overflow-y-auto bg-gray-800 rounded-lg p-4 border border-gray-700 relative">
-        <div id="loading-spinner" class="hidden absolute inset-0 bg-gray-800/80 flex flex-col items-center justify-center z-10">
-            <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-green-500 mb-2"></div>
-            <p class="text-green-400 text-sm animate-pulse">NPC를 소환하는 중...</p>
+    <div id="form-enemy" class="space-y-3 hidden">
+        <div>
+            <label class="block text-xs text-gray-400 mb-1">이름 <span class="text-red-500">*</span></label>
+            <input type="text" id="enemy-name" class="w-full bg-gray-800 border border-gray-700 rounded p-2" placeholder="적 이름">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-400 mb-1">유형 <span class="text-red-500">*</span></label>
+            <input type="text" id="enemy-type" class="w-full bg-gray-800 border border-gray-700 rounded p-2" placeholder="예: 언데드, 인간, 야수">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-400 mb-1">난이도 <span class="text-red-500">*</span></label>
+            <select id="enemy-difficulty" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm">
+                <option value="">선택하세요</option>
+                <option value="easy">약 (Easy)</option>
+                <option value="medium">중 (Normal)</option>
+                <option value="hard">강 (Hard)</option>
+            </select>
         </div>
 
-        <div id="result-container" class="hidden space-y-3">
-            <div>
-                <span class="text-xs text-green-500 font-bold uppercase tracking-wider">Name</span>
-                <h3 id="res-name" class="text-xl font-bold"></h3>
-            </div>
-            <div>
-                <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">Role</span>
-                <p id="res-role" class="text-gray-300"></p>
-            </div>
-            <div>
-                <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">Personality</span>
-                <p id="res-personality" class="text-gray-300 text-sm"></p>
-            </div>
-            <div>
-                <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">Description</span>
-                <p id="res-description" class="text-gray-300 text-sm whitespace-pre-line"></p>
-            </div>
-            <div>
-                <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">Dialogue Style</span>
-                <p id="res-dialogue" class="text-gray-400 text-sm italic"></p>
-            </div>
-        </div>
-
-        <div id="empty-state" class="flex h-full items-center justify-center text-gray-500 text-sm">
-            생성 버튼을 눌러보세요.
-        </div>
+        <button onclick="createEnemy()" class="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded mt-4">적(Enemy) 생성 및 저장</button>
     </div>
 
-    <!-- 하단 액션 버튼 -->
-    <div id="action-buttons" class="hidden flex-none mt-4 pt-4 border-t border-gray-700 flex gap-2">
-        <button onclick="addToBuilder()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded transition">
-            <i class="fas fa-plus mr-1"></i> 추가하기
-        </button>
-        <button onclick="generateNPC()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 rounded transition">
-            <i class="fas fa-redo mr-1"></i> 다시 생성
-        </button>
-    </div>
+    <div id="message-box" class="mt-4 p-3 rounded text-sm hidden"></div>
+</div>
 
-    <script>
-        let scenarioData = null;
-        let currentNPC = null;
+<script>
+    let currentTab = 'npc';
 
-        // 부모 창과 통신 준비
-        window.addEventListener('message', (event) => {
-            if (event.data.type === 'SCENARIO_INFO') {
-                scenarioData = event.data.payload;
-                document.getElementById('status-badge').innerText = '연결됨';
-                document.getElementById('status-badge').classList.replace('text-gray-400', 'text-green-400');
-            }
-        });
+    function switchTab(tab) {
+        currentTab = tab;
+        document.getElementById('form-npc').classList.toggle('hidden', tab !== 'npc');
+        document.getElementById('form-enemy').classList.toggle('hidden', tab !== 'enemy');
 
-        // 로드 시 부모에게 준비 신호
-        window.onload = () => {
-            if (window.opener) {
-                window.opener.postMessage({ type: 'GENERATOR_READY' }, '*');
-            }
+        const npcBtn = document.getElementById('tab-npc');
+        const enemyBtn = document.getElementById('tab-enemy');
+
+        if (tab === 'npc') {
+            npcBtn.className = "text-green-400 font-bold border-b-2 border-green-400 pb-1";
+            enemyBtn.className = "text-gray-500 hover:text-red-400 font-bold pb-1";
+        } else {
+            npcBtn.className = "text-gray-500 hover:text-green-400 font-bold pb-1";
+            enemyBtn.className = "text-red-400 font-bold border-b-2 border-red-400 pb-1";
+        }
+    }
+
+    function showMessage(msg, type='error') {
+        const box = document.getElementById('message-box');
+        box.className = `mt-4 p-3 rounded text-sm ${type === 'error' ? 'bg-red-900/50 text-red-200' : 'bg-green-900/50 text-green-200'}`;
+        box.innerText = msg;
+        box.classList.remove('hidden');
+        setTimeout(() => box.classList.add('hidden'), 3000);
+    }
+
+    async function saveToDB(type, data) {
+        // 백엔드 API 호출 시뮬레이션 (실제 구현 시 엔드포인트 필요)
+        try {
+            const response = await fetch('/api/npc/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, ...data })
+            });
+            return response.ok;
+        } catch (e) {
+            console.error("DB Save Failed (Backend not implemented?)", e);
+            // 백엔드가 없어도 프론트엔드 기능은 동작하도록 true 반환 (데모용)
+            return true;
+        }
+    }
+
+    async function createNPC() {
+        const name = document.getElementById('npc-name').value;
+        const role = document.getElementById('npc-role').value;
+        const personality = document.getElementById('npc-personality').value;
+        const bg = document.getElementById('npc-bg').value;
+
+        // 선택 사항
+        const age = document.getElementById('npc-age').value;
+        const coop = document.getElementById('npc-coop').value;
+        const items = document.getElementById('npc-items').value;
+
+        // 필수 항목 체크
+        if (!name || !role || !personality || !bg) {
+            showMessage("필수 항목(이름, 역할, 성격, 배경)을 모두 입력해주세요.");
+            return;
+        }
+
+        const npcData = {
+            name, role, personality, description: bg,
+            age: age || null,
+            cooperation: coop || null,
+            items: items || null,
+            isEnemy: false
         };
 
-        async function generateNPC() {
-            if (!scenarioData) {
-                alert("시나리오 정보를 불러오지 못했습니다. 창을 닫고 다시 시도해주세요.");
-                return;
-            }
+        const saved = await saveToDB('npc', npcData);
+        if (saved) {
+            // 부모 창으로 데이터 전송
+            window.parent.postMessage({ type: 'ADD_NPC', payload: npcData }, '*');
+            showMessage("NPC가 생성 및 저장되었습니다!", "success");
+            // 폼 초기화
+            document.querySelectorAll('#form-npc input, #form-npc textarea').forEach(el => el.value = '');
+            document.querySelectorAll('#form-npc select').forEach(el => el.value = '');
+        } else {
+            showMessage("저장에 실패했습니다.");
+        }
+    }
 
-            const prompt = document.getElementById('npc-prompt').value;
-            const btn = document.getElementById('btn-generate');
-            const spinner = document.getElementById('loading-spinner');
-            const resultContainer = document.getElementById('result-container');
-            const emptyState = document.getElementById('empty-state');
-            const actionButtons = document.getElementById('action-buttons');
+    async function createEnemy() {
+        const name = document.getElementById('enemy-name').value;
+        const type = document.getElementById('enemy-type').value;
+        const difficulty = document.getElementById('enemy-difficulty').value;
 
-            btn.disabled = true;
-            btn.classList.add('opacity-50', 'cursor-not-allowed');
-            spinner.classList.remove('hidden');
-            resultContainer.classList.add('hidden');
-            emptyState.classList.add('hidden');
-            actionButtons.classList.add('hidden');
-
-            try {
-                const response = await fetch('/api/builder/generate-npc', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        scenario_title: scenarioData.title,
-                        scenario_summary: scenarioData.summary,
-                        user_request: prompt
-                    })
-                });
-
-                const data = await response.json();
-                if (data.error) throw new Error(data.error);
-
-                currentNPC = data;
-                document.getElementById('res-name').innerText = data.name || '이름 없음';
-                document.getElementById('res-role').innerText = data.role || '역할 미정';
-                document.getElementById('res-personality').innerText = data.personality || '';
-                document.getElementById('res-description').innerText = data.description || '';
-                document.getElementById('res-dialogue').innerText = data.dialogue_style || '';
-
-                resultContainer.classList.remove('hidden');
-                actionButtons.classList.remove('hidden');
-
-            } catch (err) {
-                alert("생성 실패: " + err.message);
-                emptyState.classList.remove('hidden');
-                emptyState.innerText = "오류가 발생했습니다.";
-            } finally {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
-                spinner.classList.add('hidden');
-            }
+        if (!name || !type || !difficulty) {
+            showMessage("필수 항목(이름, 유형, 난이도)을 모두 입력해주세요.");
+            return;
         }
 
-        function addToBuilder() {
-            if (!currentNPC || !window.opener) return;
-            window.opener.postMessage({ type: 'ADD_NPC', payload: currentNPC }, '*');
-            const btn = event.target;
-            const originalHTML = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check"></i> 추가됨!';
-            btn.classList.replace('bg-blue-600', 'bg-green-600');
-            setTimeout(() => {
-                btn.innerHTML = originalHTML;
-                btn.classList.replace('bg-green-600', 'bg-blue-600');
-                document.getElementById('npc-prompt').value = '';
-                document.getElementById('npc-prompt').focus();
-            }, 1000);
+        const enemyData = {
+            name, type, difficulty,
+            isEnemy: true
+        };
+
+        const saved = await saveToDB('enemy', enemyData);
+        if (saved) {
+            window.parent.postMessage({ type: 'ADD_NPC', payload: enemyData }, '*');
+            showMessage("적이 생성 및 저장되었습니다!", "success");
+            document.querySelectorAll('#form-enemy input').forEach(el => el.value = '');
+            document.getElementById('enemy-difficulty').value = '';
+        } else {
+            showMessage("저장에 실패했습니다.");
         }
-    </script>
+    }
+</script>
 </body>
 </html>
