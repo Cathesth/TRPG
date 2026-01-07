@@ -263,6 +263,7 @@
     let isScenarioLoaded = false;
     let isInternalNavigation = false;  // 내부 네비게이션 플래그
     let hasGameStarted = false;  // 게임이 시작되었는지 (채팅 내역이 있는지)
+    let isStreaming = false;  // 스트리밍 중 여부 추가
 
     const CHAT_LOG_KEY = 'trpg_chat_log';
     const STATS_KEY = 'trpg_stats';
@@ -272,30 +273,74 @@
 
     // 새로고침 감지 및 경고
     window.addEventListener('beforeunload', function(e) {
-        // 내부 네비게이션이거나 게임이 시작되지 않았으면 경고 안 함
-        if (isInternalNavigation || !hasGameStarted) {
+        // 스트리밍 중이면 무조건 경고
+        if (isStreaming) {
+            e.preventDefault();
+            e.returnValue = 'AI가 답변을 생성하고 있습니다. 페이지를 벗어나시겠습니까?';
+            return e.returnValue;
+        }
+
+        // 내부 네비게이션이면 경고 안 함
+        if (isInternalNavigation) {
             return;
         }
 
-        // 채팅 로그가 있으면 경고
-        const savedLog = sessionStorage.getItem(CHAT_LOG_KEY);
-        if (savedLog && savedLog.length > 0) {
+        // 게임이 진행 중이면 경고 (채팅 로그가 있고 게임이 시작됨)
+        if (hasGameStarted && isScenarioLoaded) {
             e.preventDefault();
-            e.returnValue = '새로고침 시 시나리오 진행 내역이 초기화됩니다. 계속하시겠습니까?';
+            e.returnValue = '페이지를 벗어나면 현재 진행 내역이 초기화됩니다. 계속하시겠습니까?';
             return e.returnValue;
         }
     });
 
-    // 페이지 로드 시 새로고침 여부 확인
+    // 페이지 로드 시 항상 게임 상태 완전 초기화
     window.addEventListener('load', function() {
-        // performance.navigation.type이 1이면 새로고침 (deprecated하지만 fallback용)
-        const isReload = (performance.navigation && performance.navigation.type === 1) ||
-                        (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]?.type === 'reload');
+        // 모든 게임 상태 완전 초기화
+        clearAllGameState();
 
-        if (isReload) {
-            // 새로고침 시 모든 게임 상태 초기화
-            clearAllGameState();
+        // UI 초기화
+        const chatLog = document.getElementById('chat-log');
+        const initResult = document.getElementById('init-result');
+        const aiLoading = document.getElementById('ai-loading');
+
+        // 초기 메시지만 남기고 모두 제거
+        chatLog.innerHTML = '';
+        chatLog.appendChild(initResult);
+
+        // 초기 안내 메시지 복원
+        const introHtml = `
+            <div id="intro-message" class="flex gap-4 fade-in mb-4">
+                <div class="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center shrink-0">
+                    <i data-lucide="bot" class="text-white w-4 h-4"></i>
+                </div>
+                <div class="flex-1">
+                    <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
+                    <div class="bg-[#1a1a1e] border-gray-700 p-3 rounded-lg border text-gray-300 text-sm leading-relaxed">
+                        시스템에 접속했습니다. 우측 상단의 <span class="text-indigo-400 font-bold">[시나리오 불러오기]</span> 버튼을 눌러 게임을 로드하세요.
+                    </div>
+                </div>
+            </div>
+        `;
+        initResult.insertAdjacentHTML('afterend', introHtml);
+        chatLog.appendChild(aiLoading);
+
+        // 스탯 영역 초기화
+        const statsArea = document.getElementById('player-stats-area');
+        if (statsArea) {
+            statsArea.innerHTML = `
+                <div class="text-gray-500 text-sm text-center py-4 bg-gray-800/50 rounded-lg border border-gray-700 border-dashed">
+                    <i data-lucide="ghost" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
+                    데이터 없음<br>
+                    <span class="text-xs">상단 [시나리오 불러오기]를 눌러주세요.</span>
+                </div>
+            `;
         }
+
+        // UI 비활성화
+        disableGameUI();
+
+        // 아이콘 렌더링
+        lucide.createIcons();
     });
 
     // 모든 게임 상태 초기화 함수
@@ -308,6 +353,7 @@
         isGameEnded = false;
         isScenarioLoaded = false;
         hasGameStarted = false;
+        isStreaming = false;
     }
 
     function openScenesView() {
@@ -455,6 +501,8 @@
 
         // 게임이 시작되었음을 표시 (새로고침 경고용)
         hasGameStarted = true;
+        // 스트리밍 시작
+        isStreaming = true;
 
         const form = document.getElementById('game-form');
         const chatLog = document.getElementById('chat-log');
@@ -623,6 +671,9 @@
         } catch (error) {
             contentDiv.innerHTML = `<div class="text-red-500">통신 오류: ${error.message}</div>`;
         } finally {
+            // 스트리밍 종료
+            isStreaming = false;
+
             loadingIndicator.classList.add('hidden');
             loadingIndicator.classList.remove('flex');
             form.classList.remove('streaming');
