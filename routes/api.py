@@ -19,6 +19,8 @@ from services.scenario_service import ScenarioService
 from services.user_service import UserService
 from services.preset_service import PresetService
 from services.draft_service import DraftService
+# [추가] AI Audit 서비스 임포트
+from services.ai_audit_service import AIAuditService
 # [추가] NPC 저장을 위한 서비스 임포트 (이전 답변의 npc_service.py 필요)
 from services.npc_service import save_custom_npc
 
@@ -691,4 +693,108 @@ def delete_ending(scenario_id):
         "message": f"엔딩 '{ending_id}'이(가) 삭제되었습니다.",
         "warnings": warnings,
         "scenario": updated_scenario
+    })
+
+
+# --- [AI 서사 일관성 검사 API (AI Audit)] ---
+
+@api_bp.route('/draft/<int:scenario_id>/ai-audit', methods=['POST'])
+@login_required
+def ai_audit_scene(scenario_id):
+    """
+    AI 서사 일관성 검사 API
+
+    특정 씬의 서사적 개연성과 트리거 일치성을 AI로 검증합니다.
+
+    Request Body:
+        - scene_id: 검사할 씬 ID
+        - audit_type: 'coherence' | 'trigger' | 'full' (기본: 'full')
+        - model: 사용할 LLM 모델 (선택)
+    """
+    data = request.get_json(force=True)
+    scene_id = data.get('scene_id')
+    audit_type = data.get('audit_type', 'full')
+    model_name = data.get('model')
+
+    if not scene_id:
+        return jsonify({"success": False, "error": "scene_id가 필요합니다."}), 400
+
+    # Draft 로드
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    scenario_data = result['scenario']
+
+    # 감사 타입에 따라 적절한 메서드 호출
+    if audit_type == 'coherence':
+        audit_result = AIAuditService.audit_scene_coherence(scenario_data, scene_id, model_name)
+        return jsonify({
+            "success": audit_result.success,
+            "audit_type": "coherence",
+            "result": audit_result.to_dict()
+        })
+    elif audit_type == 'trigger':
+        audit_result = AIAuditService.audit_trigger_consistency(scenario_data, scene_id, model_name)
+        return jsonify({
+            "success": audit_result.success,
+            "audit_type": "trigger",
+            "result": audit_result.to_dict()
+        })
+    else:  # full
+        full_result = AIAuditService.full_audit(scenario_data, scene_id, model_name)
+        return jsonify({
+            "success": full_result.get('success', False),
+            "audit_type": "full",
+            "result": full_result
+        })
+
+
+@api_bp.route('/draft/<int:scenario_id>/ai-audit-all', methods=['POST'])
+@login_required
+def ai_audit_all_scenes(scenario_id):
+    """
+    전체 시나리오 AI 감사 API
+
+    시나리오의 모든 씬에 대해 서사 일관성 검사를 수행합니다.
+    (주의: 씬이 많으면 시간이 오래 걸릴 수 있음)
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    model_name = data.get('model')
+
+    # Draft 로드
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    scenario_data = result['scenario']
+    scenes = scenario_data.get('scenes', [])
+
+    all_results = []
+    total_issues = 0
+    has_errors = False
+
+    for scene in scenes:
+        scene_id = scene.get('scene_id')
+        if not scene_id:
+            continue
+
+        # 각 씬에 대해 전체 감사 수행
+        audit_result = AIAuditService.full_audit(scenario_data, scene_id, model_name)
+        all_results.append({
+            'scene_id': scene_id,
+            'scene_title': scene.get('title') or scene.get('name') or scene_id,
+            'result': audit_result
+        })
+
+        total_issues += audit_result.get('total_issues', 0)
+        if audit_result.get('has_errors'):
+            has_errors = True
+
+    return jsonify({
+        "success": True,
+        "total_scenes": len(scenes),
+        "total_issues": total_issues,
+        "has_errors": has_errors,
+        "results": all_results
     })

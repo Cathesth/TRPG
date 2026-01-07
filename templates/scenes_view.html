@@ -925,6 +925,18 @@
                         `).join('')}
                     </div>
                 </div>
+
+                <!-- AI 서사 일관성 검사 버튼 -->
+                <div class="border-t border-gray-700 pt-4">
+                    <button onclick="runAIAudit('${scene.scene_id}')"
+                            id="aiAuditBtn_${scene.scene_id}"
+                            class="w-full bg-violet-600/20 hover:bg-violet-600 text-violet-300 hover:text-white py-2.5 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors border border-violet-600/30 mb-2">
+                        <i data-lucide="brain" class="w-4 h-4"></i>
+                        AI 서사 일관성 검사
+                    </button>
+                    <div id="aiAuditResult_${scene.scene_id}" class="hidden"></div>
+                </div>
+
                 <div class="flex gap-2">
                     <button onclick="applySceneEdit('${scene.scene_id}')"
                             class="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
@@ -973,6 +985,110 @@
             </div>
         `;
     }
+
+    // AI 서사 일관성 검사 실행
+    window.runAIAudit = async function(sceneId) {
+        const btn = document.getElementById(`aiAuditBtn_${sceneId}`);
+        const resultDiv = document.getElementById(`aiAuditResult_${sceneId}`);
+
+        if (!btn || !resultDiv) return;
+
+        // 버튼 비활성화 및 로딩 아이콘 표시
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> AI 검사 중... (10~30초 소요)';
+        lucide.createIcons();
+
+        try {
+            // AI 서사 일관성 검사 API 호출
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/ai-audit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scene_id: sceneId, audit_type: 'full' })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                const result = data.result;
+                const coherence = result.coherence || {};
+                const trigger = result.trigger || {};
+
+                // 문제 목록 생성
+                let issuesHtml = '';
+                const allIssues = [...(coherence.issues || []), ...(trigger.issues || [])];
+
+                if (allIssues.length === 0) {
+                    issuesHtml = `
+                        <div class="flex items-center gap-2 text-green-400 mb-3">
+                            <i data-lucide="check-circle" class="w-5 h-5"></i>
+                            <span class="font-bold">문제 없음!</span>
+                        </div>
+                        <p class="text-gray-400 text-sm">${escapeHtml(result.summary || '서사 일관성 검사를 통과했습니다.')}</p>
+                    `;
+                } else {
+                    issuesHtml = `
+                        <div class="flex items-center gap-2 ${result.has_errors ? 'text-red-400' : 'text-amber-400'} mb-3">
+                            <i data-lucide="${result.has_errors ? 'alert-circle' : 'alert-triangle'}" class="w-5 h-5"></i>
+                            <span class="font-bold">${allIssues.length}개의 문제 발견</span>
+                        </div>
+                        <div class="space-y-2 max-h-60 overflow-y-auto">
+                            ${allIssues.map(issue => `
+                                <div class="p-2 rounded ${issue.severity === 'error' ? 'bg-red-900/30 border border-red-700/50' : 'bg-amber-900/30 border border-amber-700/50'}">
+                                    <div class="flex items-start gap-2">
+                                        <span class="${issue.severity === 'error' ? 'text-red-400' : 'text-amber-400'} text-xs font-bold uppercase">${issue.severity}</span>
+                                        <span class="text-gray-200 text-xs">${escapeHtml(issue.message)}</span>
+                                    </div>
+                                    ${issue.suggestion ? `<p class="text-green-400 text-xs mt-1">💡 ${escapeHtml(issue.suggestion)}</p>` : ''}
+                                    ${issue.trigger_text ? `<p class="text-gray-500 text-xs mt-1">트리거: "${escapeHtml(issue.trigger_text)}"</p>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+
+                // 결과 표시
+                resultDiv.innerHTML = `
+                    <div class="p-3 rounded-lg bg-gray-800/50 border border-gray-700 mt-2">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs text-gray-500">AI 서사 일관성 검사 결과</span>
+                            <button onclick="document.getElementById('aiAuditResult_${sceneId}').classList.add('hidden')" class="text-gray-500 hover:text-white">
+                                <i data-lucide="x" class="w-3 h-3"></i>
+                            </button>
+                        </div>
+                        ${issuesHtml}
+                    </div>
+                `;
+                resultDiv.classList.remove('hidden');
+                lucide.createIcons();
+
+                if (allIssues.length === 0) {
+                    showToast('서사 일관성 검사 통과! ✅', 'success');
+                } else {
+                    showToast(`${allIssues.length}개의 서사 문제 발견`, result.has_errors ? 'error' : 'info');
+                }
+            } else {
+                throw new Error(data.error || '검사 실패');
+            }
+        } catch (error) {
+            console.error('AI Audit Error:', error);
+            resultDiv.innerHTML = `
+                <div class="p-3 rounded-lg bg-red-900/30 border border-red-700/50 mt-2">
+                    <div class="flex items-center gap-2 text-red-400">
+                        <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                        <span class="text-sm">검사 실패: ${escapeHtml(error.message)}</span>
+                    </div>
+                </div>
+            `;
+            resultDiv.classList.remove('hidden');
+            lucide.createIcons();
+            showToast('AI 검사 실패: ' + error.message, 'error');
+        } finally {
+            // 버튼 원래 상태로 복원
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="brain" class="w-4 h-4"></i> AI 서사 일관성 검사';
+            lucide.createIcons();
+        }
+    };
 
     // HTML 이스케이프
     function escapeHtml(str) {
