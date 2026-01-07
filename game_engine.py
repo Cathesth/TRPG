@@ -29,6 +29,7 @@ class PlayerState(TypedDict):
     critic_feedback: str
     retry_count: int
     chat_log_html: str
+    near_miss_trigger: str  # [필수] Near Miss 저장용
 
 
 def normalize_text(text: str) -> str:
@@ -44,6 +45,9 @@ def intent_parser_node(state: PlayerState):
     - LLM 호출 제거: 오직 파이썬 내부 연산(Fast-Track)만 수행하여 속도 극대화
     - 매칭 실패 시 -> 지체 없이 Chat/Hint 모드로 전환
     """
+
+    # 0. 상태 초기화 (중요: 이전 턴의 찌꺼기 제거)
+    state['near_miss_trigger'] = None
 
     # 턴 시작 시 위치 기록
     if 'current_scene_id' in state:
@@ -84,46 +88,53 @@ def intent_parser_node(state: PlayerState):
         return state
 
     # 🚀 [SPEED-UP] Fast-Track 매칭
-    # LLM 없이 텍스트 유사도만으로 판단 (0.01초 소요)
     best_idx = -1
     highest_ratio = 0.0
+    best_trigger_text = ""  # 변수 초기화 (안전장치)
 
     for idx, trans in enumerate(transitions):
         trigger = trans.get('trigger', '').strip()
         if not trigger: continue
         norm_trigger = normalize_text(trigger)
 
-        # 1. 완전 포함 관계 확인 (가장 확실함)
-        # 예: 입력 "오래된 문을 연다" vs 트리거 "문을 연다"
+        # 1. 완전 포함 관계 확인 (가장 확실함 -> 즉시 리턴 가능)
         if norm_input in norm_trigger or norm_trigger in norm_input:
-            # 너무 짧은 단어 매칭 방지 (길이 2 이상)
             if len(norm_input) >= 2:
                 logger.info(f"⚡ [FAST-TRACK] Direct Match: '{user_input}' matched '{trigger}'")
                 state['last_user_choice_idx'] = idx
                 state['parsed_intent'] = 'transition'
                 return state
 
-        # 2. 유사도 검사 (오타 허용)
+        # 2. 유사도 계산 (Best Match 찾기 위해 루프 돎)
         similarity = difflib.SequenceMatcher(None, norm_input, norm_trigger).ratio()
         if similarity > highest_ratio:
             highest_ratio = similarity
             best_idx = idx
+            best_trigger_text = trigger
 
-    # 유사도가 0.5 이상이면 인정 (자연어라 기준을 좀 낮춤)
-    if highest_ratio >= 0.5:
-        logger.info(f"⚡ [FAST-TRACK] Fuzzy Match ({highest_ratio:.2f}): '{user_input}' -> Transtion {best_idx}")
+    # [수정] 루프 종료 후 '가장 높은 점수'로 최종 판단
+    # 0.6 이상: 성공
+    if highest_ratio >= 0.6:
+        logger.info(f"⚡ [FAST-TRACK] Fuzzy Match ({highest_ratio:.2f}): '{user_input}' -> '{best_trigger_text}'")
         state['last_user_choice_idx'] = best_idx
         state['parsed_intent'] = 'transition'
         return state
 
-    # [최적화] LLM 판단(Slow-Path) 제거
-    # 매칭 안 되면 고민하지 말고 바로 채팅/힌트 모드로 넘김 -> 반응 속도 UP
+    # 0.4 ~ 0.59: 아까운 실패 (Near Miss)
+    elif highest_ratio >= 0.4:
+        logger.info(f"⚡ [FAST-TRACK] Near Miss ({highest_ratio:.2f}): '{user_input}' vs '{best_trigger_text}'")
+        state['near_miss_trigger'] = best_trigger_text
+        state['parsed_intent'] = 'chat'  # 이동은 실패했지만 힌트 줄 예정
+        return state
+
+    # 매칭 실패 -> 일반 채팅/힌트
     state['parsed_intent'] = 'chat'
     return state
 
 
 def rule_node(state: PlayerState):
     """규칙 엔진 (이동 및 상태 변경)"""
+    # ... (기존 코드 동일) ...
     idx = state['last_user_choice_idx']
     scenario = state['scenario']
     curr_scene_id = state['current_scene_id']
@@ -207,6 +218,7 @@ def rule_node(state: PlayerState):
 
 def npc_node(state: PlayerState):
     """NPC 대화 (이동 아닐 때만 발동)"""
+    # ... (기존 코드 동일) ...
     if state.get('parsed_intent') != 'chat':
         state['npc_output'] = ""
         return state
@@ -256,6 +268,7 @@ def npc_node(state: PlayerState):
 
 def check_npc_appearance(state: PlayerState) -> str:
     """NPC 등장 (템플릿 기반)"""
+    # ... (기존 코드 동일) ...
     scenario = state['scenario']
     curr_id = state['current_scene_id']
 
@@ -309,9 +322,7 @@ def prologue_stream_generator(state: PlayerState):
 
 
 def get_narrative_fallback_message(scenario: Dict[str, Any]) -> str:
-    """
-    세계관에 맞는 내러티브 폴백 메시지 생성
-    """
+    # ... (기존 코드 동일) ...
     genre = scenario.get('genre', '').lower()
     world_setting = scenario.get('world_setting', '').lower()
 
@@ -328,20 +339,18 @@ def get_narrative_fallback_message(scenario: Dict[str, Any]) -> str:
         'martial': "⚠️ 내공의 흐름이 일시적으로 막혔습니다. 기를 가다듬고 다시 시도하십시오."
     }
 
-    # 장르나 세계관 키워드로 매칭
     for key, message in fallback_messages.items():
         if key in genre or key in world_setting:
             return message
 
-    # 기본 폴백 메시지
     return "⚠️ 잠시 상황 파악이 어렵습니다. 심호흡을 하고 다시 시도해 주세요."
 
 
 def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries: int = 2):
     """
     나레이션 스트리밍
-    [MODE 1] 힌트 모드 (이동 X) -> 빠른 반응, 힌트 제공
-    [MODE 2] 묘사 모드 (이동 O) -> 전체 씬 묘사
+    [MODE 1] 힌트 모드 (이동 X)
+    [MODE 2] 묘사 모드 (이동 O)
     """
     scenario = state['scenario']
     curr_id = state['current_scene_id']
@@ -351,7 +360,6 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     all_scenes = {s['scene_id']: s for s in scenario['scenes']}
     all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
 
-    # 엔딩 체크
     if curr_id in all_endings:
         ending = all_endings[curr_id]
         yield f"""
@@ -364,25 +372,17 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
     curr_scene = all_scenes.get(curr_id)
 
-    # 씬을 찾을 수 없는 경우
     if not curr_scene:
         logger.warning(f"Scene not found: {curr_id}")
-
-        # 재시도 가능한 경우
         if retry_count < max_retries:
-            # 재시도 신호 전송 (JavaScript에서 처리)
             yield f"__RETRY_SIGNAL__"
             return
-
-        # 재시도 실패 시 내러티브 폴백
         fallback_msg = get_narrative_fallback_message(scenario)
         yield f"""
         <div class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4 my-2">
             <div class="text-yellow-400 serif-font">{fallback_msg}</div>
         </div>
         """
-
-        # 시작 씬으로 리다이렉트 시도
         start_scene_id = scenario.get('start_scene_id')
         if start_scene_id and start_scene_id in all_scenes:
             state['current_scene_id'] = start_scene_id
@@ -394,24 +394,29 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
     # [MODE 1] 씬 유지됨 (탐색/대화) -> 힌트 모드
     if prev_id == curr_id and user_input:
-        npc_output = state.get('npc_output', '')
 
-        # NPC가 이미 대답한 경우 -> 나레이션은 최소화
-        if npc_output:
-            yield ""  # NPC 대사만으로 충분하면 생략 가능, 혹은 아주 짧게
+        # [최적화 1] Near Miss 감지 시 LLM 호출 없이 즉시 힌트 반환 (0.01초)
+        near_miss = state.get('near_miss_trigger')
+        if near_miss:
+            yield f"그 행동({user_input})은 되지 않지만, <mark>{near_miss}</mark>와 관련된 무언가가 있을 것 같습니다."
             return
 
-        # NPC 대답 없고 씬 이동도 안 함 -> 힌트 제공
+        # [최적화 2] 일반 힌트 생성 시 프롬프트 경량화
+        npc_output = state.get('npc_output', '')
+        if npc_output:
+            yield ""
+            return
+
+        # 30% 확률로 LLM 없이 기본 메시지 (비용 절감)
+        if random.random() < 0.3:
+            yield "특별한 일은 일어나지 않았습니다. 주변을 더 자세히 살펴보세요."
+            return
+
         prompt = f"""
-        [Situation] User explored '{scene_title}' with action: "{user_input}".
-        [Result] Nothing happened. Scene unchanged.
-        [Hidden Triggers] {trigger_hints}
-        [Task] 
-        1. Acknowledge the action briefly.
-        2. Give a subtle **HINT** about one of the triggers.
-        3. Korean. Short (1-2 sentences).
-        4. Use <mark>tags</mark> for interactable objects.
-        """
+            [Situation] Scene: '{scene_title}'. User tried: "{user_input}" -> Failed.
+            [Hidden Triggers] {trigger_hints}
+            [Task] Give a VERY short hint (Korean). 1 sentence. Use <mark>tags</mark>.
+            """
 
         try:
             api_key = os.getenv("OPENROUTER_API_KEY")
@@ -463,22 +468,18 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 has_content = True
                 yield chunk.content
 
-        # 응답이 비어있거나 너무 짧은 경우 재시도
         if not has_content or len(accumulated_text.strip()) < 10:
             raise Exception("Empty or insufficient response from LLM")
 
     except Exception as e:
         logger.error(f"Scene Streaming Error (attempt {retry_count + 1}): {e}")
 
-        # 재시도 가능한 경우
         if retry_count < max_retries:
             yield f"__RETRY_SIGNAL__"
             return
 
-        # 재시도 실패 시 내러티브 폴백
         fallback_msg = get_narrative_fallback_message(scenario)
 
-        # 기본 씬 설명이 있으면 함께 표시
         if scene_desc:
             yield f"""
             <div class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4 my-2">
@@ -494,8 +495,8 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             """
 
 
-
 def create_game_graph():
+    # ... (기존 코드 동일) ...
     workflow = StateGraph(PlayerState)
     workflow.add_node("intent_parser", intent_parser_node)
     workflow.add_node("rule_engine", rule_node)

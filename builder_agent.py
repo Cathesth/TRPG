@@ -7,11 +7,13 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.runnables import RunnableParallel
 from langgraph.graph import StateGraph, END
-from pydantic import BaseModel, Field
 
 from llm_factory import LLMFactory
 from schemas import NPC
 from core.utils import renumber_scenes_bfs
+
+from pydantic import BaseModel, Field
+from typing import Optional, List
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +26,17 @@ def set_progress_callback(callback):
     _progress_callback = callback
 
 
-def report_progress(status, step, detail, progress):
+def report_progress(status, step, detail, progress, phase=None):
     if _progress_callback:
-        _progress_callback(status=status, step=step, detail=detail, progress=progress)
-
+        # phase가 없으면 step을 기반으로 추론하거나 기본값 설정
+        payload = {
+            "status": status,
+            "step": step,
+            "detail": detail,
+            "progress": progress,
+            "current_phase": phase or "initializing" # 프론트엔드가 기대하는 키 추가
+        }
+        _progress_callback(**payload)
 
 # --- [유틸리티] JSON 파싱 헬퍼 ---
 def parse_json_garbage(text: str) -> dict:
@@ -140,7 +149,8 @@ class BuilderState(TypedDict):
 # --- 노드 함수 ---
 
 def parse_graph_to_blueprint(state: BuilderState):
-    report_progress("building", "1/5", "구조 분석 중...", 10)
+    # phase 명시: 'parsing'
+    report_progress("building", "1/5", "구조 분석 중...", 10, phase="parsing")
     data = state["graph_data"]
     nodes = data.get("nodes", [])
     edges = data.get("edges", [])
@@ -192,7 +202,8 @@ def parse_graph_to_blueprint(state: BuilderState):
 
 
 def refine_scenario_info(state: BuilderState):
-    report_progress("building", "2/5", "개요 및 설정 기획 중...", 30)
+    # phase 명시: 'worldbuilding' (설정 기획 단계)
+    report_progress("building", "2/5", "개요 및 설정 기획 중...", 30, phase="worldbuilding")
     llm = LLMFactory.get_llm(state.get("model_name"))
     parser = JsonOutputParser(pydantic_object=ScenarioSummary)
 
@@ -229,7 +240,8 @@ def generate_full_content(state: BuilderState):
     [수정됨] 세계관/NPC 생성 -> 씬 생성 (순차적 처리로 변경)
     세계관이 씬 묘사에 반영되도록 수정함.
     """
-    report_progress("building", "3/5", "세계관 및 NPC 생성 중...", 50)
+    # phase 명시: 'worldbuilding' -> 'scene_generation'
+    report_progress("building", "3/5", "세계관 및 NPC 생성 중...", 50, phase="worldbuilding")
     llm = LLMFactory.get_llm(state.get("model_name"))
     blueprint = state.get("blueprint", "")
 
@@ -267,7 +279,7 @@ def generate_full_content(state: BuilderState):
     worlds = setup_res['worlds'].get('worlds', [])
 
     # 생성된 세계관 정보를 텍스트로 변환하여 씬 생성 프롬프트에 주입
-    report_progress("building", "3.5/5", "장면 및 사건 구성 중...", 65)
+    report_progress("building", "3.5/5", "장면 및 사건 구성 중...", 65, phase="scene_generation")
 
     world_context = "\n".join([f"- 배경 '{w.get('name')}': {w.get('description')}" for w in worlds])
     npc_context = "\n".join([f"- NPC '{n.get('name')}': {n.get('role')}" for n in npcs])
@@ -304,7 +316,8 @@ def generate_full_content(state: BuilderState):
 
 def polish_content(state: BuilderState):
     logger.info("Validator(polish_content) checking...")
-    report_progress("building", "4/5", "품질 검수 및 보정 중...", 80)
+    # phase 명시: 'validation'
+    report_progress("building", "4/5", "품질 검수 및 보정 중...", 80, phase="validation")
     llm = LLMFactory.get_llm(state.get("model_name"))
 
     scenes = state["scenes"]
@@ -371,8 +384,17 @@ def polish_content(state: BuilderState):
         return state
 
 
+class InitialStateExtractor(BaseModel):
+    hp: Optional[int] = Field(None, description="체력 (언급 없으면 null)")
+    mp: Optional[int] = Field(None, description="마력 (언급 없으면 null)")
+    sanity: Optional[int] = Field(None, description="정신력/이성 (언급 없으면 null)")
+    gold: Optional[int] = Field(None, description="소지금/골드 (언급 없으면 null)")
+    inventory: Optional[List[str]] = Field(None, description="시작 아이템 목록 (언급 없으면 null)")
+
+
 def finalize_build(state: BuilderState):
-    report_progress("building", "5/5", "최종 마무리 중...", 100)
+    # phase 명시: 'finalizing'
+    report_progress("building", "5/5", "최종 마무리 중...", 100, phase="finalizing")
     data = state["graph_data"]
     start_id = None
 
@@ -420,18 +442,49 @@ def finalize_build(state: BuilderState):
             node["data"]["title"] = ending_map[nid]["title"]
             node["data"]["description"] = ending_map[nid]["description"]
 
-    # 플레이어 초기 상태
+    # [수정: 초기 스탯 파싱 로직 강화]
+    # gm_notes(final_hidden) 내용을 기반으로 스탯을 좀 더 스마트하게 설정
     initial_player_state = {
         "hp": 100,
-        "max_hp": 100,
         "inventory": []
     }
 
-    scenario_title = scenario_data.get("title", "Untitled")
-    if any(k in scenario_title.lower() for k in ["던전", "모험", "전투"]):
-        initial_player_state.update({"mp": 50, "attack": 10})
-    elif any(k in scenario_title.lower() for k in ["공포", "호러"]):
-        initial_player_state.update({"sanity": 100})
+    # 제목/장르 기반 1차 설정 (기존 로직 유지)
+    scenario_title = state["scenario"].get("title", "Untitled")
+    if any(k in scenario_title.lower() for k in ["던전", "모험", "전투", "raid"]):
+        initial_player_state.update({"mp": 50, "attack": 10, "gold": 0})
+    elif any(k in scenario_title.lower() for k in ["공포", "호러", "크툴루", "mystery"]):
+        initial_player_state.update({"sanity": 100, "flashlight": 1})
+
+    # 2. [신규 추가] LLM을 이용한 GM 노트 파싱 (Override)
+    # gm_notes(final_hidden)에 구체적인 수치가 있다면 추출하여 덮어씌웁니다.
+    try:
+        extract_llm = LLMFactory.get_llm(state.get("model_name"), temperature=0.1)  # 정확도를 위해 낮은 온도 사용
+        parser = JsonOutputParser(pydantic_object=InitialStateExtractor)
+
+        extract_prompt = ChatPromptTemplate.from_messages([
+            ("system",
+             "당신은 게임 데이터 분석가입니다. 주어진 '시스템 설정(GM Note)' 텍스트를 분석하여 "
+             "플레이어의 시작 스탯(HP, MP, Sanity, Gold, Inventory)이 명시되어 있다면 추출하세요.\n"
+             "명시되지 않은 항목은 null로 반환하세요.\n"
+             "{format_instructions}"),
+            ("user", f"분석할 텍스트:\n{final_hidden}")
+        ]).partial(format_instructions=parser.get_format_instructions())
+
+        # LLM 호출
+        extracted_stats = (extract_prompt | extract_llm | parser).invoke({})
+
+        # 추출된 값이 있는 경우에만 기존 state 업데이트 (None 제외)
+        if extracted_stats:
+            for key, value in extracted_stats.items():
+                if value is not None and value != []:
+                    # 기존에 값이 있더라도 GM 노트의 설정이 우선하므로 덮어씌움
+                    initial_player_state[key] = value
+                    logger.info(f"✅ Extracted Stat Applied: {key} = {value}")
+
+    except Exception as e:
+        logger.warning(f"Stats Extraction Failed: {e} (Using default templates)")
+        # 실패해도 치명적이지 않음 -> 기본 템플릿 값 사용
 
     final_data = {
         "title": scenario_title,
