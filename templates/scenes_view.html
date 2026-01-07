@@ -543,6 +543,9 @@
         }
     });
 
+    // Mermaid 인스턴스를 전역으로 저장 (리렌더링용)
+    window.mermaidInstance = mermaid;
+
     window.panZoomState = {
         scale: 1,
         panning: false,
@@ -688,6 +691,51 @@
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
         window.zoomGraph(delta);
     }, { passive: false });
+
+    // ========== 실시간 차트 리렌더링 함수 ==========
+    window.rerenderMermaidChart = async function(newMermaidCode) {
+        const graphInner = document.getElementById('graph-inner');
+        if (!graphInner) return;
+
+        // 기존 pan/zoom 상태 저장
+        const savedState = { ...window.panZoomState };
+
+        // 새 Mermaid 코드로 요소 교체
+        const newElement = document.createElement('pre');
+        newElement.className = 'mermaid opacity-0 transition-opacity duration-500';
+        newElement.id = 'mermaid-graph';
+        newElement.textContent = newMermaidCode;
+
+        // 기존 요소 교체
+        graphInner.innerHTML = '';
+        graphInner.appendChild(newElement);
+
+        try {
+            await window.mermaidInstance.run({ nodes: [newElement] });
+            newElement.classList.remove('opacity-0');
+
+            const svg = newElement.querySelector('svg');
+            if (svg) {
+                svg.style.maxWidth = 'none';
+                svg.style.height = 'auto';
+            }
+
+            // pan/zoom 상태 복원
+            window.panZoomState = savedState;
+            window.updateTransform();
+
+            // 편집 모드면 클릭 핸들러 재설정
+            if (typeof isEditModeActive !== 'undefined' && isEditModeActive) {
+                setupNodeClickHandlers();
+            }
+
+            console.log('[Mermaid] Chart re-rendered successfully');
+        } catch (err) {
+            console.error('[Mermaid] Re-render failed:', err);
+            newElement.innerHTML = `<div class='text-red-500 p-4'>차트 리렌더링 실패<br><small>${err}</small></div>`;
+            newElement.classList.remove('opacity-0');
+        }
+    };
 
     renderGraph();
 </script>
@@ -1216,7 +1264,8 @@
             markAsChanged();
             closeModal('addSceneModal');
             showToast(`새 씬 '${result.scene.scene_id}'이(가) 추가되었습니다.`, 'success');
-            setTimeout(() => location.reload(), 1500);
+            // 실시간 차트 리렌더링
+            await refreshMermaidChart();
         } else {
             showToast('씬 추가 실패: ' + result.error, 'error');
         }
@@ -1289,14 +1338,14 @@
             markAsChanged();
             closeModal('addEndingModal');
             showToast(`새 엔딩 '${result.ending.ending_id}'이(가) 추가되었습니다.`, 'success');
-            setTimeout(() => location.reload(), 1500);
+            // 실시간 차트 리렌더링
+            await refreshMermaidChart();
         } else {
             showToast('엔딩 추가 실패: ' + result.error, 'error');
         }
     };
 
-    // ========== 삭제 안전장치 ==========
-
+    // 삭제 안전장치
     window.confirmDeleteScene = async function(sceneId, sceneTitle) {
         // 먼저 참조 확인
         const response = await fetch(`/api/draft/${SCENARIO_ID}/check-references`, {
@@ -1379,6 +1428,7 @@
         if (result.success) {
             scenarioData = result.scenario;
             markAsChanged();
+            closeEditSidebar();
 
             if (result.warnings && result.warnings.length > 0) {
                 showToast(result.warnings[0], 'info');
@@ -1386,13 +1436,12 @@
                 showToast(result.message, 'success');
             }
 
-            setTimeout(() => location.reload(), 1500);
+            // 실시간 차트 리렌더링
+            await refreshMermaidChart();
         } else {
             showToast('삭제 실패: ' + result.error, 'error');
         }
     }
-
-    // ========== 공통 모달 함수 ==========
 
     // 엔딩 삭제 확인
     window.confirmDeleteEnding = function(endingId, endingTitle) {
@@ -1421,13 +1470,16 @@
                         showToast(result.message, 'success');
                     }
 
-                    setTimeout(() => location.reload(), 1500);
+                    // 실시간 차트 리렌더링
+                    await refreshMermaidChart();
                 } else {
                     showToast('삭제 실패: ' + result.error, 'error');
                 }
             }
         );
     };
+
+    // ========== 공통 모달 함수 ==========
 
     // 토스트 메시지
     function showToast(message, type = 'info') {
@@ -1487,6 +1539,7 @@
     window.saveScenario = async function() {
         await saveDraft();
     };
+    {% endif %}
 </script>
 
 <!-- 버전 정보 배지 -->

@@ -426,6 +426,17 @@ def load_preset_old():
 
 # --- [Draft 시스템 API (비주얼 에디터용)] ---
 
+from services.mermaid_service import MermaidService
+
+def _generate_mermaid_for_response(scenario_data):
+    """응답용 Mermaid 코드 생성"""
+    try:
+        chart_data = MermaidService.generate_chart(scenario_data, None)
+        return chart_data.get('mermaid_code', '')
+    except Exception as e:
+        logger.error(f"Mermaid generation error: {e}")
+        return ''
+
 @api_bp.route('/draft/<int:scenario_id>', methods=['GET'])
 @login_required
 def get_draft(scenario_id):
@@ -433,7 +444,10 @@ def get_draft(scenario_id):
     result, error = DraftService.get_draft(scenario_id, current_user.id)
     if error:
         return jsonify({"success": False, "error": error}), 403
-    return jsonify({"success": True, **result})
+
+    # Mermaid 코드 포함하여 응답
+    mermaid_code = _generate_mermaid_for_response(result['scenario'])
+    return jsonify({"success": True, "mermaid_code": mermaid_code, **result})
 
 
 @api_bp.route('/draft/<int:scenario_id>/save', methods=['POST'])
