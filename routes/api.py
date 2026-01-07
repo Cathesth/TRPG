@@ -14,7 +14,7 @@ from builder_agent import (
 )
 
 from core.state import game_state
-from core.utils import parse_request_data, pick_start_scene_id
+from core.utils import parse_request_data, pick_start_scene_id, validate_scenario_graph, can_publish_scenario
 from services.scenario_service import ScenarioService
 from services.user_service import UserService
 from services.preset_service import PresetService
@@ -464,11 +464,51 @@ def save_draft(scenario_id):
 @api_bp.route('/draft/<int:scenario_id>/publish', methods=['POST'])
 @login_required
 def publish_draft(scenario_id):
-    """Draft를 실제 시나리오로 최종 반영"""
-    success, error = DraftService.publish_draft(scenario_id, current_user.id)
+    """Draft를 실제 시나리오로 최종 반영 (유효성 검사 통과 필수)"""
+    data = request.get_json(force=True, silent=True) or {}
+    force = data.get('force', False)  # 강제 반영 옵션
+
+    success, error, validation_result = DraftService.publish_draft(scenario_id, current_user.id, force=force)
+
     if not success:
-        return jsonify({"success": False, "error": error}), 400
-    return jsonify({"success": True, "message": "시나리오에 최종 반영되었습니다."})
+        return jsonify({
+            "success": False,
+            "error": error,
+            "validation": validation_result
+        }), 400
+
+    return jsonify({
+        "success": True,
+        "message": "시나리오에 최종 반영되었습니다.",
+        "validation": validation_result
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/validate', methods=['GET', 'POST'])
+@login_required
+def validate_draft(scenario_id):
+    """
+    시나리오 그래프 유효성 검사 API
+
+    검사 항목:
+    - 고립 노드: 어떤 경로로도 도달할 수 없는 씬 적발
+    - 참조 무결성: 존재하지 않는 ID를 가리키는 target_scene_id 적발
+    - 도달 가능성: 시작 씬에서 하나 이상의 엔딩까지 도달 가능한 경로 존재 여부
+    """
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    scenario_data = result['scenario']
+
+    # 유효성 검사 수행
+    validation_result = validate_scenario_graph(scenario_data)
+
+    return jsonify({
+        "success": True,
+        "can_publish": validation_result.is_valid,
+        "validation": validation_result.to_dict()
+    })
 
 
 @api_bp.route('/draft/<int:scenario_id>/discard', methods=['POST'])
