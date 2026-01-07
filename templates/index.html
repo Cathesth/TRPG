@@ -18,12 +18,12 @@
                 extend: {
                     colors: {
                         rpg: {
-                            900: '#020617', // 메인 배경 (Deep Navy)
-                            800: '#0f172a', // 패널 배경
-                            700: '#1e293b', // 테두리
-                            accent: '#38bdf8', // 포인트 (Cyan)
-                            hover: '#0ea5e9', // 호버 (Blue)
-                            danger: '#ef4444', // 경고 (Red)
+                            900: '#020617', // Main Background
+                            800: '#0f172a', // Panel Background
+                            700: '#1e293b', // Border
+                            accent: '#38bdf8', // Cyan
+                            hover: '#0ea5e9', // Blue
+                            danger: '#ef4444', // Red
                         }
                     },
                     fontFamily: {
@@ -45,26 +45,49 @@
     </script>
     <style>
         body { @apply font-body bg-rpg-900 text-gray-200; }
-
-        /* 스크롤바 숨김 */
         .no-scrollbar::-webkit-scrollbar { display: none; }
-
-        /* 모달 애니메이션 */
         .modal { transition: opacity 0.25s ease; }
         body.modal-active { overflow-x: hidden; overflow-y: hidden !important; }
 
-        /* [중요] api.py에서 보내는 옛날 클래스 호환성 패치 */
-        .bg-dark-800 { @apply bg-rpg-800 border border-rpg-700 shadow-lg; }
-        .text-brand-light { @apply text-rpg-accent; }
-        .border-white\/5 { @apply border-rpg-700; }
-        /* api.py의 버튼 스타일 강제 수정 */
-        .bg-dark-800 button { @apply bg-rpg-700 hover:bg-rpg-accent hover:text-black transition-colors font-bold rounded; }
+        /* [핵심] API 호환성 패치: 서버에서 오는 bg-dark-800 클래스를 새로운 디자인으로 매핑 */
+        .bg-dark-800 {
+            @apply bg-rpg-800 border border-rpg-700 shadow-lg rounded-xl overflow-hidden flex flex-col h-full transition-all hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] !important;
+        }
+        /* 이미지 영역 */
+        .bg-dark-800 > div:first-child {
+            @apply relative h-40 overflow-hidden !important;
+        }
+        .bg-dark-800 img {
+            @apply w-full h-full object-cover transition-transform duration-500 hover:scale-110 !important;
+        }
+        /* 텍스트 영역 */
+        .bg-dark-800 > div:nth-child(2) {
+            @apply p-5 flex-1 flex flex-col !important;
+        }
+        .bg-dark-800 h4 {
+            @apply text-lg font-bold text-white mb-2 font-title tracking-wide truncate !important;
+        }
+        .bg-dark-800 p {
+            @apply text-sm text-gray-400 line-clamp-2 mb-4 flex-1 !important;
+        }
+
+        /* [핵심] 버튼 디자인 강제 통일 */
+        #scenario-grid button {
+            @apply w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 mt-auto !important;
+        }
+        #scenario-grid button i {
+            @apply w-4 h-4 fill-current !important;
+        }
+        /* 삭제/공개 버튼 아이콘 스타일 */
+        .opacity-0 button {
+            @apply text-gray-400 hover:text-rpg-accent transition-colors !important;
+        }
     </style>
 </head>
 <body class="h-screen flex overflow-hidden selection:bg-rpg-accent selection:text-black">
 
-    <div class="fixed left-0 top-0 h-full bg-rpg-900/90 backdrop-blur-md border-r border-rpg-700 z-50 transition-all duration-300 w-20 hover:w-64 group flex flex-col shadow-2xl">
-        <div class="h-20 flex items-center shrink-0 px-6 border-b border-rpg-700 cursor-pointer" onclick="location.href='/'">
+    <div class="relative h-full bg-rpg-900/90 backdrop-blur-md border-r border-rpg-700 z-50 transition-all duration-300 w-20 hover:w-64 group flex flex-col shadow-2xl shrink-0">
+        <div class="h-20 flex items-center shrink-0 px-6 border-b border-rpg-700 cursor-pointer overflow-hidden" onclick="location.href='/'">
             <div class="w-8 h-8 bg-rpg-accent rounded flex items-center justify-center shrink-0 shadow-[0_0_10px_#38bdf8]">
                 <i data-lucide="sword" class="text-black w-5 h-5 fill-current"></i>
             </div>
@@ -73,31 +96,31 @@
             </span>
         </div>
 
-        <nav class="flex-1 py-6 px-3 space-y-2">
-            <a href="/" class="flex items-center h-12 px-3 rounded-lg bg-rpg-800 text-rpg-accent border border-rpg-700 transition-all group hover:bg-rpg-accent hover:text-black">
+        <nav class="flex-1 py-6 px-3 space-y-2 overflow-hidden">
+            <a href="/" class="flex items-center h-12 px-3 rounded-lg bg-rpg-800 text-rpg-accent border border-rpg-700 transition-all group hover:bg-rpg-accent hover:text-black whitespace-nowrap">
                 <i data-lucide="layout-grid" class="w-6 h-6 shrink-0"></i>
-                <span class="ml-4 font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap delay-75">DASHBOARD</span>
+                <span class="ml-4 font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">DASHBOARD</span>
             </a>
 
-            <a href="/views/builder" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all">
+            <a href="/views/builder" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all whitespace-nowrap">
                 <i data-lucide="pen-tool" class="w-6 h-6 shrink-0"></i>
-                <span class="ml-4 font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap delay-75">BUILDER</span>
+                <span class="ml-4 font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">BUILDER</span>
             </a>
 
-            <a href="/views/player" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all">
+            <a href="/views/player" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all whitespace-nowrap">
                 <i data-lucide="gamepad-2" class="w-6 h-6 shrink-0"></i>
-                <span class="ml-4 font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap delay-75">PLAYER</span>
+                <span class="ml-4 font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">PLAYER</span>
             </a>
 
-            <a href="/views/scenes" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all">
+            <a href="/views/scenes" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all whitespace-nowrap">
                 <i data-lucide="network" class="w-6 h-6 shrink-0"></i>
-                <span class="ml-4 font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap delay-75">SCENES</span>
+                <span class="ml-4 font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">SCENES</span>
             </a>
         </nav>
 
-        <div class="p-4 border-t border-rpg-700 bg-black/20">
+        <div class="p-4 border-t border-rpg-700 bg-black/20 overflow-hidden">
             {% if user.is_authenticated %}
-            <div class="flex items-center gap-3 cursor-pointer overflow-hidden" onclick="logout()">
+            <div class="flex items-center gap-3 cursor-pointer" onclick="logout()">
                 <img src="{{ user.profile_img }}" class="w-10 h-10 rounded border border-rpg-700 shrink-0 object-cover bg-rpg-800">
                 <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
                     <p class="text-sm font-bold text-white truncate">{{ user.id }}</p>
@@ -117,7 +140,7 @@
         </div>
     </div>
 
-    <main class="flex-1 ml-20 h-full overflow-y-auto no-scrollbar relative bg-[#020617]">
+    <main class="flex-1 h-full overflow-y-auto no-scrollbar relative bg-[#020617]">
 
         <div class="relative w-full h-[450px] overflow-hidden group border-b border-rpg-700">
             <div class="absolute inset-0 bg-gradient-to-t from-[#020617] via-transparent to-black/50 z-20 pointer-events-none"></div>
@@ -166,7 +189,7 @@
                             <p class="text-sm text-gray-400 line-clamp-2 mb-4 flex-1">비 내리는 미래 도시의 밤, 기업의 음모를 파헤치는 해커들의 이야기.</p>
                         </div>
                         <div class="px-5 pb-5 mt-auto">
-                            <button class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2">
+                            <button onclick="playScenario('sample_cyberpunk', this)" class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2">
                                 <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
                             </button>
                         </div>
@@ -182,7 +205,7 @@
                             <p class="text-sm text-gray-400 line-clamp-2 mb-4 flex-1">지하 깊은 곳, 잠든 왕을 깨우는 자는 누구인가. 숨겨진 보물을 찾아라.</p>
                         </div>
                         <div class="px-5 pb-5 mt-auto">
-                            <button class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2">
+                            <button onclick="playScenario('sample_fantasy', this)" class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2">
                                 <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
                             </button>
                         </div>
@@ -289,11 +312,9 @@
     </div>
 
     <script>
-        // 아이콘 초기화
         lucide.createIcons();
         document.body.addEventListener('htmx:afterSwap', function(evt) { lucide.createIcons(); });
 
-        // [핵심] 시나리오 플레이 함수 (전역 스코프 배치)
         async function playScenario(filename, btn) {
             const originalText = btn.innerHTML;
             btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> LOADING...';
@@ -446,7 +467,6 @@
             }, 300);
         }
 
-        // 로그인 핸들러
         async function handleLogin(e) {
             e.preventDefault(); const form = e.target;
             const errorMsg = document.getElementById('login-error');
@@ -462,7 +482,6 @@
             } catch(e) { errorMsg.innerText = "서버 통신 오류"; errorMsg.classList.remove('hidden'); }
         }
 
-        // 회원가입 핸들러
         async function handleRegister(e) {
             e.preventDefault(); const form = e.target;
             const errorMsg = document.getElementById('register-error');
@@ -486,7 +505,6 @@
             } catch(e) { errorMsg.innerText = "서버 오류"; errorMsg.classList.remove('hidden'); }
         }
 
-        // 로그아웃 핸들러
         async function logout() {
             if(confirm('로그아웃 하시겠습니까?')) {
                 await fetch('/api/auth/logout', {method:'POST'});
