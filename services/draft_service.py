@@ -12,7 +12,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 from collections import deque
 
-from models import db, Scenario, TempScenario
+from models import SessionLocal, Scenario, TempScenario
 from config import DEFAULT_PLAYER_VARS
 from core.utils import validate_scenario_graph, can_publish_scenario, ScenarioValidationResult
 
@@ -101,9 +101,10 @@ class DraftService:
         Draft 생성 또는 업데이트
         이미 존재하면 업데이트, 없으면 새로 생성
         """
+        db = SessionLocal()
         try:
             # 원본 시나리오 확인
-            scenario = Scenario.query.get(scenario_id)
+            scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
             if not scenario:
                 return None, "시나리오를 찾을 수 없습니다."
 
@@ -111,9 +112,9 @@ class DraftService:
                 return None, "수정 권한이 없습니다."
 
             # 기존 Draft 확인
-            draft = TempScenario.query.filter_by(
-                original_scenario_id=scenario_id,
-                editor_id=user_id
+            draft = db.query(TempScenario).filter(
+                TempScenario.original_scenario_id == scenario_id,
+                TempScenario.editor_id == user_id
             ).first()
 
             if draft:
@@ -129,24 +130,28 @@ class DraftService:
                     editor_id=user_id,
                     data=data if data else original_data
                 )
-                db.session.add(draft)
+                db.add(draft)
 
-            db.session.commit()
+            db.commit()
+            db.refresh(draft)
             return draft, None
 
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             logger.error(f"Draft create/update error: {e}", exc_info=True)
             return None, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def get_draft(scenario_id: int, user_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """
         Draft 로드 (없으면 원본 시나리오 데이터 반환)
         """
+        db = SessionLocal()
         try:
             # 원본 시나리오 확인
-            scenario = Scenario.query.get(scenario_id)
+            scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
             if not scenario:
                 return None, "시나리오를 찾을 수 없습니다."
 
@@ -154,9 +159,9 @@ class DraftService:
                 return None, "수정 권한이 없습니다."
 
             # Draft 확인
-            draft = TempScenario.query.filter_by(
-                original_scenario_id=scenario_id,
-                editor_id=user_id
+            draft = db.query(TempScenario).filter(
+                TempScenario.original_scenario_id == scenario_id,
+                TempScenario.editor_id == user_id
             ).first()
 
             if draft:
@@ -181,6 +186,8 @@ class DraftService:
         except Exception as e:
             logger.error(f"Draft get error: {e}", exc_info=True)
             return None, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def save_draft(scenario_id: int, user_id: str, data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -205,9 +212,10 @@ class DraftService:
         Returns:
             (success, error_message, validation_result)
         """
+        db = SessionLocal()
         try:
             # 원본 시나리오 확인
-            scenario = Scenario.query.get(scenario_id)
+            scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
             if not scenario:
                 return False, "시나리오를 찾을 수 없습니다.", None
 
@@ -215,9 +223,9 @@ class DraftService:
                 return False, "수정 권한이 없습니다.", None
 
             # Draft 확인
-            draft = TempScenario.query.filter_by(
-                original_scenario_id=scenario_id,
-                editor_id=user_id
+            draft = db.query(TempScenario).filter(
+                TempScenario.original_scenario_id == scenario_id,
+                TempScenario.editor_id == user_id
             ).first()
 
             if not draft:
@@ -246,37 +254,42 @@ class DraftService:
             scenario.updated_at = datetime.utcnow()
 
             # Draft 삭제
-            db.session.delete(draft)
-            db.session.commit()
+            db.delete(draft)
+            db.commit()
 
             return True, None, validation_result.to_dict() if validation_result else None
 
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             logger.error(f"Publish draft error: {e}", exc_info=True)
             return False, str(e), None
+        finally:
+            db.close()
 
     @staticmethod
     def discard_draft(scenario_id: int, user_id: str) -> Tuple[bool, Optional[str]]:
         """
         Draft 폐기 (변경사항 취소)
         """
+        db = SessionLocal()
         try:
-            draft = TempScenario.query.filter_by(
-                original_scenario_id=scenario_id,
-                editor_id=user_id
+            draft = db.query(TempScenario).filter(
+                TempScenario.original_scenario_id == scenario_id,
+                TempScenario.editor_id == user_id
             ).first()
 
             if draft:
-                db.session.delete(draft)
-                db.session.commit()
+                db.delete(draft)
+                db.commit()
 
             return True, None
 
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             logger.error(f"Discard draft error: {e}", exc_info=True)
             return False, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def reorder_scene_ids(scenario_data: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, str]]:

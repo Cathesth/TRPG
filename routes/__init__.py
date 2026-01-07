@@ -1,9 +1,8 @@
 """
-Routes 모듈 - Flask 라우트 정의
+Routes 모듈 - FastAPI 라우터 정의
 """
-from .views import views_bp
-from .api import api_bp
-from .game import game_bp
+from .views import views_router
+from .api import api_router
+from .game import game_router
 
-__all__ = ['views_bp', 'api_bp', 'game_bp']
-
+__all__ = ['views_router', 'api_router', 'game_router']

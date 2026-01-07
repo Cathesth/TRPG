@@ -6,7 +6,7 @@ import logging
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
-from models import db, Preset
+from models import SessionLocal, Preset
 
 logger = logging.getLogger(__name__)
 
@@ -17,63 +17,57 @@ class PresetService:
     @staticmethod
     def list_presets(sort_order: str = 'newest', user_id: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """프리셋 목록 조회 (DB 기반)"""
-        query = Preset.query
+        db = SessionLocal()
+        try:
+            query = db.query(Preset)
 
-        # 필터링: 모든 프리셋 표시 (공개/비공개 구분 없음, 필요시 추가 가능)
-        # 현재는 로그인한 사용자가 자신의 프리셋을 볼 수 있도록만 구현
-        if user_id:
-            query = query.filter_by(author_id=user_id)
+            if user_id:
+                query = query.filter(Preset.author_id == user_id)
 
-        # 정렬
-        if sort_order == 'oldest':
-            query = query.order_by(Preset.created_at.asc())
-        elif sort_order == 'name_asc':
-            query = query.order_by(Preset.name.asc())
-        elif sort_order == 'name_desc':
-            query = query.order_by(Preset.name.desc())
-        else:  # newest
-            query = query.order_by(Preset.created_at.desc())
+            if sort_order == 'oldest':
+                query = query.order_by(Preset.created_at.asc())
+            elif sort_order == 'name_asc':
+                query = query.order_by(Preset.name.asc())
+            elif sort_order == 'name_desc':
+                query = query.order_by(Preset.name.desc())
+            else:
+                query = query.order_by(Preset.created_at.desc())
 
-        # 제한
-        if limit:
-            query = query.limit(limit)
+            if limit:
+                query = query.limit(limit)
 
-        presets = query.all()
-        preset_infos = []
+            presets = query.all()
+            preset_infos = []
 
-        for p in presets:
-            p_data = p.data or {}
+            for p in presets:
+                p_data = p.data or {}
 
-            preset_infos.append({
-                'filename': str(p.id),  # DB ID를 filename처럼 사용 (호환성)
-                'id': p.id,
-                'title': p.name,
-                'desc': p.description or '',
-                'author': p.author_id or 'Anonymous',
-                'is_owner': (user_id is not None) and (p.author_id == user_id),
-                'nodeCount': len(p_data.get('nodes', [])),
-                'npcCount': len(p_data.get('globalNpcs', [])),
-                'model': p_data.get('selectedModel', ''),
-                'createdAt': p.created_at.timestamp()
-            })
+                preset_infos.append({
+                    'filename': str(p.id),
+                    'id': p.id,
+                    'title': p.name,
+                    'desc': p.description or '',
+                    'author': p.author_id or 'Anonymous',
+                    'is_owner': (user_id is not None) and (p.author_id == user_id),
+                    'nodeCount': len(p_data.get('nodes', [])),
+                    'npcCount': len(p_data.get('globalNpcs', [])),
+                    'model': p_data.get('selectedModel', ''),
+                    'createdAt': p.created_at.timestamp() if p.created_at else 0
+                })
 
-        return preset_infos
+            return preset_infos
+        finally:
+            db.close()
 
     @staticmethod
     def save_preset(data: Dict[str, Any], user_id: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
-        """
-        프리셋 저장 (DB)
-
-        Returns:
-            (saved_id, error_message)
-        """
+        """프리셋 저장 (DB)"""
         name = data.get('name', '').strip()
         if not name:
             return None, "프리셋 이름을 입력하세요"
 
         description = data.get('description', '')
 
-        # 프리셋 데이터 구성
         preset_data = {
             'nodes': data.get('nodes', []),
             'connections': data.get('connections', []),
@@ -83,53 +77,49 @@ class PresetService:
             'useAutoTitle': data.get('useAutoTitle', True)
         }
 
+        db = SessionLocal()
         try:
-            # 동일 이름의 프리셋이 이미 있는지 확인 (같은 사용자)
-            existing = Preset.query.filter_by(name=name, author_id=user_id).first()
+            existing = db.query(Preset).filter(Preset.name == name, Preset.author_id == user_id).first()
 
             if existing:
-                # 덮어쓰기
                 existing.description = description
                 existing.data = preset_data
                 existing.updated_at = datetime.utcnow()
-                db.session.commit()
+                db.commit()
                 return str(existing.id), None
             else:
-                # 새로 생성
                 preset = Preset(
                     name=name,
                     description=description,
                     author_id=user_id,
                     data=preset_data
                 )
-                db.session.add(preset)
-                db.session.commit()
+                db.add(preset)
+                db.commit()
+                db.refresh(preset)
                 return str(preset.id), None
 
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             logger.error(f"Preset Save Error: {e}")
             return None, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def load_preset(preset_id: str, user_id: Optional[str] = None) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-        """
-        프리셋 로드 (DB ID 기반)
-
-        Returns:
-            ({'preset': preset_data}, error_message)
-        """
+        """프리셋 로드 (DB ID 기반)"""
         if not preset_id:
             return None, "ID 누락"
 
+        db = SessionLocal()
         try:
             db_id = int(preset_id)
-            preset = Preset.query.get(db_id)
+            preset = db.query(Preset).filter(Preset.id == db_id).first()
 
             if not preset:
                 return None, "프리셋을 찾을 수 없습니다."
 
-            # 접근 권한 체크 (본인 프리셋만 로드 가능, 필요시 공개 프리셋 기능 추가 가능)
             if user_id and preset.author_id and preset.author_id != user_id:
                 return None, "다른 사용자의 프리셋입니다."
 
@@ -151,36 +141,35 @@ class PresetService:
         except Exception as e:
             logger.error(f"Preset Load Error: {e}")
             return None, str(e)
+        finally:
+            db.close()
 
     @staticmethod
     def delete_preset(preset_id: str, user_id: Optional[str] = None) -> Tuple[bool, Optional[str]]:
-        """
-        프리셋 삭제 (DB)
-
-        Returns:
-            (success, error_message)
-        """
+        """프리셋 삭제 (DB)"""
         if not preset_id:
             return False, "ID 누락"
 
+        db = SessionLocal()
         try:
             db_id = int(preset_id)
-            preset = Preset.query.get(db_id)
+            preset = db.query(Preset).filter(Preset.id == db_id).first()
 
             if not preset:
                 return False, "프리셋을 찾을 수 없습니다."
 
-            # 권한 체크
             if user_id and preset.author_id != user_id:
                 return False, "삭제 권한이 없습니다."
 
-            db.session.delete(preset)
-            db.session.commit()
+            db.delete(preset)
+            db.commit()
             return True, None
 
         except ValueError:
             return False, "잘못된 ID 형식입니다."
         except Exception as e:
-            db.session.rollback()
+            db.rollback()
             logger.error(f"Preset Delete Error: {e}")
             return False, str(e)
+        finally:
+            db.close()
