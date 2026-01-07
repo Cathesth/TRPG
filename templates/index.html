@@ -439,6 +439,11 @@
             }
         }
 
+        // 시나리오 편집 함수 (비주얼 에디터로 이동)
+        function editScenario(filename) {
+            window.location.href = `/views/scenes/edit/${filename}`;
+        }
+
         // 시나리오 공개/비공개 토글 함수
         async function publishScenario(filename, btnElement) {
             const card = btnElement.closest('.bg-dark-800');
