@@ -256,8 +256,8 @@
 </div>
 
 <script>
-    const serverHasState = {{ 'true' if vars else 'false' }};
-    if (serverHasState) sessionStorage.setItem('trpg_scenario_loaded', 'true');
+    // 서버 상태는 무시하고 항상 초기화된 상태로 시작
+    const serverHasState = false;  // 항상 false로 설정하여 서버 상태 무시
 
     let isGameEnded = false;
     let isScenarioLoaded = false;
