@@ -1,388 +1,310 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TRPG Studio - {{ version }}</title>
+    <title>TRPG Studio - The Core</title>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
-    <style>
-        body { font-family: 'Pretendard', sans-serif; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #52525b; }
-
-        .htmx-indicator { display: none; pointer-events: none; }
-        .htmx-request .htmx-indicator { display: flex; pointer-events: auto; }
-        .htmx-request.htmx-indicator { display: flex; pointer-events: auto; }
-
-         /* 브랜드 그라데이션 */
-
-        .brand-gradient {
-            background: linear-gradient(135deg, #6E47E6 0%, #818cf8 100%);
-        }
-        /* 로그인/회원가입용 그라데이션 (기존 html 파일 디자인) */
-        .auth-gradient {
-            background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
-
-        }
-
-        /* 사이드바 스타일 */
-        .sidebar {
-            width: 72px;
-            transition: width 0.3s ease;
-        }
-        .sidebar:hover,
-        .sidebar.expanded {
-            width: 260px;
-        }
-        .sidebar .nav-text, .sidebar .logo-text, .sidebar .section-title, .sidebar .user-info, .sidebar .user-chevron {
-            opacity: 0;
-            white-space: nowrap;
-            transition: opacity 0.2s ease;
-        }
-        .sidebar:hover .nav-text, .sidebar.expanded .nav-text,
-        .sidebar:hover .logo-text, .sidebar.expanded .logo-text,
-        .sidebar:hover .section-title, .sidebar.expanded .section-title,
-        .sidebar:hover .user-info, .sidebar.expanded .user-info,
-        .sidebar:hover .user-chevron, .sidebar.expanded .user-chevron {
-            opacity: 1;
-        }
-
-        /* 모달 스타일 */
-        .modal { transition: opacity 0.25s ease; }
-        body.modal-active { overflow-x: hidden; overflow-y: hidden !important; }
-
-        /* 버전 정보 스타일 */
-        .version-badge {
-            position: fixed;
-            bottom: 16px;
-            right: 16px;
-            background: rgba(28, 28, 28, 0.8);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 11px;
-            color: #9ca3af;
-            font-family: 'Courier New', monospace;
-            z-index: 1000;
-            transition: all 0.2s ease;
-        }
-
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
 
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
-                        dark: { 900: '#111111', 800: '#1c1c1c', 700: '#2c2c2c', 600: '#3f3f46' },
-                        brand: { purple: '#6E47E6', light: '#9F7AEA' }
+                        rpg: {
+                            900: '#020617', // 메인 배경 (Deep Navy)
+                            800: '#0f172a', // 패널 배경
+                            700: '#1e293b', // 테두리
+                            accent: '#38bdf8', // 포인트 (Cyan)
+                            hover: '#0ea5e9', // 호버 (Blue)
+                            danger: '#ef4444', // 경고 (Red)
+                        }
+                    },
+                    fontFamily: {
+                        title: ['Cinzel', 'serif'],
+                        body: ['Inter', 'sans-serif']
+                    },
+                    animation: {
+                        'slide-infinite': 'slide 40s linear infinite',
+                    },
+                    keyframes: {
+                        slide: {
+                            '0%': { transform: 'translateX(0)' },
+                            '100%': { transform: 'translateX(-50%)' }
+                        }
                     }
                 }
             }
         }
     </script>
-</head>
-<body class="bg-dark-900 text-gray-200 h-screen flex overflow-hidden selection:bg-brand-purple selection:text-white">
+    <style>
+        body { @apply font-body bg-rpg-900 text-gray-200; }
 
-    <!-- 사이드바 -->
-    <div class="sidebar bg-dark-800 border-r border-white/5 flex flex-col hidden md:flex shrink-0 z-20 overflow-hidden">
-        <div class="p-4 h-16 flex items-center">
-            <div class="flex items-center gap-2 cursor-pointer" onclick="location.href='/'">
-                <div class="w-10 h-10 brand-gradient rounded-lg flex items-center justify-center text-white shadow-lg shadow-brand-purple/20 shrink-0">
-                    <i data-lucide="dice-5" class="w-5 h-5 fill-current"></i>
-                </div>
-                <span class="logo-text text-xl font-bold text-white tracking-tight">TRPG Studio</span>
+        /* 스크롤바 숨김 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+
+        /* 모달 애니메이션 */
+        .modal { transition: opacity 0.25s ease; }
+        body.modal-active { overflow-x: hidden; overflow-y: hidden !important; }
+
+        /* [중요] api.py에서 보내는 옛날 클래스 호환성 패치 */
+        .bg-dark-800 { @apply bg-rpg-800 border border-rpg-700 shadow-lg; }
+        .text-brand-light { @apply text-rpg-accent; }
+        .border-white\/5 { @apply border-rpg-700; }
+        /* api.py의 버튼 스타일 강제 수정 */
+        .bg-dark-800 button { @apply bg-rpg-700 hover:bg-rpg-accent hover:text-black transition-colors font-bold rounded; }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden selection:bg-rpg-accent selection:text-black">
+
+    <div class="fixed left-0 top-0 h-full bg-rpg-900/90 backdrop-blur-md border-r border-rpg-700 z-50 transition-all duration-300 w-20 hover:w-64 group flex flex-col shadow-2xl">
+        <div class="h-20 flex items-center shrink-0 px-6 border-b border-rpg-700 cursor-pointer" onclick="location.href='/'">
+            <div class="w-8 h-8 bg-rpg-accent rounded flex items-center justify-center shrink-0 shadow-[0_0_10px_#38bdf8]">
+                <i data-lucide="sword" class="text-black w-5 h-5 fill-current"></i>
             </div>
+            <span class="ml-4 font-title text-xl font-black text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap tracking-widest">
+                TRPG.OS
+            </span>
         </div>
 
-        <nav class="flex-1 px-3 space-y-1 mt-2">
-            <div class="section-title text-[10px] font-semibold text-gray-500 px-3 py-2 uppercase tracking-wider">Workspace</div>
-            <a href="/" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/5 text-white group cursor-pointer text-sm font-medium">
-                <i data-lucide="layout-grid" class="w-5 h-5 text-brand-light shrink-0"></i>
-                <span class="nav-text">대시보드</span>
+        <nav class="flex-1 py-6 px-3 space-y-2">
+            <a href="/" class="flex items-center h-12 px-3 rounded-lg bg-rpg-800 text-rpg-accent border border-rpg-700 transition-all group hover:bg-rpg-accent hover:text-black">
+                <i data-lucide="layout-grid" class="w-6 h-6 shrink-0"></i>
+                <span class="ml-4 font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap delay-75">DASHBOARD</span>
             </a>
-            <a href="/views/builder" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
-                <i data-lucide="pen-tool" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
-                <span class="nav-text">시나리오 빌더</span>
+
+            <a href="/views/builder" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all">
+                <i data-lucide="pen-tool" class="w-6 h-6 shrink-0"></i>
+                <span class="ml-4 font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap delay-75">BUILDER</span>
             </a>
-            <a href="/views/player" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
-                <i data-lucide="gamepad-2" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
-                <span class="nav-text">플레이어 모드</span>
+
+            <a href="/views/player" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all">
+                <i data-lucide="gamepad-2" class="w-6 h-6 shrink-0"></i>
+                <span class="ml-4 font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap delay-75">PLAYER</span>
             </a>
-            <a href="/views/scenes" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
-                <i data-lucide="git-merge" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
-                <span class="nav-text">전체 씬 보기</span>
+
+            <a href="/views/scenes" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all">
+                <i data-lucide="network" class="w-6 h-6 shrink-0"></i>
+                <span class="ml-4 font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap delay-75">SCENES</span>
             </a>
         </nav>
 
-        <!-- 유저 프로필 -->
-        <div class="p-3 border-t border-white/5">
+        <div class="p-4 border-t border-rpg-700 bg-black/20">
             {% if user.is_authenticated %}
-            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors" onclick="logout()">
-                <img src="{{ user.profile_img }}" alt="Profile" class="w-8 h-8 rounded-full border border-gray-600 bg-gray-700">
-                <div class="user-info flex-1 min-w-0">
-                    <p class="text-sm font-medium text-white truncate">{{ user.id }}</p>
-                    <p class="text-[11px] text-brand-light truncate">로그아웃</p>
+            <div class="flex items-center gap-3 cursor-pointer overflow-hidden" onclick="logout()">
+                <img src="{{ user.profile_img }}" class="w-10 h-10 rounded border border-rpg-700 shrink-0 object-cover bg-rpg-800">
+                <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
+                    <p class="text-sm font-bold text-white truncate">{{ user.id }}</p>
+                    <p class="text-[10px] text-rpg-accent font-bold">OPERATOR</p>
                 </div>
-                <i data-lucide="log-out" class="user-chevron w-4 h-4 text-gray-500"></i>
+                <i data-lucide="log-out" class="w-4 h-4 text-gray-500 ml-auto opacity-0 group-hover:opacity-100 hover:text-rpg-danger"></i>
             </div>
             {% else %}
-            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors" onclick="openModal('login-modal')">
-                <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center shrink-0">
-                    <i data-lucide="user" class="w-4 h-4 text-gray-400"></i>
-                </div>
-                <div class="user-info flex-1 min-w-0">
-                    <p class="text-sm font-medium text-white truncate">로그인</p>
-                    <p class="text-[11px] text-gray-500 truncate">계정 접속</p>
-                </div>
-            </div>
-            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors mt-1" onclick="openModal('register-modal')">
-                <div class="w-8 h-8 rounded-full bg-brand-purple/20 flex items-center justify-center shrink-0">
-                    <i data-lucide="user-plus" class="w-4 h-4 text-brand-light"></i>
-                </div>
-                <div class="user-info flex-1 min-w-0">
-                    <p class="text-sm font-medium text-white truncate">회원가입</p>
-                    <p class="text-[11px] text-gray-500 truncate">계정 생성</p>
-                </div>
-            </div>
+            <button onclick="openModal('login-modal')" class="w-full h-10 flex items-center justify-center bg-rpg-accent text-black font-bold rounded hover:bg-white transition-all overflow-hidden">
+                <i data-lucide="log-in" class="w-5 h-5 shrink-0"></i>
+                <span class="ml-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">LOGIN</span>
+            </button>
+            <button onclick="openModal('register-modal')" class="w-full h-10 flex items-center justify-center text-gray-400 hover:text-white mt-2 transition-all overflow-hidden group-hover:block hidden">
+                <span class="text-xs font-bold">SIGN UP</span>
+            </button>
             {% endif %}
         </div>
     </div>
 
-    <!-- 메인 뷰 -->
-    <div id="main-view" class="flex-1 flex flex-col h-full relative z-10 bg-dark-900 overflow-hidden">
-        <!-- 헤더 -->
-        <header class="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-dark-900/80 backdrop-blur-md sticky top-0 z-20">
-            <div class="flex items-center gap-4 w-full max-w-xl">
-                <div class="relative w-full group">
-                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-brand-light transition-colors"></i>
-                    <input type="text" placeholder="시나리오 검색..." class="w-full bg-dark-800 border border-white/5 rounded-full pl-10 pr-4 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-purple/50 focus:bg-dark-700 transition-all placeholder-gray-600">
-                </div>
-            </div>
-            <div class="flex items-center gap-4 ml-4">
-                {% if user.is_authenticated %}
-                    <span class="text-sm text-gray-400 hidden sm:inline"><span class="text-brand-light font-bold">{{ user.id }}</span>님</span>
-                    <button onclick="logout()" class="text-xs bg-dark-800 hover:bg-dark-700 text-gray-300 px-3 py-1.5 rounded border border-white/10 transition-colors">로그아웃</button>
-                {% else %}
-                    <button onclick="openModal('login-modal')" class="text-sm text-gray-300 hover:text-white transition-colors">로그인</button>
-                    <button onclick="openModal('register-modal')" class="text-sm bg-brand-purple hover:bg-brand-purple/90 text-white px-4 py-1.5 rounded-full shadow-lg shadow-brand-purple/20 transition-all">회원가입</button>
-                {% endif %}
-            </div>
-        </header>
+    <main class="flex-1 ml-20 h-full overflow-y-auto no-scrollbar relative bg-[#020617]">
 
-        <!-- 메인 컨텐츠 -->
-        <main class="flex-1 overflow-y-auto p-8 custom-scrollbar">
-            <!-- 웰컴 메시지 -->
-            <div class="mb-10">
-                <h2 class="text-2xl font-bold text-white mb-2">{% if user.is_authenticated %}반가워요, {{ user.id }}님! 👋{% else %}TRPG Studio에 오신 것을 환영합니다! 👋{% endif %}</h2>
-                <p class="text-gray-400">오늘도 새로운 세계를 창조해볼까요?</p>
+        <div class="relative w-full h-[450px] overflow-hidden group border-b border-rpg-700">
+            <div class="absolute inset-0 bg-gradient-to-t from-[#020617] via-transparent to-black/50 z-20 pointer-events-none"></div>
+
+            <div class="flex w-[200%] h-full animate-slide-infinite">
+                <div class="w-1/6 h-full relative"><img src="https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=1600" class="w-full h-full object-cover grayscale-[30%] contrast-125"></div>
+                <div class="w-1/6 h-full relative"><img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=1600" class="w-full h-full object-cover grayscale-[30%] contrast-125"></div>
+                <div class="w-1/6 h-full relative"><img src="https://images.unsplash.com/photo-1533230500755-667923232c95?q=80&w=1600" class="w-full h-full object-cover grayscale-[30%] contrast-125"></div>
+                <div class="w-1/6 h-full relative"><img src="https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=1600" class="w-full h-full object-cover grayscale-[30%] contrast-125"></div>
+                <div class="w-1/6 h-full relative"><img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=1600" class="w-full h-full object-cover grayscale-[30%] contrast-125"></div>
+                <div class="w-1/6 h-full relative"><img src="https://images.unsplash.com/photo-1533230500755-667923232c95?q=80&w=1600" class="w-full h-full object-cover grayscale-[30%] contrast-125"></div>
             </div>
 
-            <!-- 내 작품 목록 (로그인 시 표시) -->
-            {% if user.is_authenticated %}
-            <div class="mb-12">
-                <div class="flex items-center justify-between mb-6">
-                    <h3 class="text-lg font-bold text-white flex items-center gap-2"><i data-lucide="folder-open" class="w-5 h-5 text-gray-500"></i> 내 작품</h3>
-                    <button class="text-xs text-gray-500 hover:text-brand-light flex items-center gap-1" onclick="document.getElementById('my-tab-btn').click(); location.href='#scenarios-list'">전체보기 <i data-lucide="chevron-right" class="w-3 h-3"></i></button>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" hx-get="/api/scenarios?filter=my&limit=3" hx-trigger="load">
-                     <div class="col-span-full py-8 text-center text-gray-500"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto mb-2 text-brand-purple"></i>내 시나리오를 불러오는 중...</div>
+            <div class="absolute bottom-0 left-0 w-full p-12 z-30">
+                <div class="max-w-[1800px] mx-auto">
+                    <h1 class="text-6xl font-title font-black text-white mb-2 drop-shadow-2xl tracking-tighter">
+                        START YOUR <span class="text-rpg-accent">LEGEND</span>
+                    </h1>
+                    <p class="text-xl text-gray-300 font-medium drop-shadow-lg max-w-2xl border-l-4 border-rpg-accent pl-4 mt-4">
+                        상상을 현실로 만드는 궁극의 TRPG 플랫폼.<br>
+                        지금 바로 당신만의 세계를 창조하세요.
+                    </p>
                 </div>
             </div>
-            {% endif %}
+        </div>
 
-            <!-- 시나리오 목록 (탭) -->
-            <div class="mb-12" id="scenarios-list">
-                <div class="flex items-center justify-between mb-6">
-                    <h3 class="text-lg font-bold text-white flex items-center gap-2"><i data-lucide="library" class="w-5 h-5 text-gray-500"></i> 모든 시나리오</h3>
-                    <div class="bg-dark-800 p-1 rounded-lg inline-flex border border-white/5">
-                        <button id="public-tab-btn" class="px-4 py-1.5 rounded-md text-xs font-medium bg-brand-purple text-white shadow transition-all" hx-get="/api/scenarios?filter=public" hx-target="#scenario-grid" onclick="setActiveTab(this)">공개</button>
-                        {% if user.is_authenticated %}
-                        <button id="my-tab-btn" class="px-4 py-1.5 rounded-md text-xs font-medium text-gray-400 hover:text-white transition-all" hx-get="/api/scenarios?filter=my" hx-target="#scenario-grid" onclick="setActiveTab(this)">내 작품</button>
-                        {% endif %}
+        <div class="max-w-[1800px] mx-auto p-12 space-y-16">
+
+            <section>
+                <div class="flex items-center justify-between mb-8 pb-4 border-b border-rpg-700">
+                    <h2 class="text-2xl font-title font-black text-white flex items-center gap-3 tracking-widest">
+                        <i data-lucide="flame" class="text-rpg-accent w-6 h-6"></i>
+                        RECOMMENDED SCENARIOS
+                    </h2>
+                    <span class="text-xs font-bold text-rpg-accent bg-rpg-accent/10 px-3 py-1 rounded border border-rpg-accent/20">POPULAR</span>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] transition-all flex flex-col h-full">
+                        <div class="relative h-48 overflow-hidden">
+                            <img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=800" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
+                            <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-rpg-accent border border-rpg-accent/30">CYBERPUNK</div>
+                        </div>
+                        <div class="p-5 flex-1 flex flex-col">
+                            <h3 class="text-lg font-bold text-white mb-2 font-title tracking-wide truncate">NEON CITY: REBOOT</h3>
+                            <p class="text-sm text-gray-400 line-clamp-2 mb-4 flex-1">비 내리는 미래 도시의 밤, 기업의 음모를 파헤치는 해커들의 이야기.</p>
+                        </div>
+                        <div class="px-5 pb-5 mt-auto">
+                            <button class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2">
+                                <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] transition-all flex flex-col h-full">
+                        <div class="relative h-48 overflow-hidden">
+                            <img src="https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=800" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
+                            <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-yellow-500 border border-yellow-500/30">FANTASY</div>
+                        </div>
+                        <div class="p-5 flex-1 flex flex-col">
+                            <h3 class="text-lg font-bold text-white mb-2 font-title tracking-wide truncate">TOMB OF THE KING</h3>
+                            <p class="text-sm text-gray-400 line-clamp-2 mb-4 flex-1">지하 깊은 곳, 잠든 왕을 깨우는 자는 누구인가. 숨겨진 보물을 찾아라.</p>
+                        </div>
+                        <div class="px-5 pb-5 mt-auto">
+                            <button class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2">
+                                <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent transition-all flex flex-col h-full">
+                        <div class="relative h-48 overflow-hidden bg-black flex items-center justify-center">
+                            <i data-lucide="lock" class="w-10 h-10 text-rpg-700"></i>
+                        </div>
+                        <div class="p-5 flex-1 flex flex-col">
+                            <h3 class="text-lg font-bold text-gray-500 mb-2 font-title tracking-wide truncate">COMING SOON</h3>
+                            <p class="text-sm text-gray-600 line-clamp-2 mb-4 flex-1">새로운 모험이 준비 중입니다.</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent transition-all flex flex-col h-full">
+                        <div class="relative h-48 overflow-hidden bg-black flex items-center justify-center">
+                            <i data-lucide="lock" class="w-10 h-10 text-rpg-700"></i>
+                        </div>
+                        <div class="p-5 flex-1 flex flex-col">
+                            <h3 class="text-lg font-bold text-gray-500 mb-2 font-title tracking-wide truncate">COMING SOON</h3>
+                            <p class="text-sm text-gray-600 line-clamp-2 mb-4 flex-1">새로운 모험이 준비 중입니다.</p>
+                        </div>
                     </div>
                 </div>
-                <div id="scenario-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" hx-get="/api/scenarios?filter=public" hx-trigger="load">
-                    <div class="col-span-full py-12 flex flex-col items-center justify-center text-gray-500"><i data-lucide="loader-2" class="w-8 h-8 animate-spin mb-3 text-brand-purple"></i><p>시나리오를 불러오는 중입니다...</p></div>
-                </div>
-            </div>
+            </section>
 
-            <!-- 하단 바로가기 -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
-                <a href="/views/builder" class="group bg-dark-800 p-6 rounded-xl border border-white/5 hover:border-brand-purple/50 transition-all hover:bg-dark-800/80 cursor-pointer flex flex-col items-center justify-center text-center h-40">
-                    <div class="w-12 h-12 rounded-full bg-brand-purple/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform"><i data-lucide="plus" class="w-6 h-6 text-brand-purple"></i></div>
-                    <h5 class="font-bold text-white group-hover:text-brand-light transition-colors">새 프로젝트</h5>
-                    <p class="text-[11px] text-gray-500 mt-1">처음부터 직접 만들기</p>
-                </a>
-            </div>
-        </main>
-    </div>
-
-    <!-- 모달들 -->
-    <div id="login-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
-        <div class="modal-overlay absolute w-full h-full bg-black/70 backdrop-blur-sm" onclick="closeModal('login-modal')"></div>
-        <div class="modal-container bg-gray-800/90 w-11/12 md:max-w-md mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-white/10 transform transition-all scale-95 opacity-0 duration-300 relative">
-
-            <div class="absolute top-[-50px] left-[-50px] w-40 h-40 bg-purple-600/20 rounded-full blur-3xl pointer-events-none"></div>
-
-            <div class="absolute bottom-[-50px] right-[-50px] w-40 h-40 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
-
-
-            <div class="p-8 relative z-10">
-
-
-                <button onclick="closeModal('login-modal')" class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
-
-                <div class="flex flex-col items-center mb-8">
-                    <div class="w-12 h-12 auth-gradient rounded-xl flex items-center justify-center text-white shadow-lg shadow-purple-500/20 mb-4">
-
-                        <i data-lucide="dice-5" class="w-6 h-6 fill-current"></i>
-                    </div>
-                    <h1 class="text-2xl font-bold text-white tracking-tight">TRPG Studio</h1>
-                    <p class="text-gray-400 text-sm mt-1">모험을 시작하려면 로그인하세요</p>
+            <section>
+                <div class="flex items-center justify-between mb-8 pb-4 border-b border-rpg-700">
+                    <h2 class="text-2xl font-title font-black text-white flex items-center gap-3 tracking-widest">
+                        <i data-lucide="book-open" class="text-rpg-accent w-6 h-6"></i>
+                        MY SCENARIOS
+                    </h2>
+                    <a href="/views/builder" class="flex items-center gap-2 px-4 py-2 bg-rpg-accent hover:bg-white text-black font-bold rounded text-sm transition-all">
+                        <i data-lucide="plus" class="w-4 h-4"></i> CREATE NEW
+                    </a>
                 </div>
 
-                <form onsubmit="handleLogin(event)" class="space-y-5">
+                <div id="scenario-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" hx-get="/api/scenarios?filter=my&limit=4" hx-trigger="load">
+                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl p-0 h-[380px] animate-pulse"></div>
+                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl p-0 h-[380px] animate-pulse hidden sm:block"></div>
+                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl p-0 h-[380px] animate-pulse hidden lg:block"></div>
+                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl p-0 h-[380px] animate-pulse hidden lg:block"></div>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <div id="login-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-[100]">
+        <div class="modal-overlay absolute w-full h-full bg-black/80 backdrop-blur-sm" onclick="closeModal('login-modal')"></div>
+        <div class="modal-container bg-rpg-800 w-11/12 md:max-w-md mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-rpg-700 transform transition-all scale-95 opacity-0 duration-300">
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-title font-bold text-white">LOGIN</h3>
+                    <button onclick="closeModal('login-modal')" class="text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
+                </div>
+                <form onsubmit="handleLogin(event)" class="space-y-6">
                     <div>
-                        <label class="block text-sm font-medium text-gray-400 mb-1.5">아이디</label>
-                        <div class="relative">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="user" class="h-5 w-5 text-gray-500"></i></div>
-                            <input type="text" name="username" placeholder="아이디를 입력하세요" required class="w-full pl-10 pr-4 py-3 bg-gray-900/50 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
-                        </div>
+                        <label class="block text-gray-400 text-xs font-bold mb-2 uppercase">Username</label>
+                        <input type="text" name="username" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all font-bold">
                     </div>
                     <div>
-                        <div class="flex items-center justify-between mb-1.5">
-                            <label class="block text-sm font-medium text-gray-400">비밀번호</label>
-                            <a href="#" class="text-xs text-purple-400 hover:text-purple-300 transition-colors">비밀번호를 잊으셨나요?</a>
-                        </div>
-                        <div class="relative">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="lock" class="h-5 w-5 text-gray-500"></i></div>
-                            <input type="password" name="password" placeholder="비밀번호를 입력하세요" required class="w-full pl-10 pr-4 py-3 bg-gray-900/50 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
-
-                        </div>
+                        <label class="block text-gray-400 text-xs font-bold mb-2 uppercase">Password</label>
+                        <input type="password" name="password" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all font-bold">
                     </div>
-                    <div id="login-error" class="text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20 hidden"></div>
-                    <button type="submit" class="w-full py-3.5 px-4 auth-gradient hover:opacity-90 rounded-lg text-white font-semibold shadow-lg shadow-purple-500/25 transition-all transform hover:-translate-y-0.5">로그인</button>
+                    <div id="login-error" class="text-red-400 text-xs bg-red-500/10 p-3 rounded border border-red-500/20 hidden font-bold"></div>
+                    <button type="submit" class="w-full bg-rpg-accent hover:bg-white text-black font-black py-4 rounded-lg shadow-lg shadow-rpg-accent/20 transition-all text-lg">ACCESS SYSTEM</button>
                 </form>
-
-                <div class="mt-8 text-center border-t border-white/10 pt-6">
-                    <p class="text-gray-400 text-sm">계정이 없으신가요? <button onclick="closeModal('login-modal'); openModal('register-modal')" class="text-purple-400 hover:text-purple-300 font-medium ml-1 transition-colors">회원가입하기</button></p>
-                </div>
             </div>
         </div>
     </div>
 
-
-
-    <div id="register-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
-        <div class="modal-overlay absolute w-full h-full bg-black/70 backdrop-blur-sm" onclick="closeModal('register-modal')"></div>
-        <div class="modal-container bg-gray-800/90 w-11/12 md:max-w-md mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-white/10 transform transition-all scale-95 opacity-0 duration-300 relative">
-
-            <div class="absolute top-[-50px] left-[-50px] w-40 h-40 bg-purple-600/20 rounded-full blur-3xl pointer-events-none"></div>
-
-            <div class="absolute bottom-[-50px] right-[-50px] w-40 h-40 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
-
-            <div class="p-8 relative z-10">
-                <button onclick="closeModal('register-modal')" class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
-
-                <div class="flex flex-col items-center mb-8">
-                    <div class="w-12 h-12 auth-gradient rounded-xl flex items-center justify-center text-white shadow-lg shadow-purple-500/20 mb-4">
-
-                        <i data-lucide="dice-5" class="w-6 h-6 fill-current"></i>
-                    </div>
-                    <h1 class="text-2xl font-bold text-white tracking-tight">회원가입</h1>
-                    <p class="text-gray-400 text-sm mt-1">TRPG Studio의 멤버가 되어보세요</p>
-
+    <div id="register-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-[100]">
+        <div class="modal-overlay absolute w-full h-full bg-black/80 backdrop-blur-sm" onclick="closeModal('register-modal')"></div>
+        <div class="modal-container bg-rpg-800 w-11/12 md:max-w-md mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-rpg-700 transform transition-all scale-95 opacity-0 duration-300">
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-title font-bold text-white">REGISTER</h3>
+                    <button onclick="closeModal('register-modal')" class="text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
-
                 <form onsubmit="handleRegister(event)" class="space-y-4">
                     <div>
-
-                        <label class="block text-sm font-medium text-gray-400 mb-1.5">아이디</label>
-
-                        <div class="relative">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="user" class="h-5 w-5 text-gray-500"></i></div>
-                            <input type="text" name="username" placeholder="사용할 아이디를 입력하세요" required class="w-full pl-10 pr-4 py-3 bg-gray-900/50 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
-                        </div>
-
+                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Username</label>
+                        <input type="text" name="username" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-400 mb-1.5">이메일</label>
-                        <div class="relative">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="mail" class="h-5 w-5 text-gray-500"></i></div>
-                            <input type="email" name="email" placeholder="example@email.com" required class="w-full pl-10 pr-4 py-3 bg-gray-900/50 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
-                        </div>
+                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Email</label>
+                        <input type="email" name="email" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-400 mb-1.5">비밀번호</label>
-                        <div class="relative">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="lock" class="h-5 w-5 text-gray-500"></i></div>
-                            <input type="password" name="password" placeholder="비밀번호를 입력하세요" required class="w-full pl-10 pr-4 py-3 bg-gray-900/50 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
-                        </div>
+                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Password</label>
+                        <input type="password" name="password" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-400 mb-1.5">비밀번호 확인</label>
-                        <div class="relative">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="check-circle" class="h-5 w-5 text-gray-500"></i></div>
-                            <input type="password" name="confirm_password" placeholder="비밀번호를 다시 입력하세요" required class="w-full pl-10 pr-4 py-3 bg-gray-900/50 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
-                        </div>
+                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Confirm Password</label>
+                        <input type="password" name="confirm_password" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
                     </div>
-                    <div id="register-error" class="text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20 hidden"></div>
-                    <button type="submit" class="w-full py-3.5 px-4 auth-gradient hover:opacity-90 rounded-lg text-white font-semibold shadow-lg shadow-purple-500/25 transition-all transform hover:-translate-y-0.5 mt-2">계정 생성하기</button>
-
+                    <div id="register-error" class="text-red-400 text-xs bg-red-500/10 p-3 rounded border border-red-500/20 hidden font-bold"></div>
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-500 text-white font-black py-4 rounded-lg shadow-lg transition-all text-lg mt-2">CREATE ACCOUNT</button>
                 </form>
-
-                <div class="mt-8 text-center border-t border-white/10 pt-6">
-                    <p class="text-gray-400 text-sm">이미 계정이 있으신가요? <button onclick="closeModal('register-modal'); openModal('login-modal')" class="text-purple-400 hover:text-purple-300 font-medium ml-1 transition-colors">로그인하기</button></p>
-                </div>
             </div>
         </div>
-    </div>
-
-    <!-- 버전 정보 배지 -->
-    <div class="version-badge">
-        v{{ version }}
     </div>
 
     <script>
+        // 아이콘 초기화
         lucide.createIcons();
         document.body.addEventListener('htmx:afterSwap', function(evt) { lucide.createIcons(); });
 
-        function setActiveTab(btn) {
-            const container = btn.parentElement;
-            container.querySelectorAll('button').forEach(b => { b.classList.remove('bg-brand-purple', 'text-white', 'shadow'); b.classList.add('text-gray-400'); });
-            btn.classList.remove('text-gray-400'); btn.classList.add('bg-brand-purple', 'text-white', 'shadow');
-        }
-
-        // [핵심] 시나리오 플레이 함수 (JS fetch 방식)
+        // [핵심] 시나리오 플레이 함수 (전역 스코프 배치)
         async function playScenario(filename, btn) {
-            // 버튼 로딩 상태
             const originalText = btn.innerHTML;
-            btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 로딩...';
+            btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> LOADING...';
             btn.disabled = true;
             lucide.createIcons();
 
             try {
                 const formData = new FormData();
                 formData.append('filename', filename);
-
-                const res = await fetch('/api/load_scenario', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                // 성공하면 플레이어 페이지로 이동
+                const res = await fetch('/api/load_scenario', { method: 'POST', body: formData });
                 if (res.ok) {
-                    // [추가됨] 세션 스토리지에 로드 상태 박아줘야 함
                     sessionStorage.setItem('trpg_scenario_loaded', 'true');
                     window.location.href = '/views/player';
                 } else {
@@ -393,140 +315,23 @@
                 }
             } catch (e) {
                 console.error(e);
-                alert('오류가 발생했습니다.');
+                alert('오류 발생');
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }
         }
 
-        // 시나리오 삭제 함수
-        async function deleteScenario(filename, title, btnElement) {
-            if (!confirm(`"${title}" 시나리오를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/delete_scenario', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename: filename })
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    // 삭제된 카드 애니메이션 후 제거
-                    const card = btnElement.closest('.bg-dark-800');
-                    if (card) {
-                        card.style.transition = 'opacity 0.3s, transform 0.3s';
-                        card.style.opacity = '0';
-                        card.style.transform = 'scale(0.9)';
-                        setTimeout(() => {
-                            card.remove();
-                            // 남은 시나리오가 없으면 메시지 표시
-                            const container = document.getElementById('scenario-grid');
-                            if (container && container.children.length === 0) {
-                                container.innerHTML = '<div class="col-span-full text-center text-gray-500 py-8">저장된 시나리오가 없습니다.</div>';
-                            }
-                        }, 300);
-                    }
-                } else {
-                    alert('삭제 실패: ' + (result.error || '알 수 없는 오류'));
-                }
-            } catch (error) {
-                console.error('Delete error:', error);
-                alert('삭제 중 오류가 발생했습니다.');
-            }
-        }
-
-        // 시나리오 편집 함수 (비주얼 에디터로 이동)
-        function editScenario(filename) {
-            window.location.href = `/views/scenes/edit/${filename}`;
-        }
-
-        // 시나리오 공개/비공개 토글 함수
-        async function publishScenario(filename, btnElement) {
-            const card = btnElement.closest('.bg-dark-800');
-            const statusBadge = card.querySelector('span[class*="bg-green-900"], span[class*="bg-gray-700"]');
-            const currentStatus = statusBadge.textContent.trim();
-            const isCurrentlyPublic = currentStatus === 'PUBLIC';
-
-            try {
-                const response = await fetch('/api/publish_scenario', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename: filename })
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    // UI 즉시 업데이트
-                    if (isCurrentlyPublic) {
-                        // PUBLIC -> PRIVATE
-                        statusBadge.className = 'ml-2 text-[10px] bg-gray-700 text-gray-300 px-1 rounded';
-                        statusBadge.textContent = 'PRIVATE';
-                    } else {
-                        // PRIVATE -> PUBLIC
-                        statusBadge.className = 'ml-2 text-[10px] bg-green-900 text-green-300 px-1 rounded';
-                        statusBadge.textContent = 'PUBLIC';
-                    }
-
-                    // 성공 메시지 표시 (토스트)
-                    showToast(result.message || '상태가 변경되었습니다.', 'success');
-                } else {
-                    showToast('변경 실패: ' + (result.error || '알 수 없는 오류'), 'error');
-                }
-            } catch (error) {
-                console.error('Publish error:', error);
-                showToast('처리 중 오류가 발생했습니다.', 'error');
-            }
-        }
-
-        // 토스트 메시지 표시 함수
-        function showToast(message, type = 'info') {
-            const bgColor = type === 'success' ? 'bg-green-900/90 border-green-500/30 text-green-100' :
-                           type === 'error' ? 'bg-red-900/90 border-red-500/30 text-red-100' :
-                           'bg-blue-900/90 border-blue-500/30 text-blue-100';
-
-            const icon = type === 'success' ? 'check-circle' :
-                        type === 'error' ? 'alert-circle' : 'info';
-
-            const toast = document.createElement('div');
-            toast.className = `fixed bottom-4 right-4 z-[100] ${bgColor} border px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3 animate-bounce-in`;
-            toast.innerHTML = `
-                <i data-lucide="${icon}" class="w-5 h-5"></i>
-                <span class="font-medium">${message}</span>
-            `;
-
-            document.body.appendChild(toast);
-            lucide.createIcons();
-
-            setTimeout(() => {
-                toast.style.transition = 'opacity 0.3s, transform 0.3s';
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateY(10px)';
-                setTimeout(() => toast.remove(), 300);
-            }, 3000);
-        }
-
-        // 로그인/회원가입/로그아웃 등 기존 함수들
+        // 모달 열기/닫기
         function openModal(id) {
             const modal = document.getElementById(id);
             const container = modal.querySelector('.modal-container');
-
             const form = modal.querySelector('form');
             if (form) form.reset();
-
             const errorMsg = modal.querySelector('[id$="-error"]');
-            if (errorMsg) {
-                errorMsg.innerText = '';
-                errorMsg.classList.add('hidden');
-            }
+            if (errorMsg) errorMsg.classList.add('hidden');
 
             modal.classList.remove('opacity-0', 'pointer-events-none');
             document.body.classList.add('modal-active');
-
             setTimeout(() => {
                 container.classList.remove('scale-95', 'opacity-0');
                 container.classList.add('scale-100', 'opacity-100');
@@ -536,19 +341,17 @@
         function closeModal(id) {
             const modal = document.getElementById(id);
             const container = modal.querySelector('.modal-container');
-
             container.classList.remove('scale-100', 'opacity-100');
             container.classList.add('scale-95', 'opacity-0');
-
             setTimeout(() => {
                 modal.classList.add('opacity-0', 'pointer-events-none');
                 document.body.classList.remove('modal-active');
             }, 300);
         }
 
+        // 로그인 핸들러
         async function handleLogin(e) {
-            e.preventDefault();
-            const form = e.target;
+            e.preventDefault(); const form = e.target;
             const errorMsg = document.getElementById('login-error');
             try {
                 const res = await fetch('/api/auth/login', {
@@ -558,37 +361,18 @@
                 });
                 const data = await res.json();
                 if (data.success) window.location.reload();
-                else {
-                    errorMsg.innerText = data.error;
-                    errorMsg.classList.remove('hidden');
-                }
-            } catch(e) {
-                errorMsg.innerText = '서버 통신 오류';
-                errorMsg.classList.remove('hidden');
-            }
+                else { errorMsg.innerText = data.error; errorMsg.classList.remove('hidden'); }
+            } catch(e) { errorMsg.innerText = "서버 통신 오류"; errorMsg.classList.remove('hidden'); }
         }
 
+        // 회원가입 핸들러
         async function handleRegister(e) {
-            e.preventDefault();
-            const form = e.target;
+            e.preventDefault(); const form = e.target;
             const errorMsg = document.getElementById('register-error');
-
             if (form.password.value !== form.confirm_password.value) {
                 errorMsg.innerText = "비밀번호가 일치하지 않습니다.";
-                errorMsg.classList.remove('hidden');
-                form.confirm_password.focus();
-                return;
+                errorMsg.classList.remove('hidden'); return;
             }
-
-            if (form.password.value.length < 4) {
-                errorMsg.innerText = "비밀번호는 최소 4자리 이상이어야 합니다.";
-                errorMsg.classList.remove('hidden');
-                form.password.focus();
-                return;
-            }
-
-            errorMsg.classList.add('hidden');
-
             try {
                 const res = await fetch('/api/auth/register', {
                     method: 'POST',
@@ -599,74 +383,19 @@
                         email: form.email.value
                     })
                 });
-
                 const data = await res.json();
-
-                if (data.success) {
-                    alert('가입 성공!');
-                    closeModal('register-modal');
-                    openModal('login-modal');
-                } else {
-                    errorMsg.innerText = data.error;
-                    errorMsg.classList.remove('hidden');
-                }
-            } catch(e) {
-                console.error(e);
-                errorMsg.innerText = "서버 통신 중 오류가 발생했습니다.";
-                errorMsg.classList.remove('hidden');
-            }
+                if (data.success) { alert('가입 성공!'); closeModal('register-modal'); openModal('login-modal'); }
+                else { errorMsg.innerText = data.error; errorMsg.classList.remove('hidden'); }
+            } catch(e) { errorMsg.innerText = "서버 오류"; errorMsg.classList.remove('hidden'); }
         }
 
+        // 로그아웃 핸들러
         async function logout() {
             if(confirm('로그아웃 하시겠습니까?')) {
                 await fetch('/api/auth/logout', {method:'POST'});
                 window.location.reload();
             }
         }
-
-        // 사이드바 상태 관리
-        (function() {
-            const sidebar = document.querySelector('.sidebar');
-            const SIDEBAR_STATE_KEY = 'sidebar_expanded';
-            let isRestoredState = false;
-
-            if (sessionStorage.getItem(SIDEBAR_STATE_KEY) === 'true') {
-                sidebar.style.transition = 'none';
-                sidebar.classList.add('expanded');
-                isRestoredState = true;
-                sessionStorage.removeItem(SIDEBAR_STATE_KEY);
-                requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                        sidebar.style.transition = '';
-                    });
-                });
-            }
-
-            if (isRestoredState) {
-                setTimeout(() => {
-                    const checkMousePosition = (e) => {
-                        const rect = sidebar.getBoundingClientRect();
-                        const isInsideSidebar = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
-                        if (!isInsideSidebar) sidebar.classList.remove('expanded');
-                        document.removeEventListener('mousemove', checkMousePosition);
-                    };
-                    document.addEventListener('mousemove', checkMousePosition, { once: true });
-                }, 100);
-            }
-
-            sidebar.querySelectorAll('a[href], button').forEach(link => {
-                link.addEventListener('click', function(e) {
-                    if (this.tagName === 'A' && this.href) {
-                        sessionStorage.setItem(SIDEBAR_STATE_KEY, 'true');
-                        sidebar.classList.add('expanded');
-                    }
-                });
-            });
-
-            sidebar.addEventListener('mouseleave', () => {
-                sidebar.classList.remove('expanded');
-            });
-        })();
     </script>
 </body>
 </html>
