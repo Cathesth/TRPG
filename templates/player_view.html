@@ -517,6 +517,21 @@
             formData.append('action', actionText);
 
             const response = await fetch('/game/act_stream', { method: 'POST', body: formData });
+
+            // [추가] 서버 에러(500, 400 등) 먼저 체크
+            if (!response.ok) {
+                let errorMsg = '서버 오류';
+                try {
+                    // JSON 에러 메시지 시도
+                    const errData = await response.json();
+                    errorMsg = errData.error || errData.detail || '알 수 없는 오류';
+                } catch (e) {
+                    // 텍스트 에러 메시지 시도
+                    errorMsg = await response.text();
+                }
+                throw new Error(errorMsg);
+            }
+
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let narratorText = '';
