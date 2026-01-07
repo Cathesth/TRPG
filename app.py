@@ -5,7 +5,7 @@ from flask_login import LoginManager
 from dotenv import load_dotenv
 
 from config import LOG_FORMAT, LOG_DATE_FORMAT, SQLALCHEMY_DATABASE_URI, SQLALCHEMY_TRACK_MODIFICATIONS
-from models import db, User
+from models import db, User, Scenario, Preset, TempScenario, CustomNPC, ScenarioHistory
 
 # 환경 변수 로드
 load_dotenv()
