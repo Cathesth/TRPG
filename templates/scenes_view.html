@@ -310,6 +310,14 @@
                 <i data-lucide="mouse-pointer-click" class="w-4 h-4"></i>
                 <span>편집 모드 활성화</span>
             </button>
+
+            <!-- [신규] AI 검수 추천 버튼 -->
+            <button id="aiRecommendBtn" onclick="showAuditRecommendModal()"
+                    class="bg-teal-900/80 hover:bg-teal-800 text-teal-200 px-3 py-2 rounded-lg border border-teal-700/50 flex items-center gap-2 text-sm font-bold transition-all">
+                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">AI 검수 추천</span>
+            </button>
+
             <!-- 씬 추가 버튼 -->
             <button id="addSceneBtn" onclick="showAddSceneModal()"
                     class="bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-3 py-2 rounded-lg border border-indigo-700/50 flex items-center gap-2 text-sm font-bold transition-all">
@@ -1028,6 +1036,188 @@
         `;
     }
 
+    // [신규] AI 검수 추천 모달 표시
+    window.showAuditRecommendModal = function() {
+        // 기존 모달 있으면 제거
+        closeModal('auditRecommendModal');
+
+        const modalHtml = `
+            <div id="auditRecommendModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center fade-in">
+                <div class="bg-dark-800 rounded-xl border border-teal-500/30 shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col">
+                    <div class="p-4 border-b border-white/5 flex items-center justify-between shrink-0">
+                        <h3 class="font-bold text-white flex items-center gap-2 text-lg">
+                            <i data-lucide="sparkles" class="w-5 h-5 text-teal-400"></i>
+                            AI 검수 추천 리포트
+                        </h3>
+                        <button onclick="closeModal('auditRecommendModal')" class="p-1 text-gray-400 hover:text-white rounded">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <div id="auditRecommendContent" class="p-6 overflow-y-auto flex-1">
+                        <div class="flex flex-col items-center justify-center py-10 text-gray-400 gap-4">
+                            <div class="relative w-16 h-16">
+                                <div class="absolute inset-0 border-4 border-gray-700 rounded-full"></div>
+                                <div class="absolute inset-0 border-4 border-teal-500 rounded-full border-t-transparent animate-spin"></div>
+                                <i data-lucide="brain" class="absolute inset-0 m-auto w-6 h-6 text-teal-500 animate-pulse"></i>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-lg font-bold text-white mb-1">시나리오 구조 분석 중...</p>
+                                <p class="text-sm">전체 씬의 연결 상태와 밸런스를 확인하고 있습니다.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t border-white/5 flex justify-end gap-3 shrink-0 bg-dark-900/30 rounded-b-xl">
+                        <button onclick="closeModal('auditRecommendModal')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg">닫기</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        lucide.createIcons();
+
+        // API 호출 시작
+        runAuditRecommendation();
+    };
+
+    // [신규] AI 검수 추천 실행 함수
+    async function runAuditRecommendation() {
+        try {
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/audit-recommend`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                renderRecommendationResults(result.recommendations);
+            } else {
+                throw new Error(result.error || "분석 실패");
+            }
+        } catch (e) {
+            console.error(e);
+            const content = document.getElementById('auditRecommendContent');
+            if(content) {
+                content.innerHTML = `
+                    <div class="bg-red-900/20 border border-red-500/30 rounded-lg p-6 text-center">
+                        <i data-lucide="alert-circle" class="w-10 h-10 text-red-500 mx-auto mb-3"></i>
+                        <h3 class="text-lg font-bold text-red-400 mb-2">분석 중 오류 발생</h3>
+                        <p class="text-gray-400">${e.message}</p>
+                    </div>
+                `;
+                lucide.createIcons();
+            }
+        }
+    }
+
+    // [신규] 추천 결과 렌더링
+    function renderRecommendationResults(recommendations) {
+        const content = document.getElementById('auditRecommendContent');
+        if (!content) return;
+
+        if (!recommendations || recommendations.length === 0) {
+            content.innerHTML = `
+                <div class="text-center py-10">
+                    <i data-lucide="check-circle" class="w-12 h-12 text-green-500 mx-auto mb-4"></i>
+                    <h3 class="text-xl font-bold text-white mb-2">완벽합니다!</h3>
+                    <p class="text-gray-400">구조적으로 큰 문제가 발견되지 않았습니다.</p>
+                </div>
+            `;
+            lucide.createIcons();
+            return;
+        }
+
+        const html = `
+            <div class="mb-4 p-3 bg-teal-900/20 border border-teal-500/20 rounded-lg flex gap-3 items-start">
+                <i data-lucide="info" class="w-5 h-5 text-teal-400 mt-0.5 shrink-0"></i>
+                <div>
+                    <p class="text-sm text-teal-200 font-bold mb-1">AI 분석 완료</p>
+                    <p class="text-xs text-gray-400">다음 ${recommendations.length}개의 씬에서 잠재적인 문제가 발견되었습니다. 클릭하여 바로 편집할 수 있습니다.</p>
+                </div>
+            </div>
+            <div class="space-y-3">
+                ${recommendations.map(rec => {
+                    const riskColor = rec.risk_level === 'High' ? 'text-red-400 bg-red-900/20 border-red-700/50' :
+                                      rec.risk_level === 'Medium' ? 'text-amber-400 bg-amber-900/20 border-amber-700/50' :
+                                      'text-blue-400 bg-blue-900/20 border-blue-700/50';
+                    const icon = rec.risk_level === 'High' ? 'alert-octagon' : 'alert-triangle';
+
+                    return `
+                    <div class="group p-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all cursor-pointer relative overflow-hidden"
+                         onclick="jumpToSceneFromAudit('${rec.scene_id}')">
+                        <div class="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i data-lucide="arrow-right-circle" class="w-5 h-5 text-gray-400"></i>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <div class="px-2 py-1 rounded text-[10px] font-bold border uppercase shrink-0 flex items-center gap-1 ${riskColor}">
+                                <i data-lucide="${icon}" class="w-3 h-3"></i> ${rec.risk_level} Risk
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-white text-base mb-1 flex items-center gap-2">
+                                    ${rec.scene_id}
+                                    <span class="text-xs font-normal text-gray-500">
+                                        ${getSceneTitle(rec.scene_id)}
+                                    </span>
+                                </h4>
+                                <p class="text-gray-300 text-sm leading-relaxed">${rec.reason}</p>
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+
+        content.innerHTML = html;
+        lucide.createIcons();
+    }
+
+    // [신규] 씬 제목 가져오기 헬퍼
+    function getSceneTitle(sceneId) {
+        const s = scenarioData.scenes.find(sc => sc.scene_id === sceneId);
+        return s ? (s.title || s.name || '제목 없음') : '알 수 없음';
+    }
+
+    // [신규] 추천 항목 클릭 시 해당 씬으로 점프
+    window.jumpToSceneFromAudit = function(sceneId) {
+        // 모달 닫기
+        closeModal('auditRecommendModal');
+
+        // 편집 모드 활성화 (안 되어 있다면)
+        if (!isEditModeActive) {
+            toggleEditMode();
+        }
+
+        // 해당 씬의 노드 찾아서 선택 처리
+        // (Mermaid 그래프가 렌더링된 상태여야 함)
+        const svg = document.querySelector('#mermaid-graph svg');
+        if (svg) {
+            // ID 매칭되는 노드 찾기 시도
+            const allNodes = svg.querySelectorAll('.node');
+            let targetNode = null;
+
+            allNodes.forEach(node => {
+                const nodeId = node.getAttribute('id') || '';
+                if (extractNodeId(nodeId) === sceneId) {
+                    targetNode = node;
+                }
+            });
+
+            if (targetNode) {
+                selectNode(targetNode, sceneId);
+                // 스크롤 이동
+                targetNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } else {
+                // 노드를 못 찾았어도 사이드바는 연다 (데이터 기반)
+                openEditSidebar(sceneId);
+            }
+        } else {
+             openEditSidebar(sceneId);
+        }
+    };
+
+
     // AI 서사 일관성 검사 실행
     window.runAIAudit = async function(sceneId) {
         const btn = document.getElementById(`aiAuditBtn_${sceneId}`);
@@ -1358,6 +1548,23 @@
     };
 
     // ========== 씬/엔딩 추가 모달 ==========
+
+    // [New Function] Mermaid 차트 데이터 새로고침
+    window.refreshMermaidChart = async function() {
+        try {
+            // Draft 조회 API 호출하여 최신 Mermaid 코드 확보
+            const response = await fetch(`/api/draft/${SCENARIO_ID}`);
+            const result = await response.json();
+
+            if (result.success && result.mermaid_code) {
+                await window.rerenderMermaidChart(result.mermaid_code);
+                console.log('[Mermaid] Chart refreshed via API');
+            }
+        } catch (e) {
+            console.error('Failed to refresh mermaid chart:', e);
+            showToast('차트 갱신 실패', 'error');
+        }
+    };
 
     window.showAddSceneModal = function() {
         const modalHtml = `

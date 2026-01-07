@@ -132,6 +132,31 @@ class AIAuditService:
 문제가 없으면 issues를 빈 배열로 반환하세요.
 반드시 유효한 JSON만 출력하세요.
 """
+    # [추가] 검수 추천 프롬프트
+    AUDIT_RECOMMENDATION_PROMPT = """당신은 TRPG 시나리오의 구조적 결함을 찾아내는 수석 에디터입니다.
+    주어진 시나리오의 '구조 데이터'를 분석하여, 서사적 오류나 개연성 문제가 의심되어 **정밀 검수(Audit)가 가장 시급한 씬 3~5개**를 추천하세요.
+
+    ## 분석 대상 시나리오 구조
+    {scenario_structure}
+
+    ## 추천 기준 (우선순위)
+    1. **단절/고립**: 연결이 끊겼거나 진입/탈출이 불가능해 보이는 씬
+    2. **복잡성**: 분기점이 너무 많아(3개 이상) 로직 꼬임이 의심되는 씬
+    3. **내용 부실**: 묘사가 지나치게 짧거나('내용 없음' 등) 핵심 정보가 누락된 씬
+    4. **급격한 전개**: 초반부에서 갑자기 엔딩으로 직행하는 등 템포가 이상한 구간
+
+    ## 응답 형식 (JSON)
+    ```json
+    {{
+        "recommendations": [
+            {{
+                "scene_id": "추천할 씬 ID",
+                "reason": "왜 이 씬을 검수해야 하는지 구체적인 이유 (한글로)",
+                "risk_level": "High|Medium|Low"
+            }}
+        ]
+    }}
+    반드시 유효한 JSON만 출력하세요. """
 
     @staticmethod
     def _parse_json_response(text: str) -> dict:
@@ -494,3 +519,66 @@ class AIAuditService:
             'summary': f"서사 검사: {coherence_result.summary} | 트리거 검사: {trigger_result.summary}"
         }
 
+    @staticmethod
+    def recommend_audit_targets(
+            scenario_data: Dict[str, Any],
+            model_name: str = None
+    ) -> Dict[str, Any]:
+        """
+        [신규 기능] 전체 시나리오를 훑어보고 검수가 필요한 씬을 추천
+        """
+        try:
+            scenes = scenario_data.get('scenes', [])
+            endings = scenario_data.get('endings', [])
+
+            # 1. 시나리오 구조 경량화 (토큰 절약용 요약 데이터 생성)
+            structure_summary = []
+
+            for s in scenes:
+                trans_count = len(s.get('transitions', []))
+                desc_len = len(s.get('description', ''))
+                # 연결된 타겟 ID들만 수집
+                targets = [t.get('target_scene_id') for t in s.get('transitions', []) if t.get('target_scene_id')]
+
+                structure_summary.append(
+                    f"- ID: {s['scene_id']} | 제목: {s.get('title', 'Untitled')} | "
+                    f"내용길이: {desc_len}자 | 분기수: {trans_count}개 | "
+                    f"연결: {targets}"
+                )
+
+            # 엔딩 정보도 간략히
+            for e in endings:
+                structure_summary.append(f"- [ENDING] ID: {e['ending_id']} | 제목: {e['title']}")
+
+            summary_text = "\n".join(structure_summary)
+
+            # 2. 프롬프트 생성
+            prompt = AIAuditService.AUDIT_RECOMMENDATION_PROMPT.format(
+                scenario_structure=summary_text
+            )
+
+            # 3. LLM 호출
+            api_key = os.getenv("OPENROUTER_API_KEY")
+            if not api_key:
+                return {"success": False, "error": "API Key Missing"}
+
+            # 구조 분석은 추론 능력이 좀 필요하므로 스마트한 모델 권장
+            llm = LLMFactory.get_llm(
+                model_name=model_name or DEFAULT_MODEL,
+                api_key=api_key,
+                temperature=0.1  # 분석은 냉정하게
+            )
+
+            response = llm.invoke(prompt)
+            result_text = response.content if hasattr(response, 'content') else str(response)
+            result_data = AIAuditService._parse_json_response(result_text)
+
+            return {
+                "success": True,
+                "recommendations": result_data.get('recommendations', []),
+                "analyzed_scene_count": len(scenes)
+            }
+
+        except Exception as e:
+            logger.error(f"Audit recommendation error: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
