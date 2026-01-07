@@ -94,7 +94,7 @@ class GameScene(BaseModel):
     scene_id: str
     name: str
     description: str
-    type: str
+    type: str = Field(description="장면 유형 (normal 또는 battle)")
     npcs: List[str]
     transitions: List[Transition]
 
@@ -263,9 +263,14 @@ def parse_graph_to_blueprint(state: BuilderState):
         node_id = node["id"]
         title = node["data"].get("title", "제목 없음")
         desc = node["data"].get("description", "")
+
+        # [수정] Scene Type (Normal/Battle) 추출
+        scene_type = node["data"].get("scene_type", "normal")
+        type_str = "전투(Battle)" if scene_type == "battle" else "일반(Normal)"
+
         outgoing = [e for e in edges if e["source"] == node_id]
 
-        blueprint += f"ID: {node_id} ({node['type']})\n제목: {title}\n설명: {desc}\n"
+        blueprint += f"ID: {node_id} ({node['type']})\n유형: {type_str}\n제목: {title}\n설명: {desc}\n"
         if outgoing:
             blueprint += "연결:\n"
             for e in outgoing:
@@ -360,12 +365,17 @@ def generate_full_content(state: BuilderState):
 
     # 2. Scene 생성 (세계관 정보 참조)
     scene_parser = JsonOutputParser(pydantic_object=SceneData)
+
+    # [수정] 전투/일반 씬 구분을 위한 프롬프트 강화
     scene_prompt = ChatPromptTemplate.from_messages([
         ("system",
          "설계도와 생성된 세계관/NPC 정보를 바탕으로 씬 데이터를 생성하세요.\n"
          "ID는 절대 변경하지 마세요.\n"
          "각 장면의 'description' 작성 시, 생성된 '배경 장소(World)'의 묘사를 적극적으로 인용하여 현장감을 살리세요.\n"
          "연결(Transition) 생성 시 구체적인 행동(문을 연다 등)을 만드세요.\n"
+         "\n[중요: 씬 유형별 작성 지침]\n"
+         "1. 유형이 '전투(Battle)'인 경우: 묘사(description)에 등장하는 적의 이름, 숫자, 외형, 그리고 지형의 전술적 특징(엄폐물, 고저차 등)을 반드시 포함하세요. 'type' 필드는 'battle'로 설정하세요.\n"
+         "2. 유형이 '일반(Normal)'인 경우: 스토리 진행과 탐색 위주로 묘사하세요. 'type' 필드는 'normal'로 설정하세요.\n"
          "{format_instructions}"),
         ("user",
          f"설계도:\n{blueprint}\n\n"
@@ -447,6 +457,9 @@ def finalize_build(state: BuilderState):
             node["data"]["title"] = tgt["name"]
             node["data"]["description"] = tgt["description"]
             node["data"]["npcs"] = tgt["npcs"]
+            # [유지] node["data"]["scene_type"]은 사용자가 설정한 값이므로 유지하거나,
+            # LLM이 판단한 type을 우선하려면 여기서 덮어쓸 수 있음.
+            # 하지만 사용자의 의도(전투)가 중요하므로 여기서는 덮어쓰지 않음.
 
         elif nid in ending_map:
             tgt = ending_map[nid]

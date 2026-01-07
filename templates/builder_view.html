@@ -143,7 +143,8 @@
                         'check-circle': 'M22 11.08V12a10 10 0 1 1-5.93-9.14 M22 4L12 14.01l-3-3',
                         'alert-triangle': 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z M12 9v4 M12 17h.01',
                         'undo': 'M3 7v6h6 M21 17a9 9 0 0 0-9-9 9 9 0 0 0-9 9',
-                        'redo': 'M21 7v6h-6 M3 17a9 9 0 0 1 9-9 9 9 0 0 1 9 9'
+                        'redo': 'M21 7v6h-6 M3 17a9 9 0 0 1 9-9 9 9 0 0 1 9 9',
+                        'swords': 'M14.5 17.5L3 6V3h3l11.5 11.5 M13 19l6-6 M16 16l4 4 M19 21l2-2'
                     };
                     return icons[name] || 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z';
                 };
@@ -274,7 +275,7 @@
             function ScenarioBuilder() {
                 const [nodes, setNodes] = useState([
                     { id: 'start', type: 'start', x: 50, y: 50, data: { label: '시나리오 설정', prologue: '', gm_notes: '' } },
-                    { id: 'scene-1', type: 'scene', x: 400, y: 150, data: { title: '첫 번째 장면', description: '', npcs: [] } },
+                    { id: 'scene-1', type: 'scene', x: 400, y: 150, data: { title: '첫 번째 장면', description: '', npcs: [], scene_type: 'normal' } },
                 ]);
                 const [connections, setConnections] = useState([ { id: 'c1', source: 'start', target: 'scene-1' } ]);
                 const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -486,11 +487,8 @@
                 const canvasRef = useRef(null);
 
                 const openExternalNpcGenerator = () => {
-                    const width = 500;
-                    const height = 700;
-                    const left = (window.screen.width - width) / 2;
-                    const top = (window.screen.height - height) / 2;
-                    window.open('/builder/npc-generator', 'NPCGenerator', `width=${width},height=${height},top=${top},left=${left},resizable=yes`);
+                    // [수정됨] 팝업 대신 새 탭(창)으로 열기
+                    window.open('/builder/npc-generator', '_blank');
                 };
 
                 useEffect(() => {
@@ -563,7 +561,8 @@
 
                 const addNode = (type) => {
                     const id = `${type}-${Date.now()}`;
-                    setNodes(p => [...p, { id, type, x: Math.random() * 200 + 100, y: Math.random() * 200 + 100, data: { title: type === 'scene' ? '새로운 장면' : '새로운 엔딩', description: '', npcs: [] } }]);
+                    // [수정됨] 새 장면 추가 시 scene_type 기본값 'normal' 설정
+                    setNodes(p => [...p, { id, type, x: Math.random() * 200 + 100, y: Math.random() * 200 + 100, data: { title: type === 'scene' ? '새로운 장면' : '새로운 엔딩', description: '', npcs: [], scene_type: 'normal' } }]);
                     setTimeout(saveToHistory, 100);
                 };
 
@@ -668,7 +667,7 @@
 
                         setResultModal({
                             open: true, type: 'success', title: '생성 완료!',
-                            message: `"${scenarioTitle}" 시나리오가 생성되었습니다.\n이제 플레이어 모드에서 게임을 즐겨보세요.`,
+                            message: `"${scenarioTitle}" 시나리오가 생성되었습니다.\n'빌더에서 수정하기'를 눌러 생성된 내용을 확인하고 수정할 수 있습니다.`,
                             data: data,
                             showPlayButton: true
                         });
@@ -1050,7 +1049,9 @@
                                         className={`absolute w-[200px] rounded-lg shadow-xl border-2 group select-none transition-shadow ${selectedNodeId === node.id ? 'border-white z-20 ring-2 ring-blue-500/50' : node.type === 'start' ? 'border-blue-600 bg-gray-900 z-10' : node.type === 'ending' ? 'border-red-600 bg-gray-900 z-10' : 'border-indigo-600 bg-gray-900 z-10'} ${connectingSourceId && connectingSourceId !== node.id ? 'hover:scale-105 cursor-pointer' : 'cursor-grab active:cursor-grabbing'}`}>
 
                                         <div className={`p-2 rounded-t-md text-sm font-bold flex justify-between items-center ${node.type === 'start' ? 'bg-blue-900/50 text-blue-200' : node.type === 'ending' ? 'bg-red-900/50 text-red-200' : 'bg-indigo-900/50 text-indigo-200'}`}>
-                                            <span className="truncate pl-2">{node.type === 'start' ? '설정' : node.type === 'scene' ? 'Scene' : 'Ending'}</span>
+                                            <span className="truncate pl-2">
+                                                {node.type === 'start' ? '설정' : node.type === 'scene' ? (node.data.scene_type === 'battle' ? '전투 (Battle)' : '장면 (Scene)') : 'Ending'}
+                                            </span>
 
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); setConnectingSourceId(node.id); setSelectedNodeId(node.id); }}
@@ -1068,6 +1069,11 @@
                                                     ? (node.data.prologue ? node.data.prologue.substring(0, 50) + '...' : '프롤로그 없음')
                                                     : (node.data.description || '내용 없음')}
                                             </div>
+                                            {node.data.scene_type === 'battle' && (
+                                                <div className="absolute top-1 right-1 text-red-500">
+                                                    <Icon name="swords" size={14} />
+                                                </div>
+                                            )}
 
                                             {node.id !== 'start' && selectedNodeId === node.id && (
                                                 <button
@@ -1161,11 +1167,32 @@
                                                             placeholder="제목을 입력하세요"
                                                         />
                                                     </div>
+
+                                                    {/* [수정됨] 씬 타입 선택 (Normal vs Battle) */}
+                                                    {node.type === 'scene' && (
+                                                        <div>
+                                                            <label className="text-xs text-gray-400 block mb-1">장면 유형</label>
+                                                            <select
+                                                                className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm text-white focus:border-indigo-500 transition-colors"
+                                                                value={node.data.scene_type || 'normal'}
+                                                                onChange={e => updateNodeData('scene_type', e.target.value)}
+                                                            >
+                                                                <option value="normal">일반 (Normal)</option>
+                                                                <option value="battle">전투 (Battle)</option>
+                                                            </select>
+                                                            <p className="text-[10px] text-gray-500 mt-1">
+                                                                {node.data.scene_type === 'battle'
+                                                                    ? "⚔️ 전투 장면은 적의 정보와 지형 특징이 포함됩니다."
+                                                                    : "📜 일반 장면은 스토리 진행과 탐색 중심입니다."}
+                                                            </p>
+                                                        </div>
+                                                    )}
+
                                                     <div>
                                                         <label className="text-xs text-gray-400 block mb-1">내용</label>
                                                         <textarea
-                                                            rows={5}
-                                                            className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm text-white resize-none"
+                                                            rows={10}
+                                                            className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm text-white resize-y min-h-[100px]"
                                                             value={node.data.description || ''}
                                                             onChange={e => updateNodeData('description', e.target.value)}
                                                             placeholder="장면 내용을 입력하세요"
@@ -1342,7 +1369,10 @@
                                             플레이하러 가기
                                         </a>
                                     )}
-                                <button onClick={() => setResultModal({ ...resultModal, open: false })} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white">확인</button>
+                                <button onClick={() => setResultModal({ ...resultModal, open: false })} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white">
+                                    {/* [수정됨] 사용자에게 수정 가능함을 알리는 버튼 */}
+                                    빌더에서 수정하기 (Edit in Builder)
+                                </button>
                             </div>
                         </Modal>
                     </div>
