@@ -503,6 +503,7 @@
 
         </div>
     </div>
+    </div>
 
     {% if edit_mode %}
     <!-- 오른쪽 편집 사이드바 -->
@@ -747,7 +748,11 @@
     // ========== 편집 모드 상태 관리 ==========
     {% if edit_mode %}
     const SCENARIO_ID = '{{ scenario_id }}';
-    let scenarioData = {{ scenario | tojson | safe }};
+    let scenarioData = {{ scenario | tojson | safe if scenario else '{"scenes":[],"endings":[]}' }};
+    // 시나리오 데이터 기본값 보장
+    if (!scenarioData.scenes) scenarioData.scenes = [];
+    if (!scenarioData.endings) scenarioData.endings = [];
+
     let isEditModeActive = false;
     let hasChanges = false;
     let selectedNodeId = null;
