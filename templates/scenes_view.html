@@ -795,6 +795,33 @@
 <script>
     lucide.createIcons();
 
+    // ========== 페이지 이탈 경고 시스템 ==========
+    let isInternalNavigation = false;  // 내부 네비게이션 플래그
+
+    // 페이지 이탈 경고 (편집 모드에서 변경사항이 있을 때)
+    window.addEventListener('beforeunload', function(e) {
+        // 내부 네비게이션이면 경고 안 함
+        if (isInternalNavigation) {
+            return;
+        }
+
+        // 편집 모드에서 저장하지 않은 변경사항이 있으면 경고
+        {% if edit_mode %}
+        if (typeof hasChanges !== 'undefined' && hasChanges) {
+            e.preventDefault();
+            e.returnValue = '저장하지 않은 변경사항이 있습니다. 페이지를 벗어나시겠습니까?';
+            return e.returnValue;
+        }
+        {% endif %}
+    });
+
+    // 사이드바 링크 클릭 시 내부 네비게이션 설정
+    document.querySelectorAll('.sidebar a[href]').forEach(link => {
+        link.addEventListener('click', function() {
+            isInternalNavigation = true;
+        });
+    });
+
     // ========== 편집 모드 상태 관리 ==========
     {% if edit_mode %}
     const SCENARIO_ID = '{{ scenario_id }}';
@@ -2280,3 +2307,4 @@
 
 </body>
 </html>
+
