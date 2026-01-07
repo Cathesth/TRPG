@@ -138,6 +138,30 @@
             opacity: 1;
         }
 
+        /* History 사이드바 (왼쪽) */
+        .history-sidebar {
+            width: 0;
+            min-width: 0;
+            opacity: 0;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        .history-sidebar.open {
+            width: 320px;
+            min-width: 320px;
+            opacity: 1;
+        }
+        .history-item {
+            transition: all 0.15s ease;
+        }
+        .history-item.current {
+            background: linear-gradient(135deg, rgba(34, 211, 238, 0.2) 0%, rgba(34, 211, 238, 0.05) 100%);
+            border-color: rgba(34, 211, 238, 0.5);
+        }
+        .history-item:hover:not(.current) {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
         /* 편집 모드 토글 버튼 */
         .edit-mode-toggle {
             transition: all 0.2s ease;
@@ -262,6 +286,24 @@
         </div>
         <div class="flex items-center gap-2">
             {% if edit_mode %}
+            <!-- Undo/Redo 버튼 -->
+            <div class="flex items-center gap-1 mr-2">
+                <button id="undoBtn" onclick="performUndo()" disabled
+                        class="p-2 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded-lg border border-gray-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="실행 취소 (Ctrl+Z)">
+                    <i data-lucide="undo-2" class="w-4 h-4"></i>
+                </button>
+                <button id="redoBtn" onclick="performRedo()" disabled
+                        class="p-2 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded-lg border border-gray-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="다시 실행 (Ctrl+Y)">
+                    <i data-lucide="redo-2" class="w-4 h-4"></i>
+                </button>
+                <button id="historyToggleBtn" onclick="toggleHistorySidebar()"
+                        class="p-2 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded-lg border border-gray-700 transition-all"
+                        title="변경 이력">
+                    <i data-lucide="history" class="w-4 h-4"></i>
+                </button>
+            </div>
             <!-- 편집 모드 토글 버튼 -->
             <button id="editModeToggle" onclick="toggleEditMode()"
                     class="edit-mode-toggle bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-lg border border-gray-600 flex items-center gap-2 text-sm font-bold transition-all">
@@ -925,6 +967,18 @@
                         `).join('')}
                     </div>
                 </div>
+
+                <!-- AI 서사 일관성 검사 버튼 -->
+                <div class="border-t border-gray-700 pt-4">
+                    <button onclick="runAIAudit('${scene.scene_id}')"
+                            id="aiAuditBtn_${scene.scene_id}"
+                            class="w-full bg-violet-600/20 hover:bg-violet-600 text-violet-300 hover:text-white py-2.5 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors border border-violet-600/30 mb-2">
+                        <i data-lucide="brain" class="w-4 h-4"></i>
+                        AI 서사 일관성 검사
+                    </button>
+                    <div id="aiAuditResult_${scene.scene_id}" class="hidden"></div>
+                </div>
+
                 <div class="flex gap-2">
                     <button onclick="applySceneEdit('${scene.scene_id}')"
                             class="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
@@ -973,6 +1027,110 @@
             </div>
         `;
     }
+
+    // AI 서사 일관성 검사 실행
+    window.runAIAudit = async function(sceneId) {
+        const btn = document.getElementById(`aiAuditBtn_${sceneId}`);
+        const resultDiv = document.getElementById(`aiAuditResult_${sceneId}`);
+
+        if (!btn || !resultDiv) return;
+
+        // 버튼 비활성화 및 로딩 아이콘 표시
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> AI 검사 중... (10~30초 소요)';
+        lucide.createIcons();
+
+        try {
+            // AI 서사 일관성 검사 API 호출
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/ai-audit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scene_id: sceneId, audit_type: 'full' })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                const result = data.result;
+                const coherence = result.coherence || {};
+                const trigger = result.trigger || {};
+
+                // 문제 목록 생성
+                let issuesHtml = '';
+                const allIssues = [...(coherence.issues || []), ...(trigger.issues || [])];
+
+                if (allIssues.length === 0) {
+                    issuesHtml = `
+                        <div class="flex items-center gap-2 text-green-400 mb-3">
+                            <i data-lucide="check-circle" class="w-5 h-5"></i>
+                            <span class="font-bold">문제 없음!</span>
+                        </div>
+                        <p class="text-gray-400 text-sm">${escapeHtml(result.summary || '서사 일관성 검사를 통과했습니다.')}</p>
+                    `;
+                } else {
+                    issuesHtml = `
+                        <div class="flex items-center gap-2 ${result.has_errors ? 'text-red-400' : 'text-amber-400'} mb-3">
+                            <i data-lucide="${result.has_errors ? 'alert-circle' : 'alert-triangle'}" class="w-5 h-5"></i>
+                            <span class="font-bold">${allIssues.length}개의 문제 발견</span>
+                        </div>
+                        <div class="space-y-2 max-h-60 overflow-y-auto">
+                            ${allIssues.map(issue => `
+                                <div class="p-2 rounded ${issue.severity === 'error' ? 'bg-red-900/30 border border-red-700/50' : 'bg-amber-900/30 border border-amber-700/50'}">
+                                    <div class="flex items-start gap-2">
+                                        <span class="${issue.severity === 'error' ? 'text-red-400' : 'text-amber-400'} text-xs font-bold uppercase">${issue.severity}</span>
+                                        <span class="text-gray-200 text-xs">${escapeHtml(issue.message)}</span>
+                                    </div>
+                                    ${issue.suggestion ? `<p class="text-green-400 text-xs mt-1">💡 ${escapeHtml(issue.suggestion)}</p>` : ''}
+                                    ${issue.trigger_text ? `<p class="text-gray-500 text-xs mt-1">트리거: "${escapeHtml(issue.trigger_text)}"</p>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+
+                // 결과 표시
+                resultDiv.innerHTML = `
+                    <div class="p-3 rounded-lg bg-gray-800/50 border border-gray-700 mt-2">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs text-gray-500">AI 서사 일관성 검사 결과</span>
+                            <button onclick="document.getElementById('aiAuditResult_${sceneId}').classList.add('hidden')" class="text-gray-500 hover:text-white">
+                                <i data-lucide="x" class="w-3 h-3"></i>
+                            </button>
+                        </div>
+                        ${issuesHtml}
+                    </div>
+                `;
+                resultDiv.classList.remove('hidden');
+                lucide.createIcons();
+
+                if (allIssues.length === 0) {
+                    showToast('서사 일관성 검사 통과! ✅', 'success');
+                } else {
+                    showToast(`${allIssues.length}개의 서사 문제 발견`, result.has_errors ? 'error' : 'info');
+                }
+            } else {
+                throw new Error(data.error || '검사 실패');
+            }
+        } catch (error) {
+            console.error('AI Audit Error:', error);
+            resultDiv.innerHTML = `
+                <div class="p-3 rounded-lg bg-red-900/30 border border-red-700/50 mt-2">
+                    <div class="flex items-center gap-2 text-red-400">
+                        <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                        <span class="text-sm">검사 실패: ${escapeHtml(error.message)}</span>
+                    </div>
+                </div>
+            `;
+            resultDiv.classList.remove('hidden');
+            lucide.createIcons();
+            showToast('AI 검사 실패: ' + error.message, 'error');
+        } finally {
+            // 버튼 원래 상태로 복원
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="brain" class="w-4 h-4"></i> AI 서사 일관성 검사';
+            lucide.createIcons();
+        }
+    };
 
     // HTML 이스케이프
     function escapeHtml(str) {
@@ -1544,6 +1702,367 @@
     window.saveScenario = async function() {
         await saveDraft();
     };
+
+    // ========== History (Undo/Redo) 시스템 ==========
+    let isHistorySidebarOpen = false;
+
+    // 페이지 로드 시 이력 초기화
+    async function initializeHistory() {
+        try {
+            await fetch(`/api/draft/${SCENARIO_ID}/history/init`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            await updateUndoRedoStatus();
+        } catch (error) {
+            console.error('History init error:', error);
+        }
+    }
+
+    // Undo/Redo 상태 업데이트
+    async function updateUndoRedoStatus() {
+        try {
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/history/status`);
+            const result = await response.json();
+
+            if (result.success) {
+                const undoBtn = document.getElementById('undoBtn');
+                const redoBtn = document.getElementById('redoBtn');
+
+                if (undoBtn) undoBtn.disabled = !result.can_undo;
+                if (redoBtn) redoBtn.disabled = !result.can_redo;
+            }
+        } catch (error) {
+            console.error('Undo/Redo status error:', error);
+        }
+    }
+
+    // 변경 이력 추가 (기존 markAsChanged 함수 확장)
+    async function addHistoryEntry(actionType, actionDescription) {
+        try {
+            await fetch(`/api/draft/${SCENARIO_ID}/history/add`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action_type: actionType,
+                    action_description: actionDescription,
+                    snapshot: scenarioData
+                })
+            });
+            await updateUndoRedoStatus();
+
+            // History 사이드바가 열려있으면 새로고침
+            if (isHistorySidebarOpen) {
+                await loadHistoryList();
+            }
+        } catch (error) {
+            console.error('Add history error:', error);
+        }
+    }
+
+    // Undo 수행
+    window.performUndo = async function() {
+        const undoBtn = document.getElementById('undoBtn');
+        if (undoBtn) undoBtn.disabled = true;
+
+        try {
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/history/undo`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                scenarioData = result.scenario;
+                showToast('이전 상태로 복원되었습니다.', 'success');
+
+                // Mermaid 차트 리렌더링
+                if (result.mermaid_code) {
+                    await window.rerenderMermaidChart(result.mermaid_code);
+                }
+
+                // 상태 업데이트
+                await updateUndoRedoStatus();
+                if (isHistorySidebarOpen) await loadHistoryList();
+            } else {
+                showToast(result.error || 'Undo 실패', 'error');
+            }
+        } catch (error) {
+            console.error('Undo error:', error);
+            showToast('Undo 실패: ' + error.message, 'error');
+        } finally {
+            await updateUndoRedoStatus();
+        }
+    };
+
+    // Redo 수행
+    window.performRedo = async function() {
+        const redoBtn = document.getElementById('redoBtn');
+        if (redoBtn) redoBtn.disabled = true;
+
+        try {
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/history/redo`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                scenarioData = result.scenario;
+                showToast('다음 상태로 복원되었습니다.', 'success');
+
+                // Mermaid 차트 리렌더링
+                if (result.mermaid_code) {
+                    await window.rerenderMermaidChart(result.mermaid_code);
+                }
+
+                // 상태 업데이트
+                await updateUndoRedoStatus();
+                if (isHistorySidebarOpen) await loadHistoryList();
+            } else {
+                showToast(result.error || 'Redo 실패', 'error');
+            }
+        } catch (error) {
+            console.error('Redo error:', error);
+            showToast('Redo 실패: ' + error.message, 'error');
+        } finally {
+            await updateUndoRedoStatus();
+        }
+    };
+
+    // History 사이드바 토글
+    window.toggleHistorySidebar = async function() {
+        isHistorySidebarOpen = !isHistorySidebarOpen;
+
+        if (isHistorySidebarOpen) {
+            showHistorySidebar();
+            await loadHistoryList();
+        } else {
+            hideHistorySidebar();
+        }
+    };
+
+    // History 사이드바 표시
+    function showHistorySidebar() {
+        // 기존 사이드바가 있으면 제거
+        const existing = document.getElementById('historySidebar');
+        if (existing) existing.remove();
+
+        const sidebarHtml = `
+            <div id="historySidebar" class="fixed left-[72px] md:left-[72px] top-0 h-full history-sidebar open bg-dark-800 border-r border-white/10 flex flex-col z-30 shadow-2xl">
+                <div class="p-4 border-b border-white/5 flex items-center justify-between">
+                    <h3 class="font-bold text-white flex items-center gap-2">
+                        <i data-lucide="history" class="w-5 h-5 text-cyan-400"></i>
+                        변경 이력
+                    </h3>
+                    <button onclick="toggleHistorySidebar()" class="p-1 text-gray-400 hover:text-white hover:bg-white/5 rounded transition-colors">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+
+                <div class="p-3 border-b border-white/5 flex gap-2">
+                    <button onclick="performUndo()" id="historyUndoBtn" disabled
+                            class="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                        <i data-lucide="undo-2" class="w-4 h-4"></i>
+                        Undo
+                    </button>
+                    <button onclick="performRedo()" id="historyRedoBtn" disabled
+                            class="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                        <i data-lucide="redo-2" class="w-4 h-4"></i>
+                        Redo
+                    </button>
+                </div>
+
+                <div id="historyListContainer" class="flex-1 overflow-y-auto p-3 space-y-2">
+                    <div class="text-gray-500 text-sm text-center py-8">
+                        <i data-lucide="loader-2" class="w-6 h-6 mx-auto mb-2 animate-spin"></i>
+                        이력 로딩 중...
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', sidebarHtml);
+        lucide.createIcons();
+    }
+
+    // History 사이드바 숨기기
+    function hideHistorySidebar() {
+        const sidebar = document.getElementById('historySidebar');
+        if (sidebar) {
+            sidebar.classList.remove('open');
+            setTimeout(() => sidebar.remove(), 300);
+        }
+    }
+
+    // History 목록 로드
+    async function loadHistoryList() {
+        const container = document.getElementById('historyListContainer');
+        if (!container) return;
+
+        try {
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/history`);
+            const result = await response.json();
+
+            if (result.success) {
+                const history = result.history || [];
+                const currentSequence = result.current_sequence;
+
+                // Undo/Redo 버튼 상태 업데이트
+                const historyUndoBtn = document.getElementById('historyUndoBtn');
+                const historyRedoBtn = document.getElementById('historyRedoBtn');
+                if (historyUndoBtn) historyUndoBtn.disabled = !result.undo_redo_status?.can_undo;
+                if (historyRedoBtn) historyRedoBtn.disabled = !result.undo_redo_status?.can_redo;
+
+                if (history.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-gray-500 text-sm text-center py-8">
+                            <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 text-gray-600"></i>
+                            <p>변경 이력이 없습니다.</p>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                const historyHtml = history.map(entry => {
+                    const isCurrent = entry.is_current;
+                    const actionIcon = getActionIcon(entry.action_type);
+                    const timeStr = entry.created_at ? formatTime(entry.created_at) : '';
+
+                    return `
+                        <div class="history-item p-3 rounded-lg border ${isCurrent ? 'current border-cyan-500/50' : 'border-gray-700/50 cursor-pointer'}"
+                             ${isCurrent ? '' : `onclick="restoreToHistoryPoint(${entry.id})"`}>
+                            <div class="flex items-start gap-3">
+                                <div class="p-1.5 rounded ${isCurrent ? 'bg-cyan-500/20 text-cyan-400' : 'bg-gray-700 text-gray-400'}">
+                                    <i data-lucide="${actionIcon}" class="w-4 h-4"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-medium text-sm ${isCurrent ? 'text-cyan-300' : 'text-gray-200'} truncate">
+                                            ${escapeHtml(entry.action_description)}
+                                        </span>
+                                        ${isCurrent ? '<span class="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded-full">현재</span>' : ''}
+                                    </div>
+                                    <div class="text-xs text-gray-500 mt-0.5">${timeStr}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                container.innerHTML = historyHtml;
+                lucide.createIcons();
+            } else {
+                container.innerHTML = `
+                    <div class="text-red-400 text-sm text-center py-8">
+                        이력 로드 실패: ${escapeHtml(result.error || '알 수 없는 오류')}
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Load history error:', error);
+            container.innerHTML = `
+                <div class="text-red-400 text-sm text-center py-8">
+                    이력 로드 실패: ${escapeHtml(error.message)}
+                </div>
+            `;
+        }
+    }
+
+    // 특정 이력 시점으로 복원
+    window.restoreToHistoryPoint = async function(historyId) {
+        showConfirmModal(
+            '이력 복원',
+            '해당 시점으로 시나리오를 복원하시겠습니까?<br><span class="text-amber-400 text-sm">현재 위치 이후의 변경사항은 Redo로 복원할 수 있습니다.</span>',
+            '복원',
+            'bg-cyan-600 hover:bg-cyan-500',
+            async () => {
+                try {
+                    const response = await fetch(`/api/draft/${SCENARIO_ID}/history/restore/${historyId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        scenarioData = result.scenario;
+                        showToast('해당 시점으로 복원되었습니다.', 'success');
+
+                        // Mermaid 차트 리렌더링
+                        if (result.mermaid_code) {
+                            await window.rerenderMermaidChart(result.mermaid_code);
+                        }
+
+                        // 상태 업데이트
+                        await updateUndoRedoStatus();
+                        await loadHistoryList();
+                    } else {
+                        showToast(result.error || '복원 실패', 'error');
+                    }
+                } catch (error) {
+                    console.error('Restore error:', error);
+                    showToast('복원 실패: ' + error.message, 'error');
+                }
+            }
+        );
+    };
+
+    // 액션 타입별 아이콘
+    function getActionIcon(actionType) {
+        const icons = {
+            'initial': 'play',
+            'scene_edit': 'edit-3',
+            'scene_add': 'plus-square',
+            'scene_delete': 'trash-2',
+            'ending_edit': 'flag',
+            'ending_add': 'flag',
+            'ending_delete': 'trash-2',
+            'prologue_edit': 'book-open',
+            'reorder': 'arrow-down-up',
+            'edit': 'edit-3'
+        };
+        return icons[actionType] || 'circle';
+    }
+
+    // 시간 포맷
+    function formatTime(timestamp) {
+        const date = new Date(timestamp * 1000);
+        const now = new Date();
+        const diff = Math.floor((now - date) / 1000);
+
+        if (diff < 60) return '방금 전';
+        if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
+
+        return date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    // 키보드 단축키 (Ctrl+Z, Ctrl+Y)
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+            e.preventDefault();
+            performUndo();
+        }
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+            e.preventDefault();
+            performRedo();
+        }
+    });
+
+    // 기존 markAsChanged 함수 확장 (이력 추가 포함)
+    const originalMarkAsChanged = markAsChanged;
+    markAsChanged = function(actionType = 'edit', actionDescription = '변경') {
+        originalMarkAsChanged();
+        addHistoryEntry(actionType, actionDescription);
+    };
+
+    // 페이지 로드 시 이력 초기화
+    initializeHistory();
+
     {% endif %}
 </script>
 

@@ -4,6 +4,7 @@ Draft 시스템 서비스
 - ID 순차 재정렬 및 참조 동기화
 - 삭제 안전장치
 - 특수문자 이스케이프 처리
+- 그래프 유효성 검사 연동
 """
 import re
 import logging
@@ -13,6 +14,7 @@ from collections import deque
 
 from models import db, Scenario, TempScenario
 from config import DEFAULT_PLAYER_VARS
+from core.utils import validate_scenario_graph, can_publish_scenario, ScenarioValidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -191,18 +193,26 @@ class DraftService:
         return True, None
 
     @staticmethod
-    def publish_draft(scenario_id: int, user_id: str) -> Tuple[bool, Optional[str]]:
+    def publish_draft(scenario_id: int, user_id: str, force: bool = False) -> Tuple[bool, Optional[str], Optional[Dict]]:
         """
         Draft를 실제 시나리오로 최종 반영 (Publish)
+
+        Args:
+            scenario_id: 시나리오 ID
+            user_id: 사용자 ID
+            force: True이면 유효성 검사 실패해도 강제 반영 (기본: False)
+
+        Returns:
+            (success, error_message, validation_result)
         """
         try:
             # 원본 시나리오 확인
             scenario = Scenario.query.get(scenario_id)
             if not scenario:
-                return False, "시나리오를 찾을 수 없습니다."
+                return False, "시나리오를 찾을 수 없습니다.", None
 
             if scenario.author_id != user_id:
-                return False, "수정 권한이 없습니다."
+                return False, "수정 권한이 없습니다.", None
 
             # Draft 확인
             draft = TempScenario.query.filter_by(
@@ -211,11 +221,18 @@ class DraftService:
             ).first()
 
             if not draft:
-                return False, "저장된 Draft가 없습니다."
+                return False, "저장된 Draft가 없습니다.", None
 
-            # Draft 데이터를 원본에 반영
             draft_scenario = draft.data
 
+            # [핵심] 유효성 검사 수행
+            can_publish, validation_result = can_publish_scenario(draft_scenario)
+
+            if not can_publish and not force:
+                # 유효성 검사 실패 시 차단
+                return False, "유효성 검사를 통과하지 못했습니다. 오류를 수정한 후 다시 시도하세요.", validation_result.to_dict()
+
+            # Draft 데이터를 원본에 반영
             # title 업데이트
             if 'title' in draft_scenario:
                 scenario.title = draft_scenario['title']
@@ -232,12 +249,12 @@ class DraftService:
             db.session.delete(draft)
             db.session.commit()
 
-            return True, None
+            return True, None, validation_result.to_dict() if validation_result else None
 
         except Exception as e:
             db.session.rollback()
             logger.error(f"Publish draft error: {e}", exc_info=True)
-            return False, str(e)
+            return False, str(e), None
 
     @staticmethod
     def discard_draft(scenario_id: int, user_id: str) -> Tuple[bool, Optional[str]]:
@@ -560,4 +577,3 @@ class DraftService:
                     warnings.append(f"'{scene.get('title', scene.get('scene_id'))}'에서 '{ending_id}'로의 전환이 제거되었습니다.")
 
         return new_scenario, warnings
-

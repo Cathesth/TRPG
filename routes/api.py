@@ -14,11 +14,15 @@ from builder_agent import (
 )
 
 from core.state import game_state
-from core.utils import parse_request_data, pick_start_scene_id
+from core.utils import parse_request_data, pick_start_scene_id, validate_scenario_graph, can_publish_scenario
 from services.scenario_service import ScenarioService
 from services.user_service import UserService
 from services.preset_service import PresetService
 from services.draft_service import DraftService
+# [추가] AI Audit 서비스 임포트
+from services.ai_audit_service import AIAuditService
+# [추가] History 서비스 임포트
+from services.history_service import HistoryService
 # [추가] NPC 저장을 위한 서비스 임포트 (이전 답변의 npc_service.py 필요)
 from services.npc_service import save_custom_npc
 
@@ -464,11 +468,51 @@ def save_draft(scenario_id):
 @api_bp.route('/draft/<int:scenario_id>/publish', methods=['POST'])
 @login_required
 def publish_draft(scenario_id):
-    """Draft를 실제 시나리오로 최종 반영"""
-    success, error = DraftService.publish_draft(scenario_id, current_user.id)
+    """Draft를 실제 시나리오로 최종 반영 (유효성 검사 통과 필수)"""
+    data = request.get_json(force=True, silent=True) or {}
+    force = data.get('force', False)  # 강제 반영 옵션
+
+    success, error, validation_result = DraftService.publish_draft(scenario_id, current_user.id, force=force)
+
     if not success:
-        return jsonify({"success": False, "error": error}), 400
-    return jsonify({"success": True, "message": "시나리오에 최종 반영되었습니다."})
+        return jsonify({
+            "success": False,
+            "error": error,
+            "validation": validation_result
+        }), 400
+
+    return jsonify({
+        "success": True,
+        "message": "시나리오에 최종 반영되었습니다.",
+        "validation": validation_result
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/validate', methods=['GET', 'POST'])
+@login_required
+def validate_draft(scenario_id):
+    """
+    시나리오 그래프 유효성 검사 API
+
+    검사 항목:
+    - 고립 노드: 어떤 경로로도 도달할 수 없는 씬 적발
+    - 참조 무결성: 존재하지 않는 ID를 가리키는 target_scene_id 적발
+    - 도달 가능성: 시작 씬에서 하나 이상의 엔딩까지 도달 가능한 경로 존재 여부
+    """
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    scenario_data = result['scenario']
+
+    # 유효성 검사 수행
+    validation_result = validate_scenario_graph(scenario_data)
+
+    return jsonify({
+        "success": True,
+        "can_publish": validation_result.is_valid,
+        "validation": validation_result.to_dict()
+    })
 
 
 @api_bp.route('/draft/<int:scenario_id>/discard', methods=['POST'])
@@ -651,4 +695,324 @@ def delete_ending(scenario_id):
         "message": f"엔딩 '{ending_id}'이(가) 삭제되었습니다.",
         "warnings": warnings,
         "scenario": updated_scenario
+    })
+
+
+# --- [AI 서사 일관성 검사 API (AI Audit)] ---
+
+@api_bp.route('/draft/<int:scenario_id>/ai-audit', methods=['POST'])
+@login_required
+def ai_audit_scene(scenario_id):
+    """
+    AI 서사 일관성 검사 API
+
+    특정 씬의 서사적 개연성과 트리거 일치성을 AI로 검증합니다.
+
+    Request Body:
+        - scene_id: 검사할 씬 ID
+        - audit_type: 'coherence' | 'trigger' | 'full' (기본: 'full')
+        - model: 사용할 LLM 모델 (선택)
+    """
+    data = request.get_json(force=True)
+    scene_id = data.get('scene_id')
+    audit_type = data.get('audit_type', 'full')
+    model_name = data.get('model')
+
+    if not scene_id:
+        return jsonify({"success": False, "error": "scene_id가 필요합니다."}), 400
+
+    # Draft 로드
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    scenario_data = result['scenario']
+
+    # 감사 타입에 따라 적절한 메서드 호출
+    if audit_type == 'coherence':
+        audit_result = AIAuditService.audit_scene_coherence(scenario_data, scene_id, model_name)
+        return jsonify({
+            "success": audit_result.success,
+            "audit_type": "coherence",
+            "result": audit_result.to_dict()
+        })
+    elif audit_type == 'trigger':
+        audit_result = AIAuditService.audit_trigger_consistency(scenario_data, scene_id, model_name)
+        return jsonify({
+            "success": audit_result.success,
+            "audit_type": "trigger",
+            "result": audit_result.to_dict()
+        })
+    else:  # full
+        full_result = AIAuditService.full_audit(scenario_data, scene_id, model_name)
+        return jsonify({
+            "success": full_result.get('success', False),
+            "audit_type": "full",
+            "result": full_result
+        })
+
+
+@api_bp.route('/draft/<int:scenario_id>/ai-audit-all', methods=['POST'])
+@login_required
+def ai_audit_all_scenes(scenario_id):
+    """
+    전체 시나리오 AI 감사 API
+
+    시나리오의 모든 씬에 대해 서사 일관성 검사를 수행합니다.
+    (주의: 씬이 많으면 시간이 오래 걸릴 수 있음)
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    model_name = data.get('model')
+
+    # Draft 로드
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    scenario_data = result['scenario']
+    scenes = scenario_data.get('scenes', [])
+
+    all_results = []
+    total_issues = 0
+    has_errors = False
+
+    for scene in scenes:
+        scene_id = scene.get('scene_id')
+        if not scene_id:
+            continue
+
+        # 각 씬에 대해 전체 감사 수행
+        audit_result = AIAuditService.full_audit(scenario_data, scene_id, model_name)
+        all_results.append({
+            'scene_id': scene_id,
+            'scene_title': scene.get('title') or scene.get('name') or scene_id,
+            'result': audit_result
+        })
+
+        total_issues += audit_result.get('total_issues', 0)
+        if audit_result.get('has_errors'):
+            has_errors = True
+
+    return jsonify({
+        "success": True,
+        "total_scenes": len(scenes),
+        "total_issues": total_issues,
+        "has_errors": has_errors,
+        "results": all_results
+    })
+
+
+# --- [변경 이력 관리 API (History)] ---
+
+@api_bp.route('/draft/<int:scenario_id>/history', methods=['GET'])
+@login_required
+def get_history_list(scenario_id):
+    """
+    변경 이력 목록 조회
+
+    Returns:
+        - history: 이력 목록 (최신순)
+        - current_sequence: 현재 위치
+        - undo_redo_status: Undo/Redo 가능 상태
+    """
+    history_list, current_sequence, error = HistoryService.get_history_list(
+        scenario_id, current_user.id
+    )
+
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+
+    undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, current_user.id)
+
+    return jsonify({
+        "success": True,
+        "history": history_list,
+        "current_sequence": current_sequence,
+        "undo_redo_status": undo_redo_status
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/init', methods=['POST'])
+@login_required
+def init_history(scenario_id):
+    """
+    편집 세션 시작 시 초기 이력 생성
+    """
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    success, hist_error = HistoryService.initialize_history(
+        scenario_id, current_user.id, result['scenario']
+    )
+
+    if not success:
+        return jsonify({"success": False, "error": hist_error}), 400
+
+    return jsonify({"success": True, "message": "이력이 초기화되었습니다."})
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/add', methods=['POST'])
+@login_required
+def add_history(scenario_id):
+    """
+    새 변경 이력 추가
+
+    Request Body:
+        - action_type: 작업 유형 ('scene_edit', 'scene_add', 'scene_delete', 'ending_edit', 'reorder', 'prologue_edit')
+        - action_description: 작업 설명
+        - snapshot: 현재 시나리오 데이터 (선택, 없으면 현재 Draft에서 가져옴)
+    """
+    data = request.get_json(force=True)
+    action_type = data.get('action_type', 'edit')
+    action_description = data.get('action_description', '변경')
+    snapshot = data.get('snapshot')
+
+    # 스냅샷이 없으면 현재 Draft에서 가져옴
+    if not snapshot:
+        result, error = DraftService.get_draft(scenario_id, current_user.id)
+        if error:
+            return jsonify({"success": False, "error": error}), 403
+        snapshot = result['scenario']
+
+    success, hist_error = HistoryService.add_history(
+        scenario_id, current_user.id, action_type, action_description, snapshot
+    )
+
+    if not success:
+        return jsonify({"success": False, "error": hist_error}), 400
+
+    # Undo/Redo 상태도 함께 반환
+    undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, current_user.id)
+
+    return jsonify({
+        "success": True,
+        "message": "이력이 추가되었습니다.",
+        "undo_redo_status": undo_redo_status
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/undo', methods=['POST'])
+@login_required
+def undo_action(scenario_id):
+    """
+    Undo 수행 - 이전 상태로 복원
+
+    Returns:
+        - scenario: 복원된 시나리오 데이터
+        - mermaid_code: 업데이트된 Mermaid 코드
+        - undo_redo_status: 새로운 Undo/Redo 상태
+    """
+    restored_data, error = HistoryService.undo(scenario_id, current_user.id)
+
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+
+    # Mermaid 코드 생성
+    mermaid_code = _generate_mermaid_for_response(restored_data)
+
+    # Undo/Redo 상태
+    undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, current_user.id)
+
+    return jsonify({
+        "success": True,
+        "message": "이전 상태로 복원되었습니다.",
+        "scenario": restored_data,
+        "mermaid_code": mermaid_code,
+        "undo_redo_status": undo_redo_status
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/redo', methods=['POST'])
+@login_required
+def redo_action(scenario_id):
+    """
+    Redo 수행 - 다음 상태로 복원
+
+    Returns:
+        - scenario: 복원된 시나리오 데이터
+        - mermaid_code: 업데이트된 Mermaid 코드
+        - undo_redo_status: 새로운 Undo/Redo 상태
+    """
+    restored_data, error = HistoryService.redo(scenario_id, current_user.id)
+
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+
+    # Mermaid 코드 생성
+    mermaid_code = _generate_mermaid_for_response(restored_data)
+
+    # Undo/Redo 상태
+    undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, current_user.id)
+
+    return jsonify({
+        "success": True,
+        "message": "다음 상태로 복원되었습니다.",
+        "scenario": restored_data,
+        "mermaid_code": mermaid_code,
+        "undo_redo_status": undo_redo_status
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/restore/<int:history_id>', methods=['POST'])
+@login_required
+def restore_to_history_point(scenario_id, history_id):
+    """
+    특정 이력 시점으로 복원
+
+    Args:
+        history_id: 복원할 이력 ID
+
+    Returns:
+        - scenario: 복원된 시나리오 데이터
+        - mermaid_code: 업데이트된 Mermaid 코드
+        - undo_redo_status: 새로운 Undo/Redo 상태
+    """
+    restored_data, error = HistoryService.restore_to_point(
+        scenario_id, current_user.id, history_id
+    )
+
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+
+    # Mermaid 코드 생성
+    mermaid_code = _generate_mermaid_for_response(restored_data)
+
+    # Undo/Redo 상태
+    undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, current_user.id)
+
+    return jsonify({
+        "success": True,
+        "message": "해당 시점으로 복원되었습니다.",
+        "scenario": restored_data,
+        "mermaid_code": mermaid_code,
+        "undo_redo_status": undo_redo_status
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/clear', methods=['POST'])
+@login_required
+def clear_history(scenario_id):
+    """
+    이력 전체 삭제 (편집 완료 또는 취소 시)
+    """
+    success, error = HistoryService.clear_history(scenario_id, current_user.id)
+
+    if not success:
+        return jsonify({"success": False, "error": error}), 400
+
+    return jsonify({"success": True, "message": "이력이 삭제되었습니다."})
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/status', methods=['GET'])
+@login_required
+def get_undo_redo_status(scenario_id):
+    """
+    Undo/Redo 가능 상태만 조회 (경량 API)
+    """
+    status = HistoryService.get_undo_redo_status(scenario_id, current_user.id)
+
+    return jsonify({
+        "success": True,
+        **status
     })

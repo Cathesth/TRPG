@@ -136,3 +136,46 @@ class CustomNPC(db.Model):
             'author': self.author_id,
             'created_at': self.created_at.timestamp()
         }
+
+
+class ScenarioHistory(db.Model):
+    """
+    시나리오 변경 이력 테이블
+    - Undo/Redo 기능을 위한 스냅샷 저장
+    - Railway PostgreSQL 환경에서 영속적으로 관리
+    """
+    __tablename__ = 'scenario_history'
+
+    id = db.Column(db.Integer, primary_key=True)
+    scenario_id = db.Column(db.Integer, db.ForeignKey('scenarios.id'), nullable=False)
+    editor_id = db.Column(db.String(50), db.ForeignKey('users.id'), nullable=False)
+
+    # 변경 이력 정보
+    action_type = db.Column(db.String(50), nullable=False)  # 'scene_edit', 'scene_add', 'scene_delete', 'ending_edit', 'reorder', 'prologue_edit' 등
+    action_description = db.Column(db.String(255), nullable=False)  # 사용자에게 보여줄 설명
+
+    # 스냅샷 데이터 (해당 시점의 전체 시나리오 데이터)
+    snapshot_data = db.Column(JSON_TYPE, nullable=False)
+
+    # 이력 순서 (같은 시나리오 내에서의 순서)
+    sequence = db.Column(db.Integer, nullable=False)
+
+    # 현재 위치 표시 (Undo/Redo 시 현재 위치)
+    is_current = db.Column(db.Boolean, default=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # 관계 설정
+    scenario = db.relationship('Scenario', backref='history_entries')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'scenario_id': self.scenario_id,
+            'editor_id': self.editor_id,
+            'action_type': self.action_type,
+            'action_description': self.action_description,
+            'sequence': self.sequence,
+            'is_current': self.is_current,
+            'created_at': self.created_at.timestamp() if self.created_at else None
+        }
