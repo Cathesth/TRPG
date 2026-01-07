@@ -136,6 +136,92 @@ class BuilderState(TypedDict):
 
 # --- 노드 함수 ---
 
+def validate_structure(state: BuilderState):
+    """
+    [신규 추가] 맨 처음 실행되어 노드 연결 구조를 검증함.
+    문제가 있으면 즉시 ValueError를 발생시켜 불필요한 생성을 막음.
+    """
+    logger.info("Validating graph structure...")
+    # 생성 시작 전이므로 0단계로 표시
+    report_progress("building", "0/5", "구조 및 연결 검증 중...", 5, phase="initializing")
+
+    graph_data = state["graph_data"]
+    nodes = graph_data.get("nodes", [])
+    edges = graph_data.get("edges", [])
+
+    # 1. 빠른 조회를 위한 매핑 생성
+    node_map = {n["id"]: n for n in nodes}
+    edge_map = {n["id"]: {"in": [], "out": []} for n in nodes}
+
+    # 2. 엣지 연결 정보 구축
+    for edge in edges:
+        src = edge["source"]
+        tgt = edge["target"]
+        if src in edge_map:
+            edge_map[src]["out"].append(tgt)
+        if tgt in edge_map:
+            edge_map[tgt]["in"].append(src)
+
+    # 3. 노드별 규칙 검사
+    for node in nodes:
+        nid = node["id"]
+        ntype = node["type"]
+        # 노드 제목 (에러 메시지용)
+        title = node["data"].get("label") if ntype == "start" else node["data"].get("title", "제목 없음")
+
+        # Rule 1: 프롤로그 (Start Node)
+        if ntype == "start":
+            # 뒤에 'scene' 타입의 노드가 연결되어 있어야 함
+            has_valid_next = False
+            for target_id in edge_map[nid]["out"]:
+                target_node = node_map.get(target_id)
+                if target_node and target_node["type"] == "scene":
+                    has_valid_next = True
+                    break
+
+            if not has_valid_next:
+                raise ValueError("프롤로그에 다음 장면을 연결해주세요.")
+
+        # Rule 2: 장면 (Scene Node)
+        elif ntype == "scene":
+            # [Input Check] 앞이 Start(프롤로그)나 Scene이어야 함
+            has_valid_prev = False
+            for prev_id in edge_map[nid]["in"]:
+                prev_node = node_map.get(prev_id)
+                if prev_node and prev_node["type"] in ["start", "scene"]:
+                    has_valid_prev = True
+                    break
+
+            if not has_valid_prev:
+                raise ValueError(f"'{title}' 장면의 앞의 장면을 올바르게 연결해주세요.")
+
+            # [Output Check] 뒤가 Scene이나 Ending이어야 함
+            has_valid_next = False
+            for target_id in edge_map[nid]["out"]:
+                target_node = node_map.get(target_id)
+                if target_node and target_node["type"] in ["scene", "ending"]:
+                    has_valid_next = True
+                    break
+
+            if not has_valid_next:
+                raise ValueError(f"'{title}' 장면의 뒤의 장면을 올바르게 연결해주세요.")
+
+        # Rule 3: 엔딩 (Ending Node)
+        elif ntype == "ending":
+            # [Input Check] 앞이 Scene이어야 함
+            has_valid_prev = False
+            for prev_id in edge_map[nid]["in"]:
+                prev_node = node_map.get(prev_id)
+                if prev_node and prev_node["type"] == "scene":
+                    has_valid_prev = True
+                    break
+
+            if not has_valid_prev:
+                raise ValueError(f"'{title}' 엔딩 앞의 장면을 연결해주세요.")
+
+    return state
+
+
 def parse_graph_to_blueprint(state: BuilderState):
     # phase 명시: 'parsing'
     report_progress("building", "1/5", "구조 분석 중...", 10, phase="parsing")
@@ -302,90 +388,7 @@ def generate_full_content(state: BuilderState):
         return {"characters": npcs, "worlds": worlds, "scenes": [], "endings": []}
 
 
-def polish_content(state: BuilderState):
-    """
-    [수정됨] LLM 제거 및 Python 기반의 구조적 무결성 검사
-    노드의 연결 상태를 검사하여 규칙에 위배되면 즉시 에러를 반환합니다.
-    """
-    logger.info("Validator(polish_content) checking structure...")
-    report_progress("building", "4/5", "구조 및 연결 검증 중...", 80, phase="validation")
-
-    graph_data = state["graph_data"]
-    nodes = graph_data.get("nodes", [])
-    edges = graph_data.get("edges", [])
-
-    # 1. 빠른 조회를 위한 매핑 생성
-    node_map = {n["id"]: n for n in nodes}
-    edge_map = {n["id"]: {"in": [], "out": []} for n in nodes}
-
-    # 2. 엣지 연결 정보 구축
-    for edge in edges:
-        src = edge["source"]
-        tgt = edge["target"]
-        if src in edge_map:
-            edge_map[src]["out"].append(tgt)
-        if tgt in edge_map:
-            edge_map[tgt]["in"].append(src)
-
-    # 3. 노드별 규칙 검사
-    for node in nodes:
-        nid = node["id"]
-        ntype = node["type"]
-        # 노드 제목 (에러 메시지용)
-        title = node["data"].get("label") if ntype == "start" else node["data"].get("title", "제목 없음")
-
-        # Rule 1: 프롤로그 (Start Node)
-        if ntype == "start":
-            # 뒤에 'scene' 타입의 노드가 연결되어 있어야 함
-            has_valid_next = False
-            for target_id in edge_map[nid]["out"]:
-                target_node = node_map.get(target_id)
-                if target_node and target_node["type"] == "scene":
-                    has_valid_next = True
-                    break
-
-            if not has_valid_next:
-                raise ValueError("프롤로그에 다음 장면을 연결해주세요.")
-
-        # Rule 2: 장면 (Scene Node)
-        elif ntype == "scene":
-            # [Input Check] 앞이 Start(프롤로그)나 Scene이어야 함
-            has_valid_prev = False
-            for prev_id in edge_map[nid]["in"]:
-                prev_node = node_map.get(prev_id)
-                if prev_node and prev_node["type"] in ["start", "scene"]:
-                    has_valid_prev = True
-                    break
-
-            if not has_valid_prev:
-                raise ValueError(f"'{title}' 장면의 앞의 장면을 올바르게 연결해주세요.")
-
-            # [Output Check] 뒤가 Scene이나 Ending이어야 함
-            has_valid_next = False
-            for target_id in edge_map[nid]["out"]:
-                target_node = node_map.get(target_id)
-                if target_node and target_node["type"] in ["scene", "ending"]:
-                    has_valid_next = True
-                    break
-
-            if not has_valid_next:
-                raise ValueError(f"'{title}' 장면의 뒤의 장면을 올바르게 연결해주세요.")
-
-        # Rule 3: 엔딩 (Ending Node)
-        elif ntype == "ending":
-            # [Input Check] 앞이 Scene이어야 함
-            has_valid_prev = False
-            for prev_id in edge_map[nid]["in"]:
-                prev_node = node_map.get(prev_id)
-                if prev_node and prev_node["type"] == "scene":
-                    has_valid_prev = True
-                    break
-
-            if not has_valid_prev:
-                raise ValueError(f"'{title}' 엔딩 앞의 장면을 연결해주세요.")
-
-    # 모든 검사를 통과하면 상태 그대로 반환 (LLM 수정 없음)
-    return state
+# polish_content(구조 검사)는 validate_structure로 대체되었으므로 제거됨
 
 
 class InitialStateExtractor(BaseModel):
@@ -515,19 +518,31 @@ def finalize_build(state: BuilderState):
 
 
 def build_builder_graph():
+    """
+    [구조 변경됨]
+    Validate(검증) -> Parse -> Refine -> Generate -> Finalize
+    'Generate' 이전에 구조를 검사하므로, 잘못된 연결 시 즉시 중단됨.
+    """
     workflow = StateGraph(BuilderState)
+
+    # 1. 검증 노드 추가 (가장 먼저 실행)
+    workflow.add_node("validate", validate_structure)
+
     workflow.add_node("parse", parse_graph_to_blueprint)
     workflow.add_node("refine", refine_scenario_info)
     workflow.add_node("generate", generate_full_content)
-    workflow.add_node("polish", polish_content)
     workflow.add_node("finalize", finalize_build)
 
-    workflow.set_entry_point("parse")
+    # 진입점을 검증 노드로 설정
+    workflow.set_entry_point("validate")
+
+    # validate -> parse -> refine -> generate -> finalize 순서로 연결
+    workflow.add_edge("validate", "parse")
     workflow.add_edge("parse", "refine")
     workflow.add_edge("refine", "generate")
-    workflow.add_edge("generate", "polish")
-    workflow.add_edge("polish", "finalize")
+    workflow.add_edge("generate", "finalize")
     workflow.add_edge("finalize", END)
+
     return workflow.compile()
 
 
