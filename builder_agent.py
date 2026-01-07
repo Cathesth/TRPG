@@ -28,6 +28,7 @@ def set_progress_callback(callback):
 
 def report_progress(status, step, detail, progress, phase=None):
     if _progress_callback:
+        # phase가 없으면 step을 기반으로 추론하거나 기본값 설정
         payload = {
             "status": status,
             "step": step,
@@ -38,15 +39,45 @@ def report_progress(status, step, detail, progress, phase=None):
         _progress_callback(**payload)
 
 
-# --- 데이터 모델 등 (기존 코드 유지) ---
-# ... (parse_json_garbage 및 Pydantic 모델들은 기존과 동일하므로 생략하지 않고 그대로 사용) ...
+# --- [유틸리티] JSON 파싱 헬퍼 ---
+def parse_json_garbage(text: str) -> dict:
+    if isinstance(text, dict):
+        return text
+    if not text:
+        return {}
+    try:
+        text = text.strip()
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0]
+        elif "```" in text:
+            text = text.split("```")[1].split("```")[0]
 
-# [편의상 모델 정의 다시 포함]
+        parsed = json.loads(text)
+        if isinstance(parsed, str):
+            try:
+                parsed = json.loads(parsed)
+            except:
+                pass
+        return parsed if isinstance(parsed, dict) else {}
+    except:
+        try:
+            start = text.find('{')
+            end = text.rfind('}') + 1
+            if start != -1 and end > start:
+                return json.loads(text[start:end])
+        except:
+            pass
+        return {}
+
+
+# --- 데이터 모델 ---
+
 class ScenarioSummary(BaseModel):
     title: str = Field(description="시나리오 제목")
     summary: str = Field(description="시나리오 전체 줄거리 요약")
-    player_prologue: str = Field(description="[공개용 프롤로그] 게임 시작 시 화면에 출력되어 플레이어가 읽게 될 도입부 텍스트.")
-    gm_notes: str = Field(description="[시스템 내부 설정] 플레이어에게는 비밀로 하고 시스템(GM)이 관리할 전체 설정.")
+    player_prologue: str = Field(description="[공개용 프롤로그] 게임 시작 시 화면에 출력되어 플레이어가 읽게 될 도입부 텍스트. 분위기 있고 흥미롭게 작성.")
+    gm_notes: str = Field(
+        description="[시스템 내부 설정] 플레이어에게는 비밀로 하고 시스템(GM)이 관리할 전체 설정, 진실, 트릭, 히든 스탯 등. 이 내용은 Player Status로도 활용됨.")
 
 
 class World(BaseModel):
@@ -88,12 +119,7 @@ class SceneData(BaseModel):
     endings: List[GameEnding]
 
 
-class InitialStateExtractor(BaseModel):
-    hp: Optional[int] = Field(None, description="체력")
-    mp: Optional[int] = Field(None, description="마력")
-    sanity: Optional[int] = Field(None, description="정신력")
-    gold: Optional[int] = Field(None, description="소지금")
-    inventory: Optional[List[str]] = Field(None, description="시작 아이템")
+# LLM Patch 관련 모델 삭제 (더 이상 사용하지 않음)
 
 
 class BuilderState(TypedDict):
@@ -112,8 +138,8 @@ class BuilderState(TypedDict):
 
 def validate_structure(state: BuilderState):
     """
-    [순서 변경됨] 맨 처음 실행되어 노드 연결 구조를 검증함.
-    문제가 있으면 즉시 에러를 발생시켜 불필요한 생성을 막음.
+    [신규 추가] 맨 처음 실행되어 노드 연결 구조를 검증함.
+    문제가 있으면 즉시 ValueError를 발생시켜 불필요한 생성을 막음.
     """
     logger.info("Validating graph structure...")
     # 생성 시작 전이므로 0단계로 표시
@@ -123,9 +149,11 @@ def validate_structure(state: BuilderState):
     nodes = graph_data.get("nodes", [])
     edges = graph_data.get("edges", [])
 
+    # 1. 빠른 조회를 위한 매핑 생성
     node_map = {n["id"]: n for n in nodes}
     edge_map = {n["id"]: {"in": [], "out": []} for n in nodes}
 
+    # 2. 엣지 연결 정보 구축
     for edge in edges:
         src = edge["source"]
         tgt = edge["target"]
@@ -134,47 +162,60 @@ def validate_structure(state: BuilderState):
         if tgt in edge_map:
             edge_map[tgt]["in"].append(src)
 
+    # 3. 노드별 규칙 검사
     for node in nodes:
         nid = node["id"]
         ntype = node["type"]
+        # 노드 제목 (에러 메시지용)
         title = node["data"].get("label") if ntype == "start" else node["data"].get("title", "제목 없음")
 
+        # Rule 1: 프롤로그 (Start Node)
         if ntype == "start":
+            # 뒤에 'scene' 타입의 노드가 연결되어 있어야 함
             has_valid_next = False
             for target_id in edge_map[nid]["out"]:
                 target_node = node_map.get(target_id)
                 if target_node and target_node["type"] == "scene":
                     has_valid_next = True
                     break
+
             if not has_valid_next:
                 raise ValueError("프롤로그에 다음 장면을 연결해주세요.")
 
+        # Rule 2: 장면 (Scene Node)
         elif ntype == "scene":
+            # [Input Check] 앞이 Start(프롤로그)나 Scene이어야 함
             has_valid_prev = False
             for prev_id in edge_map[nid]["in"]:
                 prev_node = node_map.get(prev_id)
                 if prev_node and prev_node["type"] in ["start", "scene"]:
                     has_valid_prev = True
                     break
+
             if not has_valid_prev:
                 raise ValueError(f"'{title}' 장면의 앞의 장면을 올바르게 연결해주세요.")
 
+            # [Output Check] 뒤가 Scene이나 Ending이어야 함
             has_valid_next = False
             for target_id in edge_map[nid]["out"]:
                 target_node = node_map.get(target_id)
                 if target_node and target_node["type"] in ["scene", "ending"]:
                     has_valid_next = True
                     break
+
             if not has_valid_next:
                 raise ValueError(f"'{title}' 장면의 뒤의 장면을 올바르게 연결해주세요.")
 
+        # Rule 3: 엔딩 (Ending Node)
         elif ntype == "ending":
+            # [Input Check] 앞이 Scene이어야 함
             has_valid_prev = False
             for prev_id in edge_map[nid]["in"]:
                 prev_node = node_map.get(prev_id)
                 if prev_node and prev_node["type"] == "scene":
                     has_valid_prev = True
                     break
+
             if not has_valid_prev:
                 raise ValueError(f"'{title}' 엔딩 앞의 장면을 연결해주세요.")
 
@@ -182,8 +223,8 @@ def validate_structure(state: BuilderState):
 
 
 def parse_graph_to_blueprint(state: BuilderState):
+    # phase 명시: 'parsing'
     report_progress("building", "1/5", "구조 분석 중...", 10, phase="parsing")
-    # ... (기존 코드 동일) ...
     data = state["graph_data"]
     nodes = data.get("nodes", [])
     edges = data.get("edges", [])
@@ -194,8 +235,12 @@ def parse_graph_to_blueprint(state: BuilderState):
     start_node = next((n for n in nodes if n["type"] == "start"), None)
     if start_node:
         title = start_node['data'].get('label', '')
+
+        # 사용자가 UI에서 입력한 값 확인
         prologue = start_node['data'].get('prologue', '')
         gm_notes = start_node['data'].get('gm_notes', '')
+
+        # 없다면 기존 description 필드에서 파싱 시도 (호환성)
         desc = start_node['data'].get('description', '')
         if not prologue and not gm_notes and desc:
             prologue = desc
@@ -231,8 +276,8 @@ def parse_graph_to_blueprint(state: BuilderState):
 
 
 def refine_scenario_info(state: BuilderState):
+    # phase 명시: 'worldbuilding' (설정 기획 단계)
     report_progress("building", "2/5", "개요 및 설정 기획 중...", 30, phase="worldbuilding")
-    # ... (기존 코드 동일) ...
     llm = LLMFactory.get_llm(state.get("model_name"))
     parser = JsonOutputParser(pydantic_object=ScenarioSummary)
 
@@ -265,8 +310,12 @@ def refine_scenario_info(state: BuilderState):
 
 
 def generate_full_content(state: BuilderState):
+    """
+    [수정됨] 세계관/NPC 생성 -> 씬 생성 (순차적 처리로 변경)
+    세계관이 씬 묘사에 반영되도록 수정함.
+    """
+    # phase 명시: 'worldbuilding' -> 'scene_generation'
     report_progress("building", "3/5", "세계관 및 NPC 생성 중...", 50, phase="worldbuilding")
-    # ... (기존 코드 동일) ...
     llm = LLMFactory.get_llm(state.get("model_name"))
     blueprint = state.get("blueprint", "")
 
@@ -309,7 +358,7 @@ def generate_full_content(state: BuilderState):
     world_context = "\n".join([f"- 배경 '{w.get('name')}': {w.get('description')}" for w in worlds])
     npc_context = "\n".join([f"- NPC '{n.get('name')}': {n.get('role')}" for n in npcs])
 
-    # 2. Scene 생성
+    # 2. Scene 생성 (세계관 정보 참조)
     scene_parser = JsonOutputParser(pydantic_object=SceneData)
     scene_prompt = ChatPromptTemplate.from_messages([
         ("system",
@@ -339,12 +388,24 @@ def generate_full_content(state: BuilderState):
         return {"characters": npcs, "worlds": worlds, "scenes": [], "endings": []}
 
 
+# polish_content(구조 검사)는 validate_structure로 대체되었으므로 제거됨
+
+
+class InitialStateExtractor(BaseModel):
+    hp: Optional[int] = Field(None, description="체력 (언급 없으면 null)")
+    mp: Optional[int] = Field(None, description="마력 (언급 없으면 null)")
+    sanity: Optional[int] = Field(None, description="정신력/이성 (언급 없으면 null)")
+    gold: Optional[int] = Field(None, description="소지금/골드 (언급 없으면 null)")
+    inventory: Optional[List[str]] = Field(None, description="시작 아이템 목록 (언급 없으면 null)")
+
+
 def finalize_build(state: BuilderState):
+    # phase 명시: 'finalizing'
     report_progress("building", "5/5", "최종 마무리 중...", 100, phase="finalizing")
-    # ... (기존 코드 동일) ...
     data = state["graph_data"]
     start_id = None
 
+    # 시작점 찾기
     start_node = next((n for n in data.get("nodes", []) if n["type"] == "start"), None)
     if start_node:
         edge = next((e for e in data.get("edges", []) if e["source"] == start_node["id"]), None)
@@ -359,79 +420,100 @@ def finalize_build(state: BuilderState):
             if edge["source"] == start_node["id"]:
                 prologue_connects.append(edge["target"])
 
+    # 프롤로그/설정 매핑
     scenario_data = state.get("scenario", {})
     generated_prologue = scenario_data.get("player_prologue", "")
     generated_hidden = scenario_data.get("gm_notes", "")
 
+    # 사용자 입력값(raw) fallback
     raw_prologue = start_node.get("data", {}).get("prologue", "") if start_node else ""
     raw_gm_notes = start_node.get("data", {}).get("gm_notes", "") if start_node else ""
 
     final_prologue = generated_prologue if generated_prologue else raw_prologue
     final_hidden = generated_hidden if generated_hidden else raw_gm_notes
 
-    # [동기화] 생성된 씬 내용을 raw_graph 노드에 역으로 업데이트
+    # [수정됨] 생성된 씬 내용을 raw_graph 노드에 역으로 업데이트 (프론트엔드 동기화 + 대소문자 호환)
     raw_nodes = state["graph_data"].get("nodes", [])
 
+    # ID 매칭을 위해 소문자 키 맵 생성
     scene_map = {s["scene_id"].lower(): s for s in state["scenes"]}
     ending_map = {e["ending_id"].lower(): e for e in state["endings"]}
 
     for node in raw_nodes:
-        nid = node["id"].lower()
+        nid = node["id"].lower()  # raw_graph ID도 소문자로 변환하여 비교
+
         if nid in scene_map:
             tgt = scene_map[nid]
             node["data"]["title"] = tgt["name"]
             node["data"]["description"] = tgt["description"]
             node["data"]["npcs"] = tgt["npcs"]
+
         elif nid in ending_map:
             tgt = ending_map[nid]
             node["data"]["title"] = tgt["title"]
             node["data"]["description"] = tgt["description"]
 
-    # [스탯 추출]
+    # [수정: 초기 스탯 파싱 로직 강화]
     initial_player_state = {
         "hp": 100,
         "inventory": []
     }
+
+    # 제목/장르 기반 1차 설정 (기존 로직 유지)
     scenario_title = state["scenario"].get("title", "Untitled")
     if any(k in scenario_title.lower() for k in ["던전", "모험", "전투", "raid"]):
         initial_player_state.update({"mp": 50, "attack": 10, "gold": 0})
     elif any(k in scenario_title.lower() for k in ["공포", "호러", "크툴루", "mystery"]):
         initial_player_state.update({"sanity": 100, "flashlight": 1})
 
+    # 2. [신규 추가] LLM을 이용한 GM 노트 파싱 (Override)
     try:
-        extract_llm = LLMFactory.get_llm(state.get("model_name"), temperature=0.1)
+        extract_llm = LLMFactory.get_llm(state.get("model_name"), temperature=0.1)  # 정확도를 위해 낮은 온도 사용
         parser = JsonOutputParser(pydantic_object=InitialStateExtractor)
+
         extract_prompt = ChatPromptTemplate.from_messages([
-            ("system", "당신은 게임 데이터 분석가입니다. 주어진 텍스트에서 시작 스탯을 추출하세요.\n{format_instructions}"),
+            ("system",
+             "당신은 게임 데이터 분석가입니다. 주어진 '시스템 설정(GM Note)' 텍스트를 분석하여 "
+             "플레이어의 시작 스탯(HP, MP, Sanity, Gold, Inventory)이 명시되어 있다면 추출하세요.\n"
+             "명시되지 않은 항목은 null로 반환하세요.\n"
+             "{format_instructions}"),
             ("user", f"분석할 텍스트:\n{final_hidden}")
         ]).partial(format_instructions=parser.get_format_instructions())
+
+        # LLM 호출
         extracted_stats = (extract_prompt | extract_llm | parser).invoke({})
+
+        # 추출된 값이 있는 경우에만 기존 state 업데이트 (None 제외)
         if extracted_stats:
             for key, value in extracted_stats.items():
                 if value is not None and value != []:
+                    # 기존에 값이 있더라도 GM 노트의 설정이 우선하므로 덮어씌움
                     initial_player_state[key] = value
                     logger.info(f"✅ Extracted Stat Applied: {key} = {value}")
+
     except Exception as e:
-        logger.warning(f"Stats Extraction Failed: {e}")
+        logger.warning(f"Stats Extraction Failed: {e} (Using default templates)")
+        # 실패해도 치명적이지 않음 -> 기본 템플릿 값 사용
 
     final_data = {
         "title": scenario_title,
         "desc": scenario_data.get("summary", ""),
         "prologue": final_prologue,
-        "world_settings": final_hidden,
-        "player_status": final_hidden,
+        "world_settings": final_hidden,  # GM Note (Engine에서 사용)
+        "player_status": final_hidden,  # Legacy
         "prologue_connects_to": prologue_connects,
         "scenario": scenario_data,
-        "worlds": state["worlds"],
+        "worlds": state["worlds"],  # Global World Info (Engine에서 사용)
         "npcs": state["characters"],
         "scenes": state["scenes"],
         "endings": state["endings"],
         "start_scene_id": start_id,
         "initial_state": initial_player_state,
-        "raw_graph": state["graph_data"]
+        "raw_graph": state["graph_data"]  # 업데이트된 그래프 데이터 저장
     }
 
     final_data = renumber_scenes_bfs(final_data)
+
     return {"final_data": final_data}
 
 

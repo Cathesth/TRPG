@@ -261,10 +261,54 @@
 
     let isGameEnded = false;
     let isScenarioLoaded = false;
+    let isInternalNavigation = false;  // 내부 네비게이션 플래그
+    let hasGameStarted = false;  // 게임이 시작되었는지 (채팅 내역이 있는지)
+
     const CHAT_LOG_KEY = 'trpg_chat_log';
     const STATS_KEY = 'trpg_stats';
     const GAME_ENDED_KEY = 'trpg_game_ended';
     const SCENARIO_LOADED_KEY = 'trpg_scenario_loaded';
+    const CURRENT_SCENARIO_KEY = 'trpg_current_scenario';  // 현재 시나리오 ID 저장
+
+    // 새로고침 감지 및 경고
+    window.addEventListener('beforeunload', function(e) {
+        // 내부 네비게이션이거나 게임이 시작되지 않았으면 경고 안 함
+        if (isInternalNavigation || !hasGameStarted) {
+            return;
+        }
+
+        // 채팅 로그가 있으면 경고
+        const savedLog = sessionStorage.getItem(CHAT_LOG_KEY);
+        if (savedLog && savedLog.length > 0) {
+            e.preventDefault();
+            e.returnValue = '새로고침 시 시나리오 진행 내역이 초기화됩니다. 계속하시겠습니까?';
+            return e.returnValue;
+        }
+    });
+
+    // 페이지 로드 시 새로고침 여부 확인
+    window.addEventListener('load', function() {
+        // performance.navigation.type이 1이면 새로고침 (deprecated하지만 fallback용)
+        const isReload = (performance.navigation && performance.navigation.type === 1) ||
+                        (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]?.type === 'reload');
+
+        if (isReload) {
+            // 새로고침 시 모든 게임 상태 초기화
+            clearAllGameState();
+        }
+    });
+
+    // 모든 게임 상태 초기화 함수
+    function clearAllGameState() {
+        sessionStorage.removeItem(CHAT_LOG_KEY);
+        sessionStorage.removeItem(STATS_KEY);
+        sessionStorage.removeItem(GAME_ENDED_KEY);
+        sessionStorage.removeItem(SCENARIO_LOADED_KEY);
+        sessionStorage.removeItem(CURRENT_SCENARIO_KEY);
+        isGameEnded = false;
+        isScenarioLoaded = false;
+        hasGameStarted = false;
+    }
 
     function openScenesView() {
         if (isScenarioLoaded) {
@@ -408,6 +452,9 @@
 
     async function submitWithStreaming(actionText) {
         if (isGameEnded) return;
+
+        // 게임이 시작되었음을 표시 (새로고침 경고용)
+        hasGameStarted = true;
 
         const form = document.getElementById('game-form');
         const chatLog = document.getElementById('chat-log');
@@ -747,6 +794,14 @@
 
     // 시나리오 플레이 함수
     async function playScenario(filename, btn) {
+        // 이미 게임이 진행 중이라면 경고
+        const savedLog = sessionStorage.getItem(CHAT_LOG_KEY);
+        if (savedLog && savedLog.length > 0) {
+            if (!confirm('현재 진행 중인 시나리오가 있습니다.\n새 시나리오를 불러오면 진행 내역이 초기화됩니다.\n계속하시겠습니까?')) {
+                return;
+            }
+        }
+
         const originalText = btn.innerHTML;
         btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 로딩...';
         btn.disabled = true;
@@ -762,9 +817,21 @@
             });
 
             if (res.ok) {
-                sessionStorage.setItem('trpg_scenario_loaded', 'true');
+                // 이전 게임 상태 완전히 초기화
+                clearAllGameState();
+
+                // 새 시나리오 로드 상태 설정
+                sessionStorage.setItem(SCENARIO_LOADED_KEY, 'true');
+                sessionStorage.setItem(CURRENT_SCENARIO_KEY, filename);
+
+                // 내부 네비게이션으로 설정 (beforeunload 경고 방지)
+                isInternalNavigation = true;
+
                 closeLoadModal();
-                location.reload();
+
+                // UI 초기화 후 새로고침 대신 직접 초기화
+                resetGameUI();
+                showToast('시나리오가 로드되었습니다!', 'success');
             } else {
                 const text = await res.text();
                 showToast('로드 실패: ' + text, 'error');
@@ -777,6 +844,56 @@
             btn.innerHTML = originalText;
             btn.disabled = false;
         }
+    }
+
+    // 게임 UI 초기화 함수 (새로고침 없이)
+    function resetGameUI() {
+        const chatLog = document.getElementById('chat-log');
+        const initResult = document.getElementById('init-result');
+        const aiLoading = document.getElementById('ai-loading');
+        const statsArea = document.getElementById('player-stats-area');
+
+        // 채팅 로그 초기화
+        chatLog.innerHTML = '';
+        chatLog.appendChild(initResult);
+
+        // 로드 완료 메시지 표시
+        initResult.innerHTML = `
+        <div class="bg-green-900/30 border border-green-800 text-green-400 p-4 rounded-lg flex items-center gap-3 fade-in mt-4">
+            <i data-lucide="check-circle" class="w-6 h-6"></i>
+            <div>
+                <div class="font-bold">로드 완료!</div>
+                <div class="text-sm opacity-80">아래 버튼을 클릭하거나 채팅창에 "시작"을 입력하세요.</div>
+            </div>
+        </div>
+        <button onclick="submitGameAction('시작')"
+                class="mt-3 w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shadow-lg">
+            <i data-lucide="play" class="w-5 h-5"></i>
+            게임 시작하기
+        </button>
+        `;
+
+        chatLog.appendChild(aiLoading);
+
+        // 스탯 영역 초기화
+        if (statsArea) {
+            statsArea.innerHTML = `
+            <div class="text-gray-500 text-sm text-center py-4 bg-gray-800/50 rounded-lg border border-gray-700 border-dashed">
+                <i data-lucide="ghost" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
+                데이터 없음<br>
+                <span class="text-xs">게임을 시작하면 표시됩니다.</span>
+            </div>
+            `;
+        }
+
+        // 상태 초기화
+        isGameEnded = false;
+        hasGameStarted = false;
+
+        // UI 활성화
+        enableGameUI();
+
+        lucide.createIcons();
     }
 
     // 시나리오 삭제 함수
