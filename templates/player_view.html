@@ -422,6 +422,12 @@
         input.readOnly = true;
         chatLog.classList.add('processing');
 
+        // 스트리밍 중 전체 씬 보기 버튼 비활성화
+        if (scenesBtn) {
+            scenesBtn.disabled = true;
+            scenesBtn.title = "답변 생성 중에는 사용할 수 없습니다";
+        }
+
         // 플레이어 메시지 추가
         const playerMsgHtml = `
         <div class="flex gap-4 fade-in mb-4 justify-end">
@@ -560,6 +566,13 @@
             form.classList.remove('streaming');
             if (!isGameEnded) { input.readOnly = false; input.focus(); }
             chatLog.classList.remove('processing');
+
+            // 스트리밍 완료 후 전체 씬 보기 버튼 다시 활성화
+            if (scenesBtn && isScenarioLoaded) {
+                scenesBtn.disabled = false;
+                scenesBtn.title = "";
+            }
+
             lucide.createIcons();
             const oldContent = document.getElementById('gm-streaming-content');
             if (oldContent) oldContent.removeAttribute('id');
