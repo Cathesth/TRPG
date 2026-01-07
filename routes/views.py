@@ -42,6 +42,8 @@ def view_scenes():
                                mermaid_code="graph TD\n    A[시나리오를 먼저 로드하세요]",
                                scene_display_ids={},
                                ending_display_ids={},
+                               edit_mode=False,
+                               scenario_id=None,
                                version=get_full_version(),
                                user=current_user)
 
@@ -66,6 +68,8 @@ def view_scenes():
                            ending_display_ids=chart_data['ending_display_ids'],
                            current_scene_id=current_scene_id,
                            mermaid_code=chart_data['mermaid_code'],
+                           edit_mode=False,
+                           scenario_id=None,
                            version=get_full_version(),
                            user=current_user)
 

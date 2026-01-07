@@ -1000,6 +1000,15 @@
             setTimeout(() => toast.remove(), 300);
         }, 3000);
     }
+
+    // 시나리오 편집 함수 (비주얼 에디터로 이동)
+    function editScenario(filename) {
+        // 모달 닫기
+        closeLoadModal();
+        // 비주얼 에디터로 이동
+        isInternalNavigation = true;
+        window.location.href = `/views/scenes/edit/${filename}`;
+    }
 </script>
 </body>
 </html>
