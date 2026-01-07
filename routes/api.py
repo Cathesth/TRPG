@@ -17,12 +17,16 @@ from core.state import game_state
 from core.utils import parse_request_data, pick_start_scene_id
 from services.scenario_service import ScenarioService
 from services.user_service import UserService
-from services.preset_service import PresetService  # 중복 제거 및 유지
+from services.preset_service import PresetService
+# [추가] NPC 저장을 위한 서비스 임포트 (이전 답변의 npc_service.py 필요)
+from services.npc_service import save_custom_npc
+
 from game_engine import create_game_graph
 
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
 
 # [추가] Flask-Login용 임시 User 클래스 (DB 없이 작동시키기 위함)
 class User(UserMixin):
@@ -36,7 +40,7 @@ def register():
     data = parse_request_data(request)
     username = data.get('username')
     password = data.get('password')
-    email = data.get('email')  # 이메일 추가
+    email = data.get('email')
     if not username or not password: return jsonify({"success": False, "error": "입력값 부족"}), 400
     if UserService.create_user(username, password, email): return jsonify({"success": True})
     return jsonify({"success": False, "error": "이미 존재하는 아이디"}), 400
@@ -249,7 +253,7 @@ def init_game():
         game_state.game_graph = create_game_graph()
 
         update_build_progress(status="completed", step="완료", detail="생성 완료!", progress=100)
-        return jsonify({"status": "success", "filename": fid})
+        return jsonify({"status": "success", "filename": fid, **scenario_json})  # [수정] 프론트엔드 모달 표시를 위해 전체 데이터 반환
 
     except Exception as e:
         logger.error(f"Init Error: {e}")
@@ -257,23 +261,51 @@ def init_game():
         return jsonify({"error": str(e)}), 500
 
 
-# --- [빌더 도구 API] (신규 추가) ---
-@api_bp.route('/builder/generate-npc', methods=['POST'])
-def generate_npc_api():
-    """NPC 생성 팝업에서 호출"""
-    data = request.json
-    scenario_title = data.get('scenario_title', '')
-    scenario_summary = data.get('scenario_summary', '')
-    user_request = data.get('user_request', '')
+# --- [NPC/Enemy 생성 및 저장 API] (수정됨) ---
 
-    if not scenario_title:
-        return jsonify({"error": "시나리오 정보가 필요합니다."}), 400
+@api_bp.route('/npc/generate', methods=['POST'])
+def generate_npc_api():
+    """
+    [Agent 연결] NPC 생성 팝업에서 AI 생성을 요청할 때 호출
+    npc_generator.html의 '/api/npc/generate' fetch 요청 대응
+    """
+    data = request.json
+    scenario_title = data.get('scenario_title', 'Unknown Scenario')
+    scenario_summary = data.get('scenario_summary', '')
+    user_request = data.get('request', '')  # 프론트엔드에서 'request' 키로 전송됨
+    model_name = data.get('model')  # 선택적 모델 지정
 
     try:
-        npc_data = generate_single_npc(scenario_title, scenario_summary, user_request)
-        return jsonify(npc_data)
+        # Builder Agent의 함수 호출
+        npc_data = generate_single_npc(scenario_title, scenario_summary, user_request, model_name)
+        return jsonify({"success": True, "data": npc_data})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"NPC Generation Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@api_bp.route('/npc/save', methods=['POST'])
+def save_npc():
+    """
+    [DB 연결] 사용자가 작성한 NPC/Enemy 데이터를 JSON DB에 저장
+    npc_generator.html의 '/api/npc/save' fetch 요청 대응
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"success": False, "error": "No data provided"}), 400
+
+        # 서비스 계층을 통해 JSON 파일에 저장
+        saved_entity = save_custom_npc(data)
+
+        return jsonify({
+            "success": True,
+            "message": "저장되었습니다.",
+            "data": saved_entity
+        })
+    except Exception as e:
+        logger.error(f"NPC Save Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 # --- [프리셋 관리 (DB 기반)] ---

@@ -29,18 +29,31 @@
 
         #global-error { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(50, 0, 0, 0.9); color: #ffcccc; z-index: 9999; padding: 20px; overflow: auto; white-space: pre-wrap; font-family: monospace; }
         .version-badge { position: fixed; bottom: 16px; right: 16px; font-size: 10px; color: #9ca3af; font-family: 'Courier New', monospace; z-index: 1000; pointer-events: none; user-select: none; }
+
+        /* 토스트 애니메이션 */
+        @keyframes fade-in-up {
+            from { opacity: 0; transform: translate(-50%, 20px); }
+            to { opacity: 1; transform: translate(-50%, 0); }
+        }
+        .animate-toast { animation: fade-in-up 0.3s ease-out forwards; }
     </style>
 </head>
 <body class="bg-black text-white h-screen w-screen">
 
     <div id="global-error"></div>
-    <div id="root" class="w-full h-full"></div>
+    <div id="root" class="w-full h-full">
+        <div class="flex items-center justify-center h-full flex-col text-gray-500 gap-4">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+            <p class="text-lg">초기화 중...</p>
+        </div>
+    </div>
 
     {% raw %}
     <script type="text/babel">
         try {
             const { useState, useRef, useEffect } = React;
 
+            // --- 아이콘 컴포넌트 ---
             const getIconPath = (name) => {
                 const icons = {
                     'settings': 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z',
@@ -63,6 +76,7 @@
                 return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{pathData.startsWith('polygon|') ? <polygon points={pathData.split('|')[1]} /> : <path d={pathData} />}</svg>;
             };
 
+            // --- UI 컴포넌트 ---
             const Modal = ({ isOpen, title, children, onClose, type = 'info' }) => {
                 if (!isOpen) return null;
                 const colors = type === 'error' ? 'red' : type === 'success' ? 'green' : 'gray';
@@ -73,7 +87,7 @@
                                 <h3 className={`text-lg font-bold text-${colors === 'gray' ? 'white' : colors + '-400'} flex items-center gap-2`}>{type === 'success' && <Icon name="check-circle" />}{type === 'error' && <Icon name="alert-triangle" />}{title}</h3>
                                 {onClose && <button onClick={onClose}><Icon name="x" size={20} className="text-gray-500 hover:text-white" /></button>}
                             </div>
-                            <div className="p-6 text-gray-300 text-sm leading-relaxed">{children}</div>
+                            <div className="p-6 text-gray-300 text-sm leading-relaxed max-h-[70vh] overflow-y-auto custom-scrollbar">{children}</div>
                         </div>
                     </div>
                 );
@@ -89,7 +103,7 @@
                                 <Icon name={isError ? 'alert-triangle' : 'loader-2'} size={48} className={`${isError ? 'text-red-400' : 'animate-spin text-blue-400'}`} />
                             </div>
                             <h3 className="text-2xl font-bold text-white mb-2">{isError ? '생성 오류' : '시나리오 생성 중...'}</h3>
-                            <p className="text-sm text-gray-400 mb-6">{buildStatus.detail}</p>
+                            <p className="text-sm text-gray-400 mb-6">{buildStatus.detail || '잠시만 기다려주세요...'}</p>
                             <div className="w-full bg-gray-800 rounded-full h-4 mb-3 overflow-hidden border border-white/5 relative">
                                 <div className={`h-full transition-all duration-500 ease-out relative ${isError ? 'bg-red-600' : 'bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500'}`} style={{ width: `${progress}%` }}>{!isError && <div className="progress-shine"></div>}</div>
                             </div>
@@ -136,6 +150,7 @@
                 );
             };
 
+            // --- 메인 컴포넌트 ---
             function ScenarioBuilder() {
                 // 노드 기본값 설정 (필수 항목 포함)
                 const [nodes, setNodes] = useState([
@@ -150,9 +165,7 @@
                 const [isNpcGeneratorOpen, setIsNpcGeneratorOpen] = useState(false);
                 const [toast, setToast] = useState({ show: false, message: '', type: 'info' });
 
-                // ... (History, Zoom, Pan state 등 기존 코드 유지)
-                const [history, setHistory] = useState([]);
-                const [historyIndex, setHistoryIndex] = useState(-1);
+                // UI 상태
                 const [zoom, setZoom] = useState(1);
                 const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
                 const [isPanning, setIsPanning] = useState(false);
@@ -167,6 +180,9 @@
                 const [isLoading, setIsLoading] = useState(false);
                 const [progress, setProgress] = useState(0);
                 const [resultModal, setResultModal] = useState({ open: false });
+
+                // 모델 선택
+                const [selectedModel, setSelectedModel] = useState('openai/tngtech/deepseek-r1t2-chimera:free');
 
                 // Validation Logic
                 const validateNode = (node) => {
@@ -186,12 +202,32 @@
                     setTimeout(() => setToast({ show: false, message: '', type: 'info' }), 3000);
                 };
 
+                // 메시지 수신 (NPC 생성기에서)
+                useEffect(() => {
+                    const handleMessage = (event) => {
+                        if (event.data.type === 'ADD_NPC') {
+                            const entity = event.data.payload;
+                            if (entity.isEnemy) {
+                                setGlobalEnemies(prev => [...prev, entity]);
+                                showToast(`적 '${entity.name}' 추가됨`, 'success');
+                            } else {
+                                setGlobalNpcs(prev => [...prev, entity]);
+                                showToast(`NPC '${entity.name}' 추가됨`, 'success');
+                            }
+                        }
+                    };
+                    window.addEventListener('message', handleMessage);
+                    return () => window.removeEventListener('message', handleMessage);
+                }, []);
+
+                // 캔버스 인터랙션 핸들러
                 const handleMouseDownNode = (e, id) => {
                     e.stopPropagation();
                     if (connectingSourceId) {
                         // 연결 시도
                         if (connectingSourceId !== id) {
                             const sourceNode = nodes.find(n => n.id === connectingSourceId);
+                            // 필수 항목 미입력 시 연결 차단
                             if (!validateNode(sourceNode)) {
                                 showToast("필수 사항을 모두 입력해야 연결할 수 있습니다!", "error");
                                 setConnectingSourceId(null);
@@ -213,7 +249,6 @@
                     }
                 };
 
-                // ... (기본 이벤트 핸들러들: handleCanvasMouseMove, handleCanvasMouseUp, handleWheel 등 유지)
                 const handleCanvasMouseMove = (e) => {
                     if(!canvasRef.current) return;
                     const rect = canvasRef.current.getBoundingClientRect();
@@ -239,36 +274,10 @@
                     }
                 };
 
-                useEffect(() => {
-                    const handleMessage = (event) => {
-                        if (event.data.type === 'ADD_NPC') {
-                            const entity = event.data.payload;
-                            if (entity.isEnemy) {
-                                setGlobalEnemies(prev => [...prev, entity]);
-                                showToast(`적 '${entity.name}' 추가됨`, 'success');
-                            } else {
-                                setGlobalNpcs(prev => [...prev, entity]);
-                                showToast(`NPC '${entity.name}' 추가됨`, 'success');
-                            }
-                        }
-                    };
-                    window.addEventListener('message', handleMessage);
-                    return () => window.removeEventListener('message', handleMessage);
-                }, []);
-
                 const updateNodeData = (key, value) => {
                     if (!selectedNodeId) return;
                     setNodes(p => p.map(n => n.id === selectedNodeId ? { ...n, data: { ...n.data, [key]: value } } : n));
                 };
-
-                // 아이콘 등 유틸리티 (기존 유지)
-                const NODE_WIDTH = 200; const NODE_HEIGHT = 80;
-                // ... (getConnectionPoints, createPath 등은 생략된 부분 없이 포함되어야 함)
-                const getConnectionPoints = (s, t) => {
-                    const sx = s.x + NODE_WIDTH/2, sy = s.y + NODE_HEIGHT/2, tx = t.x + NODE_WIDTH/2, ty = t.y + NODE_HEIGHT/2;
-                    return { sx: sx < tx ? s.x + NODE_WIDTH : s.x, sy, tx: sx < tx ? t.x : t.x + NODE_WIDTH, ty };
-                };
-                // 단순화된 path 로직 사용 (위 코드 참고)
 
                 const addNode = (type) => {
                     const id = `${type}-${Date.now()}`;
@@ -285,18 +294,102 @@
                     if (selectedNodeId === id) setSelectedNodeId(null);
                 };
 
-                const handleGenerate = async () => { /* 기존 로직 유지, 필요시 validation 추가 가능 */ };
+                // 아이콘 등 유틸리티
+                const NODE_WIDTH = 200; const NODE_HEIGHT = 80;
+                const getConnectionPoints = (s, t) => {
+                    const sx = s.x + NODE_WIDTH/2, sy = s.y + NODE_HEIGHT/2, tx = t.x + NODE_WIDTH/2, ty = t.y + NODE_HEIGHT/2;
+                    // 단순화된 곡선 연결점 계산 (좌우 연결 선호)
+                    if (Math.abs(s.x - t.x) > Math.abs(s.y - t.y)) {
+                        return { sx: s.x < t.x ? s.x + NODE_WIDTH : s.x, sy, tx: s.x < t.x ? t.x : t.x + NODE_WIDTH, ty };
+                    } else {
+                        return { sx, sy: s.y < t.y ? s.y + NODE_HEIGHT : s.y, tx, ty: s.y < t.y ? t.y : t.y + NODE_HEIGHT };
+                    }
+                };
 
-                // 렌더링
+                // --- 시나리오 생성 로직 (Validation 포함) ---
+                const handleGenerate = async () => {
+                    // 1. 최소 노드 개수 확인
+                    if (nodes.length < 2) {
+                        setResultModal({ open: true, type: 'error', title: '생성 불가', message: '최소한 하나의 장면 노드가 추가되어야 합니다.' });
+                        return;
+                    }
+
+                    // 2. 전체 노드 필수 항목 검증
+                    const invalidNodes = nodes.filter(n => !validateNode(n));
+                    if (invalidNodes.length > 0) {
+                        const names = invalidNodes.map(n => n.data.title || n.data.label || '제목 없음').join(', ');
+                        setResultModal({
+                            open: true,
+                            type: 'error',
+                            title: '필수 항목 누락',
+                            message: `다음 노드의 필수 항목(*)이 비어있습니다:\n\n${names}\n\n모든 필수 항목을 입력해야 시나리오를 생성할 수 있습니다.`
+                        });
+                        return;
+                    }
+
+                    setProgress(0);
+                    setIsLoading(true);
+                    setBuildStatus({
+                        status: 'building', step: '0/5', detail: '구조 검증 및 빌드 준비 중...', progress: 0
+                    });
+
+                    // SSE 연결
+                    const eventSource = new EventSource('/api/build_progress');
+                    eventSource.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            setBuildStatus(data);
+                            setProgress(data.progress || 0);
+                            if (data.status === 'completed' || data.status === 'error') eventSource.close();
+                        } catch (e) { console.error('SSE parse error:', e); }
+                    };
+                    eventSource.onerror = () => eventSource.close();
+
+                    try {
+                        const response = await fetch('/api/init_game', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ nodes, edges: connections, npcs: [...globalNpcs, ...globalEnemies], model: selectedModel })
+                        });
+
+                        eventSource.close();
+
+                        if (!response.ok) {
+                            const errData = await response.json();
+                            throw new Error(errData.error || '서버 오류가 발생했습니다.');
+                        }
+
+                        setProgress(100);
+                        await new Promise(r => setTimeout(r, 300));
+
+                        const data = await response.json();
+
+                        // 결과 모달 표시
+                        setResultModal({
+                            open: true, type: 'success', title: '생성 완료!',
+                            message: `"${data.title || '새 시나리오'}" 생성이 완료되었습니다.`,
+                            data: data
+                        });
+
+                    } catch (error) {
+                        eventSource.close();
+                        setBuildStatus(prev => ({ ...prev, status: 'error', detail: error.message }));
+                        setResultModal({ open: true, type: 'error', title: '생성 실패', message: error.message });
+                    } finally {
+                        setIsLoading(false);
+                    }
+                };
+
                 return (
                     <div className="flex h-screen bg-black text-white font-sans overflow-hidden no-select">
                         {toast.show && (
-                            <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[200] px-4 py-2 rounded shadow-lg font-bold animate-fade-in ${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'}`}>
+                            <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[200] px-4 py-2 rounded shadow-lg font-bold animate-toast ${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'}`}>
                                 {toast.message}
                             </div>
                         )}
 
                         <LoadingOverlay isOpen={isLoading} progress={progress} buildStatus={buildStatus} />
+
                         <NpcGeneratorModal
                             isOpen={isNpcGeneratorOpen}
                             onClose={() => setIsNpcGeneratorOpen(false)}
@@ -308,11 +401,21 @@
 
                         {/* 사이드바 */}
                         <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col z-20 shadow-xl">
-                            <div className="p-4 border-b border-gray-800"><h1 className="text-xl font-bold text-blue-400">Builder</h1></div>
+                            <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+                                <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">Builder</h1>
+                                <a href="/" className="text-gray-500 hover:text-white"><Icon name="log-out" size={18} /></a>
+                            </div>
                             <div className="p-4 space-y-3">
-                                <button onClick={() => addNode('scene')} className="w-full py-2 bg-gray-800 border border-gray-700 rounded text-indigo-300 hover:bg-gray-700">씬 추가</button>
-                                <button onClick={() => addNode('ending')} className="w-full py-2 bg-gray-800 border border-gray-700 rounded text-red-300 hover:bg-gray-700">엔딩 추가</button>
-                                <button onClick={() => setIsNpcGeneratorOpen(true)} className="w-full py-2 bg-gray-800 border border-gray-700 rounded text-green-300 hover:bg-gray-700">NPC/적 생성</button>
+                                <button onClick={() => addNode('scene')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-indigo-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-indigo-500 rounded-full"></div> 씬 추가</button>
+                                <button onClick={() => addNode('ending')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-red-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-red-500 rounded-full"></div> 엔딩 추가</button>
+                                <button onClick={() => setIsNpcGeneratorOpen(true)} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-green-300 flex items-center justify-center gap-2"><Icon name="users" size={16} /> NPC/적 생성</button>
+                            </div>
+
+                            {/* [복구됨] 시나리오 생성 버튼 */}
+                            <div className="mt-auto p-4 border-t border-gray-800">
+                                <button onClick={handleGenerate} className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-lg shadow-lg flex items-center justify-center gap-2">
+                                    <Icon name="play" size={18} /> 시나리오 생성
+                                </button>
                             </div>
                         </div>
 
@@ -324,13 +427,22 @@
                              }}
                              onWheel={(e) => { setZoom(Math.min(Math.max(zoom + (e.deltaY * -0.001), 0.25), 2)); }}>
 
+                            {/* 줌 컨트롤 (우상단) */}
+                            <div className="absolute top-4 right-4 z-30 flex flex-col gap-2 bg-gray-900/90 rounded-lg p-2 border border-gray-700">
+                                <button onClick={() => setZoom(z => Math.min(z + 0.1, 2))} className="p-2 hover:bg-gray-700 rounded"><Icon name="plus" size={16}/></button>
+                                <button onClick={() => {setZoom(1); setPanOffset({x:0,y:0})}} className="p-2 hover:bg-gray-700 rounded text-xs">{Math.round(zoom*100)}%</button>
+                                <button onClick={() => setZoom(z => Math.max(z - 0.1, 0.25))} className="p-2 hover:bg-gray-700 rounded"><Icon name="minus" size={16}/></button>
+                            </div>
+
                             <div style={{ transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`, transformOrigin: '0 0', width: '100%', height: '100%', position: 'absolute' }}>
                                 <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" style={{ overflow: 'visible' }}>
                                     {connections.map(c => {
                                         const s = nodes.find(n => n.id === c.source), t = nodes.find(n => n.id === c.target);
                                         if(!s||!t) return null;
                                         const {sx,sy,tx,ty} = getConnectionPoints(s,t);
-                                        return <path key={c.id} d={`M ${sx} ${sy} L ${tx} ${ty}`} className="connection-line" stroke="gray" strokeWidth="2" />;
+                                        // 베지어 곡선
+                                        const path = `M ${sx} ${sy} C ${sx + 50} ${sy}, ${tx - 50} ${ty}, ${tx} ${ty}`;
+                                        return <path key={c.id} d={path} className="connection-line" />;
                                     })}
                                     {connectingSourceId && (() => {
                                         const s = nodes.find(n => n.id === connectingSourceId);
@@ -340,91 +452,109 @@
                                 </svg>
                                 {nodes.map(node => (
                                     <div key={node.id} style={{ left: node.x, top: node.y }} onMouseDown={(e) => handleMouseDownNode(e, node.id)}
-                                         className={`absolute w-[200px] rounded-lg border-2 bg-gray-900 z-10 shadow-xl ${selectedNodeId === node.id ? 'border-white ring-2 ring-blue-500' : node.type==='start'?'border-blue-600':node.type==='ending'?'border-red-600':'border-indigo-600'}`}>
-                                        <div className="p-2 text-sm font-bold flex justify-between">
-                                            <span>{node.type}</span>
-                                            <button onClick={(e)=>{e.stopPropagation(); setConnectingSourceId(node.id);}} className="hover:text-white text-gray-400"><Icon name="link" size={14}/></button>
+                                         className={`absolute w-[200px] rounded-lg border-2 bg-gray-900 z-10 shadow-xl group ${selectedNodeId === node.id ? 'border-white ring-2 ring-blue-500 z-20' : node.type==='start'?'border-blue-600':node.type==='ending'?'border-red-600':'border-indigo-600'}`}>
+                                        <div className={`p-2 rounded-t-md text-sm font-bold flex justify-between items-center ${node.type==='start'?'bg-blue-900/50 text-blue-200':node.type==='ending'?'bg-red-900/50 text-red-200':'bg-indigo-900/50 text-indigo-200'}`}>
+                                            <span className="truncate pl-2">{node.type==='start'?'설정':node.type==='scene'?(node.data.scene_type==='battle'?'전투':'장면'):'엔딩'}</span>
+                                            <button onClick={(e)=>{e.stopPropagation(); setConnectingSourceId(node.id); setSelectedNodeId(node.id);}} className="p-1 hover:bg-white/20 rounded"><Icon name="link" size={14}/></button>
                                         </div>
-                                        <div className="p-3 text-xs text-gray-300 truncate">{node.data.title || node.data.label || '제목 없음'}</div>
+                                        <div className="p-3 text-xs text-gray-300 min-h-[50px]">
+                                            <div className="font-bold truncate mb-1">{node.data.title || node.data.label || '제목 없음'}</div>
+                                            <div className="text-gray-500 line-clamp-2">{node.data.description || node.data.prologue || '내용 없음'}</div>
+                                            {/* 아이콘 표시 */}
+                                            {node.data.scene_type === 'battle' && <div className="absolute top-1 right-8 text-red-400"><Icon name="swords" size={14} /></div>}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
 
                         {/* 속성 패널 */}
-                        <div className="w-80 bg-gray-900 border-l border-gray-800 overflow-y-auto z-20 p-6 space-y-4">
+                        <div className="w-80 bg-gray-900 border-l border-gray-800 overflow-y-auto z-20 p-6 space-y-4 shadow-xl">
                             {selectedNodeId ? (() => {
                                 const node = nodes.find(n => n.id === selectedNodeId);
                                 if (!node) return null;
                                 return (
                                     <>
-                                        <h2 className="text-lg font-bold border-b border-gray-700 pb-2 mb-4">속성 편집</h2>
+                                        <h2 className="text-lg font-bold border-b border-gray-700 pb-2 mb-4">속성 편집 <span className="text-xs bg-gray-800 px-2 py-0.5 rounded text-gray-400">{node.type}</span></h2>
 
-                                        {/* Start Node */}
+                                        {/* Start Node Form */}
                                         {node.type === 'start' && (
                                             <>
-                                                <div><label className="text-xs text-gray-400">제목 <span className="text-red-500">*</span></label><input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" value={node.data.label||''} onChange={e=>updateNodeData('label', e.target.value)} /></div>
-                                                <div><label className="text-xs text-gray-400">배경 묘사 <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={3} value={node.data.background||''} onChange={e=>updateNodeData('background', e.target.value)} /></div>
-                                                <div><label className="text-xs text-blue-400">공개 프롤로그 <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={5} value={node.data.prologue||''} onChange={e=>updateNodeData('prologue', e.target.value)} /></div>
-                                                <div><label className="text-xs text-red-400">시스템 설정 <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-900 border border-red-900 rounded p-2 text-sm" rows={5} value={node.data.gm_notes||''} onChange={e=>updateNodeData('gm_notes', e.target.value)} /></div>
+                                                <div><label className="text-xs text-gray-400 block mb-1">제목 <span className="text-red-500">*</span></label><input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" value={node.data.label||''} onChange={e=>updateNodeData('label', e.target.value)} placeholder="시나리오 제목" /></div>
+                                                <div><label className="text-xs text-gray-400 block mb-1">배경 묘사 <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={3} value={node.data.background||''} onChange={e=>updateNodeData('background', e.target.value)} placeholder="전체적인 배경 분위기" /></div>
+                                                <div><label className="text-xs text-blue-400 block mb-1">공개 프롤로그 <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={5} value={node.data.prologue||''} onChange={e=>updateNodeData('prologue', e.target.value)} placeholder="플레이어에게 보여질 도입부" /></div>
+                                                <div><label className="text-xs text-red-400 block mb-1">시스템 설정 (GM 노트) <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-900 border border-red-900 rounded p-2 text-sm" rows={5} value={node.data.gm_notes||''} onChange={e=>updateNodeData('gm_notes', e.target.value)} placeholder="비공개 설정, 진실, 트릭 등" /></div>
                                             </>
                                         )}
 
-                                        {/* Scene Node */}
+                                        {/* Scene Node Form */}
                                         {node.type === 'scene' && (
                                             <>
-                                                <div><label className="text-xs text-gray-400">장면 유형</label>
+                                                <div><label className="text-xs text-gray-400 block mb-1">장면 유형</label>
                                                     <select className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" value={node.data.scene_type||'normal'} onChange={e=>updateNodeData('scene_type',e.target.value)}>
                                                         <option value="normal">일반 (Normal)</option>
                                                         <option value="battle">전투 (Battle)</option>
                                                     </select>
                                                 </div>
-                                                <div><label className="text-xs text-gray-400">제목 <span className="text-red-500">*</span></label><input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" value={node.data.title||''} onChange={e=>updateNodeData('title', e.target.value)} /></div>
-                                                <div><label className="text-xs text-gray-400">배경 묘사 <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={3} value={node.data.background||''} onChange={e=>updateNodeData('background', e.target.value)} /></div>
-                                                <div><label className="text-xs text-gray-400">진입/진행 트리거 <span className="text-red-500">*</span></label><input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" value={node.data.trigger||''} onChange={e=>updateNodeData('trigger', e.target.value)} placeholder="예: 문을 연다, 적을 처치한다" /></div>
+                                                <div><label className="text-xs text-gray-400 block mb-1">제목 <span className="text-red-500">*</span></label><input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" value={node.data.title||''} onChange={e=>updateNodeData('title', e.target.value)} /></div>
+                                                <div><label className="text-xs text-gray-400 block mb-1">배경 묘사 <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={3} value={node.data.background||''} onChange={e=>updateNodeData('background', e.target.value)} /></div>
+                                                <div><label className="text-xs text-gray-400 block mb-1">진입/진행 트리거 <span className="text-red-500">*</span></label><input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" value={node.data.trigger||''} onChange={e=>updateNodeData('trigger', e.target.value)} placeholder="예: 문을 연다, 적을 처치한다" /></div>
+                                                <div><label className="text-xs text-gray-400 block mb-1">내용 (선택)</label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={3} value={node.data.description||''} onChange={e=>updateNodeData('description', e.target.value)} /></div>
 
                                                 {/* 선택 사항 */}
                                                 <div className="pt-4 border-t border-gray-800">
                                                     <h3 className="text-xs font-bold text-gray-500 mb-2">선택 사항 (Optional)</h3>
-                                                    <div><label className="text-xs text-gray-400">추가 룰</label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={2} value={node.data.rule||''} onChange={e=>updateNodeData('rule', e.target.value)} /></div>
+                                                    <div className="mb-2"><label className="text-xs text-gray-400 block mb-1">추가 룰</label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={2} value={node.data.rule||''} onChange={e=>updateNodeData('rule', e.target.value)} /></div>
 
-                                                    <div className="mt-2">
-                                                        <label className="text-xs text-green-400 flex justify-between">NPC 등장 <span className="cursor-pointer" onClick={()=>setIsNpcGeneratorOpen(true)}>+생성</span></label>
-                                                        <div className="max-h-24 overflow-y-auto border border-gray-800 rounded p-1">{globalNpcs.map((n,i)=>(
-                                                            <label key={i} className="flex items-center gap-2 text-xs p-1 hover:bg-gray-800"><input type="checkbox" checked={(node.data.npcs||[]).includes(n.name)} onChange={e=>updateNodeData('npcs', e.target.checked?[...(node.data.npcs||[]),n.name]:(node.data.npcs||[]).filter(x=>x!==n.name))} />{n.name}</label>
+                                                    <div className="mt-3">
+                                                        <label className="text-xs text-green-400 flex justify-between font-bold mb-1">NPC 등장 <span className="cursor-pointer hover:text-white" onClick={()=>setIsNpcGeneratorOpen(true)}>+생성</span></label>
+                                                        <div className="max-h-32 overflow-y-auto border border-gray-800 rounded p-1 bg-gray-800/50">{globalNpcs.length === 0 ? <p className="text-[10px] text-gray-600 p-1">생성된 NPC 없음</p> : globalNpcs.map((n,i)=>(
+                                                            <label key={i} className="flex items-center gap-2 text-xs p-1.5 hover:bg-gray-700 rounded cursor-pointer"><input type="checkbox" checked={(node.data.npcs||[]).includes(n.name)} onChange={e=>updateNodeData('npcs', e.target.checked?[...(node.data.npcs||[]),n.name]:(node.data.npcs||[]).filter(x=>x!==n.name))} className="rounded bg-gray-600 border-gray-500 text-green-500" />{n.name}</label>
                                                         ))}</div>
                                                     </div>
 
-                                                    <div className="mt-2">
-                                                        <label className="text-xs text-red-400 flex justify-between">적(Enemy) 등장 <span className="cursor-pointer" onClick={()=>setIsNpcGeneratorOpen(true)}>+생성</span></label>
-                                                        <div className="max-h-24 overflow-y-auto border border-gray-800 rounded p-1">{globalEnemies.map((e,i)=>(
-                                                            <label key={i} className="flex items-center gap-2 text-xs p-1 hover:bg-gray-800"><input type="checkbox" checked={(node.data.enemies||[]).includes(e.name)} onChange={ev=>updateNodeData('enemies', ev.target.checked?[...(node.data.enemies||[]),e.name]:(node.data.enemies||[]).filter(x=>x!==e.name))} />{e.name} (LV.{e.difficulty})</label>
+                                                    <div className="mt-3">
+                                                        <label className="text-xs text-red-400 flex justify-between font-bold mb-1">적(Enemy) 등장 <span className="cursor-pointer hover:text-white" onClick={()=>setIsNpcGeneratorOpen(true)}>+생성</span></label>
+                                                        <div className="max-h-32 overflow-y-auto border border-gray-800 rounded p-1 bg-gray-800/50">{globalEnemies.length === 0 ? <p className="text-[10px] text-gray-600 p-1">생성된 적 없음</p> : globalEnemies.map((e,i)=>(
+                                                            <label key={i} className="flex items-center gap-2 text-xs p-1.5 hover:bg-gray-700 rounded cursor-pointer"><input type="checkbox" checked={(node.data.enemies||[]).includes(e.name)} onChange={ev=>updateNodeData('enemies', ev.target.checked?[...(node.data.enemies||[]),e.name]:(node.data.enemies||[]).filter(x=>x!==e.name))} className="rounded bg-gray-600 border-gray-500 text-red-500" />{e.name} (LV.{e.difficulty})</label>
                                                         ))}</div>
                                                     </div>
                                                 </div>
                                             </>
                                         )}
 
-                                        {/* Ending Node */}
+                                        {/* Ending Node Form */}
                                         {node.type === 'ending' && (
                                             <>
-                                                <div><label className="text-xs text-gray-400">제목</label><input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" value={node.data.title||''} onChange={e=>updateNodeData('title', e.target.value)} /></div>
-                                                <div><label className="text-xs text-gray-400">배경 묘사 <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={3} value={node.data.background||''} onChange={e=>updateNodeData('background', e.target.value)} /></div>
-                                                <div><label className="text-xs text-gray-400">엔딩 문구 <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={5} value={node.data.description||''} onChange={e=>updateNodeData('description', e.target.value)} /></div>
+                                                <div><label className="text-xs text-gray-400 block mb-1">제목</label><input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" value={node.data.title||''} onChange={e=>updateNodeData('title', e.target.value)} /></div>
+                                                <div><label className="text-xs text-gray-400 block mb-1">배경 묘사 <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={3} value={node.data.background||''} onChange={e=>updateNodeData('background', e.target.value)} /></div>
+                                                <div><label className="text-xs text-gray-400 block mb-1">엔딩 문구 <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={5} value={node.data.description||''} onChange={e=>updateNodeData('description', e.target.value)} /></div>
                                             </>
                                         )}
 
-                                        <button onClick={()=>deleteNode(node.id)} className="w-full py-2 bg-red-900/50 hover:bg-red-900 text-red-200 rounded mt-4 text-xs">노드 삭제</button>
+                                        <button onClick={()=>deleteNode(node.id)} className="w-full py-2 bg-red-900/50 hover:bg-red-900 text-red-200 rounded mt-6 text-xs transition-colors border border-red-900/50">노드 삭제</button>
                                     </>
                                 );
-                            })() : <div className="text-center text-gray-500 mt-10">노드를 선택하세요</div>}
+                            })() : <div className="text-center text-gray-500 mt-10 flex flex-col items-center"><Icon name="settings" size={48} className="opacity-20 mb-2"/><p>노드를 선택하세요</p></div>}
                         </div>
+
+                        {/* 결과 모달 */}
+                        <Modal isOpen={resultModal.open} type={resultModal.type} title={resultModal.title} onClose={() => setResultModal({ ...resultModal, open: false })}>
+                             <div className="whitespace-pre-wrap text-base font-medium text-white mb-4">{resultModal.message}</div>
+                             <div className="flex justify-end gap-2 mt-4">
+                                {resultModal.type === 'success' && (
+                                    <a href="/views/player" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold transition-colors">플레이하러 가기</a>
+                                )}
+                                <button onClick={() => setResultModal({ ...resultModal, open: false })} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white">확인</button>
+                            </div>
+                        </Modal>
+
                     </div>
                 );
             }
             const root = ReactDOM.createRoot(document.getElementById('root'));
             root.render(<ScenarioBuilder />);
-        } catch (e) { console.error(e); }
+        } catch (e) { document.getElementById('global-error').style.display='block'; document.getElementById('global-error').innerText="[Init Error] "+e.message; }
     </script>
     {% endraw %}
 </body>
