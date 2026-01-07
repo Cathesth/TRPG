@@ -77,3 +77,30 @@ class Preset(db.Model):
             'created_at': self.created_at.timestamp(),
             'updated_at': self.updated_at.timestamp()
         }
+
+
+# [신규 추가] NPC/Enemy 저장을 위한 모델
+class CustomNPC(db.Model):
+    __tablename__ = 'custom_npcs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    # npc 또는 enemy 구분
+    type = db.Column(db.String(50), default='npc')
+    # 상세 데이터 (성격, 배경, 스탯 등 JSON 통째로 저장)
+    data = db.Column(JSON_TYPE, nullable=False)
+
+    # 소유자 (로그인 유저가 만든 경우)
+    author_id = db.Column(db.String(50), db.ForeignKey('users.id'), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'type': self.type,
+            'data': self.data,
+            'author': self.author_id,
+            'created_at': self.created_at.timestamp()
+        }
