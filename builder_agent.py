@@ -34,9 +34,10 @@ def report_progress(status, step, detail, progress, phase=None):
             "step": step,
             "detail": detail,
             "progress": progress,
-            "current_phase": phase or "initializing" # 프론트엔드가 기대하는 키 추가
+            "current_phase": phase or "initializing"  # 프론트엔드가 기대하는 키 추가
         }
         _progress_callback(**payload)
+
 
 # --- [유틸리티] JSON 파싱 헬퍼 ---
 def parse_json_garbage(text: str) -> dict:
@@ -425,25 +426,28 @@ def finalize_build(state: BuilderState):
     final_prologue = generated_prologue if generated_prologue else raw_prologue
     final_hidden = generated_hidden if generated_hidden else raw_gm_notes
 
-    # [중요] 생성된 씬 내용을 raw_graph 노드에 역으로 업데이트 (프론트엔드 동기화)
+    # [수정됨] 생성된 씬 내용을 raw_graph 노드에 역으로 업데이트 (프론트엔드 동기화 + 대소문자 호환)
     raw_nodes = state["graph_data"].get("nodes", [])
-    scene_map = {s["scene_id"]: s for s in state["scenes"]}
-    ending_map = {e["ending_id"]: e for e in state["endings"]}
+
+    # ID 매칭을 위해 소문자 키 맵 생성
+    scene_map = {s["scene_id"].lower(): s for s in state["scenes"]}
+    ending_map = {e["ending_id"].lower(): e for e in state["endings"]}
 
     for node in raw_nodes:
-        nid = node["id"]
+        nid = node["id"].lower()  # raw_graph ID도 소문자로 변환하여 비교
+
         if nid in scene_map:
-            # 생성된 씬 데이터로 노드 업데이트
-            node["data"]["title"] = scene_map[nid]["name"]
-            node["data"]["description"] = scene_map[nid]["description"]
-            node["data"]["npcs"] = scene_map[nid]["npcs"]
+            tgt = scene_map[nid]
+            node["data"]["title"] = tgt["name"]
+            node["data"]["description"] = tgt["description"]
+            node["data"]["npcs"] = tgt["npcs"]
+
         elif nid in ending_map:
-            # 생성된 엔딩 데이터로 노드 업데이트
-            node["data"]["title"] = ending_map[nid]["title"]
-            node["data"]["description"] = ending_map[nid]["description"]
+            tgt = ending_map[nid]
+            node["data"]["title"] = tgt["title"]
+            node["data"]["description"] = tgt["description"]
 
     # [수정: 초기 스탯 파싱 로직 강화]
-    # gm_notes(final_hidden) 내용을 기반으로 스탯을 좀 더 스마트하게 설정
     initial_player_state = {
         "hp": 100,
         "inventory": []
@@ -457,7 +461,6 @@ def finalize_build(state: BuilderState):
         initial_player_state.update({"sanity": 100, "flashlight": 1})
 
     # 2. [신규 추가] LLM을 이용한 GM 노트 파싱 (Override)
-    # gm_notes(final_hidden)에 구체적인 수치가 있다면 추출하여 덮어씌웁니다.
     try:
         extract_llm = LLMFactory.get_llm(state.get("model_name"), temperature=0.1)  # 정확도를 위해 낮은 온도 사용
         parser = JsonOutputParser(pydantic_object=InitialStateExtractor)
@@ -490,11 +493,11 @@ def finalize_build(state: BuilderState):
         "title": scenario_title,
         "desc": scenario_data.get("summary", ""),
         "prologue": final_prologue,
-        "world_settings": final_hidden, # GM Note (Engine에서 사용)
+        "world_settings": final_hidden,  # GM Note (Engine에서 사용)
         "player_status": final_hidden,  # Legacy
         "prologue_connects_to": prologue_connects,
         "scenario": scenario_data,
-        "worlds": state["worlds"], # Global World Info (Engine에서 사용)
+        "worlds": state["worlds"],  # Global World Info (Engine에서 사용)
         "npcs": state["characters"],
         "scenes": state["scenes"],
         "endings": state["endings"],
