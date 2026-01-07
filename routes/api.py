@@ -127,17 +127,47 @@ def update_build_progress(**kwargs):
 async def get_build_progress_sse():
     def generate():
         last_data = None
+        start_time = time.time()
+        max_duration = 300  # 5분 타임아웃
+
+        # 즉시 현재 상태 전송
+        with build_lock:
+            current_data = json.dumps(build_progress)
+        yield f"data: {current_data}\n\n"
+        last_data = current_data
+
         while True:
+            # 타임아웃 체크
+            if time.time() - start_time > max_duration:
+                with build_lock:
+                    build_progress.update({"status": "error", "detail": "시간 초과"})
+                    yield f"data: {json.dumps(build_progress)}\n\n"
+                break
+
             with build_lock:
                 current_data = json.dumps(build_progress)
+
             if current_data != last_data:
                 yield f"data: {current_data}\n\n"
                 last_data = current_data
+
+            # 완료 또는 에러 상태면 종료
+            with build_lock:
                 if build_progress["status"] in ["completed", "error"]:
                     break
+
             time.sleep(0.3)
 
     return StreamingResponse(generate(), media_type='text/event-stream')
+
+
+@api_router.post('/reset_build_progress')
+async def reset_build_progress():
+    """빌드 시작 전 진행 상태 초기화"""
+    global build_progress
+    with build_lock:
+        build_progress = {"status": "idle", "progress": 0}
+    return {"success": True}
 
 
 # --- [시나리오 관리] ---

@@ -333,17 +333,39 @@
                         status: 'building', step: '0/5', detail: '구조 검증 및 빌드 준비 중...', progress: 0
                     });
 
+                    // 서버 측 빌드 상태 초기화 (SSE 연결 전)
+                    try {
+                        await fetch('/api/reset_build_progress', { method: 'POST' });
+                    } catch (e) {
+                        console.warn('Failed to reset build progress:', e);
+                    }
+
                     // SSE 연결
                     const eventSource = new EventSource('/api/build_progress');
+                    let sseTimeout = setTimeout(() => {
+                        console.warn('SSE timeout - closing connection');
+                        eventSource.close();
+                    }, 310000); // 5분 10초 타임아웃
+
                     eventSource.onmessage = (event) => {
                         try {
                             const data = JSON.parse(event.data);
+                            console.log('SSE received:', data);
                             setBuildStatus(data);
                             setProgress(data.progress || 0);
-                            if (data.status === 'completed' || data.status === 'error') eventSource.close();
-                        } catch (e) { console.error('SSE parse error:', e); }
+                            if (data.status === 'completed' || data.status === 'error') {
+                                clearTimeout(sseTimeout);
+                                eventSource.close();
+                            }
+                        } catch (e) {
+                            console.error('SSE parse error:', e);
+                        }
                     };
-                    eventSource.onerror = () => eventSource.close();
+                    eventSource.onerror = (err) => {
+                        console.error('SSE error:', err);
+                        clearTimeout(sseTimeout);
+                        eventSource.close();
+                    };
 
                     try {
                         const response = await fetch('/api/init_game', {
@@ -559,3 +581,4 @@
     {% endraw %}
 </body>
 </html>
+
