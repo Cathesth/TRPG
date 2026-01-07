@@ -441,6 +441,11 @@
 
         // 시나리오 공개/비공개 토글 함수
         async function publishScenario(filename, btnElement) {
+            const card = btnElement.closest('.bg-dark-800');
+            const statusBadge = card.querySelector('span[class*="bg-green-900"], span[class*="bg-gray-700"]');
+            const currentStatus = statusBadge.textContent.trim();
+            const isCurrentlyPublic = currentStatus === 'PUBLIC';
+
             try {
                 const response = await fetch('/api/publish_scenario', {
                     method: 'POST',
@@ -451,18 +456,53 @@
                 const result = await response.json();
 
                 if (result.success) {
-                    // 성공 시 목록 새로고침
-                    alert(result.message || '상태가 변경되었습니다.');
-                    // htmx로 목록 다시 로드
-                    const currentFilter = document.querySelector('.bg-brand-purple')?.textContent?.includes('공개') ? 'public' : 'my';
-                    htmx.ajax('GET', `/api/scenarios?filter=${currentFilter}`, {target: '#scenario-grid', swap: 'innerHTML'});
+                    // UI 즉시 업데이트
+                    if (isCurrentlyPublic) {
+                        // PUBLIC -> PRIVATE
+                        statusBadge.className = 'ml-2 text-[10px] bg-gray-700 text-gray-300 px-1 rounded';
+                        statusBadge.textContent = 'PRIVATE';
+                    } else {
+                        // PRIVATE -> PUBLIC
+                        statusBadge.className = 'ml-2 text-[10px] bg-green-900 text-green-300 px-1 rounded';
+                        statusBadge.textContent = 'PUBLIC';
+                    }
+
+                    // 성공 메시지 표시 (토스트)
+                    showToast(result.message || '상태가 변경되었습니다.', 'success');
                 } else {
-                    alert('변경 실패: ' + (result.error || '알 수 없는 오류'));
+                    showToast('변경 실패: ' + (result.error || '알 수 없는 오류'), 'error');
                 }
             } catch (error) {
                 console.error('Publish error:', error);
-                alert('처리 중 오류가 발생했습니다.');
+                showToast('처리 중 오류가 발생했습니다.', 'error');
             }
+        }
+
+        // 토스트 메시지 표시 함수
+        function showToast(message, type = 'info') {
+            const bgColor = type === 'success' ? 'bg-green-900/90 border-green-500/30 text-green-100' :
+                           type === 'error' ? 'bg-red-900/90 border-red-500/30 text-red-100' :
+                           'bg-blue-900/90 border-blue-500/30 text-blue-100';
+
+            const icon = type === 'success' ? 'check-circle' :
+                        type === 'error' ? 'alert-circle' : 'info';
+
+            const toast = document.createElement('div');
+            toast.className = `fixed bottom-4 right-4 z-[100] ${bgColor} border px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3 animate-bounce-in`;
+            toast.innerHTML = `
+                <i data-lucide="${icon}" class="w-5 h-5"></i>
+                <span class="font-medium">${message}</span>
+            `;
+
+            document.body.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.style.transition = 'opacity 0.3s, transform 0.3s';
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(10px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
         }
 
         // 로그인/회원가입/로그아웃 등 기존 함수들
