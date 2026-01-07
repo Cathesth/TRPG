@@ -70,6 +70,51 @@ def view_scenes():
                            user=current_user)
 
 
+@views_bp.route('/views/scenes/edit/<scenario_id>')
+@login_required
+def view_scenes_edit(scenario_id):
+    """씬 맵 편집 모드"""
+    from services.scenario_service import ScenarioService
+
+    result, error = ScenarioService.get_scenario_for_edit(scenario_id, current_user.id)
+    if error:
+        return render_template('scenes_view.html',
+                               title="접근 권한 없음",
+                               scenario={"endings": [], "prologue_text": ""},
+                               scenes=[],
+                               current_scene_id=None,
+                               mermaid_code="graph TD\n    A[접근 권한이 없습니다]",
+                               scene_display_ids={},
+                               ending_display_ids={},
+                               edit_mode=False,
+                               scenario_id=None,
+                               version=get_full_version(),
+                               user=current_user)
+
+    scenario = result['scenario']
+    title = scenario.get('title', 'Untitled')
+
+    # Mermaid 서비스로 차트 생성
+    chart_data = MermaidService.generate_chart(scenario, None)
+
+    return render_template('scenes_view.html',
+                           title=title,
+                           scenario=scenario,
+                           scenes=chart_data['filtered_scenes'],
+                           incoming_conditions=chart_data['incoming_conditions'],
+                           ending_incoming_conditions=chart_data['ending_incoming_conditions'],
+                           ending_names=chart_data['ending_names'],
+                           scene_names=chart_data['scene_names'],
+                           scene_display_ids=chart_data['scene_display_ids'],
+                           ending_display_ids=chart_data['ending_display_ids'],
+                           current_scene_id=None,
+                           mermaid_code=chart_data['mermaid_code'],
+                           edit_mode=True,
+                           scenario_id=scenario_id,
+                           version=get_full_version(),
+                           user=current_user)
+
+
 # [유지] NPC 생성 팝업 라우트 (builder_view.html의 JS에서 호출함)
 @views_bp.route('/builder/npc-generator')
 def npc_generator():

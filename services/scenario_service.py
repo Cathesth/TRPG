@@ -215,6 +215,93 @@ class ScenarioService:
             return False, str(e)
 
     @staticmethod
+    def update_scenario(scenario_id: str, updated_data: Dict[str, Any], user_id: str) -> Tuple[bool, Optional[str]]:
+        """
+        시나리오 업데이트 (편집 모드에서 사용)
+        updated_data: 전체 시나리오 JSON 또는 부분 업데이트 데이터
+        """
+        if not scenario_id or not user_id:
+            return False, "권한이 없습니다."
+
+        try:
+            db_id = int(scenario_id)
+            scenario = Scenario.query.get(db_id)
+
+            if not scenario:
+                return False, "시나리오를 찾을 수 없습니다."
+
+            if scenario.author_id != user_id:
+                return False, "수정 권한이 없습니다."
+
+            # 현재 데이터 가져오기
+            current_data = scenario.data
+            current_scenario = current_data.get('scenario', current_data)
+
+            # updated_data가 전체 시나리오인지 부분 업데이트인지 확인
+            if 'scenes' in updated_data or 'endings' in updated_data or 'prologue' in updated_data:
+                # 부분 업데이트: 특정 필드만 업데이트
+                for key, value in updated_data.items():
+                    current_scenario[key] = value
+            else:
+                # 전체 교체
+                current_scenario = updated_data
+
+            # title 업데이트 시 Scenario 모델도 업데이트
+            if 'title' in updated_data:
+                scenario.title = updated_data['title']
+
+            # DB에 저장
+            scenario.data = {
+                "scenario": current_scenario,
+                "player_vars": current_data.get('player_vars', DEFAULT_PLAYER_VARS.copy())
+            }
+            scenario.updated_at = datetime.utcnow()
+
+            db.session.commit()
+            return True, None
+
+        except ValueError:
+            return False, "잘못된 ID입니다."
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Update Error: {e}", exc_info=True)
+            return False, str(e)
+
+    @staticmethod
+    def get_scenario_for_edit(scenario_id: str, user_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """
+        편집용 시나리오 로드 (작성자만 가능)
+        """
+        if not scenario_id or not user_id:
+            return None, "권한이 없습니다."
+
+        try:
+            db_id = int(scenario_id)
+            scenario = Scenario.query.get(db_id)
+
+            if not scenario:
+                return None, "시나리오를 찾을 수 없습니다."
+
+            if scenario.author_id != user_id:
+                return None, "수정 권한이 없습니다."
+
+            full_data = scenario.data
+            s_content = full_data.get('scenario', full_data)
+
+            return {
+                'id': scenario.id,
+                'scenario': s_content,
+                'player_vars': full_data.get('player_vars', {}),
+                'is_public': scenario.is_public
+            }, None
+
+        except ValueError:
+            return None, "잘못된 ID입니다."
+        except Exception as e:
+            logger.error(f"Get for Edit Error: {e}", exc_info=True)
+            return None, str(e)
+
+    @staticmethod
     def is_recently_created(created_time: float, threshold_seconds: int = 600) -> bool:
         return (time.time() - created_time) < threshold_seconds
 

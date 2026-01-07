@@ -151,8 +151,9 @@ def list_scenarios():
         action_buttons = ""
         if is_owner:
             action_buttons += f"""
-            <button onclick="deleteScenario('{fid}', '{title_escaped}', this)" class="text-gray-500 hover:text-red-400 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-            <button onclick="publishScenario('{fid}', this)" class="text-gray-500 hover:text-green-400 p-1 ml-1"><i data-lucide="share-2" class="w-4 h-4"></i></button>
+            <button onclick="editScenario('{fid}')" class="text-gray-500 hover:text-blue-400 p-1" title="수정"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+            <button onclick="publishScenario('{fid}', this)" class="text-gray-500 hover:text-green-400 p-1" title="공유"><i data-lucide="share-2" class="w-4 h-4"></i></button>
+            <button onclick="deleteScenario('{fid}', '{title_escaped}', this)" class="text-gray-500 hover:text-red-400 p-1" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
             """
 
         html += f"""
@@ -218,6 +219,27 @@ def delete_scenario():
     fid = data.get('filename')
     success, msg = ScenarioService.delete_scenario(fid, current_user.id)
     return jsonify({"success": success, "message": msg, "error": msg})
+
+
+@api_bp.route('/scenario/<scenario_id>/edit', methods=['GET'])
+@login_required
+def get_scenario_for_edit(scenario_id):
+    """편집용 시나리오 데이터 로드"""
+    result, error = ScenarioService.get_scenario_for_edit(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+    return jsonify({"success": True, "data": result})
+
+
+@api_bp.route('/scenario/<scenario_id>/update', methods=['POST'])
+@login_required
+def update_scenario(scenario_id):
+    """시나리오 업데이트 (편집 모드)"""
+    data = request.get_json(force=True)
+    success, error = ScenarioService.update_scenario(scenario_id, data, current_user.id)
+    if not success:
+        return jsonify({"success": False, "error": error}), 400
+    return jsonify({"success": True, "message": "저장되었습니다."})
 
 
 @api_bp.route('/init_game', methods=['POST'])

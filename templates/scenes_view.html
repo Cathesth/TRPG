@@ -106,6 +106,56 @@
         .noto-sans-font {
             font-family: 'Noto Sans KR', 'Pretendard', sans-serif;
         }
+
+        /* 편집 모드 스타일 */
+        .edit-mode-active .mermaid svg .node {
+            cursor: pointer !important;
+        }
+        .edit-mode-active .mermaid svg .node:hover rect,
+        .edit-mode-active .mermaid svg .node:hover polygon {
+            stroke: #f59e0b !important;
+            stroke-width: 3px !important;
+            filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.5));
+        }
+        .node-selected rect,
+        .node-selected polygon {
+            stroke: #22d3ee !important;
+            stroke-width: 4px !important;
+            filter: drop-shadow(0 0 12px rgba(34, 211, 238, 0.7)) !important;
+        }
+
+        /* 오른쪽 편집 사이드바 */
+        .edit-sidebar {
+            width: 0;
+            min-width: 0;
+            opacity: 0;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        .edit-sidebar.open {
+            width: 400px;
+            min-width: 400px;
+            opacity: 1;
+        }
+
+        /* 편집 모드 토글 버튼 */
+        .edit-mode-toggle {
+            transition: all 0.2s ease;
+        }
+        .edit-mode-toggle.active {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+        }
+
+        /* 저장 알림 */
+        .save-indicator {
+            animation: saveFlash 0.5s ease;
+        }
+        @keyframes saveFlash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
     </style>
 
     <script>
@@ -194,7 +244,9 @@
 </div>
 
 <!-- 메인 뷰 -->
-<div class="flex-1 flex flex-col h-full relative z-10 bg-dark-900 overflow-hidden">
+<div class="flex-1 flex h-full relative z-10 bg-dark-900 overflow-hidden">
+    <!-- 메인 콘텐츠 영역 -->
+    <div class="flex-1 flex flex-col h-full overflow-hidden">
 
     <!-- 상단 헤더 -->
     <header class="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-dark-900/80 backdrop-blur-md sticky top-0 z-20">
@@ -202,13 +254,36 @@
             <div class="text-pink-400 font-bold flex items-center gap-2">
                 <i data-lucide="git-merge" class="w-5 h-5"></i>
                 시나리오 흐름도
+                {% if edit_mode %}
+                <span class="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/30">편집 모드</span>
+                {% endif %}
             </div>
         </div>
         <div class="flex items-center gap-2">
+            {% if edit_mode %}
+            <!-- 편집 모드 토글 버튼 -->
+            <button id="editModeToggle" onclick="toggleEditMode()"
+                    class="edit-mode-toggle bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-lg border border-gray-600 flex items-center gap-2 text-sm font-bold transition-all">
+                <i data-lucide="mouse-pointer-click" class="w-4 h-4"></i>
+                <span>편집 모드 활성화</span>
+            </button>
+            <!-- 저장 버튼 -->
+            <button id="saveBtn" onclick="saveScenario()"
+                    class="bg-green-900/80 hover:bg-green-800 text-green-200 px-4 py-2 rounded-lg border border-green-700/50 flex items-center gap-2 text-sm font-bold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <i data-lucide="save" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">저장</span>
+            </button>
+            <!-- 대시보드로 돌아가기 -->
+            <a href="/" class="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-lg border border-gray-600 flex items-center gap-2 text-sm font-bold transition-all">
+                <i data-lucide="home" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">대시보드</span>
+            </a>
+            {% else %}
             <a href="/views/player" class="bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-4 py-2 rounded-lg border border-indigo-700/50 flex items-center gap-2 text-sm font-bold transition-all hover:scale-105">
                 <i data-lucide="gamepad-2" class="w-4 h-4"></i>
                 <span class="hidden sm:inline">플레이어 모드</span>
             </a>
+            {% endif %}
             <button class="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-full transition-colors relative">
                 <i data-lucide="bell" class="w-5 h-5"></i>
                 <span class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-dark-900"></span>
@@ -397,6 +472,29 @@
 
         </div>
     </div>
+
+    {% if edit_mode %}
+    <!-- 오른쪽 편집 사이드바 -->
+    <div id="editSidebar" class="edit-sidebar bg-dark-800 border-l border-white/5 flex flex-col h-full overflow-hidden">
+        <div class="p-4 border-b border-white/5 flex items-center justify-between">
+            <h3 class="font-bold text-white flex items-center gap-2">
+                <i data-lucide="settings-2" class="w-5 h-5 text-amber-400"></i>
+                <span id="editPanelTitle">노드 편집</span>
+            </h3>
+            <button onclick="closeEditSidebar()" class="p-1 text-gray-400 hover:text-white hover:bg-white/5 rounded transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div id="editPanelContent" class="flex-1 overflow-y-auto p-4">
+            <div class="text-gray-500 text-sm text-center py-8">
+                <i data-lucide="mouse-pointer-click" class="w-8 h-8 mx-auto mb-2 text-gray-600"></i>
+                <p>편집 모드를 활성화하고</p>
+                <p>노드를 클릭하세요</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <!-- Mermaid JS Load -->
@@ -566,6 +664,353 @@
 <!-- Lucide 아이콘 초기화 -->
 <script>
     lucide.createIcons();
+
+    // ========== 편집 모드 상태 관리 ==========
+    {% if edit_mode %}
+    const SCENARIO_ID = '{{ scenario_id }}';
+    let scenarioData = {{ scenario | tojson | safe }};
+    let isEditModeActive = false;
+    let hasChanges = false;
+    let selectedNodeId = null;
+
+    // 편집 모드 토글
+    window.toggleEditMode = function() {
+        isEditModeActive = !isEditModeActive;
+        const toggleBtn = document.getElementById('editModeToggle');
+        const graphContainer = document.getElementById('graph-container');
+
+        if (isEditModeActive) {
+            toggleBtn.classList.add('active');
+            toggleBtn.querySelector('span').textContent = '편집 모드 비활성화';
+            graphContainer.classList.add('edit-mode-active');
+            setupNodeClickHandlers();
+        } else {
+            toggleBtn.classList.remove('active');
+            toggleBtn.querySelector('span').textContent = '편집 모드 활성화';
+            graphContainer.classList.remove('edit-mode-active');
+            closeEditSidebar();
+        }
+        lucide.createIcons();
+    };
+
+    // 노드 클릭 핸들러 설정
+    function setupNodeClickHandlers() {
+        const svg = document.querySelector('#mermaid-graph svg');
+        if (!svg) return;
+
+        const allNodes = svg.querySelectorAll('.node');
+        allNodes.forEach(node => {
+            node.style.cursor = 'pointer';
+            node.onclick = function(e) {
+                if (!isEditModeActive) return;
+                e.stopPropagation();
+
+                const nodeId = node.getAttribute('id') || '';
+                let extractedId = extractNodeId(nodeId);
+
+                console.log('[Edit] Node clicked:', extractedId);
+                selectNode(node, extractedId);
+            };
+        });
+    }
+
+    // 노드 ID 추출
+    function extractNodeId(nodeId) {
+        let extractedId = '';
+        const lastDashIndex = nodeId.lastIndexOf('-');
+        if (lastDashIndex > 0) {
+            const afterLastDash = nodeId.substring(lastDashIndex + 1);
+            if (/^\d+$/.test(afterLastDash)) {
+                extractedId = nodeId.substring(0, lastDashIndex).replace(/^flowchart-/, '');
+            }
+        }
+        if (!extractedId) {
+            const match = nodeId.match(/flowchart-(.+)-\d+$/);
+            extractedId = match ? match[1] : '';
+        }
+        return extractedId;
+    }
+
+    // 노드 선택
+    function selectNode(nodeElement, nodeId) {
+        // 이전 선택 해제
+        document.querySelectorAll('.node-selected').forEach(n => n.classList.remove('node-selected'));
+
+        // 새 노드 선택
+        nodeElement.classList.add('node-selected');
+        selectedNodeId = nodeId;
+
+        // 사이드바 열기 및 폼 표시
+        openEditSidebar(nodeId);
+    }
+
+    // 편집 사이드바 열기
+    function openEditSidebar(nodeId) {
+        const sidebar = document.getElementById('editSidebar');
+        const title = document.getElementById('editPanelTitle');
+        const content = document.getElementById('editPanelContent');
+
+        sidebar.classList.add('open');
+
+        // 노드 타입 확인 및 폼 생성
+        if (nodeId.toUpperCase() === 'PROLOGUE') {
+            title.textContent = '프롤로그 편집';
+            content.innerHTML = createPrologueForm();
+        } else {
+            // 씬인지 엔딩인지 확인
+            const scene = scenarioData.scenes?.find(s => s.scene_id === nodeId);
+            const ending = scenarioData.endings?.find(e => e.ending_id === nodeId);
+
+            if (scene) {
+                title.textContent = '씬 편집';
+                content.innerHTML = createSceneForm(scene);
+            } else if (ending) {
+                title.textContent = '엔딩 편집';
+                content.innerHTML = createEndingForm(ending);
+            } else {
+                content.innerHTML = '<div class="text-red-400 text-sm">노드를 찾을 수 없습니다.</div>';
+            }
+        }
+
+        lucide.createIcons();
+    }
+
+    // 편집 사이드바 닫기
+    window.closeEditSidebar = function() {
+        const sidebar = document.getElementById('editSidebar');
+        sidebar.classList.remove('open');
+        document.querySelectorAll('.node-selected').forEach(n => n.classList.remove('node-selected'));
+        selectedNodeId = null;
+    };
+
+    // 프롤로그 편집 폼
+    function createPrologueForm() {
+        const prologue = scenarioData.prologue || scenarioData.prologue_text || '';
+        return `
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">프롤로그 내용</label>
+                    <textarea id="editPrologue" rows="10"
+                              class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none"
+                              placeholder="프롤로그 내용을 입력하세요...">${escapeHtml(prologue)}</textarea>
+                </div>
+                <button onclick="applyPrologueEdit()"
+                        class="w-full bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
+                    <i data-lucide="check" class="w-4 h-4"></i>
+                    적용
+                </button>
+            </div>
+        `;
+    }
+
+    // 씬 편집 폼
+    function createSceneForm(scene) {
+        return `
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">씬 ID</label>
+                    <input type="text" value="${escapeHtml(scene.scene_id)}" disabled
+                           class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-gray-400 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">제목</label>
+                    <input type="text" id="editSceneTitle" value="${escapeHtml(scene.title || scene.name || '')}"
+                           class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-gray-200 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">설명</label>
+                    <textarea id="editSceneDescription" rows="6"
+                              class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none">${escapeHtml(scene.description || '')}</textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">전환 조건 (Transitions)</label>
+                    <div id="transitionsContainer" class="space-y-2">
+                        ${(scene.transitions || []).map((t, i) => `
+                            <div class="bg-gray-800 p-2 rounded border border-gray-700 text-xs">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-gray-400">→</span>
+                                    <input type="text" value="${escapeHtml(t.target_scene_id || '')}"
+                                           class="flex-1 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-gray-200"
+                                           data-trans-idx="${i}" data-trans-field="target">
+                                </div>
+                                <input type="text" value="${escapeHtml(t.trigger || t.condition || '')}"
+                                       class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-green-300"
+                                       data-trans-idx="${i}" data-trans-field="trigger"
+                                       placeholder="트리거 조건">
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                <button onclick="applySceneEdit('${scene.scene_id}')"
+                        class="w-full bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
+                    <i data-lucide="check" class="w-4 h-4"></i>
+                    적용
+                </button>
+            </div>
+        `;
+    }
+
+    // 엔딩 편집 폼
+    function createEndingForm(ending) {
+        return `
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">엔딩 ID</label>
+                    <input type="text" value="${escapeHtml(ending.ending_id)}" disabled
+                           class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-gray-400 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">제목</label>
+                    <input type="text" id="editEndingTitle" value="${escapeHtml(ending.title || '')}"
+                           class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-gray-200 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">설명</label>
+                    <textarea id="editEndingDescription" rows="6"
+                              class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none">${escapeHtml(ending.description || '')}</textarea>
+                </div>
+                <button onclick="applyEndingEdit('${ending.ending_id}')"
+                        class="w-full bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
+                    <i data-lucide="check" class="w-4 h-4"></i>
+                    적용
+                </button>
+            </div>
+        `;
+    }
+
+    // HTML 이스케이프
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.toString()
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    // 프롤로그 수정 적용
+    window.applyPrologueEdit = function() {
+        const value = document.getElementById('editPrologue').value;
+        scenarioData.prologue = value;
+        scenarioData.prologue_text = value;
+        markAsChanged();
+        showToast('프롤로그가 수정되었습니다.');
+    };
+
+    // 씬 수정 적용
+    window.applySceneEdit = function(sceneId) {
+        const scene = scenarioData.scenes?.find(s => s.scene_id === sceneId);
+        if (!scene) return;
+
+        scene.title = document.getElementById('editSceneTitle').value;
+        scene.description = document.getElementById('editSceneDescription').value;
+
+        // 전환 조건 업데이트
+        document.querySelectorAll('[data-trans-idx]').forEach(input => {
+            const idx = parseInt(input.dataset.transIdx);
+            const field = input.dataset.transField;
+            if (scene.transitions && scene.transitions[idx]) {
+                if (field === 'target') {
+                    scene.transitions[idx].target_scene_id = input.value;
+                } else if (field === 'trigger') {
+                    scene.transitions[idx].trigger = input.value;
+                }
+            }
+        });
+
+        markAsChanged();
+        showToast('씬이 수정되었습니다.');
+    };
+
+    // 엔딩 수정 적용
+    window.applyEndingEdit = function(endingId) {
+        const ending = scenarioData.endings?.find(e => e.ending_id === endingId);
+        if (!ending) return;
+
+        ending.title = document.getElementById('editEndingTitle').value;
+        ending.description = document.getElementById('editEndingDescription').value;
+
+        markAsChanged();
+        showToast('엔딩이 수정되었습니다.');
+    };
+
+    // 변경 표시
+    function markAsChanged() {
+        hasChanges = true;
+        const saveBtn = document.getElementById('saveBtn');
+        saveBtn.disabled = false;
+        saveBtn.classList.add('save-indicator');
+    }
+
+    // 시나리오 저장
+    window.saveScenario = async function() {
+        const saveBtn = document.getElementById('saveBtn');
+        const originalHtml = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span class="hidden sm:inline">저장 중...</span>';
+        saveBtn.disabled = true;
+        lucide.createIcons();
+
+        try {
+            const response = await fetch(`/api/scenario/${SCENARIO_ID}/update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(scenarioData)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                hasChanges = false;
+                saveBtn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i><span class="hidden sm:inline">저장 완료</span>';
+                showToast('시나리오가 저장되었습니다!', 'success');
+
+                setTimeout(() => {
+                    saveBtn.innerHTML = originalHtml;
+                    saveBtn.disabled = true;
+                    lucide.createIcons();
+                }, 2000);
+            } else {
+                throw new Error(result.error || '저장 실패');
+            }
+        } catch (error) {
+            console.error('Save error:', error);
+            saveBtn.innerHTML = originalHtml;
+            saveBtn.disabled = false;
+            showToast('저장 실패: ' + error.message, 'error');
+        }
+        lucide.createIcons();
+    };
+
+    // 토스트 메시지
+    function showToast(message, type = 'info') {
+        const bgColor = type === 'success' ? 'bg-green-900/90 border-green-500/30 text-green-100' :
+                       type === 'error' ? 'bg-red-900/90 border-red-500/30 text-red-100' :
+                       'bg-amber-900/90 border-amber-500/30 text-amber-100';
+        const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'info';
+
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] ${bgColor} border px-6 py-3 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3`;
+        toast.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5"></i><span class="font-medium">${message}</span>`;
+
+        document.body.appendChild(toast);
+        lucide.createIcons();
+
+        setTimeout(() => {
+            toast.style.transition = 'opacity 0.3s';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 2500);
+    }
+
+    // 페이지 떠날 때 경고
+    window.addEventListener('beforeunload', function(e) {
+        if (hasChanges) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    });
+    {% endif %}
 
     // 사이드바 상태 관리
     (function() {
