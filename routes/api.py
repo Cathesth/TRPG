@@ -21,6 +21,8 @@ from services.preset_service import PresetService
 from services.draft_service import DraftService
 # [추가] AI Audit 서비스 임포트
 from services.ai_audit_service import AIAuditService
+# [추가] History 서비스 임포트
+from services.history_service import HistoryService
 # [추가] NPC 저장을 위한 서비스 임포트 (이전 답변의 npc_service.py 필요)
 from services.npc_service import save_custom_npc
 
@@ -797,4 +799,220 @@ def ai_audit_all_scenes(scenario_id):
         "total_issues": total_issues,
         "has_errors": has_errors,
         "results": all_results
+    })
+
+
+# --- [변경 이력 관리 API (History)] ---
+
+@api_bp.route('/draft/<int:scenario_id>/history', methods=['GET'])
+@login_required
+def get_history_list(scenario_id):
+    """
+    변경 이력 목록 조회
+
+    Returns:
+        - history: 이력 목록 (최신순)
+        - current_sequence: 현재 위치
+        - undo_redo_status: Undo/Redo 가능 상태
+    """
+    history_list, current_sequence, error = HistoryService.get_history_list(
+        scenario_id, current_user.id
+    )
+
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+
+    undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, current_user.id)
+
+    return jsonify({
+        "success": True,
+        "history": history_list,
+        "current_sequence": current_sequence,
+        "undo_redo_status": undo_redo_status
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/init', methods=['POST'])
+@login_required
+def init_history(scenario_id):
+    """
+    편집 세션 시작 시 초기 이력 생성
+    """
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    success, hist_error = HistoryService.initialize_history(
+        scenario_id, current_user.id, result['scenario']
+    )
+
+    if not success:
+        return jsonify({"success": False, "error": hist_error}), 400
+
+    return jsonify({"success": True, "message": "이력이 초기화되었습니다."})
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/add', methods=['POST'])
+@login_required
+def add_history(scenario_id):
+    """
+    새 변경 이력 추가
+
+    Request Body:
+        - action_type: 작업 유형 ('scene_edit', 'scene_add', 'scene_delete', 'ending_edit', 'reorder', 'prologue_edit')
+        - action_description: 작업 설명
+        - snapshot: 현재 시나리오 데이터 (선택, 없으면 현재 Draft에서 가져옴)
+    """
+    data = request.get_json(force=True)
+    action_type = data.get('action_type', 'edit')
+    action_description = data.get('action_description', '변경')
+    snapshot = data.get('snapshot')
+
+    # 스냅샷이 없으면 현재 Draft에서 가져옴
+    if not snapshot:
+        result, error = DraftService.get_draft(scenario_id, current_user.id)
+        if error:
+            return jsonify({"success": False, "error": error}), 403
+        snapshot = result['scenario']
+
+    success, hist_error = HistoryService.add_history(
+        scenario_id, current_user.id, action_type, action_description, snapshot
+    )
+
+    if not success:
+        return jsonify({"success": False, "error": hist_error}), 400
+
+    # Undo/Redo 상태도 함께 반환
+    undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, current_user.id)
+
+    return jsonify({
+        "success": True,
+        "message": "이력이 추가되었습니다.",
+        "undo_redo_status": undo_redo_status
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/undo', methods=['POST'])
+@login_required
+def undo_action(scenario_id):
+    """
+    Undo 수행 - 이전 상태로 복원
+
+    Returns:
+        - scenario: 복원된 시나리오 데이터
+        - mermaid_code: 업데이트된 Mermaid 코드
+        - undo_redo_status: 새로운 Undo/Redo 상태
+    """
+    restored_data, error = HistoryService.undo(scenario_id, current_user.id)
+
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+
+    # Mermaid 코드 생성
+    mermaid_code = _generate_mermaid_for_response(restored_data)
+
+    # Undo/Redo 상태
+    undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, current_user.id)
+
+    return jsonify({
+        "success": True,
+        "message": "이전 상태로 복원되었습니다.",
+        "scenario": restored_data,
+        "mermaid_code": mermaid_code,
+        "undo_redo_status": undo_redo_status
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/redo', methods=['POST'])
+@login_required
+def redo_action(scenario_id):
+    """
+    Redo 수행 - 다음 상태로 복원
+
+    Returns:
+        - scenario: 복원된 시나리오 데이터
+        - mermaid_code: 업데이트된 Mermaid 코드
+        - undo_redo_status: 새로운 Undo/Redo 상태
+    """
+    restored_data, error = HistoryService.redo(scenario_id, current_user.id)
+
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+
+    # Mermaid 코드 생성
+    mermaid_code = _generate_mermaid_for_response(restored_data)
+
+    # Undo/Redo 상태
+    undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, current_user.id)
+
+    return jsonify({
+        "success": True,
+        "message": "다음 상태로 복원되었습니다.",
+        "scenario": restored_data,
+        "mermaid_code": mermaid_code,
+        "undo_redo_status": undo_redo_status
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/restore/<int:history_id>', methods=['POST'])
+@login_required
+def restore_to_history_point(scenario_id, history_id):
+    """
+    특정 이력 시점으로 복원
+
+    Args:
+        history_id: 복원할 이력 ID
+
+    Returns:
+        - scenario: 복원된 시나리오 데이터
+        - mermaid_code: 업데이트된 Mermaid 코드
+        - undo_redo_status: 새로운 Undo/Redo 상태
+    """
+    restored_data, error = HistoryService.restore_to_point(
+        scenario_id, current_user.id, history_id
+    )
+
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+
+    # Mermaid 코드 생성
+    mermaid_code = _generate_mermaid_for_response(restored_data)
+
+    # Undo/Redo 상태
+    undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, current_user.id)
+
+    return jsonify({
+        "success": True,
+        "message": "해당 시점으로 복원되었습니다.",
+        "scenario": restored_data,
+        "mermaid_code": mermaid_code,
+        "undo_redo_status": undo_redo_status
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/clear', methods=['POST'])
+@login_required
+def clear_history(scenario_id):
+    """
+    이력 전체 삭제 (편집 완료 또는 취소 시)
+    """
+    success, error = HistoryService.clear_history(scenario_id, current_user.id)
+
+    if not success:
+        return jsonify({"success": False, "error": error}), 400
+
+    return jsonify({"success": True, "message": "이력이 삭제되었습니다."})
+
+
+@api_bp.route('/draft/<int:scenario_id>/history/status', methods=['GET'])
+@login_required
+def get_undo_redo_status(scenario_id):
+    """
+    Undo/Redo 가능 상태만 조회 (경량 API)
+    """
+    status = HistoryService.get_undo_redo_status(scenario_id, current_user.id)
+
+    return jsonify({
+        "success": True,
+        **status
     })
