@@ -77,3 +77,35 @@ class Preset(db.Model):
             'created_at': self.created_at.timestamp(),
             'updated_at': self.updated_at.timestamp()
         }
+
+
+class TempScenario(db.Model):
+    """
+    Draft 시스템: 편집 중인 시나리오의 임시 저장용 테이블
+    최종 반영 전까지 이 테이블에서만 데이터를 수정
+    """
+    __tablename__ = 'temp_scenarios'
+
+    id = db.Column(db.Integer, primary_key=True)
+    original_scenario_id = db.Column(db.Integer, db.ForeignKey('scenarios.id'), nullable=False)
+    editor_id = db.Column(db.String(50), db.ForeignKey('users.id'), nullable=False)
+
+    # 편집 중인 시나리오 데이터
+    data = db.Column(JSON_TYPE, nullable=False)
+
+    # 메타 정보
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 관계 설정
+    original_scenario = db.relationship('Scenario', backref='drafts')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'original_scenario_id': self.original_scenario_id,
+            'editor_id': self.editor_id,
+            'data': self.data,
+            'created_at': self.created_at.timestamp() if self.created_at else None,
+            'updated_at': self.updated_at.timestamp() if self.updated_at else None
+        }

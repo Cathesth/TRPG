@@ -256,6 +256,7 @@
                 시나리오 흐름도
                 {% if edit_mode %}
                 <span class="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/30">편집 모드</span>
+                <span id="draftIndicator" class="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30 hidden">Draft</span>
                 {% endif %}
             </div>
         </div>
@@ -267,11 +268,41 @@
                 <i data-lucide="mouse-pointer-click" class="w-4 h-4"></i>
                 <span>편집 모드 활성화</span>
             </button>
-            <!-- 저장 버튼 -->
-            <button id="saveBtn" onclick="saveScenario()"
-                    class="bg-green-900/80 hover:bg-green-800 text-green-200 px-4 py-2 rounded-lg border border-green-700/50 flex items-center gap-2 text-sm font-bold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+            <!-- 씬 추가 버튼 -->
+            <button id="addSceneBtn" onclick="showAddSceneModal()"
+                    class="bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-3 py-2 rounded-lg border border-indigo-700/50 flex items-center gap-2 text-sm font-bold transition-all">
+                <i data-lucide="plus-square" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">씬 추가</span>
+            </button>
+            <!-- 엔딩 추가 버튼 -->
+            <button id="addEndingBtn" onclick="showAddEndingModal()"
+                    class="bg-pink-900/80 hover:bg-pink-800 text-pink-200 px-3 py-2 rounded-lg border border-pink-700/50 flex items-center gap-2 text-sm font-bold transition-all">
+                <i data-lucide="flag" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">엔딩 추가</span>
+            </button>
+            <!-- ID 재정렬 버튼 -->
+            <button id="reorderBtn" onclick="reorderSceneIds()"
+                    class="bg-purple-900/80 hover:bg-purple-800 text-purple-200 px-3 py-2 rounded-lg border border-purple-700/50 flex items-center gap-2 text-sm font-bold transition-all">
+                <i data-lucide="arrow-down-up" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">ID 재정렬</span>
+            </button>
+            <!-- Draft 저장 버튼 -->
+            <button id="saveDraftBtn" onclick="saveDraft()"
+                    class="bg-blue-900/80 hover:bg-blue-800 text-blue-200 px-4 py-2 rounded-lg border border-blue-700/50 flex items-center gap-2 text-sm font-bold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                 <i data-lucide="save" class="w-4 h-4"></i>
-                <span class="hidden sm:inline">저장</span>
+                <span class="hidden sm:inline">Draft 저장</span>
+            </button>
+            <!-- 최종 반영 버튼 -->
+            <button id="publishBtn" onclick="confirmPublish()"
+                    class="bg-green-900/80 hover:bg-green-800 text-green-200 px-4 py-2 rounded-lg border border-green-700/50 flex items-center gap-2 text-sm font-bold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <i data-lucide="upload" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">최종 반영</span>
+            </button>
+            <!-- 변경 취소 버튼 -->
+            <button id="discardBtn" onclick="confirmDiscard()"
+                    class="bg-red-900/80 hover:bg-red-800 text-red-200 px-3 py-2 rounded-lg border border-red-700/50 flex items-center gap-2 text-sm font-bold transition-all hidden">
+                <i data-lucide="x" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">취소</span>
             </button>
             <!-- 대시보드로 돌아가기 -->
             <a href="/" class="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-lg border border-gray-600 flex items-center gap-2 text-sm font-bold transition-all">
@@ -841,11 +872,17 @@
                         `).join('')}
                     </div>
                 </div>
-                <button onclick="applySceneEdit('${scene.scene_id}')"
-                        class="w-full bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
-                    <i data-lucide="check" class="w-4 h-4"></i>
-                    적용
-                </button>
+                <div class="flex gap-2">
+                    <button onclick="applySceneEdit('${scene.scene_id}')"
+                            class="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
+                        <i data-lucide="check" class="w-4 h-4"></i>
+                        적용
+                    </button>
+                    <button onclick="confirmDeleteScene('${scene.scene_id}', '${escapeHtml(scene.title || scene.name || scene.scene_id)}')"
+                            class="px-4 py-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-colors border border-red-600/30">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
             </div>
         `;
     }
@@ -869,11 +906,17 @@
                     <textarea id="editEndingDescription" rows="6"
                               class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none">${escapeHtml(ending.description || '')}</textarea>
                 </div>
-                <button onclick="applyEndingEdit('${ending.ending_id}')"
-                        class="w-full bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
-                    <i data-lucide="check" class="w-4 h-4"></i>
-                    적용
-                </button>
+                <div class="flex gap-2">
+                    <button onclick="applyEndingEdit('${ending.ending_id}')"
+                            class="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
+                        <i data-lucide="check" class="w-4 h-4"></i>
+                        적용
+                    </button>
+                    <button onclick="confirmDeleteEnding('${ending.ending_id}', '${escapeHtml(ending.title || ending.ending_id)}')"
+                            class="px-4 py-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-colors border border-red-600/30">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
             </div>
         `;
     }
@@ -938,21 +981,29 @@
     // 변경 표시
     function markAsChanged() {
         hasChanges = true;
-        const saveBtn = document.getElementById('saveBtn');
-        saveBtn.disabled = false;
-        saveBtn.classList.add('save-indicator');
+        const saveDraftBtn = document.getElementById('saveDraftBtn');
+        const publishBtn = document.getElementById('publishBtn');
+        const discardBtn = document.getElementById('discardBtn');
+        const draftIndicator = document.getElementById('draftIndicator');
+
+        if (saveDraftBtn) saveDraftBtn.disabled = false;
+        if (publishBtn) publishBtn.disabled = false;
+        if (discardBtn) discardBtn.classList.remove('hidden');
+        if (draftIndicator) draftIndicator.classList.remove('hidden');
     }
 
-    // 시나리오 저장
-    window.saveScenario = async function() {
-        const saveBtn = document.getElementById('saveBtn');
-        const originalHtml = saveBtn.innerHTML;
-        saveBtn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span class="hidden sm:inline">저장 중...</span>';
-        saveBtn.disabled = true;
+    // ========== Draft 시스템 함수들 ==========
+
+    // Draft 저장
+    window.saveDraft = async function() {
+        const saveDraftBtn = document.getElementById('saveDraftBtn');
+        const originalHtml = saveDraftBtn.innerHTML;
+        saveDraftBtn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span class="hidden sm:inline">저장 중...</span>';
+        saveDraftBtn.disabled = true;
         lucide.createIcons();
 
         try {
-            const response = await fetch(`/api/scenario/${SCENARIO_ID}/update`, {
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/save`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(scenarioData)
@@ -961,25 +1012,421 @@
             const result = await response.json();
 
             if (result.success) {
-                hasChanges = false;
-                saveBtn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i><span class="hidden sm:inline">저장 완료</span>';
-                showToast('시나리오가 저장되었습니다!', 'success');
+                saveDraftBtn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i><span class="hidden sm:inline">저장됨</span>';
+                showToast('Draft가 저장되었습니다!', 'success');
 
                 setTimeout(() => {
-                    saveBtn.innerHTML = originalHtml;
-                    saveBtn.disabled = true;
+                    saveDraftBtn.innerHTML = originalHtml;
+                    saveDraftBtn.disabled = !hasChanges;
                     lucide.createIcons();
                 }, 2000);
             } else {
-                throw new Error(result.error || '저장 실패');
+                throw new Error(result.error || 'Draft 저장 실패');
             }
         } catch (error) {
-            console.error('Save error:', error);
-            saveBtn.innerHTML = originalHtml;
-            saveBtn.disabled = false;
+            console.error('Draft save error:', error);
+            saveDraftBtn.innerHTML = originalHtml;
+            saveDraftBtn.disabled = false;
             showToast('저장 실패: ' + error.message, 'error');
         }
         lucide.createIcons();
+    };
+
+    // 최종 반영 확인
+    window.confirmPublish = function() {
+        showConfirmModal(
+            '최종 반영',
+            'Draft의 변경사항을 실제 시나리오에 반영합니다.<br><strong class="text-amber-400">이 작업은 되돌릴 수 없습니다.</strong>',
+            '최종 반영',
+            'bg-green-600 hover:bg-green-500',
+            async () => {
+                await publishDraft();
+            }
+        );
+    };
+
+    // Draft 최종 반영
+    async function publishDraft() {
+        // 먼저 Draft 저장
+        const saveResponse = await fetch(`/api/draft/${SCENARIO_ID}/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(scenarioData)
+        });
+
+        if (!saveResponse.ok) {
+            showToast('Draft 저장 실패', 'error');
+            return;
+        }
+
+        // 최종 반영
+        const response = await fetch(`/api/draft/${SCENARIO_ID}/publish`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            hasChanges = false;
+            showToast('시나리오에 최종 반영되었습니다!', 'success');
+
+            // UI 업데이트
+            document.getElementById('draftIndicator')?.classList.add('hidden');
+            document.getElementById('discardBtn')?.classList.add('hidden');
+            document.getElementById('saveDraftBtn').disabled = true;
+            document.getElementById('publishBtn').disabled = true;
+
+            // 페이지 새로고침
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('최종 반영 실패: ' + result.error, 'error');
+        }
+    }
+
+    // 변경 취소 확인
+    window.confirmDiscard = function() {
+        showConfirmModal(
+            '변경사항 취소',
+            '모든 변경사항을 취소하고 원본 시나리오로 되돌립니다.<br><strong class="text-red-400">저장하지 않은 변경사항은 모두 사라집니다.</strong>',
+            '변경 취소',
+            'bg-red-600 hover:bg-red-500',
+            async () => {
+                await discardDraft();
+            }
+        );
+    };
+
+    // Draft 폐기
+    async function discardDraft() {
+        const response = await fetch(`/api/draft/${SCENARIO_ID}/discard`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            hasChanges = false;
+            showToast('변경사항이 취소되었습니다.', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast('취소 실패: ' + result.error, 'error');
+        }
+    }
+
+    // ID 재정렬
+    window.reorderSceneIds = async function() {
+        showConfirmModal(
+            'ID 순차 재정렬',
+            '씬 ID를 Mermaid 흐름도 순서(위→아래, 좌→우)에 따라 scene_1, scene_2, ... 형식으로 재정렬합니다.<br><strong class="text-amber-400">모든 참조가 자동으로 업데이트됩니다.</strong>',
+            '재정렬 실행',
+            'bg-purple-600 hover:bg-purple-500',
+            async () => {
+                const response = await fetch(`/api/draft/${SCENARIO_ID}/reorder`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    if (result.changes === 0) {
+                        showToast('이미 정렬되어 있습니다.', 'info');
+                    } else {
+                        scenarioData = result.scenario;
+                        markAsChanged();
+                        showToast(result.message, 'success');
+                        setTimeout(() => location.reload(), 1500);
+                    }
+                } else {
+                    showToast('재정렬 실패: ' + result.error, 'error');
+                }
+            }
+        );
+    };
+
+    // ========== 씬/엔딩 추가 모달 ==========
+
+    window.showAddSceneModal = function() {
+        const modalHtml = `
+            <div id="addSceneModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center fade-in">
+                <div class="bg-dark-800 rounded-xl border border-white/10 shadow-2xl w-full max-w-lg mx-4">
+                    <div class="p-4 border-b border-white/5 flex items-center justify-between">
+                        <h3 class="font-bold text-white flex items-center gap-2">
+                            <i data-lucide="plus-square" class="w-5 h-5 text-indigo-400"></i>
+                            새 씬 추가
+                        </h3>
+                        <button onclick="closeModal('addSceneModal')" class="p-1 text-gray-400 hover:text-white rounded">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">씬 제목</label>
+                            <input type="text" id="newSceneTitle" placeholder="새 씬의 제목을 입력하세요"
+                                   class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">설명 (선택)</label>
+                            <textarea id="newSceneDescription" rows="4" placeholder="씬의 설명을 입력하세요"
+                                      class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"></textarea>
+                        </div>
+                    </div>
+                    <div class="p-4 border-t border-white/5 flex justify-end gap-3">
+                        <button onclick="closeModal('addSceneModal')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg">취소</button>
+                        <button onclick="addNewScene()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center gap-2">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            추가
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        lucide.createIcons();
+        document.getElementById('newSceneTitle').focus();
+    };
+
+    window.addNewScene = async function() {
+        const title = document.getElementById('newSceneTitle').value.trim();
+        const description = document.getElementById('newSceneDescription').value.trim();
+
+        if (!title) {
+            showToast('씬 제목을 입력하세요.', 'error');
+            return;
+        }
+
+        const newScene = {
+            title: title,
+            description: description || '',
+            transitions: []
+        };
+
+        const response = await fetch(`/api/draft/${SCENARIO_ID}/add-scene`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scene: newScene })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            scenarioData = result.scenario;
+            markAsChanged();
+            closeModal('addSceneModal');
+            showToast(`새 씬 '${result.scene.scene_id}'이(가) 추가되었습니다.`, 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('씬 추가 실패: ' + result.error, 'error');
+        }
+    };
+
+    window.showAddEndingModal = function() {
+        const modalHtml = `
+            <div id="addEndingModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center fade-in">
+                <div class="bg-dark-800 rounded-xl border border-white/10 shadow-2xl w-full max-w-lg mx-4">
+                    <div class="p-4 border-b border-white/5 flex items-center justify-between">
+                        <h3 class="font-bold text-white flex items-center gap-2">
+                            <i data-lucide="flag" class="w-5 h-5 text-pink-400"></i>
+                            새 엔딩 추가
+                        </h3>
+                        <button onclick="closeModal('addEndingModal')" class="p-1 text-gray-400 hover:text-white rounded">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">엔딩 제목</label>
+                            <input type="text" id="newEndingTitle" placeholder="엔딩 제목을 입력하세요"
+                                   class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-pink-500 focus:border-transparent">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">설명</label>
+                            <textarea id="newEndingDescription" rows="4" placeholder="엔딩의 설명을 입력하세요"
+                                      class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"></textarea>
+                        </div>
+                    </div>
+                    <div class="p-4 border-t border-white/5 flex justify-end gap-3">
+                        <button onclick="closeModal('addEndingModal')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg">취소</button>
+                        <button onclick="addNewEnding()" class="px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg font-bold flex items-center gap-2">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            추가
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        lucide.createIcons();
+        document.getElementById('newEndingTitle').focus();
+    };
+
+    window.addNewEnding = async function() {
+        const title = document.getElementById('newEndingTitle').value.trim();
+        const description = document.getElementById('newEndingDescription').value.trim();
+
+        if (!title) {
+            showToast('엔딩 제목을 입력하세요.', 'error');
+            return;
+        }
+
+        const newEnding = {
+            title: title,
+            description: description || ''
+        };
+
+        const response = await fetch(`/api/draft/${SCENARIO_ID}/add-ending`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ending: newEnding })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            scenarioData = result.scenario;
+            markAsChanged();
+            closeModal('addEndingModal');
+            showToast(`새 엔딩 '${result.ending.ending_id}'이(가) 추가되었습니다.`, 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('엔딩 추가 실패: ' + result.error, 'error');
+        }
+    };
+
+    // ========== 삭제 안전장치 ==========
+
+    window.confirmDeleteScene = async function(sceneId, sceneTitle) {
+        // 먼저 참조 확인
+        const response = await fetch(`/api/draft/${SCENARIO_ID}/check-references`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scene_id: sceneId })
+        });
+
+        const result = await response.json();
+
+        if (result.has_references) {
+            showDeleteWithReferencesModal(sceneId, sceneTitle, result.references);
+        } else {
+            showConfirmModal(
+                '씬 삭제',
+                `"${escapeHtml(sceneTitle)}" 씬을 삭제하시겠습니까?`,
+                '삭제',
+                'bg-red-600 hover:bg-red-500',
+                () => deleteScene(sceneId, 'remove_transitions')
+            );
+        }
+    };
+
+    function showDeleteWithReferencesModal(sceneId, sceneTitle, references) {
+        const refList = references.map(r =>
+            `<li class="flex items-start gap-2 text-sm">
+                <span class="text-amber-400">←</span>
+                <span class="text-gray-300">${escapeHtml(r.from_title)}</span>
+                <span class="text-gray-500">에서</span>
+                <span class="text-green-300">"${escapeHtml(r.trigger || '연결')}"</span>
+            </li>`
+        ).join('');
+
+        const modalHtml = `
+            <div id="deleteRefModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center fade-in">
+                <div class="bg-dark-800 rounded-xl border border-red-500/30 shadow-2xl w-full max-w-lg mx-4">
+                    <div class="p-4 border-b border-red-500/20 flex items-center gap-3">
+                        <div class="p-2 bg-red-500/20 rounded-full">
+                            <i data-lucide="alert-triangle" class="w-6 h-6 text-red-400"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-white">참조 중인 씬 삭제</h3>
+                            <p class="text-sm text-gray-400">"${escapeHtml(sceneTitle)}"</p>
+                        </div>
+                    </div>
+                    <div class="p-6">
+                        <p class="text-amber-400 text-sm mb-4">⚠️ 이 씬은 다른 곳에서 참조되고 있습니다:</p>
+                        <ul class="bg-gray-900/50 rounded-lg p-3 space-y-2 mb-4 max-h-40 overflow-y-auto">
+                            ${refList}
+                        </ul>
+                        <p class="text-gray-300 text-sm">삭제 시 연결된 선택지 처리 방식을 선택하세요:</p>
+                    </div>
+                    <div class="p-4 border-t border-white/5 flex flex-col gap-2">
+                        <button onclick="deleteScene('${sceneId}', 'remove_transitions'); closeModal('deleteRefModal')"
+                                class="w-full px-4 py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold flex items-center justify-center gap-2">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            씬 삭제 + 연결된 전환도 삭제
+                        </button>
+                        <button onclick="closeModal('deleteRefModal')"
+                                class="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg">
+                            취소
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        lucide.createIcons();
+    }
+
+    async function deleteScene(sceneId, handleMode) {
+        const response = await fetch(`/api/draft/${SCENARIO_ID}/delete-scene`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scene_id: sceneId, handle_mode: handleMode })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            scenarioData = result.scenario;
+            markAsChanged();
+
+            if (result.warnings && result.warnings.length > 0) {
+                showToast(result.warnings[0], 'info');
+            } else {
+                showToast(result.message, 'success');
+            }
+
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('삭제 실패: ' + result.error, 'error');
+        }
+    }
+
+    // ========== 공통 모달 함수 ==========
+
+    // 엔딩 삭제 확인
+    window.confirmDeleteEnding = function(endingId, endingTitle) {
+        showConfirmModal(
+            '엔딩 삭제',
+            `"${escapeHtml(endingTitle)}" 엔딩을 삭제하시겠습니까?<br><span class="text-amber-400 text-sm">이 엔딩으로 연결된 전환도 함께 삭제됩니다.</span>`,
+            '삭제',
+            'bg-red-600 hover:bg-red-500',
+            async () => {
+                const response = await fetch(`/api/draft/${SCENARIO_ID}/delete-ending`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ending_id: endingId })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    scenarioData = result.scenario;
+                    markAsChanged();
+                    closeEditSidebar();
+
+                    if (result.warnings && result.warnings.length > 0) {
+                        showToast(result.warnings[0], 'info');
+                    } else {
+                        showToast(result.message, 'success');
+                    }
+
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    showToast('삭제 실패: ' + result.error, 'error');
+                }
+            }
+        );
     };
 
     // 토스트 메시지
@@ -1003,79 +1450,43 @@
         }, 2500);
     }
 
-    // 페이지 떠날 때 경고
-    window.addEventListener('beforeunload', function(e) {
-        if (hasChanges) {
-            e.preventDefault();
-            e.returnValue = '';
+    function showConfirmModal(title, message, confirmText, confirmClass, onConfirm) {
+        const modalHtml = `
+            <div id="confirmModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center fade-in">
+                <div class="bg-dark-800 rounded-xl border border-white/10 shadow-2xl w-full max-w-md mx-4">
+                    <div class="p-4 border-b border-white/5">
+                        <h3 class="font-bold text-white text-lg">${title}</h3>
+                    </div>
+                    <div class="p-6">
+                        <p class="text-gray-300">${message}</p>
+                    </div>
+                    <div class="p-4 border-t border-white/5 flex justify-end gap-3">
+                        <button onclick="closeModal('confirmModal')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg">취소</button>
+                        <button id="confirmBtn" class="px-4 py-2 ${confirmClass} text-white rounded-lg font-bold">${confirmText}</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        document.getElementById('confirmBtn').onclick = async () => {
+            closeModal('confirmModal');
+            await onConfirm();
+        };
+        lucide.createIcons();
+    }
+
+    window.closeModal = function(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.opacity = '0';
+            setTimeout(() => modal.remove(), 200);
         }
-    });
-    {% endif %}
+    };
 
-    // 사이드바 상태 관리
-    (function() {
-        const sidebar = document.querySelector('.sidebar');
-        const SIDEBAR_STATE_KEY = 'sidebar_expanded';
-        let isRestoredState = false;
-
-        // 페이지 로드 시 저장된 상태 복원
-        if (sessionStorage.getItem(SIDEBAR_STATE_KEY) === 'true') {
-            // transition 일시 비활성화 (깜빡임 방지)
-            sidebar.style.transition = 'none';
-            sidebar.classList.add('expanded');
-            isRestoredState = true;
-            // 상태키 즉시 제거 (다음 페이지 이동을 위해)
-            sessionStorage.removeItem(SIDEBAR_STATE_KEY);
-            // 다음 프레임에서 transition 복원
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    sidebar.style.transition = '';
-                });
-            });
-        }
-
-        // 페이지 로드 완료 후 마우스 위치 확인하여 사이드바 닫기
-        if (isRestoredState) {
-            // 약간의 지연 후 마우스 위치 체크
-            setTimeout(() => {
-                const checkMousePosition = (e) => {
-                    const rect = sidebar.getBoundingClientRect();
-                    const isInsideSidebar = e.clientX >= rect.left && e.clientX <= rect.right &&
-                                           e.clientY >= rect.top && e.clientY <= rect.bottom;
-                    if (!isInsideSidebar) {
-                        sidebar.classList.remove('expanded');
-                    }
-                    document.removeEventListener('mousemove', checkMousePosition);
-                };
-                document.addEventListener('mousemove', checkMousePosition, { once: true });
-            }, 100);
-        }
-
-        // 사이드바 내 링크 클릭 시 상태 저장
-        sidebar.querySelectorAll('a[href], button').forEach(link => {
-            link.addEventListener('click', function(e) {
-                // 페이지 이동이 있는 링크인 경우에만 상태 저장
-                if (this.tagName === 'A' && this.href) {
-                    sessionStorage.setItem(SIDEBAR_STATE_KEY, 'true');
-                    sidebar.classList.add('expanded');
-                }
-            });
-        });
-
-        // TRPG Studio 로고 클릭 시 상태 저장
-        const logoArea = sidebar.querySelector('.p-4.h-16 .flex.items-center.gap-2');
-        if (logoArea) {
-            logoArea.addEventListener('click', function(e) {
-                sessionStorage.setItem(SIDEBAR_STATE_KEY, 'true');
-                sidebar.classList.add('expanded');
-            });
-        }
-
-        // 마우스가 사이드바를 벗어나면 expanded 클래스 제거
-        sidebar.addEventListener('mouseleave', function() {
-            sidebar.classList.remove('expanded');
-        });
-    })();
+    // 시나리오 저장 (기존 함수 업데이트)
+    window.saveScenario = async function() {
+        await saveDraft();
+    };
 </script>
 
 <!-- 버전 정보 배지 -->

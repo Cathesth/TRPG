@@ -18,6 +18,7 @@ from core.utils import parse_request_data, pick_start_scene_id
 from services.scenario_service import ScenarioService
 from services.user_service import UserService
 from services.preset_service import PresetService
+from services.draft_service import DraftService
 # [추가] NPC 저장을 위한 서비스 임포트 (이전 답변의 npc_service.py 필요)
 from services.npc_service import save_custom_npc
 
@@ -421,3 +422,219 @@ def load_preset_old():
     </div>
     <script>lucide.createIcons();</script>
     '''
+
+
+# --- [Draft 시스템 API (비주얼 에디터용)] ---
+
+@api_bp.route('/draft/<int:scenario_id>', methods=['GET'])
+@login_required
+def get_draft(scenario_id):
+    """Draft 로드 (없으면 원본 시나리오 데이터 반환)"""
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+    return jsonify({"success": True, **result})
+
+
+@api_bp.route('/draft/<int:scenario_id>/save', methods=['POST'])
+@login_required
+def save_draft(scenario_id):
+    """Draft 저장 (자동 저장용)"""
+    data = request.get_json(force=True)
+    success, error = DraftService.save_draft(scenario_id, current_user.id, data)
+    if not success:
+        return jsonify({"success": False, "error": error}), 400
+    return jsonify({"success": True, "message": "Draft가 저장되었습니다."})
+
+
+@api_bp.route('/draft/<int:scenario_id>/publish', methods=['POST'])
+@login_required
+def publish_draft(scenario_id):
+    """Draft를 실제 시나리오로 최종 반영"""
+    success, error = DraftService.publish_draft(scenario_id, current_user.id)
+    if not success:
+        return jsonify({"success": False, "error": error}), 400
+    return jsonify({"success": True, "message": "시나리오에 최종 반영되었습니다."})
+
+
+@api_bp.route('/draft/<int:scenario_id>/discard', methods=['POST'])
+@login_required
+def discard_draft(scenario_id):
+    """Draft 폐기 (변경사항 취소)"""
+    success, error = DraftService.discard_draft(scenario_id, current_user.id)
+    if not success:
+        return jsonify({"success": False, "error": error}), 400
+    return jsonify({"success": True, "message": "변경사항이 취소되었습니다."})
+
+
+@api_bp.route('/draft/<int:scenario_id>/reorder', methods=['POST'])
+@login_required
+def reorder_scene_ids(scenario_id):
+    """씬 ID 순차 재정렬"""
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    scenario_data = result['scenario']
+    reordered_data, id_mapping = DraftService.reorder_scene_ids(scenario_data)
+
+    if not id_mapping:
+        return jsonify({"success": True, "message": "재정렬할 필요가 없습니다.", "changes": 0})
+
+    # Draft에 저장
+    success, save_error = DraftService.save_draft(scenario_id, current_user.id, reordered_data)
+    if not success:
+        return jsonify({"success": False, "error": save_error}), 400
+
+    return jsonify({
+        "success": True,
+        "message": f"{len(id_mapping)}개의 씬 ID가 재정렬되었습니다.",
+        "id_mapping": id_mapping,
+        "scenario": reordered_data
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/check-references', methods=['POST'])
+@login_required
+def check_scene_references(scenario_id):
+    """씬 삭제 전 참조 확인"""
+    data = request.get_json(force=True)
+    scene_id = data.get('scene_id')
+
+    if not scene_id:
+        return jsonify({"success": False, "error": "scene_id가 필요합니다."}), 400
+
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    references = DraftService.check_scene_references(result['scenario'], scene_id)
+
+    return jsonify({
+        "success": True,
+        "scene_id": scene_id,
+        "references": references,
+        "has_references": len(references) > 0
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/delete-scene', methods=['POST'])
+@login_required
+def delete_scene(scenario_id):
+    """씬 삭제"""
+    data = request.get_json(force=True)
+    scene_id = data.get('scene_id')
+    handle_mode = data.get('handle_mode', 'remove_transitions')
+
+    if not scene_id:
+        return jsonify({"success": False, "error": "scene_id가 필요합니다."}), 400
+
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    updated_scenario, warnings = DraftService.delete_scene(result['scenario'], scene_id, handle_mode)
+
+    # Draft에 저장
+    success, save_error = DraftService.save_draft(scenario_id, current_user.id, updated_scenario)
+    if not success:
+        return jsonify({"success": False, "error": save_error}), 400
+
+    return jsonify({
+        "success": True,
+        "message": f"씬 '{scene_id}'이(가) 삭제되었습니다.",
+        "warnings": warnings,
+        "scenario": updated_scenario
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/add-scene', methods=['POST'])
+@login_required
+def add_scene(scenario_id):
+    """새 씬 추가"""
+    data = request.get_json(force=True)
+    new_scene = data.get('scene', {})
+    after_scene_id = data.get('after_scene_id')
+
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    updated_scenario = DraftService.add_scene(result['scenario'], new_scene, after_scene_id)
+
+    # Draft에 저장
+    success, save_error = DraftService.save_draft(scenario_id, current_user.id, updated_scenario)
+    if not success:
+        return jsonify({"success": False, "error": save_error}), 400
+
+    # 생성된 씬 ID 반환
+    added_scene = updated_scenario['scenes'][-1] if not after_scene_id else None
+    if after_scene_id:
+        for i, s in enumerate(updated_scenario['scenes']):
+            if s.get('scene_id') == after_scene_id and i + 1 < len(updated_scenario['scenes']):
+                added_scene = updated_scenario['scenes'][i + 1]
+                break
+
+    return jsonify({
+        "success": True,
+        "message": "새 씬이 추가되었습니다.",
+        "scene": added_scene,
+        "scenario": updated_scenario
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/add-ending', methods=['POST'])
+@login_required
+def add_ending(scenario_id):
+    """새 엔딩 추가"""
+    data = request.get_json(force=True)
+    new_ending = data.get('ending', {})
+
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    updated_scenario = DraftService.add_ending(result['scenario'], new_ending)
+
+    # Draft에 저장
+    success, save_error = DraftService.save_draft(scenario_id, current_user.id, updated_scenario)
+    if not success:
+        return jsonify({"success": False, "error": save_error}), 400
+
+    added_ending = updated_scenario['endings'][-1]
+
+    return jsonify({
+        "success": True,
+        "message": "새 엔딩이 추가되었습니다.",
+        "ending": added_ending,
+        "scenario": updated_scenario
+    })
+
+
+@api_bp.route('/draft/<int:scenario_id>/delete-ending', methods=['POST'])
+@login_required
+def delete_ending(scenario_id):
+    """엔딩 삭제"""
+    data = request.get_json(force=True)
+    ending_id = data.get('ending_id')
+
+    if not ending_id:
+        return jsonify({"success": False, "error": "ending_id가 필요합니다."}), 400
+
+    result, error = DraftService.get_draft(scenario_id, current_user.id)
+    if error:
+        return jsonify({"success": False, "error": error}), 403
+
+    updated_scenario, warnings = DraftService.delete_ending(result['scenario'], ending_id)
+
+    # Draft에 저장
+    success, save_error = DraftService.save_draft(scenario_id, current_user.id, updated_scenario)
+    if not success:
+        return jsonify({"success": False, "error": save_error}), 400
+
+    return jsonify({
+        "success": True,
+        "message": f"엔딩 '{ending_id}'이(가) 삭제되었습니다.",
+        "warnings": warnings,
+        "scenario": updated_scenario
+    })
