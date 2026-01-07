@@ -137,3 +137,7 @@ async def view_scenes_edit(request: Request, scenario_id: str, user=Depends(get_
         "version": get_full_version(),
         "user": user
     })
+@views_router.get("/builder/npc-generator", response_class=HTMLResponse)
+async def view_npc_generator(request: Request):
+    """NPC 생성기 iframe 뷰"""
+    return templates.TemplateResponse("npc_generator.html", {"request": request})

@@ -8,6 +8,8 @@ from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
+from starlette.concurrency import run_in_threadpool
+
 # builder_agent에서 필요한 함수들 임포트
 from builder_agent import (
     generate_scenario_from_graph,
@@ -321,7 +323,12 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
     try:
         set_progress_callback(update_build_progress)
 
-        scenario_json = generate_scenario_from_graph(api_key, react_flow_data, model_name=selected_model)
+        scenario_json = await run_in_threadpool(
+            generate_scenario_from_graph,
+            api_key,
+            react_flow_data,
+            model_name=selected_model
+        )
 
         user_id = user.id if user.is_authenticated else None
         fid, error = ScenarioService.save_scenario(scenario_json, user_id=user_id)

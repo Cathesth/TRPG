@@ -306,6 +306,31 @@
                     }
                 };
 
+                const handleSavePreset = async () => {
+                    const title = nodes.find(n => n.id === 'start')?.data.label || '새 프리셋';
+                    const name = prompt("프리셋 이름을 입력하세요:", title);
+                    if (!name) return;
+
+                    try {
+                        const response = await fetch('/api/presets/save', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                name: name,
+                                description: nodes.find(n => n.id === 'start')?.data.background || '',
+                                data: { nodes, edges: connections, npcs: [...globalNpcs, ...globalEnemies] }
+                            })
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                            showToast("프리셋이 저장되었습니다!", "success");
+                        } else {
+                            showToast(result.error || "저장 실패", "error");
+                        }
+                    } catch (e) {
+                        showToast("오류 발생: " + e.message, "error");
+                    }
+                };
                 // --- 시나리오 생성 로직 (Validation 포함) ---
                 const handleGenerate = async () => {
                     // 1. 최소 노드 개수 확인
@@ -431,6 +456,9 @@
                                 <button onClick={() => addNode('scene')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-indigo-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-indigo-500 rounded-full"></div> 씬 추가</button>
                                 <button onClick={() => addNode('ending')} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-red-300 flex items-center justify-center gap-2"><div className="w-2 h-2 bg-red-500 rounded-full"></div> 엔딩 추가</button>
                                 <button onClick={() => setIsNpcGeneratorOpen(true)} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-green-300 flex items-center justify-center gap-2"><Icon name="users" size={16} /> NPC/적 생성</button>
+                                <button onClick={handleSavePreset} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-yellow-300 flex items-center justify-center gap-2">
+                                    <Icon name="settings" size={16} /> 프리셋 저장
+                                </button>
                             </div>
 
                             {/* [복구됨] 시나리오 생성 버튼 */}
