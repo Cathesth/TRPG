@@ -115,7 +115,7 @@ def list_scenarios():
 
     import time
     current_time = time.time()
-    NEW_THRESHOLD = 24 * 60 * 60  # 24시간 이내면 NEW 배지
+    NEW_THRESHOLD = 30 * 60  # 30분 이내면 NEW 배지
 
     html = ""
     for info in file_infos:
@@ -135,7 +135,7 @@ def list_scenarios():
         else:
             time_str = "알 수 없음"
 
-        # NEW 배지 (24시간 이내 생성)
+        # NEW 배지 (30분 이내 생성)
         is_new = (current_time - created_time) < NEW_THRESHOLD if created_time else False
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
