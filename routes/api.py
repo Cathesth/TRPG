@@ -331,7 +331,10 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
         )
 
         user_id = user.id if user.is_authenticated else None
-        fid, error = ScenarioService.save_scenario(scenario_json, user_id=user_id)
+
+        # [FIX] initial_state를 player_vars로 전달
+        initial_player_vars = scenario_json.get('initial_state', {})
+        fid, error = ScenarioService.save_scenario(scenario_json, player_vars=initial_player_vars, user_id=user_id)
 
         if error:
             update_build_progress(status="error", detail=f"저장 오류: {error}")
@@ -341,7 +344,11 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
         game_state.state = {
             "scenario": scenario_json,
             "current_scene_id": pick_start_scene_id(scenario_json),
-            "player_vars": {}, "history": [], "last_user_choice_idx": -1, "system_message": "Init", "npc_output": "",
+            "player_vars": initial_player_vars,  # [FIX] 빈 딕셔너리 대신 초기 상태 사용
+            "history": [],
+            "last_user_choice_idx": -1,
+            "system_message": "Init",
+            "npc_output": "",
             "narrator_output": ""
         }
         game_state.game_graph = create_game_graph()

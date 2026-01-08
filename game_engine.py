@@ -285,8 +285,7 @@ def npc_node(state: PlayerState):
 
 
 def check_npc_appearance(state: PlayerState) -> str:
-    """NPC 등장 (템플릿 기반)"""
-    # ... (기존 코드 동일) ...
+    """NPC 및 적 등장 (템플릿 기반)"""
     scenario = state['scenario']
     curr_id = state['current_scene_id']
 
@@ -298,30 +297,59 @@ def check_npc_appearance(state: PlayerState) -> str:
     curr_scene = all_scenes.get(curr_id)
     if not curr_scene: return ""
 
+    # [FIX] NPC와 적을 모두 처리
     npc_names = curr_scene.get('npcs', [])
-    if not npc_names: return ""
+    enemy_names = curr_scene.get('enemies', [])
+    scene_type = curr_scene.get('type', 'normal')  # [FIX] 장면 유형 확인
+
+    if not npc_names and not enemy_names: return ""
 
     scene_history_key = f"npc_appeared_{curr_id}"
     player_vars = state.get('player_vars', {})
     if player_vars.get(scene_history_key): return ""
 
     state['player_vars'][scene_history_key] = True
-    npc_introductions = []
-    action_templates = [
-        "당신을 바라봅니다.", "무언가를 하고 있습니다.", "조용히 서 있습니다.",
-        "경계하는 눈빛입니다.", "당신을 흥미롭게 쳐다봅니다."
-    ]
+    introductions = []
 
-    for npc_name in npc_names:
-        action = random.choice(action_templates)
-        intro_html = f"""
-        <div class='npc-intro text-green-300 italic my-2 p-2 bg-green-900/20 rounded border-l-2 border-green-500'>
-            👀 <span class='font-bold'>{npc_name}</span>이(가) {action}
+    # [FIX] 장면 유형에 따른 메시지 차별화
+    if scene_type == 'battle':
+        introductions.append("""
+        <div class='battle-alert text-red-400 font-bold my-3 p-3 bg-red-900/30 rounded border-2 border-red-500 animate-pulse'>
+            ⚔️ 전투 시작! 적과의 전투가 시작됩니다!
         </div>
-        """
-        npc_introductions.append(intro_html)
+        """)
 
-    return "\n".join(npc_introductions)
+    # NPC 등장
+    if npc_names:
+        npc_action_templates = [
+            "당신을 바라봅니다.", "무언가를 하고 있습니다.", "조용히 서 있습니다.",
+            "경계하는 눈빛입니다.", "당신을 흥미롭게 쳐다봅니다."
+        ]
+        for npc_name in npc_names:
+            action = random.choice(npc_action_templates)
+            intro_html = f"""
+            <div class='npc-intro text-green-300 italic my-2 p-2 bg-green-900/20 rounded border-l-2 border-green-500'>
+                👀 <span class='font-bold'>{npc_name}</span>이(가) {action}
+            </div>
+            """
+            introductions.append(intro_html)
+
+    # [FIX] 적 등장 처리
+    if enemy_names:
+        enemy_action_templates = [
+            "적대적인 기색을 보입니다!", "공격 태세를 갖춥니다!", "위협적으로 다가옵니다!",
+            "살기를 내뿜습니다!", "전투를 준비합니다!"
+        ]
+        for enemy_name in enemy_names:
+            action = random.choice(enemy_action_templates)
+            intro_html = f"""
+            <div class='enemy-intro text-red-400 font-bold my-2 p-2 bg-red-900/30 rounded border-l-2 border-red-500'>
+                ⚔️ <span class='font-bold'>{enemy_name}</span>이(가) 나타났습니다! {action}
+            </div>
+            """
+            introductions.append(intro_html)
+
+    return "\n".join(introductions)
 
 
 def narrator_node(state: PlayerState):

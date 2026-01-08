@@ -34,9 +34,7 @@ DEFAULT_CONFIG = {
 
 DEFAULT_PLAYER_VARS = {
     "hp": 100,
-    "sanity": 100,
-    "inventory": [],
-    "gold": 0
+    "inventory": []
 }
 
 # 버전 정보 설정
