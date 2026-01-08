@@ -26,6 +26,7 @@ async def game_act():
 async def game_act_stream(
     request: Request,
     action: str = Form(default=''),
+    model: str = Form(default='openai/tngtech/deepseek-r1t2-chimera:free'),
     user: CurrentUser = Depends(get_current_user_optional)
 ):
     """스트리밍 방식 - SSE (LangGraph 기반)"""
@@ -36,6 +37,11 @@ async def game_act_stream(
 
     action_text = action.strip()
     current_state = game_state.state
+
+    # 선택한 모델을 상태에 저장
+    if model:
+        current_state['model'] = model
+        logger.info(f"🤖 Using model: {model}")
 
     # 1. 사용자 입력 저장
     current_state['last_user_input'] = action_text

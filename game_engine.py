@@ -253,7 +253,9 @@ def npc_node(state: PlayerState):
 
     try:
         api_key = os.getenv("OPENROUTER_API_KEY")
-        llm = LLMFactory.get_llm(api_key=api_key, model_name="openai/tngtech/deepseek-r1t2-chimera:free")
+        # 상태에서 모델 가져오기 (없으면 기본값 사용)
+        model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+        llm = LLMFactory.get_llm(api_key=api_key, model_name=model_name)
         response = llm.invoke(prompt).content.strip()
         state['npc_output'] = response
 

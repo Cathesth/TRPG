@@ -132,6 +132,18 @@
                 <i data-lucide="gamepad-2" class="w-5 h-5"></i>
                 플레이어 모드
             </div>
+            <div class="flex items-center gap-2 ml-4">
+                <label class="text-xs text-gray-400 font-medium">AI 모델:</label>
+                <select id="model-select"
+                    class="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 hover:bg-gray-750 transition-colors">
+                    <option value="openai/tngtech/deepseek-r1t2-chimera:free">DeepSeek R1 (무료)</option>
+                    <option value="openai/deepseek/deepseek-chat">DeepSeek Chat (유료)</option>
+                    <option value="openai/qwen/qwen-2.5-72b-instruct">Qwen 2.5 72B</option>
+                    <option value="openai/meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B</option>
+                    <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                    <option value="openai/gpt-4o">GPT-4o</option>
+                </select>
+            </div>
         </div>
         <div class="flex items-center gap-2">
             <button id="scenes-btn" onclick="openScenesView()" disabled
@@ -508,6 +520,7 @@
         const loadingIndicator = document.getElementById('ai-loading');
         const input = form.querySelector('input[name="action"]');
         const scenesBtn = document.getElementById('scenes-btn');
+        const modelSelect = document.getElementById('model-select');
 
         const introMsg = document.getElementById('intro-message');
         if (introMsg) introMsg.remove();
@@ -562,6 +575,10 @@
         try {
             const formData = new FormData();
             formData.append('action', actionText);
+            // 선택한 모델 추가
+            if (modelSelect) {
+                formData.append('model', modelSelect.value);
+            }
 
             const response = await fetch('/game/act_stream', { method: 'POST', body: formData });
 
