@@ -64,6 +64,50 @@ async def game_act_stream(
                 current_state['current_scene_id'] = start_scene_id
                 current_state['system_message'] = 'Game Started'
             else:
+                # [개선] 상태 메시지를 유저 행동에 맞게 동기화
+                scenario = current_state['scenario']
+                curr_scene_id = current_state['current_scene_id']
+                all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
+                curr_scene = all_scenes.get(curr_scene_id)
+                scene_type = curr_scene.get('type', 'normal') if curr_scene else 'normal'
+
+                # 행동 분석 및 상태 메시지 생성
+                status_message = ""
+                action_lower = action_text.lower()
+
+                if scene_type == 'battle':
+                    # 전투 씬에서의 행동별 상태 메시지
+                    investigation_keywords = ['조사', '살펴', '찾', '둘러', '관찰', '확인', '탐색', 'look', 'search', 'examine']
+                    attack_keywords = ['공격', '때리', '치', '베', '찌르', '쏘', '던지', '싸우', 'attack', 'hit', 'strike', 'fight']
+                    defensive_keywords = ['방어', '회피', '막', '피하', '버티', '숨', '엄폐', 'block', 'defend', 'dodge', 'hide']
+                    thinking_keywords = ['생각', '방법', '전략', '약점', 'think', 'strategy']
+
+                    if any(kw in action_lower for kw in investigation_keywords):
+                        status_message = "🔍 주변을 살피는 중..."
+                    elif any(kw in action_lower for kw in thinking_keywords):
+                        status_message = "💭 전투 상황을 분석하는 중..."
+                    elif any(kw in action_lower for kw in attack_keywords):
+                        status_message = "⚔️ 전투 상황 분석 중..."
+                    elif any(kw in action_lower for kw in defensive_keywords):
+                        status_message = "🛡️ 방어 태세 확인 중..."
+                    else:
+                        status_message = "⚔️ 전투 진행 중..."
+                else:
+                    # 일반 씬에서의 상태 메시지
+                    if any(kw in action_lower for kw in ['대화', '말', '물어', '질문', 'talk', 'speak', 'ask']):
+                        status_message = "💬 대화 중..."
+                    elif any(kw in action_lower for kw in ['이동', '가', '향하', 'go', 'move']):
+                        status_message = "🚶 이동 중..."
+                    elif any(kw in action_lower for kw in ['조사', '살펴', '확인', 'look', 'examine']):
+                        status_message = "🔍 조사 중..."
+                    else:
+                        status_message = "⏳ 행동 처리 중..."
+
+                # 상태 메시지 출력
+                if status_message:
+                    status_html = f"<div class='text-xs text-indigo-400 mb-2 border-l-2 border-indigo-500 pl-2'>{status_message}</div>"
+                    yield f"data: {json.dumps({'type': 'prefix', 'content': status_html})}\n\n"
+
                 # 일반 턴: LangGraph 실행
                 logger.info(f"🎮 Action: {action_text}")
                 processed_state = game_state.game_graph.invoke(current_state)

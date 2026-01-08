@@ -704,17 +704,76 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             # 플래그 초기화
             state['_internal_flags']['battle_attack'] = False
 
-            # 공격 결과 묘사 + 약점 힌트
-            attack_narration = random.choice(get_battle_attack_messages())
-            yield attack_narration
+            # [개선] LLM으로 즉각적인 물리적 결과 생성
+            attack_result_prompt = f"""당신은 텍스트 RPG의 게임 마스터입니다.
 
-            # NPC 약점 기반 서사적 힌트 제공
+**최우선 지침: 유저의 마지막 입력("{user_input}")에 대한 즉각적이고 구체적인 물리적 결과를 먼저 서술하세요.**
+
+**현재 상황:**
+- 장면: "{scene_title}" (전투 중)
+- 유저의 행동: "{user_input}"
+- 결과: 공격이 적에게 닿았으나 치명타는 아님
+
+**약점 정보 (환경 묘사에 자연스럽게 포함할 것):**
+{get_npc_weakness_hint(scenario, enemy_names) or "주변을 살펴보니 활용할 수 있는 것이 보입니다."}
+
+**규칙:**
+1. 먼저 유저 행동의 물리적 결과를 2인칭으로 서술 ("당신의 공격이...")
+2. 그 다음 환경 묘사를 통해 약점을 암시
+3. 2-3문장, 한국어로 작성
+4. "~해보세요", "전략이 필요합니다" 등 금지
+
+**응답:**"""
+
+            try:
+                api_key = os.getenv("OPENROUTER_API_KEY")
+                model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+                llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
+                for chunk in llm.stream(attack_result_prompt):
+                    if chunk.content: yield chunk.content
+            except Exception:
+                yield random.choice(get_battle_attack_messages())
+            return
+
+        # [개선] 전투 씬에서 조사/탐색 행동 감지 - 약점 노출 강화
+        investigation_keywords = ['조사', '살펴', '찾', '둘러', '관찰', '확인', '생각', '방법', '전략', '약점', '탐색', 'look', 'search', 'examine', 'think', 'find']
+        is_investigation = any(kw in user_input.lower() for kw in investigation_keywords)
+
+        if scene_type == 'battle' and is_investigation:
+            # [필수] 약점을 명확히 보여주는 환경 묘사 생성
             weakness_hint = get_npc_weakness_hint(scenario, enemy_names)
-            if weakness_hint:
-                yield f" {weakness_hint}"
-            else:
-                # 약점 정보 없으면 일반 전투 힌트
-                yield f" {random.choice(get_battle_stalemate_messages())}"
+
+            investigation_prompt = f"""당신은 텍스트 RPG의 게임 마스터입니다.
+
+**최우선 지침: 유저의 마지막 입력("{user_input}")에 대한 즉각적이고 구체적인 물리적 결과를 먼저 서술하세요.**
+
+**현재 상황:**
+- 장면: "{scene_title}" (전투 중)
+- 유저의 행동: "{user_input}" (주변 조사/탐색)
+
+**필수 약점 힌트 (반드시 포함):**
+{weakness_hint if weakness_hint else "주변을 살펴보니 특이한 물건이 눈에 띕니다."}
+
+**규칙:**
+1. 먼저 유저의 조사 행동 결과를 2인칭으로 서술
+2. 위 약점 힌트를 구체적인 오브젝트로 묘사 (예: "바닥에 쏟아진 소금물이 보입니다")
+3. 2-3문장, 한국어
+4. 절대 금지: "전략이 필요합니다", "방법을 찾아보세요" 등 메타적 제안
+
+**응답:**"""
+
+            try:
+                api_key = os.getenv("OPENROUTER_API_KEY")
+                model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+                llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
+                for chunk in llm.stream(investigation_prompt):
+                    if chunk.content: yield chunk.content
+            except Exception:
+                # 폴백: 약점 힌트 직접 출력
+                if weakness_hint:
+                    yield f"주변을 살핍니다. {weakness_hint}"
+                else:
+                    yield "주변을 둘러보니 활용할 수 있는 것들이 보입니다."
             return
 
         # [개선] 방어 행동 감지 (전투 씬에서)
@@ -722,42 +781,101 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         is_defensive_action = any(kw in user_input.lower() for kw in defensive_keywords)
 
         if scene_type == 'battle' and is_defensive_action:
-            # 방어 행동 묘사 + 약점 힌트
-            defense_narration = random.choice(get_battle_defensive_messages())
-            yield defense_narration
+            # [개선] LLM으로 방어 결과 생성
+            defense_prompt = f"""당신은 텍스트 RPG의 게임 마스터입니다.
 
-            # NPC 약점 기반 서사적 힌트 제공
-            weakness_hint = get_npc_weakness_hint(scenario, enemy_names)
-            if weakness_hint:
-                yield f" {weakness_hint}"
+**최우선 지침: 유저의 마지막 입력("{user_input}")에 대한 즉각적이고 구체적인 물리적 결과를 먼저 서술하세요.**
+
+**현재 상황:**
+- 장면: "{scene_title}" (전투 중)
+- 유저의 행동: "{user_input}" (방어적 행동)
+
+**약점 정보 (환경 묘사에 자연스럽게 포함):**
+{get_npc_weakness_hint(scenario, enemy_names) or "주변에 활용할 수 있는 것들이 있습니다."}
+
+**규칙:**
+1. 먼저 방어 행동의 즉각적 결과를 서술 ("당신은 몸을 낮췄습니다...")
+2. 숨 돌리는 동안 주변 환경(약점)이 눈에 들어오는 식으로 묘사
+3. 2-3문장, 한국어
+
+**응답:**"""
+
+            try:
+                api_key = os.getenv("OPENROUTER_API_KEY")
+                model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+                llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
+                for chunk in llm.stream(defense_prompt):
+                    if chunk.content: yield chunk.content
+            except Exception:
+                yield random.choice(get_battle_defensive_messages())
             return
 
-        # [최적화 1] Near Miss 감지 시 서사적 힌트 반환
+        # [개선] Near Miss 감지 시 서사적 힌트 반환 (LLM 사용)
         near_miss = state.get('near_miss_trigger')
         if near_miss:
-            yield random.choice(get_near_miss_narrative_hints())
+            near_miss_prompt = f"""당신은 텍스트 RPG의 게임 마스터입니다.
+
+**최우선 지침: 유저의 마지막 입력("{user_input}")에 대한 즉각적이고 구체적인 물리적 결과를 먼저 서술하세요.**
+
+**상황:**
+- 유저 시도: "{user_input}"
+- 정답에 가까움: "{near_miss}"
+- 결과: 아슬아슬하게 실패
+
+**규칙:**
+1. 유저 행동의 물리적 결과를 먼저 서술
+2. "거의 통할 뻔했다", "방향은 맞다" 등의 긍정적 피드백
+3. 1-2문장, 한국어
+
+**응답:**"""
+
+            try:
+                api_key = os.getenv("OPENROUTER_API_KEY")
+                model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+                llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
+                for chunk in llm.stream(near_miss_prompt):
+                    if chunk.content: yield chunk.content
+            except Exception:
+                yield random.choice(get_near_miss_narrative_hints())
             return
 
-        # [최적화 2] NPC 대화 있으면 스킵
+        # [최적화] NPC 대화 있으면 스킵
         npc_output = state.get('npc_output', '')
         if npc_output:
             yield ""
             return
 
-        # [신규] 전투 씬에서 일반 행동 시에도 전투 상황 유지
+        # [신규] 전투 씬에서 일반 행동 시에도 전투 상황 유지 (LLM 사용)
         if scene_type == 'battle':
-            stalemate_msg = random.choice(get_battle_stalemate_messages())
-            weakness_hint = get_npc_weakness_hint(scenario, enemy_names)
-            if weakness_hint:
-                yield f"{stalemate_msg} {weakness_hint}"
-            else:
-                yield stalemate_msg
+            battle_continue_prompt = f"""당신은 텍스트 RPG의 게임 마스터입니다.
+
+**최우선 지침: 유저의 마지막 입력("{user_input}")에 대한 즉각적이고 구체적인 물리적 결과를 먼저 서술하세요.**
+
+**현재 상황:**
+- 장면: "{scene_title}" (전투 교착 상태)
+- 유저의 행동: "{user_input}"
+
+**약점 정보:**
+{get_npc_weakness_hint(scenario, enemy_names) or "주변에 활용할 수 있는 것이 있습니다."}
+
+**규칙:**
+1. 유저 행동의 즉각적 결과 서술
+2. 전투 긴장감 유지하며 환경에 약점 암시
+3. 2-3문장, 한국어
+
+**응답:**"""
+
+            try:
+                api_key = os.getenv("OPENROUTER_API_KEY")
+                model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+                llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
+                for chunk in llm.stream(battle_continue_prompt):
+                    if chunk.content: yield chunk.content
+            except Exception:
+                yield random.choice(get_battle_stalemate_messages())
             return
 
-        # [최적화 3] 50% 확률로 LLM 없이 서사적 기본 메시지 (비용+속도 절감)
-        if random.random() < 0.5:
-            yield random.choice(get_narrative_hint_messages())
-            return
+        # [삭제] 정적 힌트 로직 완전 제거 - 모든 응답은 LLM으로 일원화
 
         # [개선] 부정적 결말로 가는 transition 완전 필터링
         filtered_transitions = filter_negative_transitions(transitions, scenario)
@@ -769,14 +887,19 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         hint_prompt_template = prompts.get('hint_mode', '')
 
         if hint_prompt_template:
-            prompt = hint_prompt_template.format(
+            # [개선] 프롬프트 최상단에 유저 입력에 대한 즉각 응답 지침 추가
+            prompt = f"""**최우선 지침: 유저의 마지막 입력("{user_input}")에 대한 즉각적이고 구체적인 물리적 결과를 먼저 서술하세요.**
+
+""" + hint_prompt_template.format(
                 scene_title=scene_title,
                 user_input=user_input,
                 hint_list=hint_list
             )
         else:
             # 폴백 프롬프트
-            prompt = f"""당신은 텍스트 기반 RPG의 게임 마스터입니다. 철저히 세계관 안에서 상황을 묘사하는 역할입니다.
+            prompt = f"""**최우선 지침: 유저의 마지막 입력("{user_input}")에 대한 즉각적이고 구체적인 물리적 결과를 먼저 서술하세요.**
+
+당신은 텍스트 기반 RPG의 게임 마스터입니다. 철저히 세계관 안에서 상황을 묘사하는 역할입니다.
 
 **현재 상황:**
 - 장면: "{scene_title}"
@@ -795,7 +918,8 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             for chunk in llm.stream(prompt):
                 if chunk.content: yield chunk.content
         except Exception:
-            yield random.choice(get_narrative_hint_messages())
+            # 폴백: 기본 서사적 메시지
+            yield "당신의 행동에 주변이 미세하게 반응했습니다. 더 주의 깊게 상황을 살펴봅니다."
         return
 
     # [MODE 2] 씬 변경됨 -> 전체 묘사
@@ -811,11 +935,22 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     scene_prompt_template = prompts.get('scene_description', '')
 
     if scene_prompt_template:
-        prompt = scene_prompt_template.format(
-            scene_title=scene_title,
-            scene_desc=scene_desc,
-            npc_list=npc_list
-        )
+        # [개선] 씬 변경 시에도 유저 입력 컨텍스트 포함
+        if user_input:
+            context_prefix = f"""**최우선 지침: 유저의 마지막 입력("{user_input}")이 이 장면으로의 전환을 일으켰습니다. 그 결과를 먼저 서술하세요.**
+
+"""
+            prompt = context_prefix + scene_prompt_template.format(
+                scene_title=scene_title,
+                scene_desc=scene_desc,
+                npc_list=npc_list
+            )
+        else:
+            prompt = scene_prompt_template.format(
+                scene_title=scene_title,
+                scene_desc=scene_desc,
+                npc_list=npc_list
+            )
     else:
         # 폴백 프롬프트
         prompt = f"""당신은 텍스트 기반 RPG의 게임 마스터입니다.
@@ -868,7 +1003,6 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 <div class="text-yellow-400 serif-font">{fallback_msg}</div>
             </div>
             """
-
 
 def create_game_graph():
     # ... (기존 코드 동일) ...
