@@ -4,6 +4,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import JSON
 from datetime import datetime
 import os
+import uuid
 
 # SQLAlchemy Base
 Base = declarative_base()
@@ -16,7 +17,8 @@ else:
     JSON_TYPE = JSON
 
 # Database URL 처리 (postgres:// -> postgresql://)
-DATABASE_URL = os.getenv('DATABASE_URL', f'sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), "trpg.db")}')
+DATABASE_URL = os.getenv('DATABASE_URL',
+                         f'sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), "trpg.db")}')
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -97,6 +99,10 @@ class Preset(Base):
     __tablename__ = 'presets'
 
     id = Column(Integer, primary_key=True)
+
+    # [수정] 프론트엔드 호환용 식별자 (UUID)
+    filename = Column(String(100), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+
     name = Column(String(100), nullable=False)
     description = Column(Text, default='')
     author_id = Column(String(50), ForeignKey('users.id'), nullable=True)
@@ -109,13 +115,12 @@ class Preset(Base):
 
     def to_dict(self):
         return {
-            'id': self.id,
+            'filename': self.filename,  # id 대신 filename 반환
             'name': self.name,
-            'description': self.description,
+            'desc': self.description,
             'author': self.author_id or 'Anonymous',
             'data': self.data,
-            'created_at': self.created_at.timestamp() if self.created_at else None,
-            'updated_at': self.updated_at.timestamp() if self.updated_at else None
+            'created_time': self.created_at.timestamp() if self.created_at else None  # created_at -> created_time 변환
         }
 
 

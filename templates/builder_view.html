@@ -401,7 +401,17 @@
                         const result = await response.json();
 
                         if (result.success) {
-                            const loadData = result.data.data;
+                            // [CRITICAL FIX] 문자열로 들어온 JSON 데이터 파싱
+                            let loadData = result.data.data;
+                            if (typeof loadData === 'string') {
+                                try {
+                                    loadData = JSON.parse(loadData);
+                                } catch (e) {
+                                    console.error("JSON Parse Error:", e);
+                                    showToast("데이터 파싱 오류 발생", "error");
+                                    return;
+                                }
+                            }
 
                             if (loadData.nodes) setNodes(loadData.nodes);
                             if (loadData.edges) setConnections(loadData.edges);
