@@ -364,6 +364,7 @@
                             body: JSON.stringify({
                                 name: name,
                                 description: nodes.find(n => n.id === 'start')?.data.background || '',
+                                // [수정] NPC 및 적 목록도 함께 저장
                                 data: { nodes, edges: connections, npcs: [...globalNpcs, ...globalEnemies] }
                             })
                         });
@@ -401,8 +402,9 @@
                         const result = await response.json();
 
                         if (result.success) {
+                            let loadData = result.data.data; // 저장할 때 data 안에 넣었으므로
+
                             // [CRITICAL FIX] 문자열로 들어온 JSON 데이터 파싱
-                            let loadData = result.data.data;
                             if (typeof loadData === 'string') {
                                 try {
                                     loadData = JSON.parse(loadData);
@@ -413,9 +415,11 @@
                                 }
                             }
 
+                            // 데이터 적용
                             if (loadData.nodes) setNodes(loadData.nodes);
                             if (loadData.edges) setConnections(loadData.edges);
 
+                            // [수정] 저장된 NPC 및 적 목록 복원
                             if (loadData.npcs) {
                                 setGlobalNpcs(loadData.npcs.filter(n => !n.isEnemy));
                                 setGlobalEnemies(loadData.npcs.filter(n => n.isEnemy));
