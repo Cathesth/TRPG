@@ -6,6 +6,7 @@ import threading
 from typing import Optional
 from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -35,6 +36,7 @@ from routes.auth import get_current_user, get_current_user_optional, login_user,
 from models import get_db, Preset, CustomNPC
 
 logger = logging.getLogger(__name__)
+templates = Jinja2Templates(directory="templates")
 
 api_router = APIRouter(prefix="/api", tags=["api"])
 
@@ -1074,3 +1076,76 @@ async def get_undo_redo_status(scenario_id: int, user: CurrentUser = Depends(get
     status = HistoryService.get_undo_redo_status(scenario_id, user.id)
 
     return {"success": True, **status}
+
+# 마이페이지 연결함수
+@api_router.get("/scenarios", response_class=HTMLResponse)
+async def get_scenarios(
+        request: Request,
+        filter: str = Query(None),
+        limit: int = Query(None),
+        user: CurrentUser = Depends(get_current_user_optional)
+):
+    """
+    시나리오 목록을 가져와 HTML 카드 리스트로 반환합니다.
+    HTMX 요청(hx-get)에 의해 호출되어 화면의 그리드 부분을 채웁니다.
+    """
+
+    # 1. 시나리오 데이터 조회
+    if filter == 'my':
+        # [마이페이지] 로그인한 유저의 시나리오만 조회
+        if not user:
+            return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10">로그인이 필요합니다.</div>')
+
+        # ScenarioService에 해당 함수가 있다고 가정 (없다면 서비스에 추가 필요)
+        # 예: list_scenarios(user_id=..., limit=...)
+        scenarios = ScenarioService.list_scenarios(user_id=user.id, limit=limit)
+        empty_message = "아직 생성한 시나리오가 없습니다."
+
+    else:
+        # [메인페이지] 전체 공개 시나리오 조회 (기본값)
+        scenarios = ScenarioService.list_scenarios(is_public=True, limit=limit)
+        empty_message = "공개된 시나리오가 없습니다."
+
+    # 2. HTML 조각 생성 (서버 사이드 렌더링)
+    # 템플릿 파일 없이 파이썬 코드 내에서 HTML 문자열을 직접 조립하여 반환합니다.
+    # (유지보수를 위해 나중에는 templates/partials/card.html 같은 파일로 분리하는 것이 좋습니다)
+
+    if not scenarios:
+        return HTMLResponse(f'<div class="col-span-full text-center text-gray-500 py-10">{empty_message}</div>')
+
+    html_content = ""
+
+    for scenario in scenarios:
+        # DB 모델 객체에서 필요한 정보 추출 (필드명은 실제 모델에 맞춰 조정하세요)
+        s_id = getattr(scenario, 'filename', '') or getattr(scenario, 'id', '')
+        title = getattr(scenario, 'title', 'Untitled')
+        desc = getattr(scenario, 'description', '설명이 없습니다.') or ""
+        # 이미지: 모델에 image_url이 없으면 기본 이미지 사용
+        img = getattr(scenario, 'image_url',
+                      '') or "https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=800"
+        genre = getattr(scenario, 'genre', 'RPG')
+
+        # HTML 카드 조립 (mypage.html의 스타일 유지)
+        card_html = f"""
+        <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] transition-all flex flex-col h-full">
+            <div class="relative h-48 overflow-hidden">
+                <img src="{img}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
+                <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-rpg-accent border border-rpg-accent/30">{genre}</div>
+            </div>
+            <div class="p-5 flex-1 flex flex-col gap-3">
+                <h3 class="text-lg font-bold text-white mb-1 font-title tracking-wide truncate">{title}</h3>
+                <p class="text-sm text-gray-400 line-clamp-2">{desc}</p>
+
+                <div class="mt-auto pt-2 flex gap-2">
+                    <button onclick="playScenario('{s_id}', this)" class="flex-1 py-2 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded text-sm transition-all flex items-center justify-center gap-2">
+                        <i data-lucide="play" class="w-4 h-4"></i> PLAY
+                    </button>
+                    {'<button class="p-2 rounded bg-rpg-900 text-gray-400 hover:text-white border border-rpg-700 hover:border-rpg-accent transition-all" title="수정"><i data-lucide="edit" class="w-4 h-4"></i></button>' if filter == 'my' else ''}
+                    {'<button class="p-2 rounded bg-rpg-900 text-gray-400 hover:text-rpg-danger border border-rpg-700 hover:border-rpg-danger transition-all" title="삭제"><i data-lucide="trash" class="w-4 h-4"></i></button>' if filter == 'my' else ''}
+                </div>
+            </div>
+        </div>
+        """
+        html_content += card_html
+
+    return HTMLResponse(content=html_content)
