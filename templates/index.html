@@ -49,38 +49,45 @@
         .modal { transition: opacity 0.25s ease; }
         body.modal-active { overflow-x: hidden; overflow-y: hidden !important; }
 
-        /* [핵심] API 호환성 패치: 서버에서 오는 bg-dark-800 클래스를 새로운 디자인으로 매핑 */
-        .bg-dark-800 {
+        /* [핵심] API에서 오는 구형 디자인 강제 오버라이딩 (깨짐 방지) */
+        #scenario-grid .bg-dark-800,
+        #scenario-grid .border-white\/5 {
             @apply bg-rpg-800 border border-rpg-700 shadow-lg rounded-xl overflow-hidden flex flex-col h-full transition-all hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] !important;
-        }
-        /* 이미지 영역 */
-        .bg-dark-800 > div:first-child {
-            @apply relative h-40 overflow-hidden !important;
-        }
-        .bg-dark-800 img {
-            @apply w-full h-full object-cover transition-transform duration-500 hover:scale-110 !important;
-        }
-        /* 텍스트 영역 */
-        .bg-dark-800 > div:nth-child(2) {
-            @apply p-5 flex-1 flex flex-col !important;
-        }
-        .bg-dark-800 h4 {
-            @apply text-lg font-bold text-white mb-2 font-title tracking-wide truncate !important;
-        }
-        .bg-dark-800 p {
-            @apply text-sm text-gray-400 line-clamp-2 mb-4 flex-1 !important;
+            min-height: 380px; /* 높이 고정 */
         }
 
-        /* [핵심] 버튼 디자인 강제 통일 */
-        #scenario-grid button {
-            @apply w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 mt-auto !important;
+        /* 이미지 영역 강제 스타일링 */
+        #scenario-grid .bg-dark-800 > div:first-child,
+        #scenario-grid .aspect-video {
+            @apply relative h-48 overflow-hidden bg-black !important;
+            aspect-ratio: auto !important;
         }
-        #scenario-grid button i {
-            @apply w-4 h-4 fill-current !important;
+        #scenario-grid img {
+            @apply w-full h-full object-cover transition-transform duration-500 hover:scale-110 opacity-80 hover:opacity-100 !important;
         }
-        /* 삭제/공개 버튼 아이콘 스타일 */
-        .opacity-0 button {
-            @apply text-gray-400 hover:text-rpg-accent transition-colors !important;
+
+        /* 텍스트 영역 강제 스타일링 */
+        #scenario-grid .bg-dark-800 > div:last-child {
+            @apply p-5 flex-1 flex flex-col justify-between bg-rpg-800 !important;
+        }
+        #scenario-grid h3, #scenario-grid h4, #scenario-grid .text-lg {
+            @apply text-lg font-bold text-white mb-2 font-title tracking-wide truncate !important;
+        }
+        #scenario-grid p, #scenario-grid .text-sm {
+            @apply text-sm text-gray-400 line-clamp-2 mb-4 !important;
+        }
+
+        /* [버튼] 플레이 버튼 디자인 강제 적용 */
+        #scenario-grid button[onclick*="playScenario"] {
+            @apply w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 mt-auto shadow-md border border-rpg-700 !important;
+        }
+
+        /* [버튼] 수정/삭제 버튼 디자인 */
+        #scenario-grid button:not([onclick*="playScenario"]) {
+            @apply p-2 rounded-lg transition-all border border-transparent hover:bg-rpg-900 hover:border-rpg-accent !important;
+        }
+        #scenario-grid button:not([onclick*="playScenario"]) svg {
+            @apply w-4 h-4 text-gray-400 hover:text-white !important;
         }
     </style>
 </head>
@@ -313,9 +320,29 @@
 
     <script>
         lucide.createIcons();
-        document.body.addEventListener('htmx:afterSwap', function(evt) { lucide.createIcons(); });
 
-        async function playScenario(filename, btn) {
+        // [중요] HTMX 로드 후 아이콘 리로드 및 스타일 강제 적용
+        document.body.addEventListener('htmx:afterSwap', function(evt) {
+            lucide.createIcons();
+
+            // API에서 불러온 버튼에 이벤트 재연결 및 스타일 적용 (필요 시)
+            const container = document.getElementById('scenario-grid');
+            if (container) {
+                // 수정 버튼 이벤트 연결
+                const editBtns = container.querySelectorAll('button:has(.lucide-edit), button:contains("수정")');
+                editBtns.forEach(btn => {
+                    if (!btn.getAttribute('onclick')) {
+                        // 카드 내부에서 filename 추출 시도
+                        const card = btn.closest('.bg-dark-800');
+                        // 이 부분은 서버 HTML 구조에 따라 다를 수 있음.
+                        // 현재는 window.editScenario가 호출되도록 서버에서 onclick을 보내주는 게 가장 좋음.
+                    }
+                });
+            }
+        });
+
+        // 전역 함수로 등록하여 HTML onclick에서 호출 가능하게 함
+        window.playScenario = async function(filename, btn) {
             const originalText = btn.innerHTML;
             btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> LOADING...';
             btn.disabled = true;
@@ -340,107 +367,42 @@
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }
-        }
-        function showToast(message, type = 'info') {
-            const bgColor = type === 'success' ? 'bg-green-900/90 border-green-500/30 text-green-100' :
-                           type === 'error' ? 'bg-red-900/90 border-red-500/30 text-red-100' :
-                           'bg-blue-900/90 border-blue-500/30 text-blue-100';
+        };
 
-            const icon = type === 'success' ? 'check-circle' :
-                        type === 'error' ? 'alert-circle' : 'info';
-
-            const toast = document.createElement('div');
-            toast.className = `fixed bottom-4 right-4 z-[100] ${bgColor} border px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3`;
-            toast.innerHTML = `
-                <i data-lucide="${icon}" class="w-5 h-5"></i>
-                <span class="font-medium">${message}</span>
-            `;
-
-            document.body.appendChild(toast);
-            lucide.createIcons();
-
-            setTimeout(() => {
-                toast.style.transition = 'opacity 0.3s, transform 0.3s';
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateY(10px)';
-                setTimeout(() => toast.remove(), 300);
-            }, 3000);
-        }
-
-        // [추가] 시나리오 수정 페이지로 이동
-        function editScenario(filename) {
-            // 빌더 페이지로 이동하며 시나리오 로드 (URL 구조는 프로젝트 라우팅에 맞게 조정 필요)
-            // routes/views.py 설정에 따라 다르겠지만, 보통 builder나 edit 라우트를 사용합니다.
-            // 만약 별도 edit 라우트가 없다면 builder 페이지로 보내되 쿼리 파라미터를 쓸 수도 있습니다.
-            // 여기서는 player_view.html에 있던 방식을 따릅니다.
-            window.location.href = `/views/scenes/edit/${filename}`;
-        }
-
-        // [추가] 시나리오 공개/비공개 전환
-        async function publishScenario(filename, btnElement) {
-            try {
-                const response = await fetch('/api/publish_scenario', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename: filename })
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    // 버튼 스타일이나 텍스트를 즉시 변경 (UX 향상)
-                    // api.py가 반환하는 HTML 구조에 의존하므로, 여기서는 새로고침 없이 토스트만 띄우거나
-                    // htmx-trigger를 이용해 리스트를 갱신할 수도 있습니다.
-                    showToast(result.message || '상태가 변경되었습니다.', 'success');
-
-                    // 간단하게 리스트 갱신 (htmx 활용)
-                    const grid = document.getElementById('scenario-grid');
-                    if (grid) htmx.trigger(grid, 'load');
-                } else {
-                    showToast('변경 실패: ' + (result.error || '알 수 없는 오류'), 'error');
-                }
-            } catch (error) {
-                console.error('Publish error:', error);
-                showToast('오류가 발생했습니다.', 'error');
-            }
-        }
-
-        // [추가] 시나리오 삭제
-        async function deleteScenario(filename, title, btnElement) {
-            if (!confirm(`"${title}" 시나리오를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
-                return;
-            }
+        window.deleteScenario = async function(filename, btn) {
+            if(!confirm('정말 삭제하시겠습니까?')) return;
 
             try {
-                const response = await fetch('/api/delete_scenario', {
+                // JSON 방식으로 전송 (서버 로그 "Stopping Container" 방지)
+                const res = await fetch('/api/delete_scenario', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename: filename })
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({filename: filename})
                 });
+                const result = await res.json();
 
-                const result = await response.json();
-
-                if (result.success) {
-                    showToast('시나리오가 삭제되었습니다.', 'success');
-                    // 해당 카드 UI 제거 또는 리스트 갱신
-                    const card = btnElement.closest('.bg-rpg-800'); // index.html의 카드 클래스
-                    if (card) {
-                        card.remove();
-                    } else {
-                        // 카드를 못 찾으면 그리드 전체 리로드
-                        const grid = document.getElementById('scenario-grid');
-                        if (grid) htmx.trigger(grid, 'load');
+                if(result.success) {
+                    const card = btn.closest('.bg-dark-800') || btn.closest('.bg-rpg-800');
+                    if(card) {
+                        card.style.opacity = '0';
+                        setTimeout(() => card.remove(), 300);
                     }
                 } else {
-                    showToast('삭제 실패: ' + (result.error || '알 수 없는 오류'), 'error');
+                    alert('삭제 실패: ' + result.error);
                 }
-            } catch (error) {
-                console.error('Delete error:', error);
-                showToast('삭제 중 오류가 발생했습니다.', 'error');
+            } catch(e) {
+                console.error(e);
+                alert('삭제 중 오류 발생');
             }
-        }
-        // 모달 열기/닫기
-        function openModal(id) {
+        };
+
+        window.editScenario = function(filename) {
+            const encodedName = encodeURIComponent(filename);
+            // builder 페이지로 이동하며 시나리오 로드
+            window.location.href = `/views/builder?scenario=${encodedName}`;
+        };
+
+        window.openModal = function(id) {
             const modal = document.getElementById(id);
             const container = modal.querySelector('.modal-container');
             const form = modal.querySelector('form');
@@ -454,9 +416,9 @@
                 container.classList.remove('scale-95', 'opacity-0');
                 container.classList.add('scale-100', 'opacity-100');
             }, 10);
-        }
+        };
 
-        function closeModal(id) {
+        window.closeModal = function(id) {
             const modal = document.getElementById(id);
             const container = modal.querySelector('.modal-container');
             container.classList.remove('scale-100', 'opacity-100');
@@ -465,9 +427,9 @@
                 modal.classList.add('opacity-0', 'pointer-events-none');
                 document.body.classList.remove('modal-active');
             }, 300);
-        }
+        };
 
-        async function handleLogin(e) {
+        window.handleLogin = async function(e) {
             e.preventDefault(); const form = e.target;
             const errorMsg = document.getElementById('login-error');
             try {
@@ -480,9 +442,9 @@
                 if (data.success) window.location.reload();
                 else { errorMsg.innerText = data.error; errorMsg.classList.remove('hidden'); }
             } catch(e) { errorMsg.innerText = "서버 통신 오류"; errorMsg.classList.remove('hidden'); }
-        }
+        };
 
-        async function handleRegister(e) {
+        window.handleRegister = async function(e) {
             e.preventDefault(); const form = e.target;
             const errorMsg = document.getElementById('register-error');
             if (form.password.value !== form.confirm_password.value) {
@@ -503,14 +465,14 @@
                 if (data.success) { alert('가입 성공!'); closeModal('register-modal'); openModal('login-modal'); }
                 else { errorMsg.innerText = data.error; errorMsg.classList.remove('hidden'); }
             } catch(e) { errorMsg.innerText = "서버 오류"; errorMsg.classList.remove('hidden'); }
-        }
+        };
 
-        async function logout() {
+        window.logout = async function() {
             if(confirm('로그아웃 하시겠습니까?')) {
                 await fetch('/api/auth/logout', {method:'POST'});
                 window.location.reload();
             }
-        }
+        };
     </script>
 </body>
 </html>
