@@ -67,7 +67,9 @@
                     'alert-triangle': 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z M12 9v4 M12 17h.01',
                     'undo': 'M3 7v6h6 M21 17a9 9 0 0 0-9-9 9 9 0 0 0-9 9',
                     'redo': 'M21 7v6h-6 M3 17a9 9 0 0 1 9-9 9 9 0 0 1 9 9',
-                    'swords': 'M14.5 17.5L3 6V3h3l11.5 11.5 M13 19l6-6 M16 16l4 4 M19 21l2-2'
+                    'swords': 'M14.5 17.5L3 6V3h3l11.5 11.5 M13 19l6-6 M16 16l4 4 M19 21l2-2',
+                    'plus': 'M12 5v14 M5 12h14',
+                    'minus': 'M5 12h14'
                 };
                 return icons[name] || 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z';
             };
@@ -153,8 +155,16 @@
             // --- 메인 컴포넌트 ---
             function ScenarioBuilder() {
                 // 노드 기본값 설정 (필수 항목 포함)
+                // [수정] Start 노드: 기본 스탯(HP, Items) + 커스텀 스탯(배열) + 규칙
                 const [nodes, setNodes] = useState([
-                    { id: 'start', type: 'start', x: 50, y: 50, data: { label: '시나리오 설정', prologue: '', gm_notes: '', background: '' } },
+                    {
+                        id: 'start', type: 'start', x: 50, y: 50,
+                        data: {
+                            label: '시나리오 설정', prologue: '', gm_notes: '', background: '',
+                            initial_hp: 100, initial_items: '',
+                            custom_stats: [], stat_rules: ''
+                        }
+                    },
                     { id: 'scene-1', type: 'scene', x: 400, y: 150, data: { title: '첫 번째 장면', description: '', background: '', trigger: '', npcs: [], enemies: [], rule: '', scene_type: 'normal' } },
                 ]);
                 const [connections, setConnections] = useState([]);
@@ -194,7 +204,7 @@
                     } else if (node.type === 'scene') {
                         return d.title && d.background && d.trigger;
                     } else if (node.type === 'ending') {
-                        return d.background && d.description; // description을 엔딩 문구로 사용
+                        return d.background && d.description;
                     }
                     return true;
                 };
@@ -235,6 +245,17 @@
                                 setConnectingSourceId(null);
                                 return;
                             }
+
+                            // [수정] Start 노드는 오직 1개의 연결만 허용 (트리거 부재 해결)
+                            if (sourceNode.type === 'start') {
+                                const existing = connections.filter(c => c.source === connectingSourceId);
+                                if (existing.length >= 1) {
+                                    showToast("시작점(설정)은 하나의 오프닝 장면과만 연결할 수 있습니다.", "error");
+                                    setConnectingSourceId(null);
+                                    return;
+                                }
+                            }
+
                             if (!connections.some(c => c.source === connectingSourceId && c.target === id)) {
                                 setConnections(p => [...p, { id: `c-${Date.now()}`, source: connectingSourceId, target: id }]);
                             }
@@ -279,6 +300,29 @@
                 const updateNodeData = (key, value) => {
                     if (!selectedNodeId) return;
                     setNodes(p => p.map(n => n.id === selectedNodeId ? { ...n, data: { ...n.data, [key]: value } } : n));
+                };
+
+                // [추가] 커스텀 스탯 관리 함수들
+                const addCustomStat = () => {
+                    if (!selectedNodeId) return;
+                    const node = nodes.find(n => n.id === selectedNodeId);
+                    const currentStats = node.data.custom_stats || [];
+                    updateNodeData('custom_stats', [...currentStats, { name: '', value: 0 }]);
+                };
+
+                const updateCustomStat = (index, field, value) => {
+                    if (!selectedNodeId) return;
+                    const node = nodes.find(n => n.id === selectedNodeId);
+                    const currentStats = [...(node.data.custom_stats || [])];
+                    currentStats[index][field] = value;
+                    updateNodeData('custom_stats', currentStats);
+                };
+
+                const removeCustomStat = (index) => {
+                    if (!selectedNodeId) return;
+                    const node = nodes.find(n => n.id === selectedNodeId);
+                    const currentStats = (node.data.custom_stats || []).filter((_, i) => i !== index);
+                    updateNodeData('custom_stats', currentStats);
                 };
 
                 const addNode = (type) => {
@@ -333,7 +377,7 @@
                         showToast("오류 발생: " + e.message, "error");
                     }
                 };
-                // [추가] 프리셋 목록 불러오기
+
                 const handleOpenLoadModal = async () => {
                     try {
                         const response = await fetch('/api/presets');
@@ -345,7 +389,6 @@
                     }
                 };
 
-                // [추가] 선택한 프리셋 적용하기
                 const handleLoadPreset = async (filename) => {
                     if (!confirm("현재 작업 중인 내용이 사라집니다. 불러오시겠습니까?")) return;
 
@@ -358,13 +401,11 @@
                         const result = await response.json();
 
                         if (result.success) {
-                            const loadData = result.data.data; // 저장할 때 data 안에 넣었으므로
+                            const loadData = result.data.data;
 
-                            // 데이터 적용
                             if (loadData.nodes) setNodes(loadData.nodes);
                             if (loadData.edges) setConnections(loadData.edges);
 
-                            // NPC/적 분리해서 적용
                             if (loadData.npcs) {
                                 setGlobalNpcs(loadData.npcs.filter(n => !n.isEnemy));
                                 setGlobalEnemies(loadData.npcs.filter(n => n.isEnemy));
@@ -380,7 +421,6 @@
                     }
                 };
 
-                // [추가] 프리셋 삭제 함수 (덤으로 넣어줌)
                 const handleDeletePreset = async (e, filename) => {
                     e.stopPropagation();
                     if (!confirm("정말 이 프리셋을 삭제하시겠습니까?")) return;
@@ -402,7 +442,8 @@
                         showToast("삭제 오류: " + e.message, "error");
                     }
                 };
-                // --- 시나리오 생성 로직 (Validation 포함) ---
+
+                // --- 시나리오 생성 로직 ---
                 const handleGenerate = async () => {
                     // 1. 최소 노드 개수 확인
                     if (nodes.length < 2) {
@@ -425,27 +466,20 @@
 
                     setProgress(0);
                     setIsLoading(true);
-                    // 초기 상태 메시지 명확화
                     setBuildStatus({
                         status: 'building', step: '0/5', detail: '서버와 연결 중...', progress: 0
                     });
 
-                    // 1. 진행률 초기화 요청
                     try {
                         await fetch('/api/reset_build_progress', { method: 'POST' });
                     } catch (e) {
                         console.warn('진행률 초기화 실패 (무시 가능):', e);
                     }
 
-                    // 2. SSE 연결 설정
                     const eventSource = new EventSource('/api/build_progress');
-
-                    // [추가] 타임아웃 안전장치 (5분)
-                    // 서버가 응답이 없어도 무한 대기하지 않도록 강제 종료 타이머 설정
                     const sseTimeout = setTimeout(() => {
                         console.warn('SSE 타임아웃: 연결을 종료합니다.');
                         eventSource.close();
-                        // 타임아웃 시에도 UI가 멈추지 않도록 에러 처리
                         setBuildStatus(prev => ({ ...prev, status: 'error', detail: '서버 응답 시간이 초과되었습니다.' }));
                         setIsLoading(false);
                     }, 300000);
@@ -456,7 +490,6 @@
                             setBuildStatus(data);
                             setProgress(data.progress || 0);
 
-                            // 완료되거나 에러가 나면 연결 즉시 종료
                             if (data.status === 'completed' || data.status === 'error') {
                                 clearTimeout(sseTimeout);
                                 eventSource.close();
@@ -467,14 +500,10 @@
                     };
 
                     eventSource.onerror = (err) => {
-                        // [중요] 연결 에러가 나도 바로 닫지 않고, 재시도하거나 메인 로직(init_game)의 응답을 기다립니다.
-                        // 다만 브라우저 콘솔에 로그는 남깁니다.
                         console.log('SSE 연결 상태 변경 (일시적일 수 있음):', err);
                     };
 
                     try {
-                        // 3. 게임 생성 요청 (비동기)
-                        // api.py가 async여도 클라이언트는 await으로 응답을 기다려야 합니다.
                         const response = await fetch('/api/init_game', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -486,7 +515,6 @@
                             })
                         });
 
-                        // 요청이 끝나면 SSE는 확실히 정리
                         eventSource.close();
                         clearTimeout(sseTimeout);
 
@@ -497,7 +525,6 @@
 
                         const data = await response.json();
 
-                        // 100% 강제 설정 (SSE가 마지막 메시지를 놓쳤을 경우 대비)
                         setProgress(100);
 
                         setResultModal({
@@ -553,7 +580,6 @@
                                 </button>
                             </div>
 
-                            {/* [복구됨] 시나리오 생성 버튼 */}
                             <div className="mt-auto p-4 border-t border-gray-800">
                                 <button onClick={handleGenerate} className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-lg shadow-lg flex items-center justify-center gap-2">
                                     <Icon name="play" size={18} /> 시나리오 생성
@@ -582,7 +608,6 @@
                                         const s = nodes.find(n => n.id === c.source), t = nodes.find(n => n.id === c.target);
                                         if(!s||!t) return null;
                                         const {sx,sy,tx,ty} = getConnectionPoints(s,t);
-                                        // 베지어 곡선
                                         const path = `M ${sx} ${sy} C ${sx + 50} ${sy}, ${tx - 50} ${ty}, ${tx} ${ty}`;
                                         return <path key={c.id} d={path} className="connection-line" />;
                                     })}
@@ -602,7 +627,6 @@
                                         <div className="p-3 text-xs text-gray-300 min-h-[50px]">
                                             <div className="font-bold truncate mb-1">{node.data.title || node.data.label || '제목 없음'}</div>
                                             <div className="text-gray-500 line-clamp-2">{node.data.description || node.data.prologue || '내용 없음'}</div>
-                                            {/* 아이콘 표시 */}
                                             {node.data.scene_type === 'battle' && <div className="absolute top-1 right-8 text-red-400"><Icon name="swords" size={14} /></div>}
                                         </div>
                                     </div>
@@ -626,6 +650,50 @@
                                                 <div><label className="text-xs text-gray-400 block mb-1">배경 묘사 <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={3} value={node.data.background||''} onChange={e=>updateNodeData('background', e.target.value)} placeholder="전체적인 배경 분위기" /></div>
                                                 <div><label className="text-xs text-blue-400 block mb-1">공개 프롤로그 <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={5} value={node.data.prologue||''} onChange={e=>updateNodeData('prologue', e.target.value)} placeholder="플레이어에게 보여질 도입부" /></div>
                                                 <div><label className="text-xs text-red-400 block mb-1">시스템 설정 (GM 노트) <span className="text-red-500">*</span></label><textarea className="w-full bg-gray-900 border border-red-900 rounded p-2 text-sm" rows={5} value={node.data.gm_notes||''} onChange={e=>updateNodeData('gm_notes', e.target.value)} placeholder="비공개 설정, 진실, 트릭 등" /></div>
+
+                                                {/* [수정] 스탯 설정 커스터마이징 */}
+                                                <div className="pt-4 border-t border-gray-800">
+                                                    <h3 className="text-xs font-bold text-gray-400 mb-2">초기 플레이어 상태</h3>
+
+                                                    {/* 기본 고정 스탯 */}
+                                                    <div className="mb-2">
+                                                        <label className="text-xs text-gray-500 block">체력 (HP) <span className="text-gray-600">(기본)</span></label>
+                                                        <input type="number" className="w-full bg-gray-800 border border-gray-700 rounded p-1 text-sm text-gray-300"
+                                                               value={node.data.initial_hp||100} onChange={e=>updateNodeData('initial_hp', parseInt(e.target.value))} />
+                                                    </div>
+                                                    <div className="mb-3">
+                                                        <label className="text-xs text-gray-500 block">초기 소지품 <span className="text-gray-600">(쉼표로 구분)</span></label>
+                                                        <input className="w-full bg-gray-800 border border-gray-700 rounded p-1 text-sm text-gray-300"
+                                                               value={node.data.initial_items||''} onChange={e=>updateNodeData('initial_items', e.target.value)} placeholder="예: 낡은 검, 지도" />
+                                                    </div>
+
+                                                    {/* 커스텀 스탯 추가 */}
+                                                    <div className="mb-2">
+                                                        <div className="flex justify-between items-center mb-1">
+                                                            <label className="text-xs text-yellow-500">추가 스탯 (Custom)</label>
+                                                            <button onClick={addCustomStat} className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded flex items-center gap-1"><Icon name="plus" size={10}/> 추가</button>
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            {(node.data.custom_stats || []).map((stat, idx) => (
+                                                                <div key={idx} className="flex gap-1">
+                                                                    <input className="w-1/2 bg-gray-800 border border-gray-700 rounded p-1 text-xs" placeholder="스탯명 (예: MP)"
+                                                                           value={stat.name} onChange={e=>updateCustomStat(idx, 'name', e.target.value)} />
+                                                                    <input type="number" className="w-1/3 bg-gray-800 border border-gray-700 rounded p-1 text-xs" placeholder="값"
+                                                                           value={stat.value} onChange={e=>updateCustomStat(idx, 'value', parseInt(e.target.value))} />
+                                                                    <button onClick={()=>removeCustomStat(idx)} className="w-6 bg-red-900/30 hover:bg-red-900/60 text-red-400 rounded flex items-center justify-center"><Icon name="minus" size={10}/></button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* 스탯 규칙 텍스트 영역 */}
+                                                    <div className="mt-3">
+                                                        <label className="text-xs text-blue-400 block mb-1">스탯 규칙 설명</label>
+                                                        <textarea className="w-full bg-gray-900 border border-blue-900/50 rounded p-2 text-xs" rows={3}
+                                                                  value={node.data.stat_rules||''} onChange={e=>updateNodeData('stat_rules', e.target.value)}
+                                                                  placeholder="예: MP는 마법 사용 시 소모되며 휴식하면 회복된다." />
+                                                    </div>
+                                                </div>
                                             </>
                                         )}
 
@@ -724,4 +792,3 @@
     {% endraw %}
 </body>
 </html>
-
