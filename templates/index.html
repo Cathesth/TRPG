@@ -49,18 +49,16 @@
         .modal { transition: opacity 0.25s ease; }
         body.modal-active { overflow-x: hidden; overflow-y: hidden !important; }
 
-        /* [핵심] API 호환성 패치: 서버에서 오는 bg-dark-800 클래스를 새로운 디자인으로 매핑 */
+        /* [API 호환성 패치] 서버에서 오는 옛날 클래스 디자인 덮어쓰기 */
         .bg-dark-800 {
             @apply bg-rpg-800 border border-rpg-700 shadow-lg rounded-xl overflow-hidden flex flex-col h-full transition-all hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] !important;
         }
-        /* 이미지 영역 */
         .bg-dark-800 > div:first-child {
             @apply relative h-40 overflow-hidden !important;
         }
         .bg-dark-800 img {
             @apply w-full h-full object-cover transition-transform duration-500 hover:scale-110 !important;
         }
-        /* 텍스트 영역 */
         .bg-dark-800 > div:nth-child(2) {
             @apply p-5 flex-1 flex flex-col !important;
         }
@@ -75,13 +73,16 @@
         #scenario-grid button {
             @apply w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 mt-auto !important;
         }
+
         #scenario-grid button i {
             @apply w-4 h-4 fill-current !important;
         }
+
         /* 삭제/공개 버튼 아이콘 스타일 */
         .opacity-0 button {
             @apply text-gray-400 hover:text-rpg-accent transition-colors !important;
         }
+
     </style>
 </head>
 <body class="h-screen flex overflow-hidden selection:bg-rpg-accent selection:text-black">
@@ -313,9 +314,10 @@
 
     <script>
         lucide.createIcons();
-        document.body.addEventListener('htmx:afterSwap', function(evt) { lucide.createIcons(); });
 
+        document.body.addEventListener('htmx:afterSwap', function(evt) { lucide.createIcons(); });
         async function playScenario(filename, btn) {
+
             const originalText = btn.innerHTML;
             btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> LOADING...';
             btn.disabled = true;
@@ -340,6 +342,7 @@
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }
+
         }
         function showToast(message, type = 'info') {
             const bgColor = type === 'success' ? 'bg-green-900/90 border-green-500/30 text-green-100' :
@@ -351,6 +354,7 @@
 
             const toast = document.createElement('div');
             toast.className = `fixed bottom-4 right-4 z-[100] ${bgColor} border px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3`;
+
             toast.innerHTML = `
                 <i data-lucide="${icon}" class="w-5 h-5"></i>
                 <span class="font-medium">${message}</span>
@@ -365,7 +369,9 @@
                 toast.style.transform = 'translateY(10px)';
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
+
         }
+
 
         // [추가] 시나리오 수정 페이지로 이동
         function editScenario(filename) {
@@ -374,6 +380,7 @@
             // 만약 별도 edit 라우트가 없다면 builder 페이지로 보내되 쿼리 파라미터를 쓸 수도 있습니다.
             // 여기서는 player_view.html에 있던 방식을 따릅니다.
             window.location.href = `/views/scenes/edit/${filename}`;
+
         }
 
         // [추가] 시나리오 공개/비공개 전환
@@ -383,6 +390,7 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filename: filename })
+
                 });
 
                 const result = await response.json();
@@ -416,6 +424,7 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filename: filename })
+
                 });
 
                 const result = await response.json();
@@ -439,6 +448,7 @@
                 showToast('삭제 중 오류가 발생했습니다.', 'error');
             }
         }
+
         // 모달 열기/닫기
         function openModal(id) {
             const modal = document.getElementById(id);
