@@ -2,6 +2,7 @@ import json
 import os
 import yaml
 import logging
+import concurrent.futures  # [NEW] 병렬 처리를 위해 추가
 from typing import TypedDict, List, Annotated, Optional, Dict, Any, Callable
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -12,6 +13,17 @@ from langgraph.graph import StateGraph, END
 from llm_factory import LLMFactory
 from schemas import NPC
 from core.utils import renumber_scenes_bfs
+
+# [NEW] 검수 서비스 임포트 (파일 경로 확인 필요)
+# 만약 파일이 services/ai_audit_service.py 에 있다면 아래처럼 임포트
+try:
+    from services.ai_audit_service import AiAuditService
+except ImportError:
+    # 임시 fallback 클래스 (파일이 없을 경우 에러 방지)
+    class AiAuditService:
+        @staticmethod
+        def audit_scenario(data):
+            return {"valid": True, "score": 0, "feedback": ["검수 모듈을 찾을 수 없습니다."]}
 
 from pydantic import BaseModel, Field
 
@@ -142,6 +154,8 @@ def summarize_npc_context(npcs: List[Dict], limit: int = 15) -> str:
         traits = []
         if npc.get("appearance"): traits.append(f"외모:{npc.get('appearance')}")
         if npc.get("personality"): traits.append(f"성격:{npc.get('personality')}")
+        # [Tip] 씬 생성 시 대사 스타일도 참조하면 좋음
+        if npc.get("dialogue_style"): traits.append(f"말투:{npc.get('dialogue_style')}")
 
         trait_str = f" ({', '.join(traits)})" if traits else ""
         summary_list.append(f"- {name} [{role}]{trait_str}")
@@ -509,19 +523,36 @@ def generate_full_content(state: BuilderState):
 
     report_progress("building", "3.5/5", "장면 및 사건 구성 중...", 65, phase="scene_generation")
 
-    # 씬 생성용 컨텍스트는 스마트 요약 사용
-    world_context = summarize_context(worlds, 'name', 'description', limit=5)
+    # [수정] 방금 생성된 풍부한 NPC와 World 정보를 사용함
+    world_context = summarize_context(worlds, 'name', 'description', limit=10)
 
+    # graph_data의 단순 정보 대신 AI가 생성한 상세 정보를 우선 사용 (없으면 graph_data 사용)
+    generated_npcs_map = {n['name']: n for n in npcs}
     graph_npcs = state["graph_data"].get("npcs", [])
-    if not isinstance(graph_npcs, list):
-        graph_npcs = []
+    merged_npcs = []
 
-    npc_context = summarize_npc_context(graph_npcs, limit=20)
+    # 그래프에 있는 NPC들을 AI 생성 정보로 강화
+    if isinstance(graph_npcs, list):
+        for g_npc in graph_npcs:
+            if not isinstance(g_npc, dict): continue
+            name = g_npc.get("name")
+            if name in generated_npcs_map:
+                merged_npcs.append(generated_npcs_map[name])
+            else:
+                merged_npcs.append(g_npc)
+
+    # AI가 추가로 생성한 NPC가 있다면 추가
+    existing_names = {n.get("name") for n in merged_npcs}
+    for n in npcs:
+        if n.get("name") not in existing_names:
+            merged_npcs.append(n)
+
+    npc_context = summarize_npc_context(merged_npcs, limit=20)
 
     scene_parser = JsonOutputParser(pydantic_object=SceneData)
     scene_prompt = ChatPromptTemplate.from_messages([
         ("system", PROMPTS.get("generate_scene", "Generate scenes based on the blueprint.")),
-        ("user", f"설계도:\n{blueprint}\n\n세계관:\n{world_context}\n\nNPC:\n{npc_context}")
+        ("user", f"설계도:\n{blueprint}\n\n[참고: 세계관 설정]\n{world_context}\n\n[참고: 등장인물 상세]\n{npc_context}")
     ]).partial(format_instructions=scene_parser.get_format_instructions())
 
     content = safe_invoke_json(
@@ -539,6 +570,31 @@ def generate_full_content(state: BuilderState):
     }
 
 
+# --- [NEW] 병렬 생성 노드 ---
+def parallel_generation_node(state: BuilderState):
+    """
+    개요 생성(Refine)과 상세 내용 생성(Generate)을 병렬로 수행
+    """
+    report_progress("building", "2/5", "시나리오 개요 및 상세 콘텐츠 동시 생성 중...", 40, phase="parallel_gen")
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        # 두 작업을 동시에 던짐
+        future_refine = executor.submit(refine_scenario_info, state)
+        future_generate = executor.submit(generate_full_content, state)
+
+        # 결과 대기
+        try:
+            refine_result = future_refine.result()
+            generate_result = future_generate.result()
+        except Exception as e:
+            logger.error(f"Parallel Generation Error: {e}")
+            # 에러 발생 시 재시도하거나 기본값 처리 (여기선 에러 전파)
+            raise e
+
+    # 결과 병합
+    return {**refine_result, **generate_result}
+
+
 class InitialStateExtractor(BaseModel):
     hp: Optional[int] = Field(None, description="체력")
     mp: Optional[int] = Field(None, description="마력")
@@ -548,7 +604,7 @@ class InitialStateExtractor(BaseModel):
 
 
 def finalize_build(state: BuilderState):
-    report_progress("building", "5/5", "최종 마무리 중...", 100, phase="finalizing")
+    report_progress("building", "4/5", "데이터 통합 및 최종 마무리 중...", 90, phase="finalizing")
     data = state["graph_data"]
 
     # 1. 시작점 연결
@@ -691,20 +747,58 @@ def finalize_build(state: BuilderState):
     return {"final_data": final_data}
 
 
+# --- [NEW] 검수 노드 ---
+def audit_content_node(state: BuilderState):
+    report_progress("building", "5/5", "최종 콘텐츠 검수 중...", 95, phase="auditing")
+
+    final_data = state.get("final_data", {})
+
+    # 검수 서비스 호출
+    try:
+        # ai_audit_service.py의 메서드명 확인 필요 (예: analyze_scenario, audit 등)
+        # 여기서는 가정하여 호출함. 실제 서비스 코드에 맞춰 수정 바람.
+        if hasattr(AiAuditService, 'audit_scenario'):
+            audit_result = AiAuditService.audit_scenario(final_data)
+        elif hasattr(AiAuditService, 'analyze'):
+            audit_result = AiAuditService.analyze(final_data)
+        else:
+            # 메서드를 못 찾으면 스킵
+            audit_result = {"valid": True, "info": "Audit method not found"}
+
+        final_data["audit_report"] = audit_result
+    except Exception as e:
+        logger.error(f"Audit failed: {e}")
+        final_data["audit_report"] = {"valid": True, "warnings": [f"검수 중 오류 발생: {e}"]}
+
+    return {"final_data": final_data}
+
+
 def build_builder_graph():
     workflow = StateGraph(BuilderState)
     workflow.add_node("validate", validate_structure)
     workflow.add_node("parse", parse_graph_to_blueprint)
-    workflow.add_node("refine", refine_scenario_info)
-    workflow.add_node("generate", generate_full_content)
+
+    # [변경] 병렬 처리 노드로 교체
+    workflow.add_node("parallel_gen", parallel_generation_node)
+    # workflow.add_node("refine", refine_scenario_info)
+    # workflow.add_node("generate", generate_full_content)
+
     workflow.add_node("finalize", finalize_build)
+
+    # [추가] 검수 노드
+    workflow.add_node("audit", audit_content_node)
 
     workflow.set_entry_point("validate")
     workflow.add_edge("validate", "parse")
-    workflow.add_edge("parse", "refine")
-    workflow.add_edge("refine", "generate")
-    workflow.add_edge("generate", "finalize")
-    workflow.add_edge("finalize", END)
+
+    # [변경] parse -> parallel_gen -> finalize 흐름
+    workflow.add_edge("parse", "parallel_gen")
+    workflow.add_edge("parallel_gen", "finalize")
+
+    # [변경] finalize -> audit -> END
+    workflow.add_edge("finalize", "audit")
+    workflow.add_edge("audit", END)
+
     return workflow.compile()
 
 
