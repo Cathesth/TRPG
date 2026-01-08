@@ -467,30 +467,30 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         # [ROLLBACK] 이전 상세 프롬프트 복원 + 사용자 입력 변형 방지 강화
         hint_list = ', '.join([f'"{h}"' for h in trigger_hints[:3]]) if trigger_hints else '없음'
 
-        prompt = f"""You are the Game Master of a text-based RPG.
+        prompt = f"""당신은 텍스트 기반 RPG의 게임 마스터입니다.
 
-**Current Situation:**
-- Scene: "{scene_title}"
-- Player's action: "{user_input}"
-- Result: Action did not trigger any scene transition (failed).
+**현재 상황:**
+- 장면: "{scene_title}"
+- 플레이어의 행동: "{user_input}"
+- 결과: 행동이 장면 전환을 유발하지 않음 (실패).
 
-**Available Valid Actions:**
+**가능한 유효 행동:**
 {hint_list}
 
-**Your Task:**
-Provide a brief, natural hint in Korean (1-2 sentences) to guide the player toward valid actions.
+**당신의 임무:**
+플레이어가 유효한 행동을 하도록 짧고 자연스러운 힌트를 한국어로 1-2문장 제공하세요.
 
-**CRITICAL RULES:**
-1. DO NOT repeat, describe, or embellish what the player said or did.
-2. DO NOT add imaginary details about the player's action.
-3. ONLY provide a hint about what to try instead.
-4. Use <mark>keyword</mark> tags to highlight actionable words from the available actions list.
-5. Keep it concise and immersive.
+**중요 규칙:**
+1. 플레이어가 말하거나 행동한 것을 반복, 묘사, 또는 꾸미지 마세요.
+2. 플레이어의 행동에 대해 상상으로 세부사항을 추가하지 마세요.
+3. 오직 대신 시도할 것에 대한 힌트만 제공하세요.
+4. 가능한 행동 목록에서 실행 가능한 단어를 <mark>키워드</mark> 태그로 강조하세요.
+5. 간결하고 몰입감 있게 유지하세요.
 
-**Example Output:**
+**출력 예시:**
 "여기서는 그런 방법이 통하지 않습니다. <mark>조사하기</mark>나 <mark>대화하기</mark>를 시도해보세요."
 
-**Now provide your hint in Korean:**"""
+**이제 한국어로 힌트를 제공하세요:**"""
 
         try:
             api_key = os.getenv("OPENROUTER_API_KEY")
@@ -510,8 +510,27 @@ Provide a brief, natural hint in Korean (1-2 sentences) to guide the player towa
     npc_intro = check_npc_appearance(state)
     if npc_intro: yield npc_intro + "<br><br>"
 
-    # [최적화 5] 프롬프트 경량화
-    prompt = f"[GM] Scene: {scene_desc}\nLocation: {scene_title}, NPCs: {', '.join(npc_names)}\n→ Immersive 2nd-person Korean, 3-4 sentences. Use <mark> for key objects."
+    # [롤백] 상세 프롬프트 복원
+    npc_list = ', '.join(npc_names) if npc_names else '없음'
+
+    prompt = f"""당신은 텍스트 기반 RPG의 게임 마스터입니다.
+
+**장면 정보:**
+- 제목: "{scene_title}"
+- 설명: "{scene_desc}"
+- 등장 NPC: {npc_list}
+
+**당신의 임무:**
+플레이어가 이 장면에 들어왔을 때의 상황을 생생하게 묘사하세요.
+
+**규칙:**
+1. 2인칭 시점으로 작성하세요 ("당신은...", "당신 앞에...").
+2. 한국어로 3-4문장으로 작성하세요.
+3. 중요한 오브젝트나 NPC 이름은 <mark>태그</mark>로 강조하세요.
+4. 몰입감 있고 분위기 있게 작성하세요.
+5. 플레이어가 할 수 있는 행동에 대한 힌트를 자연스럽게 포함하세요.
+
+**이제 장면을 묘사하세요:**"""
 
     try:
         api_key = os.getenv("OPENROUTER_API_KEY")
