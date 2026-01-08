@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
 from config import DEFAULT_PLAYER_VARS
-from models import SessionLocal, Scenario
+from models import SessionLocal, Scenario, ScenarioHistory, TempScenario
 
 logger = logging.getLogger(__name__)
 
@@ -176,14 +176,25 @@ class ScenarioService:
             if scenario.author_id != user_id:
                 return False, "삭제 권한이 없습니다."
 
+            # [FIX] 연관된 데이터를 명시적으로 삭제
+            # 1. ScenarioHistory 삭제
+            db.query(ScenarioHistory).filter(ScenarioHistory.scenario_id == db_id).delete()
+
+            # 2. TempScenario (Draft) 삭제
+            db.query(TempScenario).filter(TempScenario.original_scenario_id == db_id).delete()
+
+            # 3. 시나리오 본체 삭제
             db.delete(scenario)
             db.commit()
+
+            logger.info(f"✅ Scenario {db_id} and related data deleted successfully")
             return True, None
 
         except ValueError:
             return False, "잘못된 ID입니다."
         except Exception as e:
             db.rollback()
+            logger.error(f"Delete Error: {e}", exc_info=True)
             return False, str(e)
         finally:
             db.close()
