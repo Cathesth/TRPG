@@ -694,6 +694,13 @@
                                     break;
                                 case 'done':
                                     contentDiv.innerHTML = contentDiv.innerHTML.replace('<span class="streaming-cursor">▌</span>', '');
+
+                                    // 최종 생성 시간 계산 및 표시
+                                    const finalElapsedTime = Date.now() - responseStartTime;
+                                    const finalSeconds = (finalElapsedTime / 1000).toFixed(1);
+                                    const timeStamp = `<div class="text-[10px] text-gray-500 mt-2 font-mono">⏱ 생성 시간: ${finalSeconds}초</div>`;
+                                    contentDiv.innerHTML += timeStamp;
+
                                     // 로딩 메시지 초기화
                                     const loadingTextReset = document.getElementById('loading-text');
                                     if (loadingTextReset) {
