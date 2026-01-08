@@ -604,7 +604,7 @@ class InitialStateExtractor(BaseModel):
 
 
 def finalize_build(state: BuilderState):
-    report_progress("building", "4/5", "데이터 통합 및 최종 마무리 중...", 90, phase="finalizing")
+    report_progress("building", "5/5", "최종 마무리 중...", 100, phase="finalizing")
     data = state["graph_data"]
 
     # 1. 시작점 연결
@@ -743,7 +743,35 @@ def finalize_build(state: BuilderState):
         "raw_graph": state["graph_data"]
     }
 
+    # 씬 리넘버링 (Scene-1, Scene-2...)
     final_data = renumber_scenes_bfs(final_data)
+
+    # --- [추가] 엔딩 ID 리넘버링 (Ending-1, Ending-2...) ---
+    endings = final_data.get("endings", [])
+    scenes = final_data.get("scenes", [])
+
+    if endings:
+        ending_map = {}
+        # 1. 엔딩 ID 변경 및 매핑 생성
+        for idx, ending in enumerate(endings, 1):
+            old_id = ending["ending_id"]
+            new_id = f"Ending-{idx}"
+            ending["ending_id"] = new_id
+            ending_map[old_id] = new_id
+
+        # 2. 씬 Transition(연결)에서 엔딩 ID 참조 업데이트
+        for scene in scenes:
+            for trans in scene.get("transitions", []):
+                tgt = trans.get("target_scene_id")
+                if tgt in ending_map:
+                    trans["target_scene_id"] = ending_map[tgt]
+
+        # 3. 프롤로그 연결 업데이트 (엔딩으로 바로 이어지는 경우 대비)
+        prologue_connects = final_data.get("prologue_connects_to", [])
+        for i, target in enumerate(prologue_connects):
+            if target in ending_map:
+                prologue_connects[i] = ending_map[target]
+
     return {"final_data": final_data}
 
 
