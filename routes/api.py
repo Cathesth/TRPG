@@ -4,7 +4,7 @@ import logging
 import time
 import threading
 from typing import Optional
-from fastapi import APIRouter, Request, Depends, Form, HTTPException
+from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -185,7 +185,18 @@ async def list_scenarios(
         limit: Optional[int] = None,
         user: CurrentUser = Depends(get_current_user_optional)
 ):
+    # 1. 요청 파라미터 받기
+    sort_order = request.args.get('sort', 'newest')
+    filter_mode = request.args.get('filter', 'public')  # 'my'는 마이페이지
+    limit = request.args.get('limit', 20, type=int)
+
+    # 2. 현재 사용자 확인
     user_id = user.id if user.is_authenticated else None
+
+    # 3. 마이페이지 접근인데 비로그인 상태면 안내 문구 표시
+    if filter_mode == 'my' and not user_id:
+        return '<div class="col-span-full text-center text-gray-500 py-10">로그인이 필요합니다.</div>'
+
     file_infos = ScenarioService.list_scenarios(sort, user_id, filter, limit)
 
     if not file_infos:
@@ -201,9 +212,15 @@ async def list_scenarios(
         fid = info['filename']
         title = info['title']
         desc = info['desc']
+        #[추가]
+        if not desc: desc = "설명이 없습니다."
+        # 이미지 (없으면 기본 판타지 이미지 사용)
+        img_src = info.get('image') or "https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=800"
+
         author = info['author']
         is_owner = info['is_owner']
         is_public = info['is_public']
+
         created_time = info.get('created_time', 0)
 
         if created_time:
@@ -218,6 +235,10 @@ async def list_scenarios(
         status_badge = '<span class="ml-2 text-[10px] bg-green-900 text-green-300 px-1 rounded">PUBLIC</span>' if is_public else '<span class="ml-2 text-[10px] bg-gray-700 text-gray-300 px-1 rounded">PRIVATE</span>'
 
         title_escaped = title.replace("'", "\\'").replace('"', '&quot;')
+
+        # [추가]공개/비공개 뱃지 스타일
+        public_text = "PUBLIC" if is_public else "PRIVATE"
+        public_class = "bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"
 
         action_buttons = ""
         if is_owner:
