@@ -133,68 +133,23 @@
                 플레이어 모드
             </div>
             <div class="flex items-center gap-2 ml-4">
-                <label class="text-xs text-gray-400 font-medium">AI 모델:</label>
-                <select id="model-select"
+                <label class="text-xs text-gray-400 font-medium">AI 제공사:</label>
+                <select id="provider-select" onchange="updateModelVersions()"
                     class="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 hover:bg-gray-750 transition-colors">
-                    <!-- Google (2.0 → 2.5 → 3) -->
-                    <optgroup label="🔷 Google">
-                        <option value="openai/google/gemini-2.0-flash-001">Gemini 2.0 Flash (1M)</option>
-                        <option value="openai/google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (1M)</option>
-                        <option value="openai/google/gemini-2.5-flash">Gemini 2.5 Flash (1M)</option>
-                        <option value="openai/google/gemini-3-flash-preview">Gemini 3 Flash Preview (1M)</option>
-                        <option value="openai/google/gemini-3-pro-preview">Gemini 3 Pro Preview (1M)</option>
-                    </optgroup>
+                    <option value="google">🔷 Google</option>
+                    <option value="anthropic">🟣 Anthropic</option>
+                    <option value="openai">🟢 OpenAI</option>
+                    <option value="deepseek" selected>🔴 DeepSeek</option>
+                    <option value="meta">🔵 Meta</option>
+                    <option value="xai">⚫ xAI</option>
+                    <option value="mistral">🟠 Mistral</option>
+                    <option value="xiaomi">🟡 Xiaomi</option>
+                </select>
 
-                    <!-- Anthropic (3.5 → 4 → 4.5) -->
-                    <optgroup label="🟣 Anthropic">
-                        <option value="openai/anthropic/claude-3.5-haiku">Claude 3.5 Haiku (200K)</option>
-                        <option value="openai/anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (200K)</option>
-                        <option value="openai/anthropic/claude-sonnet-4">Claude Sonnet 4 (200K)</option>
-                        <option value="openai/anthropic/claude-haiku-4.5">Claude Haiku 4.5 (200K)</option>
-                        <option value="openai/anthropic/claude-sonnet-4.5">Claude Sonnet 4.5 (200K)</option>
-                        <option value="openai/anthropic/claude-opus-4.5">Claude Opus 4.5 (200K)</option>
-                    </optgroup>
-
-                    <!-- OpenAI (4o → 5) -->
-                    <optgroup label="🟢 OpenAI">
-                        <option value="openai/openai/gpt-4o-mini">GPT-4o Mini (128K)</option>
-                        <option value="openai/openai/gpt-4o">GPT-4o (128K)</option>
-                        <option value="openai/openai/gpt-5-mini">GPT-5 Mini (1M)</option>
-                        <option value="openai/openai/gpt-5.2">GPT-5.2 (1M)</option>
-                    </optgroup>
-
-                    <!-- DeepSeek -->
-                    <optgroup label="🔴 DeepSeek">
-                        <option value="openai/tngtech/deepseek-r1t2-chimera:free" selected>R1 Chimera (Free) ⭐</option>
-                        <option value="openai/deepseek/deepseek-chat-v3-0324">DeepSeek Chat V3 (128K)</option>
-                        <option value="openai/deepseek/deepseek-v3.2">DeepSeek V3.2 (128K)</option>
-                    </optgroup>
-
-                    <!-- Meta Llama (3.1 → 3.3) -->
-                    <optgroup label="🔵 Meta">
-                        <option value="openai/meta-llama/llama-3.1-8b-instruct">Llama 3.1 8B (128K)</option>
-                        <option value="openai/meta-llama/llama-3.1-405b-instruct:free">Llama 3.1 405B (Free) ⭐</option>
-                        <option value="openai/meta-llama/llama-3.1-405b-instruct">Llama 3.1 405B (128K)</option>
-                        <option value="openai/meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (Free) ⭐</option>
-                        <option value="openai/meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B (128K)</option>
-                    </optgroup>
-
-                    <!-- xAI Grok (1 → 4 → 4.1) -->
-                    <optgroup label="⚫ xAI">
-                        <option value="openai/x-ai/grok-code-fast-1">Grok Code Fast 1 (128K)</option>
-                        <option value="openai/x-ai/grok-4-fast">Grok 4 Fast (256K)</option>
-                        <option value="openai/x-ai/grok-4.1-fast">Grok 4.1 Fast (1M)</option>
-                    </optgroup>
-
-                    <!-- Mistral AI -->
-                    <optgroup label="🟠 Mistral">
-                        <option value="openai/mistralai/devstral-2512:free">Devstral 2512 (Free) ⭐</option>
-                    </optgroup>
-
-                    <!-- Xiaomi -->
-                    <optgroup label="🟡 Xiaomi">
-                        <option value="openai/xiaomi/mimo-v2-flash:free">MiMo V2 Flash (Free) ⭐</option>
-                    </optgroup>
+                <label class="text-xs text-gray-400 font-medium">모델 버전:</label>
+                <select id="model-version-select"
+                    class="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 hover:bg-gray-750 transition-colors min-w-[200px]">
+                    <!-- JavaScript로 동적 생성 -->
                 </select>
             </div>
         </div>
@@ -573,7 +528,8 @@
         const loadingIndicator = document.getElementById('ai-loading');
         const input = form.querySelector('input[name="action"]');
         const scenesBtn = document.getElementById('scenes-btn');
-        const modelSelect = document.getElementById('model-select');
+        const providerSelect = document.getElementById('provider-select');
+        const modelVersionSelect = document.getElementById('model-version-select');
 
         const introMsg = document.getElementById('intro-message');
         if (introMsg) introMsg.remove();
@@ -629,8 +585,9 @@
             const formData = new FormData();
             formData.append('action', actionText);
             // 선택한 모델 추가
-            if (modelSelect) {
-                formData.append('model', modelSelect.value);
+            if (providerSelect && modelVersionSelect) {
+                formData.append('model', modelVersionSelect.value);
+                formData.append('provider', providerSelect.value);
             }
 
             const response = await fetch('/game/act_stream', { method: 'POST', body: formData });
@@ -1144,6 +1101,101 @@
         isInternalNavigation = true;
         window.location.href = `/views/scenes/edit/${filename}`;
     }
+
+    // 모델 버전 업데이트 함수
+    function updateModelVersions() {
+        const providerSelect = document.getElementById('provider-select');
+        const modelVersionSelect = document.getElementById('model-version-select');
+
+        const provider = providerSelect.value;
+
+        // 기본 옵션 지우기
+        modelVersionSelect.innerHTML = '';
+
+        // 제공사에 따른 모델 버전 추가
+        let options = [];
+        switch (provider) {
+            case 'google':
+                options = [
+                    { value: 'openai/google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash (1M)' },
+                    { value: 'openai/google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite (1M)' },
+                    { value: 'openai/google/gemini-2.5-flash', label: 'Gemini 2.5 Flash (1M)' },
+                    { value: 'openai/google/gemini-3-flash-preview', label: 'Gemini 3 Flash Preview (1M)' },
+                    { value: 'openai/google/gemini-3-pro-preview', label: 'Gemini 3 Pro Preview (1M)' }
+                ];
+                break;
+            case 'anthropic':
+                options = [
+                    { value: 'openai/anthropic/claude-3.5-haiku', label: 'Claude 3.5 Haiku (200K)' },
+                    { value: 'openai/anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet (200K)' },
+                    { value: 'openai/anthropic/claude-sonnet-4', label: 'Claude Sonnet 4 (200K)' },
+                    { value: 'openai/anthropic/claude-haiku-4.5', label: 'Claude Haiku 4.5 (200K)' },
+                    { value: 'openai/anthropic/claude-sonnet-4.5', label: 'Claude Sonnet 4.5 (200K)' },
+                    { value: 'openai/anthropic/claude-opus-4.5', label: 'Claude Opus 4.5 (200K)' }
+                ];
+                break;
+            case 'openai':
+                options = [
+                    { value: 'openai/openai/gpt-4o-mini', label: 'GPT-4o Mini (128K)' },
+                    { value: 'openai/openai/gpt-4o', label: 'GPT-4o (128K)' },
+                    { value: 'openai/openai/gpt-5-mini', label: 'GPT-5 Mini (1M)' },
+                    { value: 'openai/openai/gpt-5.2', label: 'GPT-5.2 (1M)' }
+                ];
+                break;
+            case 'deepseek':
+                options = [
+                    { value: 'openai/tngtech/deepseek-r1t2-chimera:free', label: 'R1 Chimera (Free) ⭐' },
+                    { value: 'openai/deepseek/deepseek-chat-v3-0324', label: 'DeepSeek Chat V3 (128K)' },
+                    { value: 'openai/deepseek/deepseek-v3.2', label: 'DeepSeek V3.2 (128K)' }
+                ];
+                break;
+            case 'meta':
+                options = [
+                    { value: 'openai/meta-llama/llama-3.1-8b-instruct', label: 'Llama 3.1 8B (128K)' },
+                    { value: 'openai/meta-llama/llama-3.1-405b-instruct:free', label: 'Llama 3.1 405B (Free) ⭐' },
+                    { value: 'openai/meta-llama/llama-3.1-405b-instruct', label: 'Llama 3.1 405B (128K)' },
+                    { value: 'openai/meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 70B (Free) ⭐' },
+                    { value: 'openai/meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B (128K)' }
+                ];
+                break;
+            case 'xai':
+                options = [
+                    { value: 'openai/x-ai/grok-code-fast-1', label: 'Grok Code Fast 1 (128K)' },
+                    { value: 'openai/x-ai/grok-4-fast', label: 'Grok 4 Fast (256K)' },
+                    { value: 'openai/x-ai/grok-4.1-fast', label: 'Grok 4.1 Fast (1M)' }
+                ];
+                break;
+            case 'mistral':
+                options = [
+                    { value: 'openai/mistralai/devstral-2512:free', label: 'Devstral 2512 (Free) ⭐' }
+                ];
+                break;
+            case 'xiaomi':
+                options = [
+                    { value: 'openai/xiaomi/mimo-v2-flash:free', label: 'MiMo V2 Flash (Free) ⭐' }
+                ];
+                break;
+        }
+
+        // 옵션 추가
+        options.forEach(opt => {
+            const optionElement = document.createElement('option');
+            optionElement.value = opt.value;
+            optionElement.textContent = opt.label;
+            modelVersionSelect.appendChild(optionElement);
+        });
+
+        // 모델 버전 선택 초기화
+        modelVersionSelect.value = options.length > 0 ? options[0].value : '';
+    }
+
+    // 페이지 로드 시 모델 버전 초기화
+    (function() {
+        const providerSelect = document.getElementById('provider-select');
+        if (providerSelect) {
+            providerSelect.dispatchEvent(new Event('change'));
+        }
+    })();
 </script>
 </body>
 </html>
