@@ -422,7 +422,9 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
         try:
             api_key = os.getenv("OPENROUTER_API_KEY")
-            llm = LLMFactory.get_llm(api_key=api_key, model_name="openai/tngtech/deepseek-r1t2-chimera:free",
+            # 상태에서 모델 가져오기
+            model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+            llm = LLMFactory.get_llm(api_key=api_key, model_name=model_name,
                                      streaming=True)
             for chunk in llm.stream(prompt):
                 if chunk.content: yield chunk.content
@@ -455,9 +457,11 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
     try:
         api_key = os.getenv("OPENROUTER_API_KEY")
+        # 상태에서 모델 가져오기
+        model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
         llm = LLMFactory.get_llm(
             api_key=api_key,
-            model_name="openai/tngtech/deepseek-r1t2-chimera:free",
+            model_name=model_name,
             streaming=True
         )
 
