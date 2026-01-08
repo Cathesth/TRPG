@@ -54,27 +54,6 @@
         .modal { transition: opacity 0.25s ease; }
         body.modal-active { overflow-x: hidden; overflow-y: hidden !important; }
 
-        /* [API 호환성 패치] */
-        #scenario-grid .bg-dark-800,
-        #scenario-grid .border-white\/5 {
-            @apply bg-rpg-800 border border-rpg-700 shadow-lg rounded-xl overflow-hidden flex flex-col h-full transition-all hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] !important;
-            min-height: auto !important;
-        }
-        #scenario-grid .bg-dark-800 > div:first-child { @apply relative h-48 overflow-hidden !important; }
-        #scenario-grid img { @apply w-full h-full object-cover transition-transform duration-500 hover:scale-110 opacity-80 hover:opacity-100 !important; }
-        #scenario-grid .bg-dark-800 > div:last-child { @apply p-5 flex flex-col gap-3 bg-rpg-800 !important; }
-        #scenario-grid h3, #scenario-grid h4, #scenario-grid .text-lg { @apply text-lg font-bold text-white font-title tracking-wide truncate !important; margin-bottom: 0 !important; }
-        #scenario-grid p, #scenario-grid .text-sm { @apply text-sm text-gray-400 line-clamp-2 !important; margin-bottom: 0 !important; }
-
-        /* 버튼 스타일 */
-        #scenario-grid button[onclick*="playScenario"] {
-            @apply w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 !important;
-            margin-top: 0.5rem !important;
-        }
-        #scenario-grid button:not([onclick*="playScenario"]) {
-            @apply p-2 rounded-lg transition-all border border-transparent hover:bg-rpg-900 hover:border-rpg-accent text-gray-400 hover:text-white !important;
-        }
-
         /* [사이드바 텍스트 애니메이션] */
         .sidebar-text {
             opacity: 0;
@@ -113,6 +92,11 @@
             <a href="/" class="flex items-center h-12 px-3 rounded-lg bg-rpg-800 text-rpg-accent border border-rpg-700 transition-all hover:bg-rpg-accent hover:text-black whitespace-nowrap">
                 <i data-lucide="layout-grid" class="w-6 h-6 shrink-0"></i>
                 <span class="ml-4 font-bold sidebar-text delay-75">DASHBOARD</span>
+            </a>
+
+            <a href="/views/mypage" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all whitespace-nowrap">
+                <i data-lucide="user" class="w-6 h-6 shrink-0"></i>
+                <span class="ml-4 font-bold sidebar-text delay-75">MY PAGE</span>
             </a>
 
             <a href="/views/builder" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all whitespace-nowrap">
@@ -336,41 +320,10 @@
 
     <script>
         lucide.createIcons();
-
-        // HTMX 로드 후 스타일/아이콘 재적용 + 버튼 강제 스타일링
+        // HTMX 로드 후 아이콘만 재적용
         document.body.addEventListener('htmx:afterSwap', function(evt) {
             lucide.createIcons();
-
-            const container = document.getElementById('scenario-grid');
-            if (container) {
-                const buttons = container.querySelectorAll('button');
-                buttons.forEach(btn => {
-                    if (btn.innerText.includes('Play') || btn.innerText.includes('플레이') || btn.querySelector('i') || btn.querySelector('svg')) {
-                        btn.className = "w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 mt-2";
-                        if (!btn.getAttribute('onclick')) {
-                            // 카드에서 ID 찾기 시도 (생략 가능)
-                        }
-                    } else {
-                        const card = btn.closest('.bg-dark-800');
-                        if (card) {
-                            const playBtn = card.querySelector('button[onclick*="playScenario"]');
-                            if (playBtn) {
-                                const match = playBtn.getAttribute('onclick').match(/'([^']+)'/);
-                                const scenarioId = match ? match[1] : null;
-                                if (scenarioId) {
-                                    if (btn.querySelector('.lucide-edit') || btn.innerText.includes('수정')) {
-                                        btn.onclick = function() { editScenario(scenarioId); };
-                                    } else if (btn.querySelector('.lucide-trash') || btn.innerText.includes('삭제')) {
-                                        btn.onclick = function() { deleteScenario(scenarioId, this); };
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-            }
         });
-
         // [수정] 사이드바 토글 함수 (Hover + Scroll Lock + Banner Pause)
         function openSidebar() {
             const sidebar = document.getElementById('sidebar');
