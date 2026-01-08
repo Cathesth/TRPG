@@ -2,8 +2,10 @@ import json
 import os
 import yaml
 import logging
-import concurrent.futures  # [NEW] 병렬 처리를 위해 추가
+import concurrent.futures
 from typing import TypedDict, List, Annotated, Optional, Dict, Any, Callable
+from collections import deque
+
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -12,14 +14,14 @@ from langgraph.graph import StateGraph, END
 
 from llm_factory import LLMFactory
 from schemas import NPC
+# core.utils의 renumber_scenes_bfs는 이제 사용하지 않으므로 임포트에서 제거해도 되지만,
+# 호환성을 위해 남겨두거나 사용하지 않음 처리합니다.
 from core.utils import renumber_scenes_bfs
 
-# [NEW] 검수 서비스 임포트 (파일 경로 확인 필요)
-# 만약 파일이 services/ai_audit_service.py 에 있다면 아래처럼 임포트
+# [NEW] 검수 서비스 임포트
 try:
     from services.ai_audit_service import AiAuditService
 except ImportError:
-    # 임시 fallback 클래스 (파일이 없을 경우 에러 방지)
     class AiAuditService:
         @staticmethod
         def audit_scenario(data):
@@ -32,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 # --- 프롬프트 로더 ---
 def load_prompts() -> Dict[str, str]:
-    # 가능한 경로들 (단수/복수 혼용 방지, 절대 경로 사용)
     base_dir = os.path.dirname(__file__)
     possible_paths = [
         os.path.join(base_dir, "config", "prompt.yaml"),
@@ -115,46 +116,36 @@ def safe_invoke_json(chain, input_data: dict, retries: int = 2, fallback: Any = 
     return fallback if fallback is not None else {}
 
 
-# [최적화] 일반적인 요약 (World 등)
 def summarize_context(items: List[Dict], key_name: str, key_desc: str, limit: int = 10) -> str:
     if not items: return "없음"
-
     summary_list = []
     count = len(items)
     target_items = items[:limit]
 
     for item in target_items:
         if not isinstance(item, dict): continue
-
         name = item.get(key_name, "Unknown")
         desc = item.get(key_desc, "")
         summary_list.append(f"- {name}: {desc}")
 
     if count > limit:
         summary_list.append(f"...외 {count - limit}개")
-
     return "\n".join(summary_list)
 
 
-# [NEW] NPC 전용 스마트 요약 (이름, 역할, 외모, 성격만 추출)
 def summarize_npc_context(npcs: List[Dict], limit: int = 15) -> str:
     if not npcs: return "없음"
-
     summary_list = []
     count = len(npcs)
     target_items = npcs[:limit]
 
     for npc in target_items:
         if not isinstance(npc, dict): continue
-
         name = npc.get("name", "Unknown")
         role = npc.get("role") or npc.get("type") or "Unknown"
-
-        # 묘사에 필수적인 요소만 압축해서 전달 (비밀, 스탯 등 제외)
         traits = []
         if npc.get("appearance"): traits.append(f"외모:{npc.get('appearance')}")
         if npc.get("personality"): traits.append(f"성격:{npc.get('personality')}")
-        # [Tip] 씬 생성 시 대사 스타일도 참조하면 좋음
         if npc.get("dialogue_style"): traits.append(f"말투:{npc.get('dialogue_style')}")
 
         trait_str = f" ({', '.join(traits)})" if traits else ""
@@ -162,7 +153,6 @@ def summarize_npc_context(npcs: List[Dict], limit: int = 15) -> str:
 
     if count > limit:
         summary_list.append(f"...외 {count - limit}명")
-
     return "\n".join(summary_list)
 
 
@@ -236,25 +226,20 @@ class BuilderState(TypedDict):
 def validate_start_node(node: dict, edge_map: dict) -> None:
     data = node.get("data", {})
     if not isinstance(data, dict): data = {}
-
     if not all([data.get(k) for k in ["label", "prologue", "gm_notes", "background"]]):
         logger.warning(f"Start node {node.get('id')} missing fields")
-
-    # Start Node는 반드시 1개의 연결만 가져야 함
     out_edges = edge_map[node["id"]]["out"]
     if len(out_edges) == 0:
         raise ValueError("시작점(프롤로그)에 첫 번째 장면을 연결해주세요.")
     if len(out_edges) > 1:
-        raise ValueError("시작점(프롤로그)은 오직 하나의 오프닝 장면과만 연결할 수 있습니다. 분기점은 그 이후 장면부터 만들어주세요.")
+        raise ValueError("시작점(프롤로그)은 오직 하나의 오프닝 장면과만 연결할 수 있습니다.")
 
 
 def validate_scene_node(node: dict, edge_map: dict) -> None:
     data = node.get("data", {})
     if not isinstance(data, dict): data = {}
-
     if not edge_map[node["id"]]["in"]:
         raise ValueError(f"'{data.get('title')}' 장면으로 들어오는 연결이 없습니다.")
-
     if not edge_map[node["id"]]["out"]:
         raise ValueError(f"'{data.get('title')}' 장면에서 다음으로 가는 연결이 없습니다.")
 
@@ -262,7 +247,6 @@ def validate_scene_node(node: dict, edge_map: dict) -> None:
 def validate_ending_node(node: dict, edge_map: dict) -> None:
     data = node.get("data", {})
     if not isinstance(data, dict): data = {}
-
     if not edge_map[node["id"]]["in"]:
         raise ValueError(f"'{data.get('title')}' 엔딩으로 들어오는 연결이 없습니다.")
 
@@ -274,36 +258,24 @@ NODE_VALIDATORS: Dict[str, Callable] = {
 }
 
 
-# --- 노드 함수 (LangGraph Nodes) ---
+# --- 노드 함수 ---
 
 def validate_structure(state: BuilderState):
     logger.info("Validating graph structure...")
     report_progress("building", "0/5", "구조 및 연결 검증 중...", 5, phase="initializing")
 
     graph_data = state["graph_data"]
-
-    # 1. graph_data 파싱 (문자열인 경우)
-    if isinstance(graph_data, str):
-        try:
-            logger.info("graph_data is string, attempting to parse JSON...")
-            graph_data = json.loads(graph_data)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse graph_data JSON: {e}")
-            raise ValueError("입력 데이터가 올바른 JSON 형식이 아닙니다.")
-
     if isinstance(graph_data, str):
         try:
             graph_data = json.loads(graph_data)
         except:
             pass
-
     if not isinstance(graph_data, dict):
-        raise ValueError(f"그래프 데이터가 딕셔너리가 아닙니다. (Type: {type(graph_data)})")
+        raise ValueError("입력 데이터가 올바른 JSON 형식이 아닙니다.")
 
-    # 2. 노드 데이터 파싱
+    # 노드 파싱
     raw_nodes = graph_data.get("nodes", [])
     valid_nodes = []
-
     if isinstance(raw_nodes, list):
         for node in raw_nodes:
             if isinstance(node, str):
@@ -311,27 +283,20 @@ def validate_structure(state: BuilderState):
                     node = json.loads(node)
                 except:
                     continue
-
             if not isinstance(node, dict): continue
-
-            # node['data']가 문자열이면 파싱 시도
             if "data" in node and isinstance(node["data"], str):
                 try:
                     node["data"] = json.loads(node["data"])
-                except Exception:
+                except:
                     node["data"] = {}
-
             if "data" not in node or not isinstance(node["data"], dict):
                 node["data"] = {}
-
             valid_nodes.append(node)
-
     graph_data["nodes"] = valid_nodes
 
-    # 3. 엣지 데이터 파싱
+    # 엣지 파싱
     raw_edges = graph_data.get("edges", [])
     valid_edges = []
-
     if isinstance(raw_edges, list):
         for edge in raw_edges:
             if isinstance(edge, str):
@@ -339,15 +304,11 @@ def validate_structure(state: BuilderState):
                     edge = json.loads(edge)
                 except:
                     continue
-
             if isinstance(edge, dict):
                 valid_edges.append(edge)
-
     graph_data["edges"] = valid_edges
-
     state["graph_data"] = graph_data
 
-    # 검증 실행
     nodes = graph_data.get("nodes", [])
     edge_map = {n.get("id"): {"in": [], "out": []} for n in nodes if isinstance(n, dict) and "id" in n}
 
@@ -359,18 +320,12 @@ def validate_structure(state: BuilderState):
     for node in nodes:
         ntype = node.get("type", "unknown")
         validator = NODE_VALIDATORS.get(ntype)
-        if validator:
-            validator(node, edge_map)
-        else:
-            logger.warning(f"Unknown node type: {ntype}")
+        if validator: validator(node, edge_map)
 
     return state
 
 
 def parse_graph_to_blueprint(state: BuilderState):
-    """
-    Blueprint 생성 단계 (Enemy, NPC 리스트 처리 안전장치 추가)
-    """
     report_progress("building", "1/5", "구조 분석 중...", 10, phase="parsing")
     data = state["graph_data"]
     nodes = data.get("nodes", [])
@@ -378,83 +333,50 @@ def parse_graph_to_blueprint(state: BuilderState):
     raw_npcs = data.get("npcs", [])
 
     blueprint = "### 시나리오 구조 명세서 ###\n\n"
-
     start_node = next((n for n in nodes if n.get("type") == "start"), None)
     if start_node:
         d = start_node.get('data', {})
-        blueprint += f"[설정]\n제목: {d.get('label', '')}\n"
-        blueprint += f"프롤로그: {d.get('prologue', '')}\n"
-        blueprint += f"시스템 설정: {d.get('gm_notes', '')}\n"
-        blueprint += f"배경 묘사: {d.get('background', '')}\n\n"
+        blueprint += f"[설정]\n제목: {d.get('label', '')}\n프롤로그: {d.get('prologue', '')}\n"
+        blueprint += f"시스템 설정: {d.get('gm_notes', '')}\n배경 묘사: {d.get('background', '')}\n\n"
 
     blueprint += "[등장인물 및 적 상세]\n"
     if isinstance(raw_npcs, list):
         for npc in raw_npcs:
             if not isinstance(npc, dict): continue
-
             name = npc.get('name', 'Unknown')
             role = npc.get('role') or npc.get('type') or 'Unknown'
-
             desc_parts = []
             if npc.get('personality'): desc_parts.append(f"성격: {npc.get('personality')}")
             if npc.get('appearance'): desc_parts.append(f"외모: {npc.get('appearance')}")
-            if npc.get('dialogue'): desc_parts.append(f"대표 대사: \"{npc.get('dialogue')}\"")
+            if npc.get('dialogue'): desc_parts.append(f"대사: \"{npc.get('dialogue')}\"")
             if npc.get('secret'): desc_parts.append(f"비밀: {npc.get('secret')}")
-
             if npc.get('isEnemy'):
                 stats = []
                 if npc.get('hp'): stats.append(f"HP {npc.get('hp')}")
                 if npc.get('attack'): stats.append(f"ATK {npc.get('attack')}")
                 if npc.get('weakness'): stats.append(f"약점: {npc.get('weakness')}")
                 if stats: desc_parts.append(f"전투: {', '.join(stats)}")
+            blueprint += f"- {name} ({role}): {' / '.join(desc_parts)}\n"
+            if npc.get('description'): blueprint += f"  설명: {npc.get('description')}\n"
+    blueprint += "\n[장면 흐름]\n"
 
-            desc_str = " / ".join(desc_parts)
-            blueprint += f"- {name} ({role}): {desc_str}\n"
-            if npc.get('description'):
-                blueprint += f"  배경설명: {npc.get('description')}\n"
-    blueprint += "\n"
-
-    blueprint += "[장면 흐름]\n"
     for node in nodes:
         if node.get("type") == "start": continue
         d = node.get("data", {})
-
-        blueprint += f"ID: {node.get('id')} ({node.get('type')})\n"
-        blueprint += f"제목: {d.get('title', '제목 없음')}\n"
+        blueprint += f"ID: {node.get('id')} ({node.get('type')})\n제목: {d.get('title', '제목 없음')}\n"
         blueprint += f"유형: {d.get('scene_type', 'normal')}\n"
         if d.get('background'): blueprint += f"배경: {d.get('background')}\n"
         if d.get('description'): blueprint += f"내용: {d.get('description')}\n"
         if d.get('trigger'): blueprint += f"트리거: {d.get('trigger')}\n"
-        if d.get('rule'): blueprint += f"추가 룰: {d.get('rule')}\n"
 
-        # [CRITICAL FIX] Enemy와 NPC 리스트가 문자열(이름)로 들어와도 안전하게 처리
         enemies = d.get("enemies", [])
         if enemies:
-            enemy_list = []
-            if isinstance(enemies, list):
-                for e in enemies:
-                    if isinstance(e, dict):
-                        enemy_list.append(e.get('name', 'Unknown'))
-                    else:
-                        enemy_list.append(str(e))  # 문자열인 경우 그대로 사용
-                e_str = ', '.join(enemy_list)
-            else:
-                e_str = str(enemies)
+            e_str = ', '.join([e.get('name', 'Unknown') if isinstance(e, dict) else str(e) for e in enemies])
             blueprint += f"등장 적: {e_str}\n"
 
-        # NPC 등장 정보도 동일하게 처리 (안전장치)
         scene_npcs = d.get("npcs", [])
         if scene_npcs:
-            npc_list = []
-            if isinstance(scene_npcs, list):
-                for n in scene_npcs:
-                    if isinstance(n, dict):
-                        npc_list.append(n.get('name', 'Unknown'))
-                    else:
-                        npc_list.append(str(n))
-                n_str = ', '.join(npc_list)
-            else:
-                n_str = str(scene_npcs)
+            n_str = ', '.join([n.get('name', 'Unknown') if isinstance(n, dict) else str(n) for n in scene_npcs])
             blueprint += f"등장 NPC: {n_str}\n"
 
         outgoing = [e for e in edges if e.get("source") == node.get("id")]
@@ -471,12 +393,8 @@ def refine_scenario_info(state: BuilderState):
     report_progress("building", "2/5", "개요 및 설정 기획 중...", 30, phase="worldbuilding")
     llm = LLMFactory.get_llm(state.get("model_name"))
     parser = JsonOutputParser(pydantic_object=ScenarioSummary)
-
-    prompt_text = PROMPTS.get("refine_scenario",
-                              "You are a TRPG Scenario Architect. Refine the given blueprint into a cohesive scenario summary.")
-
     prompt = ChatPromptTemplate.from_messages([
-        ("system", prompt_text),
+        ("system", PROMPTS.get("refine_scenario", "Refine scenario summary.")),
         ("user", "{blueprint}")
     ]).partial(format_instructions=parser.get_format_instructions())
 
@@ -497,7 +415,7 @@ def generate_full_content(state: BuilderState):
     npc_parser = JsonOutputParser(pydantic_object=NPCList)
     npc_chain = (
             ChatPromptTemplate.from_messages([
-                ("system", PROMPTS.get("generate_npc", "Generate NPCs based on the blueprint.")),
+                ("system", PROMPTS.get("generate_npc", "Generate NPCs.")),
                 ("user", "{blueprint}")
             ]).partial(format_instructions=npc_parser.get_format_instructions())
             | llm | npc_parser
@@ -506,7 +424,7 @@ def generate_full_content(state: BuilderState):
     world_parser = JsonOutputParser(pydantic_object=WorldList)
     world_chain = (
             ChatPromptTemplate.from_messages([
-                ("system", PROMPTS.get("generate_world", "Generate world settings based on the blueprint.")),
+                ("system", PROMPTS.get("generate_world", "Generate world.")),
                 ("user", "{blueprint}")
             ]).partial(format_instructions=world_parser.get_format_instructions())
             | llm | world_parser
@@ -522,16 +440,12 @@ def generate_full_content(state: BuilderState):
     worlds = setup_res['worlds'].get('worlds', [])
 
     report_progress("building", "3.5/5", "장면 및 사건 구성 중...", 65, phase="scene_generation")
-
-    # [수정] 방금 생성된 풍부한 NPC와 World 정보를 사용함
     world_context = summarize_context(worlds, 'name', 'description', limit=10)
 
-    # graph_data의 단순 정보 대신 AI가 생성한 상세 정보를 우선 사용 (없으면 graph_data 사용)
     generated_npcs_map = {n['name']: n for n in npcs}
     graph_npcs = state["graph_data"].get("npcs", [])
     merged_npcs = []
 
-    # 그래프에 있는 NPC들을 AI 생성 정보로 강화
     if isinstance(graph_npcs, list):
         for g_npc in graph_npcs:
             if not isinstance(g_npc, dict): continue
@@ -541,7 +455,6 @@ def generate_full_content(state: BuilderState):
             else:
                 merged_npcs.append(g_npc)
 
-    # AI가 추가로 생성한 NPC가 있다면 추가
     existing_names = {n.get("name") for n in merged_npcs}
     for n in npcs:
         if n.get("name") not in existing_names:
@@ -551,8 +464,8 @@ def generate_full_content(state: BuilderState):
 
     scene_parser = JsonOutputParser(pydantic_object=SceneData)
     scene_prompt = ChatPromptTemplate.from_messages([
-        ("system", PROMPTS.get("generate_scene", "Generate scenes based on the blueprint.")),
-        ("user", f"설계도:\n{blueprint}\n\n[참고: 세계관 설정]\n{world_context}\n\n[참고: 등장인물 상세]\n{npc_context}")
+        ("system", PROMPTS.get("generate_scene", "Generate scenes.")),
+        ("user", f"설계도:\n{blueprint}\n\n[참고: 세계관]\n{world_context}\n\n[참고: NPC]\n{npc_context}")
     ]).partial(format_instructions=scene_parser.get_format_instructions())
 
     content = safe_invoke_json(
@@ -570,28 +483,17 @@ def generate_full_content(state: BuilderState):
     }
 
 
-# --- [NEW] 병렬 생성 노드 ---
 def parallel_generation_node(state: BuilderState):
-    """
-    개요 생성(Refine)과 상세 내용 생성(Generate)을 병렬로 수행
-    """
     report_progress("building", "2/5", "시나리오 개요 및 상세 콘텐츠 동시 생성 중...", 40, phase="parallel_gen")
-
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        # 두 작업을 동시에 던짐
         future_refine = executor.submit(refine_scenario_info, state)
         future_generate = executor.submit(generate_full_content, state)
-
-        # 결과 대기
         try:
             refine_result = future_refine.result()
             generate_result = future_generate.result()
         except Exception as e:
             logger.error(f"Parallel Generation Error: {e}")
-            # 에러 발생 시 재시도하거나 기본값 처리 (여기선 에러 전파)
             raise e
-
-    # 결과 병합
     return {**refine_result, **generate_result}
 
 
@@ -604,100 +506,56 @@ class InitialStateExtractor(BaseModel):
 
 
 def finalize_build(state: BuilderState):
-    report_progress("building", "5/5", "최종 마무리 중...", 100, phase="finalizing")
-    data = state["graph_data"]
+    """
+    최종 단계에서 직접 BFS 탐색을 수행하여
+    Scene과 Ending을 명확히 구분하고 ID를 Scene-N, Ending-N으로 재할당합니다.
+    """
+    report_progress("building", "4/5", "데이터 통합 및 최종 마무리 중...", 90, phase="finalizing")
 
-    # 1. 시작점 연결
-    start_node = next((n for n in data.get("nodes", []) if n.get("type") == "start"), None)
+    graph_data = state["graph_data"]
+    raw_nodes = graph_data.get("nodes", [])
+    raw_edges = graph_data.get("edges", [])
 
-    start_id = None
-    prologue_connects = []
+    # 1. Start 노드 찾기
+    start_node = next((n for n in raw_nodes if n.get("type") == "start"), None)
+    if not start_node:
+        raise ValueError("Start Node not found")
 
-    if start_node:
-        for edge in data.get("edges", []):
-            if edge.get("source") == start_node.get("id"):
-                prologue_connects.append(edge.get("target"))
-                if not start_id: start_id = edge.get("target")
-
+    # 2. Prologue 및 초기 설정 처리
     scenario_data = state.get("scenario", {})
-    start_data = start_node.get("data", {}) if start_node else {}
+    start_data = start_node.get("data", {})
     if not isinstance(start_data, dict): start_data = {}
 
     final_prologue = scenario_data.get("player_prologue") or start_data.get("prologue", "")
     final_hidden = scenario_data.get("gm_notes") or start_data.get("gm_notes", "")
 
-    # 2. Raw Graph 업데이트
-    raw_nodes = state["graph_data"].get("nodes", [])
-    scene_map = {s["scene_id"].lower(): s for s in state["scenes"]}
-    ending_map = {e["ending_id"].lower(): e for e in state["endings"]}
-
-    for node in raw_nodes:
-        nid = node.get("id", "").lower()
-        if not nid: continue
-
-        node_data = node.get("data", {})
-        if not isinstance(node_data, dict): node_data = {}
-
-        if nid in scene_map:
-            tgt = scene_map[nid]
-            node_data.update({
-                "title": tgt["name"],
-                "description": tgt["description"],
-                "npcs": tgt["npcs"],
-                "background": tgt.get("background"),
-                "trigger": tgt.get("trigger"),
-                "rule": tgt.get("rule"),
-                "enemies": tgt.get("enemies")
-            })
-        elif nid in ending_map:
-            tgt = ending_map[nid]
-            node_data.update({
-                "title": tgt["title"],
-                "description": tgt["description"],
-                "background": tgt.get("background")
-            })
-
-        node["data"] = node_data
-
-    # 3. 초기 스탯 설정
+    # 초기 스탯 추출
     initial_player_state = {"hp": 100, "inventory": []}
+    if "initial_hp" in start_data: initial_player_state["hp"] = start_data["initial_hp"]
+    if "initial_items" in start_data:
+        items = start_data["initial_items"]
+        if isinstance(items, str) and items.strip():
+            initial_player_state["inventory"] = [i.strip() for i in items.split(',')]
+        elif isinstance(items, list):
+            initial_player_state["inventory"] = items
 
-    if start_node:
-        d = start_data
-        if "initial_hp" in d: initial_player_state["hp"] = d["initial_hp"]
-        if "initial_items" in d:
-            items = d["initial_items"]
-            if isinstance(items, str) and items.strip():
-                initial_player_state["inventory"] = [i.strip() for i in items.split(',')]
-            elif isinstance(items, list):
-                initial_player_state["inventory"] = items
+    custom_stats = start_data.get("custom_stats", [])
+    stat_rules = start_data.get("stat_rules", "")
+    custom_stats_text = []
+    if isinstance(custom_stats, list):
+        for stat in custom_stats:
+            if isinstance(stat, dict) and stat.get("name"):
+                initial_player_state[stat["name"]] = stat.get("value")
+                custom_stats_text.append(f"{stat['name']}: {stat.get('value')}")
 
-        custom_stats = d.get("custom_stats", [])
-        stat_rules = d.get("stat_rules", "")
+    if custom_stats_text: final_hidden += "\n\n[추가 스탯 설정]\n" + "\n".join(custom_stats_text)
+    if stat_rules: final_hidden += "\n\n[스탯 규칙]\n" + str(stat_rules)
 
-        custom_stats_text = []
-        if isinstance(custom_stats, list):
-            for stat in custom_stats:
-                if isinstance(stat, dict):
-                    name = stat.get("name")
-                    val = stat.get("value")
-                    if name:
-                        initial_player_state[name] = val
-                        custom_stats_text.append(f"{name}: {val}")
-
-        append_text = ""
-        if custom_stats_text:
-            append_text += "\n\n[추가 스탯 설정]\n" + "\n".join(custom_stats_text)
-        if stat_rules:
-            append_text += "\n\n[스탯 규칙]\n" + str(stat_rules)
-
-        final_hidden += append_text
-
+    # LLM으로 스탯 추가 추출
     extract_llm = LLMFactory.get_llm(state.get("model_name"), temperature=0.0)
     parser = JsonOutputParser(pydantic_object=InitialStateExtractor)
-
     extract_prompt = ChatPromptTemplate.from_messages([
-        ("system", PROMPTS.get("extract_stats", "Extract initial game stats from the text.")),
+        ("system", PROMPTS.get("extract_stats", "Extract stats.")),
         ("user", "{gm_notes}")
     ]).partial(format_instructions=parser.get_format_instructions())
 
@@ -707,97 +565,197 @@ def finalize_build(state: BuilderState):
         retries=2,
         fallback={}
     )
-
     for k, v in extracted_stats.items():
         if v is not None and k not in initial_player_state:
             initial_player_state[k] = v
 
-    # 4. NPC 데이터 병합
+    # --- [핵심 수정] BFS 기반 리넘버링 및 Scene/Ending 분리 ---
+
+    # 3. AI가 생성한 Scene/Ending 데이터 매핑 (ID는 lowercase로 비교)
+    generated_scene_map = {s["scene_id"].lower(): s for s in state["scenes"]}
+    generated_ending_map = {e["ending_id"].lower(): e for e in state["endings"]}
+
+    # 그래프 구조 파악용 인접 리스트
+    adj_list = {n["id"]: [] for n in raw_nodes}
+    for edge in raw_edges:
+        src, tgt = edge.get("source"), edge.get("target")
+        if src in adj_list and tgt in adj_list:
+            adj_list[src].append(tgt)
+
+    # Start에서 연결된 첫 번째 노드 찾기
+    start_neighbors = adj_list.get(start_node["id"], [])
+    if not start_neighbors:
+        raise ValueError("Start node has no outgoing connection")
+
+    # BFS 탐색 준비
+    queue = deque(start_neighbors)  # Start 노드 다음부터 시작
+    visited = set(start_neighbors)
+
+    id_map = {}  # Old ID -> New ID
+    final_scenes = []
+    final_endings = []
+
+    scene_counter = 1
+    ending_counter = 1
+
+    # 탐색 루프
+    while queue:
+        curr_id = queue.popleft()
+        curr_node = next((n for n in raw_nodes if n["id"] == curr_id), None)
+        if not curr_node: continue
+
+        node_type = curr_node.get("type", "scene")
+        curr_id_lower = curr_id.lower()
+        new_id = ""
+
+        # A. 씬(Scene)인 경우
+        if node_type == "scene":
+            new_id = f"Scene-{scene_counter}"
+            scene_counter += 1
+            id_map[curr_id] = new_id
+
+            # 데이터 병합 (AI 생성 데이터 + 유저 그래프 데이터)
+            base_data = generated_scene_map.get(curr_id_lower, {})
+            user_data = curr_node.get("data", {})
+
+            merged_scene = {
+                "scene_id": new_id,
+                "name": user_data.get("title") or base_data.get("name") or f"Scene {scene_counter - 1}",
+                "description": base_data.get("description") or user_data.get("description") or "내용 없음",
+                "type": user_data.get("scene_type") or base_data.get("type") or "normal",
+                "background": base_data.get("background") or user_data.get("background"),
+                "trigger": user_data.get("trigger") or base_data.get("trigger"),
+                "rule": user_data.get("rule") or base_data.get("rule"),
+                "npcs": user_data.get("npcs") or base_data.get("npcs") or [],
+                "enemies": user_data.get("enemies") or base_data.get("enemies") or [],
+                "transitions": []  # 나중에 처리
+            }
+            final_scenes.append(merged_scene)
+
+        # B. 엔딩(Ending)인 경우
+        elif node_type == "ending":
+            new_id = f"Ending-{ending_counter}"
+            ending_counter += 1
+            id_map[curr_id] = new_id
+
+            base_data = generated_ending_map.get(curr_id_lower, {})
+            user_data = curr_node.get("data", {})
+
+            merged_ending = {
+                "ending_id": new_id,
+                "title": user_data.get("title") or base_data.get("title") or "Ending",
+                "description": base_data.get("description") or user_data.get("description") or "엔딩 내용 없음",
+                "background": base_data.get("background") or user_data.get("background"),
+                "type": "ending"
+            }
+            final_endings.append(merged_ending)
+
+        # 다음 노드 탐색
+        for neighbor in adj_list.get(curr_id, []):
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append(neighbor)
+
+    # 4. Transitions 연결 및 프롤로그 연결 업데이트
+
+    # 4-1. 씬들의 Transitions 업데이트
+    for scene in final_scenes:
+        # 원래 Old ID 찾기 (역추적은 비효율적이니 순서대로 처리했다 가정하거나, Old ID를 임시 저장했어야 함)
+        # -> 간단하게: id_map을 뒤집어서 Old ID를 찾거나, 애초에 final_scenes 생성 시 Old ID를 저장해두면 됨.
+        # 여기서는 raw_edges를 다시 순회하며 처리
+
+        # 현재 씬의 New ID -> Old ID 찾기
+        old_id = next((k for k, v in id_map.items() if v == scene["scene_id"]), None)
+        if not old_id: continue
+
+        # 이 노드에서 나가는 엣지 찾기
+        out_edges = [e for e in raw_edges if e.get("source") == old_id]
+
+        transitions = []
+        for edge in out_edges:
+            tgt_old = edge.get("target")
+            if tgt_old in id_map:
+                tgt_new = id_map[tgt_old]
+
+                # 유저가 작성한 트리거가 있다면 사용, 없으면 AI 생성 데이터에서 찾아보기(복잡하므로 생략하거나 기본값)
+                # 우선순위: 유저 그래프의 trigger -> 노드 데이터 -> 기본값
+                # 근데 엣지에는 데이터가 별로 없으므로 타겟 노드의 트리거를 주로 씀.
+                # 여기서는 씬 생성 시점에 AI가 만든 transition 텍스트를 가져오기 어려우므로(매핑이 꼬임),
+                # 타겟 씬의 'trigger' 필드를 가져와서 사용함.
+
+                trigger_text = "이동"
+                # 타겟이 씬이면 그 씬의 진입 트리거를 사용
+                tgt_scene = next((s for s in final_scenes if s["scene_id"] == tgt_new), None)
+                if tgt_scene and tgt_scene.get("trigger"):
+                    trigger_text = tgt_scene["trigger"]
+
+                # 타겟이 엔딩이면?
+                tgt_ending = next((e for e in final_endings if e["ending_id"] == tgt_new), None)
+                if tgt_ending:  # 엔딩은 트리거가 보통 없으므로 적절히 처리하거나 이전 씬에서 정해야 함
+                    trigger_text = "엔딩으로"
+
+                transitions.append({
+                    "trigger": trigger_text,
+                    "target_scene_id": tgt_new
+                })
+
+        scene["transitions"] = transitions
+
+    # 4-2. 프롤로그 연결 업데이트
+    final_prologue_connects = []
+    for neighbor in start_neighbors:
+        if neighbor in id_map:
+            final_prologue_connects.append(id_map[neighbor])
+
+    # 첫 씬 ID 설정
+    start_scene_id = final_prologue_connects[0] if final_prologue_connects else None
+
+    # 5. NPC 데이터 최종 병합
     final_npcs = state["characters"]
     user_npcs = {n.get("name"): n for n in state["graph_data"].get("npcs", []) if isinstance(n, dict)}
-
     for npc in final_npcs:
         u_npc = user_npcs.get(npc["name"])
-        if u_npc:
-            npc.update(u_npc)
-
+        if u_npc: npc.update(u_npc)
     existing_names = {n["name"] for n in final_npcs}
     for u_npc in state["graph_data"].get("npcs", []):
         if isinstance(u_npc, dict) and u_npc.get("name") not in existing_names:
             final_npcs.append(u_npc)
 
+    # 6. 최종 데이터 구성
     final_data = {
         "title": scenario_data.get("title", "Untitled"),
         "desc": scenario_data.get("summary", ""),
         "prologue": final_prologue,
         "world_settings": final_hidden,
         "player_status": final_hidden,
-        "prologue_connects_to": prologue_connects,
+        "prologue_connects_to": final_prologue_connects,
         "scenario": scenario_data,
         "worlds": state["worlds"],
         "npcs": final_npcs,
-        "scenes": state["scenes"],
-        "endings": state["endings"],
-        "start_scene_id": start_id,
+        "scenes": final_scenes,
+        "endings": final_endings,  # 이제 엔딩은 여기에만 들어감
+        "start_scene_id": start_scene_id,
         "initial_state": initial_player_state,
         "raw_graph": state["graph_data"]
     }
 
-    # 씬 리넘버링 (Scene-1, Scene-2...)
-    final_data = renumber_scenes_bfs(final_data)
-
-    # --- [추가] 엔딩 ID 리넘버링 (Ending-1, Ending-2...) ---
-    endings = final_data.get("endings", [])
-    scenes = final_data.get("scenes", [])
-
-    if endings:
-        ending_map = {}
-        # 1. 엔딩 ID 변경 및 매핑 생성
-        for idx, ending in enumerate(endings, 1):
-            old_id = ending["ending_id"]
-            new_id = f"Ending-{idx}"
-            ending["ending_id"] = new_id
-            ending_map[old_id] = new_id
-
-        # 2. 씬 Transition(연결)에서 엔딩 ID 참조 업데이트
-        for scene in scenes:
-            for trans in scene.get("transitions", []):
-                tgt = trans.get("target_scene_id")
-                if tgt in ending_map:
-                    trans["target_scene_id"] = ending_map[tgt]
-
-        # 3. 프롤로그 연결 업데이트 (엔딩으로 바로 이어지는 경우 대비)
-        prologue_connects = final_data.get("prologue_connects_to", [])
-        for i, target in enumerate(prologue_connects):
-            if target in ending_map:
-                prologue_connects[i] = ending_map[target]
-
     return {"final_data": final_data}
 
 
-# --- [NEW] 검수 노드 ---
 def audit_content_node(state: BuilderState):
     report_progress("building", "5/5", "최종 콘텐츠 검수 중...", 95, phase="auditing")
-
     final_data = state.get("final_data", {})
-
-    # 검수 서비스 호출
     try:
-        # ai_audit_service.py의 메서드명 확인 필요 (예: analyze_scenario, audit 등)
-        # 여기서는 가정하여 호출함. 실제 서비스 코드에 맞춰 수정 바람.
         if hasattr(AiAuditService, 'audit_scenario'):
             audit_result = AiAuditService.audit_scenario(final_data)
         elif hasattr(AiAuditService, 'analyze'):
             audit_result = AiAuditService.analyze(final_data)
         else:
-            # 메서드를 못 찾으면 스킵
             audit_result = {"valid": True, "info": "Audit method not found"}
-
         final_data["audit_report"] = audit_result
     except Exception as e:
         logger.error(f"Audit failed: {e}")
         final_data["audit_report"] = {"valid": True, "warnings": [f"검수 중 오류 발생: {e}"]}
-
     return {"final_data": final_data}
 
 
@@ -805,25 +763,14 @@ def build_builder_graph():
     workflow = StateGraph(BuilderState)
     workflow.add_node("validate", validate_structure)
     workflow.add_node("parse", parse_graph_to_blueprint)
-
-    # [변경] 병렬 처리 노드로 교체
     workflow.add_node("parallel_gen", parallel_generation_node)
-    # workflow.add_node("refine", refine_scenario_info)
-    # workflow.add_node("generate", generate_full_content)
-
     workflow.add_node("finalize", finalize_build)
-
-    # [추가] 검수 노드
     workflow.add_node("audit", audit_content_node)
 
     workflow.set_entry_point("validate")
     workflow.add_edge("validate", "parse")
-
-    # [변경] parse -> parallel_gen -> finalize 흐름
     workflow.add_edge("parse", "parallel_gen")
     workflow.add_edge("parallel_gen", "finalize")
-
-    # [변경] finalize -> audit -> END
     workflow.add_edge("finalize", "audit")
     workflow.add_edge("audit", END)
 
@@ -851,10 +798,8 @@ def generate_scenario_from_graph(api_key, user_data, model_name=None):
 def generate_single_npc(scenario_title, scenario_summary, user_request="", model_name=None):
     llm = LLMFactory.get_llm(model_name)
     parser = JsonOutputParser(pydantic_object=NPC)
-
     prompt = ChatPromptTemplate.from_messages([
         ("system", PROMPTS.get("generate_single_npc", "Create a TRPG NPC.")),
         ("user", f"제목:{scenario_title}\n요청:{user_request}")
     ]).partial(format_instructions=parser.get_format_instructions())
-
     return safe_invoke_json(prompt | llm | parser, {}, retries=1)
