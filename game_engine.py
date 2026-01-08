@@ -13,6 +13,26 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# [최적화] LLM 인스턴스 캐시 (모델별로 재사용)
+_llm_cache: Dict[str, Any] = {}
+_llm_streaming_cache: Dict[str, Any] = {}
+
+
+def get_cached_llm(api_key: str, model_name: str, streaming: bool = False):
+    """LLM 인스턴스 캐싱으로 재생성 비용 절감"""
+    cache = _llm_streaming_cache if streaming else _llm_cache
+    cache_key = f"{model_name}_{streaming}"
+
+    if cache_key not in cache:
+        cache[cache_key] = LLMFactory.get_llm(
+            api_key=api_key,
+            model_name=model_name,
+            streaming=streaming
+        )
+        logger.info(f"🔧 [LLM CACHE] Created new instance: {model_name} (streaming={streaming})")
+
+    return cache[cache_key]
+
 
 class PlayerState(TypedDict):
     scenario: Dict[str, Any]
@@ -30,6 +50,7 @@ class PlayerState(TypedDict):
     retry_count: int
     chat_log_html: str
     near_miss_trigger: str  # [필수] Near Miss 저장용
+    model: str  # [추가] 사용 중인 LLM 모델
 
 
 def normalize_text(text: str) -> str:
@@ -243,19 +264,14 @@ def npc_node(state: PlayerState):
     history = state.get('history', [])
     history_context = "\n".join(history[-3:]) if history else ""
 
-    prompt = f"""
-    [ROLE] Act as NPC '{target_npc_name}'. Scene: {curr_scene.get('title')}
-    [PROFILE] {npc_info}
-    [HISTORY] {history_context}
-    [USER] "{state['last_user_input']}"
-    [GOAL] Reply in Korean. Short (1 sentence). Natural tone.
-    """
+    # [최적화] 프롬프트 경량화
+    prompt = f"[NPC: {target_npc_name}] {npc_info}\n[History] {history_context}\n[User] \"{state['last_user_input']}\"\n→ Korean, 1 sentence."
 
     try:
         api_key = os.getenv("OPENROUTER_API_KEY")
-        # 상태에서 모델 가져오기 (없으면 기본값 사용)
         model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
-        llm = LLMFactory.get_llm(api_key=api_key, model_name=model_name)
+        # [최적화] 캐시된 LLM 사용
+        llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
         response = llm.invoke(prompt).content.strip()
         state['npc_output'] = response
 
@@ -403,29 +419,31 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             yield f"그 행동({user_input})은 되지 않지만, <mark>{near_miss}</mark>와 관련된 무언가가 있을 것 같습니다."
             return
 
-        # [최적화 2] 일반 힌트 생성 시 프롬프트 경량화
+        # [최적화 2] NPC 대화 있으면 스킵
         npc_output = state.get('npc_output', '')
         if npc_output:
             yield ""
             return
 
-        # 30% 확률로 LLM 없이 기본 메시지 (비용 절감)
-        if random.random() < 0.3:
-            yield "특별한 일은 일어나지 않았습니다. 주변을 더 자세히 살펴보세요."
+        # [최적화 3] 50% 확률로 LLM 없이 기본 메시지 (비용+속도 절감)
+        if random.random() < 0.5:
+            fallback_hints = [
+                "특별한 일은 일어나지 않았습니다. 주변을 더 자세히 살펴보세요.",
+                "그 방향으로는 진전이 없어 보입니다.",
+                "다른 방법을 시도해 보세요.",
+                "주변에 다른 단서가 있을지도 모릅니다."
+            ]
+            yield random.choice(fallback_hints)
             return
 
-        prompt = f"""
-            [Situation] Scene: '{scene_title}'. User tried: "{user_input}" -> Failed.
-            [Hidden Triggers] {trigger_hints}
-            [Task] Give a VERY short hint (Korean). 1 sentence. Use <mark>tags</mark>.
-            """
+        # [최적화 4] 프롬프트 경량화
+        prompt = f"Scene: '{scene_title}'. User: \"{user_input}\" (failed). Hints: {trigger_hints[:3]}. → Korean hint, 1 sentence, use <mark>."
 
         try:
             api_key = os.getenv("OPENROUTER_API_KEY")
-            # 상태에서 모델 가져오기
             model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
-            llm = LLMFactory.get_llm(api_key=api_key, model_name=model_name,
-                                     streaming=True)
+            # [최적화] 캐시된 LLM 사용
+            llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
             for chunk in llm.stream(prompt):
                 if chunk.content: yield chunk.content
         except Exception:
@@ -439,31 +457,14 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     npc_intro = check_npc_appearance(state)
     if npc_intro: yield npc_intro + "<br><br>"
 
-    gm_notes = scenario.get('world_settings', '')
-
-    prompt = f"""
-    You are a Game Master.
-    [SCENE] {scene_desc}
-    [GM NOTES] {gm_notes}
-    [LOCATION] {scene_title}
-    [NPCs] {', '.join(npc_names)}
-    [TRIGGERS] {trigger_hints}
-
-    [INSTRUCTIONS]
-    1. Rewrite [SCENE] to be immersive (Second-person "You...").
-    2. **MANDATORY**: Enclose key interactive objects in <mark> tags.
-    3. Korean. 3-5 sentences.
-    """
+    # [최적화 5] 프롬프트 경량화
+    prompt = f"[GM] Scene: {scene_desc}\nLocation: {scene_title}, NPCs: {', '.join(npc_names)}\n→ Immersive 2nd-person Korean, 3-4 sentences. Use <mark> for key objects."
 
     try:
         api_key = os.getenv("OPENROUTER_API_KEY")
-        # 상태에서 모델 가져오기
         model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
-        llm = LLMFactory.get_llm(
-            api_key=api_key,
-            model_name=model_name,
-            streaming=True
-        )
+        # [최적화] 캐시된 LLM 사용
+        llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
 
         accumulated_text = ""
         has_content = False
