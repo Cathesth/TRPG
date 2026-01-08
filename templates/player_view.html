@@ -296,6 +296,8 @@
     const SCENARIO_LOADED_KEY = 'trpg_scenario_loaded';
     const CURRENT_SCENARIO_KEY = 'trpg_current_scenario';  // 현재 시나리오 ID 저장
     const NAVIGATION_FLAG_KEY = 'trpg_navigation_flag';  // 내부 네비게이션 플래그
+    const MODEL_PROVIDER_KEY = 'trpg_model_provider';  // 선택한 제공사 저장
+    const MODEL_VERSION_KEY = 'trpg_model_version';  // 선택한 모델 버전 저장
 
     // 새로고침 감지 및 경고
     window.addEventListener('beforeunload', function(e) {
@@ -1150,6 +1152,9 @@
 
         const provider = providerSelect.value;
 
+        // 제공사 선택 저장
+        sessionStorage.setItem(MODEL_PROVIDER_KEY, provider);
+
         // 기본 옵션 지우기
         modelVersionSelect.innerHTML = '';
 
@@ -1226,15 +1231,46 @@
             modelVersionSelect.appendChild(optionElement);
         });
 
-        // 모델 버전 선택 초기화
-        modelVersionSelect.value = options.length > 0 ? options[0].value : '';
+        // 저장된 모델 버전이 있고 해당 provider와 일치하면 복원
+        const savedModelVersion = sessionStorage.getItem(MODEL_VERSION_KEY);
+        const savedProvider = sessionStorage.getItem(MODEL_PROVIDER_KEY);
+
+        if (savedModelVersion && savedProvider === provider) {
+            // 해당 옵션이 존재하는지 확인
+            const optionExists = options.some(opt => opt.value === savedModelVersion);
+            if (optionExists) {
+                modelVersionSelect.value = savedModelVersion;
+            } else {
+                modelVersionSelect.value = options.length > 0 ? options[0].value : '';
+                sessionStorage.setItem(MODEL_VERSION_KEY, modelVersionSelect.value);
+            }
+        } else {
+            // 모델 버전 선택 초기화
+            modelVersionSelect.value = options.length > 0 ? options[0].value : '';
+            sessionStorage.setItem(MODEL_VERSION_KEY, modelVersionSelect.value);
+        }
     }
 
-    // 페이지 로드 시 모델 버전 초기화
+    // 페이지 로드 시 모델 버전 초기화 및 복원
     (function() {
         const providerSelect = document.getElementById('provider-select');
-        if (providerSelect) {
+        const modelVersionSelect = document.getElementById('model-version-select');
+
+        if (providerSelect && modelVersionSelect) {
+            // 저장된 제공사 복원
+            const savedProvider = sessionStorage.getItem(MODEL_PROVIDER_KEY);
+            if (savedProvider) {
+                providerSelect.value = savedProvider;
+            }
+
+            // 모델 버전 업데이트 (복원 포함)
             providerSelect.dispatchEvent(new Event('change'));
+
+            // 모델 버전 변경 시 저장
+            modelVersionSelect.addEventListener('change', function() {
+                sessionStorage.setItem(MODEL_VERSION_KEY, this.value);
+                console.log('🤖 모델 저장됨:', this.value);
+            });
         }
     })();
 </script>
