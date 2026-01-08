@@ -226,13 +226,16 @@
                     </div>
                     <div class="flex-1">
                         <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
-                        <div id="loading-message" class="bg-[#1a1a1e]/50 border border-gray-700/50 p-3 rounded-lg text-gray-400 text-sm flex items-center gap-2">
-                            <div class="flex gap-1">
-                                <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full typing-dot"></div>
-                                <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full typing-dot"></div>
-                                <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full typing-dot"></div>
+                        <div id="loading-message" class="bg-[#1a1a1e]/50 border border-gray-700/50 p-3 rounded-lg text-gray-400 text-sm flex flex-col gap-1">
+                            <div class="flex items-center gap-2">
+                                <div class="flex gap-1">
+                                    <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full typing-dot"></div>
+                                    <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full typing-dot"></div>
+                                    <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full typing-dot"></div>
+                                </div>
+                                <span id="loading-text" class="text-xs">답변을 생성하고 있습니다...</span>
                             </div>
-                            <span id="loading-text" class="text-xs">답변을 생성하고 있습니다...</span>
+                            <div id="response-timer" class="text-[10px] text-gray-500 font-mono">⏱ 0.0초</div>
                         </div>
                     </div>
                 </div>
@@ -284,6 +287,8 @@
     let isInternalNavigation = false;  // 내부 네비게이션 플래그
     let hasGameStarted = false;  // 게임이 시작되었는지 (채팅 내역이 있는지)
     let isStreaming = false;  // 스트리밍 중 여부 추가
+    let responseTimerInterval = null;  // 응답 시간 타이머
+    let responseStartTime = null;  // 응답 시작 시간
 
     const CHAT_LOG_KEY = 'trpg_chat_log';
     const STATS_KEY = 'trpg_stats';
@@ -612,6 +617,16 @@
             let buffer = '';
             let currentContent = '';
 
+            // 응답 시간 측정을 위한 타이머 시작
+            responseStartTime = Date.now();
+            responseTimerInterval = setInterval(() => {
+                const elapsedTime = Date.now() - responseStartTime;
+                const seconds = Math.floor(elapsedTime / 1000);
+                const milliseconds = Math.floor((elapsedTime % 1000) / 100);
+                const timerText = `⏱ ${seconds}.${milliseconds}초`;
+                document.getElementById('response-timer').textContent = timerText;
+            }, 100);
+
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
@@ -699,6 +714,7 @@
         } finally {
             // 스트리밍 종료
             isStreaming = false;
+            clearInterval(responseTimerInterval);  // 타이머 중지
 
             loadingIndicator.classList.add('hidden');
             loadingIndicator.classList.remove('flex');
