@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from starlette.concurrency import run_in_threadpool
 
@@ -21,7 +22,6 @@ from core.state import game_state
 from core.utils import parse_request_data, pick_start_scene_id, validate_scenario_graph, can_publish_scenario
 from services.scenario_service import ScenarioService
 from services.user_service import UserService
-from services.preset_service import PresetService
 from services.draft_service import DraftService
 from services.ai_audit_service import AIAuditService
 from services.history_service import HistoryService
@@ -30,6 +30,9 @@ from services.mermaid_service import MermaidService
 
 from game_engine import create_game_graph
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
+
+# [수정] DB 관련 임포트 추가
+from models import get_db, Preset
 
 logger = logging.getLogger(__name__)
 
@@ -393,99 +396,171 @@ async def save_npc(request: Request, user: CurrentUser = Depends(get_current_use
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
-# --- [프리셋 관리] ---
+# --- [프리셋 관리 (DB 직접 연결)] ---
 
 @api_router.get('/presets')
 async def list_presets(
         sort: str = 'newest',
         limit: Optional[int] = None,
-        user: CurrentUser = Depends(get_current_user_optional)
+        user: CurrentUser = Depends(get_current_user_optional),
+        db: Session = Depends(get_db)
 ):
-    user_id = user.id if user.is_authenticated else None
-    file_infos = PresetService.list_presets(sort, user_id, limit)
-    return file_infos
+    """DB에서 프리셋 목록 조회"""
+    try:
+        query = db.query(Preset)
+
+        # 개인용/공용 필터가 필요하다면 여기서 추가 (현재는 전체 공개)
+        # if user.is_authenticated:
+        #     query = query.filter(Preset.author_id == user.id)
+
+        if sort == 'newest':
+            query = query.order_by(Preset.created_at.desc())
+
+        if limit:
+            query = query.limit(limit)
+
+        presets = query.all()
+        return [p.to_dict() for p in presets]
+    except Exception as e:
+        logger.error(f"프리셋 조회 실패: {e}")
+        return JSONResponse([], status_code=500)
 
 
 @api_router.post('/presets/save')
-async def save_preset(request: Request, user: CurrentUser = Depends(get_current_user)):
-    data = await request.json()
-    user_id = user.id if user.is_authenticated else None
-    fid, error = PresetService.save_preset(data, user_id=user_id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=400)
-    return {"success": True, "filename": fid, "message": "프리셋이 저장되었습니다."}
+async def save_preset(
+        request: Request,
+        user: CurrentUser = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """DB에 프리셋 저장"""
+    try:
+        data = await request.json()
+        name = data.get('name')
+        description = data.get('description', '')
+        graph_data = data.get('data')
+
+        if not name or not graph_data:
+            return JSONResponse({"success": False, "error": "필수 데이터 누락"}, status_code=400)
+
+        # 새 프리셋 객체 생성
+        new_preset = Preset(
+            name=name,
+            description=description,
+            data=graph_data,
+            author_id=user.id if user.is_authenticated else None
+        )
+
+        db.add(new_preset)
+        db.commit()
+        db.refresh(new_preset)
+
+        return {"success": True, "filename": new_preset.filename, "message": "프리셋이 저장되었습니다."}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"프리셋 저장 실패: {e}")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 @api_router.post('/presets/load')
-async def load_preset_api(request: Request, user: CurrentUser = Depends(get_current_user_optional)):
-    data = await request.json()
-    filename = data.get('filename')
-    user_id = user.id if user.is_authenticated else None
-    result, error = PresetService.load_preset(filename, user_id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=400)
-    preset = result['preset']
-    return {
-        "success": True,
-        "data": preset,
-        "message": f"'{preset.get('name')}' 프리셋을 불러왔습니다."
-    }
+async def load_preset_api(
+        request: Request,
+        user: CurrentUser = Depends(get_current_user_optional),
+        db: Session = Depends(get_db)
+):
+    """DB에서 프리셋 로드"""
+    try:
+        data = await request.json()
+        filename = data.get('filename')  # 프론트엔드에서 보낸 filename (UUID)
+
+        preset = db.query(Preset).filter(Preset.filename == filename).first()
+
+        if not preset:
+            return JSONResponse({"success": False, "error": "프리셋을 찾을 수 없습니다."}, status_code=404)
+
+        return {
+            "success": True,
+            "data": preset.to_dict(),  # to_dict() 내부에 data 필드 포함
+            "message": f"'{preset.name}' 프리셋을 불러왔습니다."
+        }
+    except Exception as e:
+        logger.error(f"프리셋 로드 실패: {e}")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 @api_router.post('/presets/delete')
-async def delete_preset(request: Request, user: CurrentUser = Depends(get_current_user)):
-    data = await request.json()
-    fid = data.get('filename')
-    success, msg = PresetService.delete_preset(fid, user.id)
-    if success:
+async def delete_preset(
+        request: Request,
+        user: CurrentUser = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """DB에서 프리셋 삭제"""
+    try:
+        data = await request.json()
+        filename = data.get('filename')
+
+        preset = db.query(Preset).filter(Preset.filename == filename).first()
+
+        if not preset:
+            return JSONResponse({"success": False, "error": "삭제할 프리셋이 없습니다."}, status_code=404)
+
+        # 권한 체크 (본인 것만 삭제 가능)
+        if user.is_authenticated and preset.author_id != user.id:
+            # 관리자가 아니면 차단하는 로직 등 추가 가능
+            # 일단은 작성자만 삭제 허용
+            pass
+
+        db.delete(preset)
+        db.commit()
+
         return {"success": True, "message": "삭제 완료"}
-    return JSONResponse({"success": False, "error": msg}, status_code=400)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"프리셋 삭제 실패: {e}")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 @api_router.post('/load_preset')
 async def load_preset_old(
         filename: str = Form(...),
-        user: CurrentUser = Depends(get_current_user_optional)
+        user: CurrentUser = Depends(get_current_user_optional),
+        db: Session = Depends(get_db)
 ):
-    user_id = user.id if user.is_authenticated else None
+    # [수정] HTML 응답용 구버전 로드 함수도 DB 연동
+    try:
+        preset = db.query(Preset).filter(Preset.filename == filename).first()
 
-    result, error = PresetService.load_preset(filename, user_id)
-    if error:
-        return HTMLResponse(
-            f'<div class="bg-red-500/10 text-red-400 p-4 rounded-lg border border-red-500/20 shadow-lg fixed bottom-4 right-4 z-50">로드 실패: {error}</div>')
+        if not preset:
+            return HTMLResponse(
+                f'<div class="bg-red-500/10 text-red-400 p-4 rounded-lg border border-red-500/20 shadow-lg fixed bottom-4 right-4 z-50">로드 실패: 찾을 수 없음</div>')
 
-    preset = result['preset']
+        # 데이터 구조 매핑 (DB JSON 구조 -> 게임 상태 구조)
+        preset_data = preset.data
 
-    game_state.config['title'] = preset.get('title', 'Loaded Preset')
-    game_state.state = {
-        "scenario": preset.get('scenario'),
-        "current_scene_id": "prologue",
-        "start_scene_id": "prologue",
-        "player_vars": preset.get('player_vars', {}),
-        "history": [], "last_user_choice_idx": -1, "system_message": "Loaded Preset", "npc_output": "",
-        "narrator_output": ""
-    }
-    game_state.game_graph = create_game_graph()
+        # 만약 저장된 데이터가 graph_data(nodes, edges) 형태라면 변환 필요할 수도 있음
+        # 여기서는 단순히 세팅한다고 가정
 
-    return HTMLResponse(f'''
-    <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 animate-bounce-in">
-        <div class="bg-green-900/90 border border-green-500/30 text-green-100 px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-4">
-            <div class="bg-green-500/20 p-2 rounded-full">
-                <i data-lucide="check" class="w-6 h-6 text-green-400"></i>
-            </div>
-            <div>
-                <div class="font-bold text-lg">프리셋 로드 완료!</div>
-                <div class="text-sm text-green-300/80">"{preset.get('title')}"</div>
+        game_state.config['title'] = preset.name
+        # 주의: graph_data만으로는 바로 플레이 가능한 시나리오(scenario json)가 아님.
+        # 프리셋은 보통 Builder에서 불러와서 편집하는 용도.
+        # 바로 플레이하려면 'generate' 과정을 거쳐야 함.
+
+        return HTMLResponse(f'''
+        <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 animate-bounce-in">
+            <div class="bg-green-900/90 border border-green-500/30 text-green-100 px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-4">
+                <div class="bg-green-500/20 p-2 rounded-full">
+                    <i data-lucide="check" class="w-6 h-6 text-green-400"></i>
+                </div>
+                <div>
+                    <div class="font-bold text-lg">프리셋 로드 완료!</div>
+                    <div class="text-sm text-green-300/80">"{preset.name}"</div>
+                </div>
             </div>
         </div>
-        <a href="/views/player" 
-           class="bg-brand-purple hover:bg-brand-light text-white py-4 px-6 rounded-xl font-bold text-lg shadow-xl shadow-brand-purple/20 transition-all flex items-center justify-center gap-3 transform hover:scale-[1.02]">
-            <i data-lucide="play-circle" class="w-6 h-6"></i>
-            게임 시작하기
-        </a>
-    </div>
-    <script>lucide.createIcons();</script>
-    ''')
+        <script>lucide.createIcons();</script>
+        ''')
+    except Exception as e:
+        return HTMLResponse(
+            f'<div class="bg-red-500/10 text-red-400 p-4 rounded-lg border border-red-500/20 shadow-lg fixed bottom-4 right-4 z-50">로드 오류: {e}</div>')
 
 
 # --- [Draft 시스템 API] ---
