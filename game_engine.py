@@ -444,7 +444,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         # [최적화 1] Near Miss 감지 시 LLM 호출 없이 즉시 힌트 반환 (0.01초)
         near_miss = state.get('near_miss_trigger')
         if near_miss:
-            yield f"그 행동({user_input})은 되지 않지만, <mark>{near_miss}</mark>와 관련된 무언가가 있을 것 같습니다."
+            yield f"그 행동은 되지 않지만, <mark>{near_miss}</mark>와 관련된 무언가가 있을 것 같습니다."
             return
 
         # [최적화 2] NPC 대화 있으면 스킵
@@ -464,8 +464,33 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             yield random.choice(fallback_hints)
             return
 
-        # [최적화 4] 프롬프트 경량화
-        prompt = f"Scene: '{scene_title}'. User: \"{user_input}\" (failed). Hints: {trigger_hints[:3]}. → Korean hint, 1 sentence, use <mark>."
+        # [ROLLBACK] 이전 상세 프롬프트 복원 + 사용자 입력 변형 방지 강화
+        hint_list = ', '.join([f'"{h}"' for h in trigger_hints[:3]]) if trigger_hints else '없음'
+
+        prompt = f"""You are the Game Master of a text-based RPG.
+
+**Current Situation:**
+- Scene: "{scene_title}"
+- Player's action: "{user_input}"
+- Result: Action did not trigger any scene transition (failed).
+
+**Available Valid Actions:**
+{hint_list}
+
+**Your Task:**
+Provide a brief, natural hint in Korean (1-2 sentences) to guide the player toward valid actions.
+
+**CRITICAL RULES:**
+1. DO NOT repeat, describe, or embellish what the player said or did.
+2. DO NOT add imaginary details about the player's action.
+3. ONLY provide a hint about what to try instead.
+4. Use <mark>keyword</mark> tags to highlight actionable words from the available actions list.
+5. Keep it concise and immersive.
+
+**Example Output:**
+"여기서는 그런 방법이 통하지 않습니다. <mark>조사하기</mark>나 <mark>대화하기</mark>를 시도해보세요."
+
+**Now provide your hint in Korean:**"""
 
         try:
             api_key = os.getenv("OPENROUTER_API_KEY")
