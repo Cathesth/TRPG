@@ -240,7 +240,6 @@ def rule_node(state: PlayerState):
 
 def npc_node(state: PlayerState):
     """NPC 대화 (이동 아닐 때만 발동)"""
-    # ... (기존 코드 동일) ...
     if state.get('parsed_intent') != 'chat':
         state['npc_output'] = ""
         return state
@@ -256,31 +255,77 @@ def npc_node(state: PlayerState):
         return state
 
     target_npc_name = npc_names[0]
-    npc_info = f"Name: {target_npc_name}"
+    npc_info = {"name": target_npc_name, "role": "Unknown", "personality": "보통"}
+
     for npc in scenario.get('npcs', []):
         if npc.get('name') == target_npc_name:
-            npc_info += f"\nRole: {npc.get('role', 'Unknown')}\nPersonality: {npc.get('personality')}"
+            npc_info['role'] = npc.get('role', 'Unknown')
+            npc_info['personality'] = npc.get('personality', '보통')
+            npc_info['dialogue_style'] = npc.get('dialogue_style', '')
             break
 
     history = state.get('history', [])
-    history_context = "\n".join(history[-3:]) if history else ""
+    history_context = "\n".join(history[-3:]) if history else "대화 시작"
+    user_input = state['last_user_input']
 
-    # [최적화] 프롬프트 경량화
-    prompt = f"[NPC: {target_npc_name}] {npc_info}\n[History] {history_context}\n[User] \"{state['last_user_input']}\"\n→ Korean, 1 sentence."
+    # [개선] 상세한 프롬프트로 변경
+    prompt = f"""당신은 텍스트 RPG의 NPC입니다.
+
+**NPC 정보:**
+- 이름: {npc_info['name']}
+- 역할: {npc_info['role']}
+- 성격: {npc_info['personality']}
+
+**대화 맥락:**
+{history_context}
+
+**플레이어의 말/행동:**
+"{user_input}"
+
+**당신의 임무:**
+NPC {npc_info['name']}가 되어 플레이어의 말이나 행동에 자연스럽게 반응하세요.
+
+**중요 규칙:**
+1. 플레이어의 말을 반복하지 마세요.
+2. NPC의 관점에서 직접 대답하세요.
+3. 한국어로 1-2문장으로 간결하게 작성하세요.
+4. NPC의 성격과 역할에 맞게 반응하세요.
+5. 대화를 이어가거나, 질문에 답하거나, 행동에 반응하세요.
+
+**예시:**
+플레이어: "물건을 보여주세요"
+NPC: "어서 오세요. 여기 오늘의 추천 상품이에요."
+
+플레이어: "살 건 없어요"
+NPC: "그래요? 다음에 또 들러주세요."
+
+**이제 NPC {npc_info['name']}로서 응답하세요:**"""
 
     try:
         api_key = os.getenv("OPENROUTER_API_KEY")
         model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
-        # [최적화] 캐시된 LLM 사용
         llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
         response = llm.invoke(prompt).content.strip()
+
+        # [추가] 응답 검증 - 사용자 입력을 그대로 반복하는 경우 필터링
+        normalized_input = user_input.lower().replace(" ", "")
+        normalized_response = response.lower().replace(" ", "")
+
+        if normalized_input in normalized_response and len(normalized_response) < len(normalized_input) + 10:
+            # 사용자 입력을 단순 반복한 경우 기본 응답 생성
+            logger.warning(f"⚠️ NPC response too similar to user input, using fallback")
+            response = f"(잠시 생각하더니) 알겠습니다."
+
         state['npc_output'] = response
 
         if 'history' not in state: state['history'] = []
-        state['history'].append(f"User: {state['last_user_input']}")
+        state['history'].append(f"User: {user_input}")
         state['history'].append(f"NPC({target_npc_name}): {response}")
-    except Exception:
-        state['npc_output'] = "..."
+
+        logger.info(f"💬 [NPC] {target_npc_name}: {response}")
+    except Exception as e:
+        logger.error(f"NPC generation error: {e}")
+        state['npc_output'] = f"(말없이 고개를 끄덕입니다)"
 
     return state
 
