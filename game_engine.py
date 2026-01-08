@@ -51,6 +51,7 @@ class PlayerState(TypedDict):
     chat_log_html: str
     near_miss_trigger: str  # [필수] Near Miss 저장용
     model: str  # [추가] 사용 중인 LLM 모델
+    _internal_flags: Dict[str, Any]  # [추가] 내부 플래그 (UI에 노출 안 됨)
 
 
 def normalize_text(text: str) -> str:
@@ -444,7 +445,12 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         # [최적화 1] Near Miss 감지 시 LLM 호출 없이 즉시 힌트 반환 (0.01초)
         near_miss = state.get('near_miss_trigger')
         if near_miss:
-            yield f"그 행동은 되지 않지만, <mark>{near_miss}</mark>와 관련된 무언가가 있을 것 같습니다."
+            # [개선] 전투/행동 관련 Near Miss는 직접 키워드 노출 대신 자연스러운 힌트 제공
+            scene_type = curr_scene.get('type', 'normal')
+            if scene_type == 'battle':
+                yield "당신의 공격이 적에게 스치듯 지나갑니다. 더 결정적인 일격이 필요해 보입니다."
+            else:
+                yield f"그 방향으로는 잘 되지 않지만, 비슷한 시도를 계속하면 무언가 발견할 수 있을 것 같습니다."
             return
 
         # [최적화 2] NPC 대화 있으면 스킵
