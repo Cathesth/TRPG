@@ -82,9 +82,25 @@ async def game_act_stream(
                 sys_html = f"<div class='text-xs text-indigo-400 mb-2 border-l-2 border-indigo-500 pl-2'>🚀 {sys_msg}</div>"
                 yield f"data: {json.dumps({'type': 'prefix', 'content': sys_html})}\n\n"
 
-            # B. NPC 대화
+            # B. NPC 대화 (NPC 이름 표시)
             if npc_say:
-                npc_html = f"<div class='bg-gray-800/80 p-3 rounded-lg border-l-4 border-yellow-500 mb-4'><span class='text-yellow-400 font-bold block mb-1'>NPC</span>{npc_say}</div>"
+                # 현재 씬에서 NPC 이름 가져오기
+                scenario = processed_state['scenario']
+                curr_scene_id = processed_state['current_scene_id']
+                all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
+                curr_scene = all_scenes.get(curr_scene_id)
+                npc_names = curr_scene.get('npcs', []) if curr_scene else []
+                npc_name = npc_names[0] if npc_names else "NPC"
+
+                npc_html = f"""
+                <div class='bg-gradient-to-r from-yellow-900/30 to-yellow-800/20 p-4 rounded-lg border-l-4 border-yellow-500 mb-4 shadow-lg'>
+                    <div class='flex items-center gap-2 mb-2'>
+                        <i data-lucide="message-circle" class="w-4 h-4 text-yellow-400"></i>
+                        <span class='text-yellow-400 font-bold text-sm uppercase tracking-wide'>{npc_name}</span>
+                    </div>
+                    <div class='text-gray-200 leading-relaxed pl-6'>{npc_say}</div>
+                </div>
+                """
                 yield f"data: {json.dumps({'type': 'prefix', 'content': npc_html})}\n\n"
 
             # C. 프롤로그 (게임 시작 시)
