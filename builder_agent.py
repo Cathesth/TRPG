@@ -19,21 +19,32 @@ logger = logging.getLogger(__name__)
 
 
 # --- 프롬프트 로더 ---
-def load_prompts(filepath: str = "config/prompts.yaml") -> Dict[str, str]:
-    if not os.path.exists(filepath):
-        alt_path = os.path.join(os.path.dirname(__file__), "prompts.yaml")
-        if os.path.exists(alt_path):
-            filepath = alt_path
-        else:
-            logger.warning(f"Prompts file not found at {filepath}. Using empty prompts.")
-            return {}
+def load_prompts() -> Dict[str, str]:
+    # 가능한 경로들 (단수/복수 혼용 방지, 절대 경로 사용)
+    base_dir = os.path.dirname(__file__)
+    possible_paths = [
+        os.path.join(base_dir, "config", "prompt.yaml"),
+        os.path.join(base_dir, "config", "prompts.yaml"),
+        os.path.join(base_dir, "prompt.yaml"),
+        "config/prompt.yaml",
+        "config/prompts.yaml"
+    ]
 
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f) or {}
-    except Exception as e:
-        logger.error(f"Failed to load prompts: {e}")
-        return {}
+    for path in possible_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+                    if isinstance(data, dict):
+                        logger.info(f"Loaded prompts from {path}")
+                        return data
+                    else:
+                        logger.warning(f"Prompts file at {path} is not a dictionary. Returning empty.")
+            except Exception as e:
+                logger.error(f"Failed to load prompts from {path}: {e}")
+
+    logger.warning("Prompts file not found in any standard location. Using empty prompts.")
+    return {}
 
 
 PROMPTS = load_prompts()
@@ -101,6 +112,9 @@ def summarize_context(items: List[Dict], key_name: str, key_desc: str, limit: in
     target_items = items[:limit]
 
     for item in target_items:
+        # item이 딕셔너리가 아닌 경우 방어 코드
+        if not isinstance(item, dict): continue
+
         name = item.get(key_name, "Unknown")
         desc = item.get(key_desc, "")
         summary_list.append(f"- {name}: {desc}")
@@ -120,6 +134,8 @@ def summarize_npc_context(npcs: List[Dict], limit: int = 15) -> str:
     target_items = npcs[:limit]
 
     for npc in target_items:
+        if not isinstance(npc, dict): continue
+
         name = npc.get("name", "Unknown")
         role = npc.get("role") or npc.get("type") or "Unknown"
 
@@ -243,16 +259,31 @@ def validate_structure(state: BuilderState):
     logger.info("Validating graph structure...")
     report_progress("building", "0/5", "구조 및 연결 검증 중...", 5, phase="initializing")
 
-    # [CRITICAL FIX] 입력 데이터가 문자열(JSON String)인 경우 딕셔너리로 변환
+    # [CRITICAL FIX] 입력 데이터가 문자열(JSON String)인 경우 딕셔너리로 변환 (더블 인코딩 대응)
     graph_data = state["graph_data"]
+
+    # 1차 파싱
     if isinstance(graph_data, str):
         try:
             logger.info("graph_data is string, attempting to parse JSON...")
             graph_data = json.loads(graph_data)
-            state["graph_data"] = graph_data  # 파싱된 데이터로 상태 업데이트
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse graph_data JSON: {e}")
             raise ValueError("입력 데이터가 올바른 JSON 형식이 아닙니다.")
+
+    # 2차 파싱 (더블 인코딩된 경우: "{\"nodes\": ...}")
+    if isinstance(graph_data, str):
+        try:
+            logger.info("graph_data is STILL string (double encoded), parsing again...")
+            graph_data = json.loads(graph_data)
+        except json.JSONDecodeError:
+            pass  # 더 이상 파싱 불가하면 그대로 진행 (아마 에러나겠지만)
+
+    # 최종적으로 dict인지 확인
+    if not isinstance(graph_data, dict):
+        raise ValueError(f"그래프 데이터가 딕셔너리가 아닙니다. (Type: {type(graph_data)})")
+
+    state["graph_data"] = graph_data  # 파싱된 데이터로 상태 업데이트
 
     nodes = graph_data.get("nodes", [])
     edges = graph_data.get("edges", [])
@@ -296,6 +327,9 @@ def parse_graph_to_blueprint(state: BuilderState):
 
     blueprint += "[등장인물 및 적 상세]\n"
     for npc in raw_npcs:
+        # npc가 dict가 아닌 경우 방어
+        if not isinstance(npc, dict): continue
+
         name = npc.get('name', 'Unknown')
         role = npc.get('role') or npc.get('type') or 'Unknown'
 
@@ -352,7 +386,10 @@ def refine_scenario_info(state: BuilderState):
     llm = LLMFactory.get_llm(state.get("model_name"))
     parser = JsonOutputParser(pydantic_object=ScenarioSummary)
 
-    prompt_text = PROMPTS.get("refine_scenario", "기본 프롬프트...")
+    # PROMPTS가 비어있을 경우 기본값 사용
+    prompt_text = PROMPTS.get("refine_scenario",
+                              "You are a TRPG Scenario Architect. Refine the given blueprint into a cohesive scenario summary.")
+
     prompt = ChatPromptTemplate.from_messages([
         ("system", prompt_text),
         ("user", "{blueprint}")
@@ -375,7 +412,7 @@ def generate_full_content(state: BuilderState):
     npc_parser = JsonOutputParser(pydantic_object=NPCList)
     npc_chain = (
             ChatPromptTemplate.from_messages([
-                ("system", PROMPTS.get("generate_npc", "")),
+                ("system", PROMPTS.get("generate_npc", "Generate NPCs based on the blueprint.")),
                 ("user", "{blueprint}")
             ]).partial(format_instructions=npc_parser.get_format_instructions())
             | llm | npc_parser
@@ -384,7 +421,7 @@ def generate_full_content(state: BuilderState):
     world_parser = JsonOutputParser(pydantic_object=WorldList)
     world_chain = (
             ChatPromptTemplate.from_messages([
-                ("system", PROMPTS.get("generate_world", "")),
+                ("system", PROMPTS.get("generate_world", "Generate world settings based on the blueprint.")),
                 ("user", "{blueprint}")
             ]).partial(format_instructions=world_parser.get_format_instructions())
             | llm | world_parser
@@ -403,12 +440,17 @@ def generate_full_content(state: BuilderState):
 
     # [최적화 적용] 씬 생성용 컨텍스트는 스마트 요약 사용 (토큰 절약 + 핵심 정보 전달)
     world_context = summarize_context(worlds, 'name', 'description', limit=5)
-    # 여기서 summarize_npc_context 사용!
-    npc_context = summarize_npc_context(state["graph_data"].get("npcs", []), limit=20)
+
+    # graph_data의 npcs가 리스트인지 확인
+    graph_npcs = state["graph_data"].get("npcs", [])
+    if not isinstance(graph_npcs, list):
+        graph_npcs = []
+
+    npc_context = summarize_npc_context(graph_npcs, limit=20)
 
     scene_parser = JsonOutputParser(pydantic_object=SceneData)
     scene_prompt = ChatPromptTemplate.from_messages([
-        ("system", PROMPTS.get("generate_scene", "")),
+        ("system", PROMPTS.get("generate_scene", "Generate scenes based on the blueprint.")),
         ("user", f"설계도:\n{blueprint}\n\n세계관:\n{world_context}\n\nNPC:\n{npc_context}")
     ]).partial(format_instructions=scene_parser.get_format_instructions())
 
@@ -517,7 +559,7 @@ def finalize_build(state: BuilderState):
     parser = JsonOutputParser(pydantic_object=InitialStateExtractor)
 
     extract_prompt = ChatPromptTemplate.from_messages([
-        ("system", PROMPTS.get("extract_stats", "")),
+        ("system", PROMPTS.get("extract_stats", "Extract initial game stats from the text.")),
         ("user", "{gm_notes}")
     ]).partial(format_instructions=parser.get_format_instructions())
 
@@ -534,7 +576,7 @@ def finalize_build(state: BuilderState):
 
     # 4. NPC 데이터 병합 (유저 입력 우선)
     final_npcs = state["characters"]
-    user_npcs = {n.get("name"): n for n in state["graph_data"].get("npcs", [])}
+    user_npcs = {n.get("name"): n for n in state["graph_data"].get("npcs", []) if isinstance(n, dict)}
 
     for npc in final_npcs:
         u_npc = user_npcs.get(npc["name"])
@@ -543,7 +585,7 @@ def finalize_build(state: BuilderState):
 
     existing_names = {n["name"] for n in final_npcs}
     for u_npc in state["graph_data"].get("npcs", []):
-        if u_npc.get("name") not in existing_names:
+        if isinstance(u_npc, dict) and u_npc.get("name") not in existing_names:
             final_npcs.append(u_npc)
 
     final_data = {
@@ -607,7 +649,7 @@ def generate_single_npc(scenario_title, scenario_summary, user_request="", model
     parser = JsonOutputParser(pydantic_object=NPC)
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", PROMPTS.get("generate_single_npc", "")),
+        ("system", PROMPTS.get("generate_single_npc", "Create a TRPG NPC.")),
         ("user", f"제목:{scenario_title}\n요청:{user_request}")
     ]).partial(format_instructions=parser.get_format_instructions())
 
