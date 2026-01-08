@@ -31,8 +31,8 @@ from services.mermaid_service import MermaidService
 from game_engine import create_game_graph
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
 
-# [수정] DB 관련 임포트 추가
-from models import get_db, Preset
+# [수정] NPC 모델 추가 임포트
+from models import get_db, Preset, NPC
 
 logger = logging.getLogger(__name__)
 
@@ -400,6 +400,28 @@ async def save_npc(request: Request, user: CurrentUser = Depends(get_current_use
         }
     except Exception as e:
         logger.error(f"NPC Save Error: {e}")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+# [수정] NPC 목록 조회 API 추가
+@api_router.get('/npc/list')
+async def get_npc_list(
+        user: CurrentUser = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """사용자의 NPC 목록 조회"""
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "로그인이 필요합니다."}, status_code=401)
+
+    try:
+        # NPC 모델이 models.py에 정의되어 있다고 가정
+        # user_id로 필터링하여 조회
+        npcs = db.query(NPC).filter(NPC.user_id == user.id).order_by(NPC.created_at.desc()).all()
+
+        # models.py의 NPC 클래스에 to_dict() 메서드가 있어야 함
+        return [npc.to_dict() for npc in npcs]
+    except Exception as e:
+        logger.error(f"NPC List Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
