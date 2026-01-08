@@ -243,7 +243,17 @@ def validate_structure(state: BuilderState):
     logger.info("Validating graph structure...")
     report_progress("building", "0/5", "구조 및 연결 검증 중...", 5, phase="initializing")
 
+    # [CRITICAL FIX] 입력 데이터가 문자열(JSON String)인 경우 딕셔너리로 변환
     graph_data = state["graph_data"]
+    if isinstance(graph_data, str):
+        try:
+            logger.info("graph_data is string, attempting to parse JSON...")
+            graph_data = json.loads(graph_data)
+            state["graph_data"] = graph_data  # 파싱된 데이터로 상태 업데이트
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse graph_data JSON: {e}")
+            raise ValueError("입력 데이터가 올바른 JSON 형식이 아닙니다.")
+
     nodes = graph_data.get("nodes", [])
     edges = graph_data.get("edges", [])
 
