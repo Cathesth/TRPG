@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import difflib
+import yaml
 from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 from llm_factory import LLMFactory
@@ -12,6 +13,24 @@ from dotenv import load_dotenv
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# [최적화] 프롬프트 캐시 (YAML 파일에서 한 번만 로드)
+_prompt_cache: Dict[str, Any] = {}
+
+
+def load_player_prompts() -> Dict[str, Any]:
+    """플레이어 프롬프트 YAML 파일 로드 (캐싱)"""
+    if 'player' not in _prompt_cache:
+        prompt_path = os.path.join(os.path.dirname(__file__), 'config', 'prompt_player.yaml')
+        try:
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                _prompt_cache['player'] = yaml.safe_load(f)
+            logger.info(f"📄 [PROMPT] Loaded player prompts from {prompt_path}")
+        except Exception as e:
+            logger.error(f"Failed to load player prompts: {e}")
+            _prompt_cache['player'] = {}
+    return _prompt_cache['player']
+
 
 # [최적화] LLM 인스턴스 캐시 (모델별로 재사용)
 _llm_cache: Dict[str, Any] = {}
@@ -87,51 +106,44 @@ def filter_negative_transitions(transitions: list, scenario: dict) -> list:
     return filtered if filtered else []  # 적합한 게 없으면 빈 리스트 반환
 
 
-# 서사적 내레이션 힌트 (관찰자 시점) - 시스템 말투 제거
-NARRATIVE_HINT_MESSAGES = [
-    "주변의 공기가 긴장감으로 가득 차 있습니다. 무언가 눈에 띄는 것이 있을지도 모릅니다.",
-    "당신의 행동에 상황이 미세하게 반응했습니다. 주위를 더 살펴봅니다.",
-    "이 순간, 주변 환경에서 뭔가 눈에 들어옵니다.",
-    "분위기가 묘하게 바뀌었습니다. 더 주의 깊게 상황을 관찰합니다.",
-    "당신의 직감이 무언가를 가리키고 있습니다.",
-    "여기서 뭔가 놓치고 있는 것 같습니다. 주변을 다시 둘러봅니다.",
-    "잠시 숨을 고르고 상황을 다시 파악합니다."
-]
+# 서사적 내레이션 힌트 (관찰자 시점) - YAML에서 로드
+def get_narrative_hint_messages() -> List[str]:
+    prompts = load_player_prompts()
+    return prompts.get('narrative_hint_messages', [
+        "주변의 공기가 긴장감으로 가득 차 있습니다. 무언가 눈에 띄는 것이 있을지도 모릅니다."
+    ])
 
-# 전투 씬 방어 행동 관련 내레이션 - 시스템 말투 제거
-BATTLE_DEFENSIVE_MESSAGES = [
-    "당신은 몸을 낮추고 방어 자세를 취했습니다. 적의 공격을 간신히 막아냈지만, 적은 여전히 공격 태세입니다.",
-    "당신의 방어는 성공적이었습니다. 하지만 적의 눈빛은 여전히 날카롭게 빛나고 있습니다.",
-    "몸을 사리며 버텼습니다. 적이 다음 공격을 준비하는 동안, 주변에서 무언가 반짝이는 것이 눈에 들어옵니다.",
-    "적의 공격을 간신히 피했습니다. 숨을 고르는 사이, 바닥에 흩어진 물건들이 시야에 잡힙니다.",
-    "충격을 흡수했습니다. 적이 잠시 주춤하는 지금, 주변 환경이 더 선명하게 보입니다."
-]
 
-# Near Miss 상황용 서사적 힌트 - 시스템 말투 제거
-NEAR_MISS_NARRATIVE_HINTS = [
-    "거의 통할 뻔했습니다. 무언가 반응이 있었습니다.",
-    "미세한 파장이 일었습니다. 올바른 방향인 것 같습니다.",
-    "아쉽게 빗나갔지만, 방향은 맞는 것 같습니다.",
-    "거의 맞닿을 뻔한 순간이었습니다.",
-    "상대가 잠시 흔들렸습니다. 비슷한 시도가 효과적일 수 있습니다."
-]
+# 전투 씬 방어 행동 관련 내레이션 - YAML에서 로드
+def get_battle_defensive_messages() -> List[str]:
+    prompts = load_player_prompts()
+    return prompts.get('battle_defensive_messages', [
+        "당신은 몸을 낮추고 방어 자세를 취했습니다."
+    ])
 
-# 전투 씬 공격 행동 관련 내레이션 (승리 조건 미충족 시)
-BATTLE_ATTACK_MESSAGES = [
-    "당신의 공격이 적에게 닿았지만, 치명상을 입히지는 못했습니다. 적이 비틀거리며 반격을 준비합니다.",
-    "일격을 가했습니다! 하지만 적은 여전히 건재합니다. 전투는 계속됩니다.",
-    "공격이 스쳐 지나갔습니다. 적이 이를 드러내며 으르렁거립니다.",
-    "적에게 타격을 주었지만, 쓰러뜨리기엔 부족했습니다. 적의 눈에 분노가 타오릅니다.",
-    "당신의 공격에 적이 잠시 뒤로 물러섰습니다. 하지만 금세 태세를 가다듬고 돌진해옵니다."
-]
 
-# 전투 씬 교착 상태 내레이션
-BATTLE_STALEMATE_MESSAGES = [
-    "치열한 공방이 이어집니다. 적도 당신도 결정타를 내지 못하고 있습니다.",
-    "전투가 교착 상태에 빠졌습니다. 적의 숨소리가 거칠어지는 것이 느껴집니다.",
-    "서로 간격을 재며 대치합니다. 주변에 활용할 수 있는 것이 있는지 눈이 갑니다.",
-    "양측 모두 지쳐가고 있습니다. 하지만 적은 포기할 기색이 없습니다."
-]
+# Near Miss 상황용 서사적 힌트 - YAML에서 로드
+def get_near_miss_narrative_hints() -> List[str]:
+    prompts = load_player_prompts()
+    return prompts.get('near_miss_narrative_hints', [
+        "거의 통할 뻔했습니다. 무언가 반응이 있었습니다."
+    ])
+
+
+# 전투 씬 공격 행동 관련 내레이션 - YAML에서 로드
+def get_battle_attack_messages() -> List[str]:
+    prompts = load_player_prompts()
+    return prompts.get('battle_attack_messages', [
+        "당신의 공격이 적에게 닿았지만, 치명상을 입히지는 못했습니다."
+    ])
+
+
+# 전투 씬 교착 상태 내레이션 - YAML에서 로드
+def get_battle_stalemate_messages() -> List[str]:
+    prompts = load_player_prompts()
+    return prompts.get('battle_stalemate_messages', [
+        "치열한 공방이 이어집니다. 적도 당신도 결정타를 내지 못하고 있습니다."
+    ])
 
 
 def get_npc_weakness_hint(scenario: Dict[str, Any], enemy_names: List[str]) -> str:
@@ -139,6 +151,8 @@ def get_npc_weakness_hint(scenario: Dict[str, Any], enemy_names: List[str]) -> s
     NPC 데이터에서 약점을 찾아 서사적 힌트로 변환
     절대 직접적으로 '약점을 써라'라고 하지 않고, 환경 묘사로 힌트 제공
     """
+    prompts = load_player_prompts()
+    weakness_hints = prompts.get('weakness_hints', {})
     npcs = scenario.get('npcs', [])
 
     for npc in npcs:
@@ -146,43 +160,26 @@ def get_npc_weakness_hint(scenario: Dict[str, Any], enemy_names: List[str]) -> s
         if npc_name in enemy_names:
             weakness = npc.get('weakness', npc.get('약점', ''))
             if weakness:
-                # 약점을 서사적 환경 묘사로 변환
                 weakness_lower = weakness.lower()
 
                 if '소금' in weakness_lower or 'salt' in weakness_lower or '염' in weakness_lower:
-                    return random.choice([
-                        "바닥에 쏟아진 짠물이 발밑에서 번들거립니다.",
-                        "근처 선반에 식염수 팩이 놓여 있는 것이 눈에 들어옵니다.",
-                        "어디선가 짠 냄새가 납니다. 염분이 든 무언가가 가까이 있는 것 같습니다.",
-                        "깨진 용기에서 흘러나온 액체가 소금 결정을 남기며 마르고 있습니다."
-                    ])
+                    hints = weakness_hints.get('salt', ["바닥에 쏟아진 짠물이 발밑에서 번들거립니다."])
+                    return random.choice(hints)
                 elif '빛' in weakness_lower or 'light' in weakness_lower:
-                    return random.choice([
-                        "천장의 조명이 깜빡이며 강렬한 빛을 내뿜습니다.",
-                        "창문 틈으로 햇살이 비쳐들어오고 있습니다.",
-                        "손전등이 바닥에 굴러다니는 것이 보입니다."
-                    ])
+                    hints = weakness_hints.get('light', ["천장의 조명이 깜빡이며 강렬한 빛을 내뿜습니다."])
+                    return random.choice(hints)
                 elif '불' in weakness_lower or 'fire' in weakness_lower or '화염' in weakness_lower:
-                    return random.choice([
-                        "근처에 라이터가 떨어져 있습니다.",
-                        "가스레인지의 불꽃이 여전히 타오르고 있습니다.",
-                        "인화성 물질이 담긴 통이 눈에 띕니다."
-                    ])
+                    hints = weakness_hints.get('fire', ["근처에 라이터가 떨어져 있습니다."])
+                    return random.choice(hints)
                 elif '물' in weakness_lower or 'water' in weakness_lower:
-                    return random.choice([
-                        "파열된 수도관에서 물이 뿜어져 나오고 있습니다.",
-                        "바닥에 고인 물웅덩이가 보입니다.",
-                        "소화전이 가까이에 있습니다."
-                    ])
+                    hints = weakness_hints.get('water', ["파열된 수도관에서 물이 뿜어져 나오고 있습니다."])
+                    return random.choice(hints)
                 elif '전기' in weakness_lower or 'electric' in weakness_lower:
-                    return random.choice([
-                        "노출된 전선이 스파크를 일으키고 있습니다.",
-                        "전기 패널이 열려 있는 것이 보입니다.",
-                        "충전 중인 장비에서 전류가 흐르는 소리가 들립니다."
-                    ])
+                    hints = weakness_hints.get('electric', ["노출된 전선이 스파크를 일으키고 있습니다."])
+                    return random.choice(hints)
                 else:
-                    # 일반적인 약점 힌트
-                    return f"주변을 둘러보니, {weakness}과(와) 관련된 무언가가 눈에 들어옵니다."
+                    default_hint = weakness_hints.get('default', "주변을 둘러보니, {weakness}과(와) 관련된 무언가가 눈에 들어옵니다.")
+                    return default_hint.format(weakness=weakness)
 
     return ""
 
@@ -477,8 +474,21 @@ def npc_node(state: PlayerState):
     history_context = "\n".join(history[-3:]) if history else "대화 시작"
     user_input = state['last_user_input']
 
-    # [개선] 상세한 프롬프트로 변경
-    prompt = f"""당신은 텍스트 RPG의 NPC입니다.
+    # YAML에서 프롬프트 로드
+    prompts = load_player_prompts()
+    prompt_template = prompts.get('npc_dialogue', '')
+
+    if prompt_template:
+        prompt = prompt_template.format(
+            npc_name=npc_info['name'],
+            npc_role=npc_info['role'],
+            npc_personality=npc_info['personality'],
+            history_context=history_context,
+            user_input=user_input
+        )
+    else:
+        # 폴백 프롬프트
+        prompt = f"""당신은 텍스트 RPG의 NPC입니다.
 
 **NPC 정보:**
 - 이름: {npc_info['name']}
@@ -490,23 +500,6 @@ def npc_node(state: PlayerState):
 
 **플레이어의 말/행동:**
 "{user_input}"
-
-**당신의 임무:**
-NPC {npc_info['name']}가 되어 플레이어의 말이나 행동에 자연스럽게 반응하세요.
-
-**중요 규칙:**
-1. 플레이어의 말을 반복하지 마세요.
-2. NPC의 관점에서 직접 대답하세요.
-3. 한국어로 1-2문장으로 간결하게 작성하세요.
-4. NPC의 성격과 역할에 맞게 반응하세요.
-5. 대화를 이어가거나, 질문에 답하거나, 행동에 반응하세요.
-
-**예시:**
-플레이어: "물건을 보여주세요"
-NPC: "어서 오세요. 여기 오늘의 추천 상품이에요."
-
-플레이어: "살 건 없어요"
-NPC: "그래요? 다음에 또 들러주세요."
 
 **이제 NPC {npc_info['name']}로서 응답하세요:**"""
 
@@ -623,28 +616,34 @@ def prologue_stream_generator(state: PlayerState):
 
 
 def get_narrative_fallback_message(scenario: Dict[str, Any]) -> str:
-    # ... (기존 코드 동일) ...
+    """세계관별 폴백 메시지 - YAML에서 로드"""
     genre = scenario.get('genre', '').lower()
     world_setting = scenario.get('world_setting', '').lower()
 
-    # 세계관별 폴백 메시지
-    fallback_messages = {
-        'cyberpunk': "⚠️ 신경 신호가 불안정하여 시야가 일시적으로 차단되었습니다. 잠시 후 다시 시도하십시오.",
-        'sf': "⚠️ 통신 간섭이 감지되었습니다. 신호가 안정화될 때까지 대기해 주세요.",
-        'fantasy': "⚠️ 마력의 흐름이 일시적으로 혼란스럽습니다. 잠시 정신을 가다듬어 주세요.",
-        'horror': "⚠️ 알 수 없는 힘이 시야를 가립니다... 잠시 후 다시 시도해 주세요.",
-        'modern': "⚠️ 잠시 정신이 혼미해졌습니다. 심호흡을 하고 다시 시도해 주세요.",
-        'medieval': "⚠️ 갑작스러운 현기증이 엄습합니다. 잠시 쉬었다가 다시 시도해 주세요.",
-        'apocalypse': "⚠️ 방사능 간섭으로 인해 감각이 일시적으로 마비되었습니다. 잠시 후 다시 시도하십시오.",
-        'workplace': "⚠️ 과로로 인해 잠시 멍해졌습니다. 커피를 마시고 다시 시도해 주세요.",
-        'martial': "⚠️ 내공의 흐름이 일시적으로 막혔습니다. 기를 가다듬고 다시 시도하십시오."
-    }
+    # YAML에서 폴백 메시지 로드
+    prompts = load_player_prompts()
+    fallback_messages = prompts.get('fallback_messages', {})
+
+    if not fallback_messages:
+        # 기본 폴백 메시지
+        fallback_messages = {
+            'cyberpunk': "⚠️ 신경 신호가 불안정하여 시야가 일시적으로 차단되었습니다. 잠시 후 다시 시도하십시오.",
+            'sf': "⚠️ 통신 간섭이 감지되었습니다. 신호가 안정화될 때까지 대기해 주세요.",
+            'fantasy': "⚠️ 마력의 흐름이 일시적으로 혼란스럽습니다. 잠시 정신을 가다듬어 주세요.",
+            'horror': "⚠️ 알 수 없는 힘이 시야를 가립니다... 잠시 후 다시 시도해 주세요.",
+            'modern': "⚠️ 잠시 정신이 혼미해졌습니다. 심호흡을 하고 다시 시도해 주세요.",
+            'medieval': "⚠️ 갑작스러운 현기증이 엄습합니다. 잠시 쉬었다가 다시 시도해 주세요.",
+            'apocalypse': "⚠️ 방사능 간섭으로 인해 감각이 일시적으로 마비되었습니다. 잠시 후 다시 시도하십시오.",
+            'workplace': "⚠️ 과로로 인해 잠시 멍해졌습니다. 커피를 마시고 다시 시도해 주세요.",
+            'martial': "⚠️ 내공의 흐름이 일시적으로 막혔습니다. 기를 가다듬고 다시 시도하십시오.",
+            'default': "⚠️ 잠시 상황 파악이 어렵습니다. 심호흡을 하고 다시 시도해 주세요."
+        }
 
     for key, message in fallback_messages.items():
-        if key in genre or key in world_setting:
+        if key != 'default' and (key in genre or key in world_setting):
             return message
 
-    return "⚠️ 잠시 상황 파악이 어렵습니다. 심호흡을 하고 다시 시도해 주세요."
+    return fallback_messages.get('default', "⚠️ 잠시 상황 파악이 어렵습니다. 심호흡을 하고 다시 시도해 주세요.")
 
 
 def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries: int = 2):
@@ -706,7 +705,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             state['_internal_flags']['battle_attack'] = False
 
             # 공격 결과 묘사 + 약점 힌트
-            attack_narration = random.choice(BATTLE_ATTACK_MESSAGES)
+            attack_narration = random.choice(get_battle_attack_messages())
             yield attack_narration
 
             # NPC 약점 기반 서사적 힌트 제공
@@ -715,7 +714,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 yield f" {weakness_hint}"
             else:
                 # 약점 정보 없으면 일반 전투 힌트
-                yield f" {random.choice(BATTLE_STALEMATE_MESSAGES)}"
+                yield f" {random.choice(get_battle_stalemate_messages())}"
             return
 
         # [개선] 방어 행동 감지 (전투 씬에서)
@@ -724,7 +723,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
         if scene_type == 'battle' and is_defensive_action:
             # 방어 행동 묘사 + 약점 힌트
-            defense_narration = random.choice(BATTLE_DEFENSIVE_MESSAGES)
+            defense_narration = random.choice(get_battle_defensive_messages())
             yield defense_narration
 
             # NPC 약점 기반 서사적 힌트 제공
@@ -736,7 +735,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         # [최적화 1] Near Miss 감지 시 서사적 힌트 반환
         near_miss = state.get('near_miss_trigger')
         if near_miss:
-            yield random.choice(NEAR_MISS_NARRATIVE_HINTS)
+            yield random.choice(get_near_miss_narrative_hints())
             return
 
         # [최적화 2] NPC 대화 있으면 스킵
@@ -747,7 +746,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
         # [신규] 전투 씬에서 일반 행동 시에도 전투 상황 유지
         if scene_type == 'battle':
-            stalemate_msg = random.choice(BATTLE_STALEMATE_MESSAGES)
+            stalemate_msg = random.choice(get_battle_stalemate_messages())
             weakness_hint = get_npc_weakness_hint(scenario, enemy_names)
             if weakness_hint:
                 yield f"{stalemate_msg} {weakness_hint}"
@@ -757,7 +756,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
         # [최적화 3] 50% 확률로 LLM 없이 서사적 기본 메시지 (비용+속도 절감)
         if random.random() < 0.5:
-            yield random.choice(NARRATIVE_HINT_MESSAGES)
+            yield random.choice(get_narrative_hint_messages())
             return
 
         # [개선] 부정적 결말로 가는 transition 완전 필터링
@@ -765,8 +764,19 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         filtered_hints = [t.get('trigger', '') for t in filtered_transitions if t.get('trigger')]
         hint_list = ', '.join([f'"{h}"' for h in filtered_hints[:3]]) if filtered_hints else '없음'
 
-        # [개선] 관찰자(내레이터) 시점 프롬프트 - 시스템 말투 완전 제거
-        prompt = f"""당신은 텍스트 기반 RPG의 게임 마스터입니다. 철저히 세계관 안에서 상황을 묘사하는 역할입니다.
+        # YAML에서 힌트 모드 프롬프트 로드
+        prompts = load_player_prompts()
+        hint_prompt_template = prompts.get('hint_mode', '')
+
+        if hint_prompt_template:
+            prompt = hint_prompt_template.format(
+                scene_title=scene_title,
+                user_input=user_input,
+                hint_list=hint_list
+            )
+        else:
+            # 폴백 프롬프트
+            prompt = f"""당신은 텍스트 기반 RPG의 게임 마스터입니다. 철저히 세계관 안에서 상황을 묘사하는 역할입니다.
 
 **현재 상황:**
 - 장면: "{scene_title}"
@@ -775,26 +785,6 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
 **가능한 행동 방향 (참고용, 절대 직접 언급 금지):**
 {hint_list}
-
-**당신의 임무:**
-게임 마스터로서 현재 상황을 몰입감 있게 묘사하세요. 플레이어가 다음 행동을 자연스럽게 떠올릴 수 있도록 환경 묘사에 힌트를 숨기세요.
-
-**절대 금지 규칙:**
-1. "~해보세요", "~를 시도해보세요", "~를 고려해보세요" - 이런 제안형 문장 금지
-2. "다른 전략이 필요합니다", "다른 방법을 찾아야 합니다" - 이런 시스템 말투 금지
-3. "패배", "사망", "실패", "죽음" 등 부정적 결말 언급 금지
-4. 선택지나 키워드를 직접 나열하는 것 금지
-5. 메타적인 게임 시스템 언급 금지
-
-**필수 규칙:**
-1. 오직 2인칭 묘사만 사용 ("당신은...", "눈앞에...")
-2. 환경과 오브젝트 묘사를 통해 간접적으로만 힌트 제공
-3. 한국어로 2-3문장, 소설처럼 묘사
-4. 긴장감과 몰입감 유지
-
-**좋은 예시:**
-- "당신의 주먹이 허공을 갈랐습니다. 적의 비웃음 섞인 숨소리가 들립니다. 바닥에 쏟아진 액체가 형광등 불빛에 반짝입니다."
-- "시도는 실패했지만, 책상 위에 놓인 무언가가 시선을 끕니다."
 
 **이제 게임 마스터로서 상황을 묘사하세요:**"""
 
@@ -805,7 +795,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             for chunk in llm.stream(prompt):
                 if chunk.content: yield chunk.content
         except Exception:
-            yield random.choice(NARRATIVE_HINT_MESSAGES)
+            yield random.choice(get_narrative_hint_messages())
         return
 
     # [MODE 2] 씬 변경됨 -> 전체 묘사
@@ -815,25 +805,26 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     npc_intro = check_npc_appearance(state)
     if npc_intro: yield npc_intro + "<br><br>"
 
-    # [롤백] 상세 프롬프트 복원
+    # YAML에서 씬 묘사 프롬프트 로드
     npc_list = ', '.join(npc_names) if npc_names else '없음'
+    prompts = load_player_prompts()
+    scene_prompt_template = prompts.get('scene_description', '')
 
-    prompt = f"""당신은 텍스트 기반 RPG의 게임 마스터입니다.
+    if scene_prompt_template:
+        prompt = scene_prompt_template.format(
+            scene_title=scene_title,
+            scene_desc=scene_desc,
+            npc_list=npc_list
+        )
+    else:
+        # 폴백 프롬프트
+        prompt = f"""당신은 텍스트 기반 RPG의 게임 마스터입니다.
 
 **장면 정보:**
 - 제목: "{scene_title}"
 - 설명: "{scene_desc}"
 - 등장 NPC: {npc_list}
 
-**당신의 임무:**
-플레이어가 이 장면에 들어왔을 때의 상황을 생생하게 묘사하세요.
-
-**규칙:**
-1. 2인칭 시점으로 작성하세요 ("당신은...", "당신 앞에...").
-2. 한국어로 3-4문장으로 작성하세요.
-3. 중요한 오브젝트나 NPC 이름은 <mark>태그</mark>로 강조하세요.
-4. 몰입감 있고 분위기 있게 작성하세요.
-5. 플레이어가 할 수 있는 행동에 대한 힌트를 자연스럽게 포함하세요.
 
 **이제 장면을 묘사하세요:**"""
 
