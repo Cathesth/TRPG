@@ -112,7 +112,6 @@ def summarize_context(items: List[Dict], key_name: str, key_desc: str, limit: in
     target_items = items[:limit]
 
     for item in target_items:
-        # item이 딕셔너리가 아닌 경우 방어 코드
         if not isinstance(item, dict): continue
 
         name = item.get(key_name, "Unknown")
@@ -221,15 +220,13 @@ class BuilderState(TypedDict):
 # --- 노드 타입별 검증 로직 ---
 
 def validate_start_node(node: dict, edge_map: dict) -> None:
-    data = node.get("data", {})  # [수정] .get으로 안전하게 접근
-    if not isinstance(data, dict):
-        logger.warning(f"Start node {node.get('id')} has invalid data type: {type(data)}")
-        data = {}  # 방어 코드
+    data = node.get("data", {})
+    if not isinstance(data, dict): data = {}
 
     if not all([data.get(k) for k in ["label", "prologue", "gm_notes", "background"]]):
         logger.warning(f"Start node {node.get('id')} missing fields")
 
-    # [수정] Start Node는 반드시 1개의 연결만 가져야 함
+    # Start Node는 반드시 1개의 연결만 가져야 함
     out_edges = edge_map[node["id"]]["out"]
     if len(out_edges) == 0:
         raise ValueError("시작점(프롤로그)에 첫 번째 장면을 연결해주세요.")
@@ -239,7 +236,7 @@ def validate_start_node(node: dict, edge_map: dict) -> None:
 
 def validate_scene_node(node: dict, edge_map: dict) -> None:
     data = node.get("data", {})
-    if not isinstance(data, dict): data = {}  # 방어
+    if not isinstance(data, dict): data = {}
 
     if not edge_map[node["id"]]["in"]:
         raise ValueError(f"'{data.get('title')}' 장면으로 들어오는 연결이 없습니다.")
@@ -250,7 +247,7 @@ def validate_scene_node(node: dict, edge_map: dict) -> None:
 
 def validate_ending_node(node: dict, edge_map: dict) -> None:
     data = node.get("data", {})
-    if not isinstance(data, dict): data = {}  # 방어
+    if not isinstance(data, dict): data = {}
 
     if not edge_map[node["id"]]["in"]:
         raise ValueError(f"'{data.get('title')}' 엔딩으로 들어오는 연결이 없습니다.")
@@ -271,7 +268,7 @@ def validate_structure(state: BuilderState):
 
     graph_data = state["graph_data"]
 
-    # 1차 파싱 (최상위가 문자열인 경우)
+    # 1. graph_data 파싱 (문자열인 경우)
     if isinstance(graph_data, str):
         try:
             logger.info("graph_data is string, attempting to parse JSON...")
@@ -280,38 +277,68 @@ def validate_structure(state: BuilderState):
             logger.error(f"Failed to parse graph_data JSON: {e}")
             raise ValueError("입력 데이터가 올바른 JSON 형식이 아닙니다.")
 
-    # 2차 파싱 (더블 인코딩 방어: "{\"nodes\": ...}")
     if isinstance(graph_data, str):
         try:
-            logger.info("graph_data is STILL string (double encoded), parsing again...")
             graph_data = json.loads(graph_data)
-        except json.JSONDecodeError:
-            pass  # 더 이상 파싱 불가하면 그대로 진행 (아마 에러나겠지만)
+        except:
+            pass
 
-    # 최종적으로 dict인지 확인
     if not isinstance(graph_data, dict):
         raise ValueError(f"그래프 데이터가 딕셔너리가 아닙니다. (Type: {type(graph_data)})")
 
-    # [CRITICAL FIX] nodes 내부의 data 필드가 문자열인 경우 자동 파싱
+    # 2. 노드 데이터 파싱
+    raw_nodes = graph_data.get("nodes", [])
+    valid_nodes = []
+
+    if isinstance(raw_nodes, list):
+        for node in raw_nodes:
+            if isinstance(node, str):
+                try:
+                    node = json.loads(node)
+                except:
+                    continue
+
+            if not isinstance(node, dict): continue
+
+            # node['data']가 문자열이면 파싱 시도
+            if "data" in node and isinstance(node["data"], str):
+                try:
+                    node["data"] = json.loads(node["data"])
+                except Exception:
+                    node["data"] = {}
+
+            if "data" not in node or not isinstance(node["data"], dict):
+                node["data"] = {}
+
+            valid_nodes.append(node)
+
+    graph_data["nodes"] = valid_nodes
+
+    # 3. 엣지 데이터 파싱
+    raw_edges = graph_data.get("edges", [])
+    valid_edges = []
+
+    if isinstance(raw_edges, list):
+        for edge in raw_edges:
+            if isinstance(edge, str):
+                try:
+                    edge = json.loads(edge)
+                except:
+                    continue
+
+            if isinstance(edge, dict):
+                valid_edges.append(edge)
+
+    graph_data["edges"] = valid_edges
+
+    state["graph_data"] = graph_data
+
+    # 검증 실행
     nodes = graph_data.get("nodes", [])
-    if isinstance(nodes, list):
-        for node in nodes:
-            if isinstance(node, dict) and "data" in node:
-                if isinstance(node["data"], str):
-                    try:
-                        node["data"] = json.loads(node["data"])
-                    except Exception:
-                        logger.warning(f"Failed to parse node data for node {node.get('id')}")
-                        node["data"] = {}  # 파싱 실패 시 빈 dict
+    edge_map = {n.get("id"): {"in": [], "out": []} for n in nodes if isinstance(n, dict) and "id" in n}
 
-    state["graph_data"] = graph_data  # 파싱 및 수정된 데이터로 상태 업데이트
-
-    nodes = graph_data.get("nodes", [])
-    edges = graph_data.get("edges", [])
-
-    edge_map = {n["id"]: {"in": [], "out": []} for n in nodes}
-    for edge in edges:
-        src, tgt = edge["source"], edge["target"]
+    for edge in valid_edges:
+        src, tgt = edge.get("source"), edge.get("target")
         if src in edge_map: edge_map[src]["out"].append(tgt)
         if tgt in edge_map: edge_map[tgt]["in"].append(src)
 
@@ -328,7 +355,7 @@ def validate_structure(state: BuilderState):
 
 def parse_graph_to_blueprint(state: BuilderState):
     """
-    Blueprint 생성 단계
+    Blueprint 생성 단계 (Enemy, NPC 리스트 처리 안전장치 추가)
     """
     report_progress("building", "1/5", "구조 분석 중...", 10, phase="parsing")
     data = state["graph_data"]
@@ -341,8 +368,6 @@ def parse_graph_to_blueprint(state: BuilderState):
     start_node = next((n for n in nodes if n.get("type") == "start"), None)
     if start_node:
         d = start_node.get('data', {})
-        if not isinstance(d, dict): d = {}  # 방어
-
         blueprint += f"[설정]\n제목: {d.get('label', '')}\n"
         blueprint += f"프롤로그: {d.get('prologue', '')}\n"
         blueprint += f"시스템 설정: {d.get('gm_notes', '')}\n"
@@ -379,7 +404,6 @@ def parse_graph_to_blueprint(state: BuilderState):
     for node in nodes:
         if node.get("type") == "start": continue
         d = node.get("data", {})
-        if not isinstance(d, dict): d = {}
 
         blueprint += f"ID: {node.get('id')} ({node.get('type')})\n"
         blueprint += f"제목: {d.get('title', '제목 없음')}\n"
@@ -389,10 +413,35 @@ def parse_graph_to_blueprint(state: BuilderState):
         if d.get('trigger'): blueprint += f"트리거: {d.get('trigger')}\n"
         if d.get('rule'): blueprint += f"추가 룰: {d.get('rule')}\n"
 
+        # [CRITICAL FIX] Enemy와 NPC 리스트가 문자열(이름)로 들어와도 안전하게 처리
         enemies = d.get("enemies", [])
         if enemies:
-            e_str = ', '.join([e.get('name', str(e)) for e in enemies]) if isinstance(enemies, list) else str(enemies)
+            enemy_list = []
+            if isinstance(enemies, list):
+                for e in enemies:
+                    if isinstance(e, dict):
+                        enemy_list.append(e.get('name', 'Unknown'))
+                    else:
+                        enemy_list.append(str(e))  # 문자열인 경우 그대로 사용
+                e_str = ', '.join(enemy_list)
+            else:
+                e_str = str(enemies)
             blueprint += f"등장 적: {e_str}\n"
+
+        # NPC 등장 정보도 동일하게 처리 (안전장치)
+        scene_npcs = d.get("npcs", [])
+        if scene_npcs:
+            npc_list = []
+            if isinstance(scene_npcs, list):
+                for n in scene_npcs:
+                    if isinstance(n, dict):
+                        npc_list.append(n.get('name', 'Unknown'))
+                    else:
+                        npc_list.append(str(n))
+                n_str = ', '.join(npc_list)
+            else:
+                n_str = str(scene_npcs)
+            blueprint += f"등장 NPC: {n_str}\n"
 
         outgoing = [e for e in edges if e.get("source") == node.get("id")]
         if outgoing:
@@ -460,10 +509,9 @@ def generate_full_content(state: BuilderState):
 
     report_progress("building", "3.5/5", "장면 및 사건 구성 중...", 65, phase="scene_generation")
 
-    # [최적화 적용] 씬 생성용 컨텍스트는 스마트 요약 사용 (토큰 절약 + 핵심 정보 전달)
+    # 씬 생성용 컨텍스트는 스마트 요약 사용
     world_context = summarize_context(worlds, 'name', 'description', limit=5)
 
-    # graph_data의 npcs가 리스트인지 확인
     graph_npcs = state["graph_data"].get("npcs", [])
     if not isinstance(graph_npcs, list):
         graph_npcs = []
@@ -532,7 +580,7 @@ def finalize_build(state: BuilderState):
         if not nid: continue
 
         node_data = node.get("data", {})
-        if not isinstance(node_data, dict): node_data = {}  # 방어
+        if not isinstance(node_data, dict): node_data = {}
 
         if nid in scene_map:
             tgt = scene_map[nid]
@@ -555,7 +603,7 @@ def finalize_build(state: BuilderState):
 
         node["data"] = node_data
 
-    # 3. 초기 스탯 설정 (명시적 값 우선 사용)
+    # 3. 초기 스탯 설정
     initial_player_state = {"hp": 100, "inventory": []}
 
     if start_node:
@@ -608,7 +656,7 @@ def finalize_build(state: BuilderState):
         if v is not None and k not in initial_player_state:
             initial_player_state[k] = v
 
-    # 4. NPC 데이터 병합 (유저 입력 우선)
+    # 4. NPC 데이터 병합
     final_npcs = state["characters"]
     user_npcs = {n.get("name"): n for n in state["graph_data"].get("npcs", []) if isinstance(n, dict)}
 
