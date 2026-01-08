@@ -183,7 +183,7 @@ class ScenarioHistory(Base):
     __tablename__ = 'scenario_history'
 
     id = Column(Integer, primary_key=True)
-    scenario_id = Column(Integer, ForeignKey('scenarios.id'), nullable=False)
+    scenario_id = Column(Integer, ForeignKey('scenarios.id', ondelete='CASCADE'), nullable=False)
     editor_id = Column(String(50), ForeignKey('users.id'), nullable=False)
 
     # 변경 이력 정보
