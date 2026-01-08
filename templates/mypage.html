@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRPG Studio - Operator Profile</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        rpg: {
+                            900: '#020617',
+                            800: '#0f172a',
+                            700: '#1e293b',
+                            accent: '#38bdf8',
+                            hover: '#0ea5e9',
+                            danger: '#ef4444',
+                        }
+                    },
+                    fontFamily: {
+                        title: ['Cinzel', 'serif'],
+                        body: ['Inter', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #020617;
+            color: #e5e7eb;
+        }
+
+        /* 스크롤바 숨김 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* 유리 효과 패널 */
+        .glass-panel {
+            background-color: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(8px);
+            border: 1px solid #1e293b;
+            border-radius: 0.75rem;
+            overflow: hidden;
+        }
+
+        /* 사이드바 텍스트 애니메이션 */
+        .sidebar-text {
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            white-space: nowrap;
+        }
+        #sidebar.expanded .sidebar-text {
+            opacity: 1;
+            visibility: visible;
+            transition-delay: 0.1s;
+        }
+        #sidebar {
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden selection:bg-rpg-accent selection:text-black">
+
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-40 hidden opacity-0 transition-opacity duration-300 pointer-events-none"></div>
+
+    <div id="sidebar"
+         class="fixed left-0 top-0 h-full bg-rpg-900/95 backdrop-blur-xl border-r border-rpg-700 z-50 w-20 flex flex-col shadow-2xl overflow-hidden"
+         onmouseenter="openSidebar()"
+         onmouseleave="closeSidebar()">
+
+        <div class="h-20 flex items-center shrink-0 px-6 border-b border-rpg-700 cursor-pointer hover:bg-rpg-800 transition-colors" onclick="location.href='/'">
+            <div class="w-8 h-8 bg-rpg-accent rounded flex items-center justify-center shrink-0 shadow-[0_0_10px_#38bdf8]">
+                <i data-lucide="sword" class="text-black w-5 h-5 fill-current"></i>
+            </div>
+            <span class="ml-4 font-title text-xl font-black text-white sidebar-text tracking-widest">
+                TRPG.OS
+            </span>
+        </div>
+
+        <nav class="flex-1 py-6 px-3 space-y-2 overflow-y-auto no-scrollbar">
+            <a href="/" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all whitespace-nowrap">
+                <i data-lucide="layout-grid" class="w-6 h-6 shrink-0"></i>
+                <span class="ml-4 font-bold sidebar-text">DASHBOARD</span>
+            </a>
+
+            <div class="flex items-center h-12 px-3 rounded-lg bg-rpg-800 text-rpg-accent border border-rpg-700 whitespace-nowrap">
+                <i data-lucide="user" class="w-6 h-6 shrink-0"></i>
+                <span class="ml-4 font-bold sidebar-text">MY PAGE</span>
+            </div>
+        </nav>
+
+        <div class="p-4 border-t border-rpg-700 bg-black/20 overflow-hidden shrink-0">
+            <div class="flex items-center gap-3 cursor-pointer group">
+                <img src="{{ user.profile_img }}" class="w-10 h-10 rounded border border-rpg-700 shrink-0 object-cover bg-rpg-800">
+                <div class="sidebar-text">
+                    <p class="text-sm font-bold text-white truncate">{{ user.id }}</p>
+                    <p class="text-[10px] text-rpg-accent font-bold">OPERATOR</p>
+                </div>
+                <div onclick="handleLogout(event)" class="ml-auto p-1 rounded hover:bg-rpg-danger/20 transition-colors" title="Logout">
+                    <i data-lucide="log-out" class="w-4 h-4 text-gray-500 sidebar-text hover:text-rpg-danger"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <main class="flex-1 ml-20 h-full overflow-y-auto no-scrollbar relative bg-[#020617]">
+
+        <div class="relative w-full h-64 overflow-hidden border-b border-rpg-700">
+            <div class="absolute inset-0 bg-gradient-to-t from-[#020617] to-transparent z-10"></div>
+            <img src="https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=2000" class="w-full h-full object-cover opacity-40">
+        </div>
+
+        <div class="max-w-6xl mx-auto px-8 -mt-20 relative z-20 space-y-8 pb-20">
+
+            <div class="glass-panel p-8 flex flex-col md:flex-row items-center gap-6 shadow-2xl">
+                <div class="relative group shrink-0">
+                    <img src="{{ user.profile_img }}" class="w-32 h-32 rounded-xl border-4 border-rpg-800 shadow-lg object-cover bg-black">
+                    <button class="absolute bottom-2 right-2 p-2 bg-rpg-accent text-black rounded-lg opacity-0 group-hover:opacity-100 transition-all hover:bg-white shadow-lg">
+                        <i data-lucide="camera" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <div class="flex-1 text-center md:text-left">
+                    <h1 class="text-4xl font-title font-black text-white tracking-wide">{{ user.id }}</h1>
+                    <div class="flex items-center justify-center md:justify-start gap-2 text-gray-400 mt-2 font-medium">
+                        <i data-lucide="mail" class="w-4 h-4"></i>
+                        <span>{{ user.email }}</span>
+                        <span class="w-1 h-1 bg-gray-600 rounded-full mx-2"></span>
+                        <span class="text-rpg-accent font-bold">Lv. 1 Operator</span>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 w-full md:w-auto">
+                    <button class="w-full md:w-auto px-6 py-3 bg-rpg-700 hover:bg-rpg-600 text-white font-bold rounded-lg border border-rpg-600 transition-all shadow-md">
+                        EDIT PROFILE
+                    </button>
+                </div>
+            </div>
+
+            <section class="space-y-6">
+                <div class="flex items-center justify-between border-b border-rpg-700 pb-4">
+                    <h2 class="text-2xl font-title font-bold text-white flex items-center gap-3">
+                        <i data-lucide="book-open" class="text-rpg-accent w-6 h-6"></i>
+                        MY SCENARIOS
+                    </h2>
+
+                    <a href="/views/builder" class="flex items-center gap-2 px-5 py-2.5 bg-rpg-accent hover:bg-white text-black font-black rounded-lg shadow-[0_0_15px_rgba(56,189,248,0.3)] hover:shadow-[0_0_25px_rgba(56,189,248,0.6)] transition-all transform hover:-translate-y-0.5">
+                        <i data-lucide="plus" class="w-5 h-5"></i>
+                        CREATE NEW
+                    </a>
+                </div>
+
+                <div id="my-scenario-grid"
+                     class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+                     hx-get="/api/scenarios?filter=my"
+                     hx-trigger="load">
+
+                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl h-[380px] animate-pulse"></div>
+                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl h-[380px] animate-pulse hidden sm:block"></div>
+                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl h-[380px] animate-pulse hidden lg:block"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        lucide.createIcons();
+
+        // 사이드바 열기
+        function openSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+
+            sidebar.classList.remove('w-20');
+            sidebar.classList.add('w-64', 'expanded');
+
+            overlay.classList.remove('hidden');
+            setTimeout(() => overlay.classList.remove('opacity-0'), 10);
+        }
+
+        // 사이드바 닫기
+        function closeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+
+            sidebar.classList.remove('w-64', 'expanded');
+            sidebar.classList.add('w-20');
+
+            overlay.classList.add('opacity-0');
+            setTimeout(() => overlay.classList.add('hidden'), 300);
+        }
+
+        // 로그아웃 처리
+        async function handleLogout(e) {
+            e.stopPropagation(); // 프로필 클릭(페이지 이동) 이벤트 중지
+            if(confirm('로그아웃 하시겠습니까?')) {
+                try {
+                    await fetch('/api/auth/logout', {method: 'POST'});
+                    window.location.href = '/';
+                } catch(err) {
+                    alert('로그아웃 중 오류가 발생했습니다.');
+                }
+            }
+        }
+
+        // [리팩토링된 HTMX 로드 핸들러] Arrow Code 제거됨
+        document.body.addEventListener('htmx:afterSwap', function(evt) {
+            lucide.createIcons();
+
+            const container = document.getElementById('my-scenario-grid');
+            if (!container) return; // Early Return
+
+            const buttons = container.querySelectorAll('button');
+            buttons.forEach(processButton); // 별도 함수로 로직 위임
+        });
+
+        // 버튼 처리 로직 분리 (Clean Code)
+        function processButton(btn) {
+            // 조건에 맞지 않으면 즉시 종료 (Early Return)
+            if (!btn.innerText.includes('Play') && !btn.querySelector('i') && !btn.querySelector('svg')) {
+                return;
+            }
+
+            // 스타일 적용
+            btn.className = "w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 mt-2";
+
+            const card = btn.closest('div[class*="bg-"]');
+            if (!card) return;
+
+            // 시나리오 ID 추출
+            const playBtn = card.querySelector('button[onclick*="playScenario"]');
+            if (!playBtn) return;
+
+            const match = playBtn.getAttribute('onclick').match(/'([^']+)'/);
+            const scenarioId = match ? match[1] : null;
+
+            if (!scenarioId) return;
+
+            // 이벤트 연결: 수정 버튼
+            if (btn.innerText.includes('수정') || btn.querySelector('.lucide-edit')) {
+                btn.onclick = (e) => {
+                    e.preventDefault();
+                    location.href = `/views/builder?scenario=${encodeURIComponent(scenarioId)}`;
+                };
+            }
+
+            // 이벤트 연결: 삭제 버튼
+            if (btn.innerText.includes('삭제') || btn.querySelector('.lucide-trash')) {
+                btn.onclick = async (e) => {
+                    e.preventDefault();
+                    if (!confirm('정말 삭제하시겠습니까? (복구 불가)')) return;
+
+                    try {
+                        await fetch('/api/delete_scenario', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({filename: scenarioId})
+                        });
+                        window.location.reload();
+                    } catch(err) {
+                        alert('삭제 중 오류가 발생했습니다.');
+                    }
+                };
+            }
+        }
+    </script>
+</body>
+</html>

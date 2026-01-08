@@ -133,13 +133,15 @@
 
         <div class="p-4 border-t border-rpg-700 bg-black/20 overflow-hidden shrink-0">
             {% if user.is_authenticated %}
-            <div class="flex items-center gap-3 cursor-pointer" onclick="logout()">
-                <img src="{{ user.profile_img }}" class="w-10 h-10 rounded border border-rpg-700 shrink-0 object-cover bg-rpg-800">
+            <div class="flex items-center gap-3 cursor-pointer group" onclick="location.href='/views/mypage'">
+                <img src="{{ user.profile_img }}" class="w-10 h-10 rounded border border-rpg-700 shrink-0 object-cover bg-rpg-800 group-hover:border-rpg-accent transition-colors">
                 <div class="sidebar-text">
-                    <p class="text-sm font-bold text-white truncate">{{ user.id }}</p>
+                    <p class="text-sm font-bold text-white truncate group-hover:text-rpg-accent transition-colors">{{ user.id }}</p>
                     <p class="text-[10px] text-rpg-accent font-bold">OPERATOR</p>
                 </div>
-                <i data-lucide="log-out" class="w-4 h-4 text-gray-500 ml-auto sidebar-text hover:text-rpg-danger"></i>
+                <div onclick="handleLogout(event)" class="ml-auto p-1 rounded hover:bg-rpg-danger/20 transition-colors">
+                    <i data-lucide="log-out" class="w-4 h-4 text-gray-500 sidebar-text hover:text-rpg-danger"></i>
+                </div>
             </div>
             {% else %}
             <button onclick="openModal('login-modal')" class="w-full h-10 flex items-center justify-center bg-rpg-accent text-black font-bold rounded hover:bg-white transition-all overflow-hidden">
@@ -151,7 +153,17 @@
             </button>
             {% endif %}
         </div>
-    </div>
+
+        <script>
+            // 기존 logout 함수가 있다면 아래 함수로 대체하거나 추가하세요
+            window.handleLogout = async function(e) {
+                e.stopPropagation(); // 부모 요소(마이페이지 이동) 클릭 방지
+                if(confirm('로그아웃 하시겠습니까?')) {
+                    await fetch('/api/auth/logout', {method:'POST'});
+                    window.location.href = '/'; // 로그아웃 후 메인으로 이동
+                }
+            };
+        </script>
 
     <main class="flex-1 ml-20 h-full overflow-y-auto no-scrollbar relative bg-[#020617]">
 
