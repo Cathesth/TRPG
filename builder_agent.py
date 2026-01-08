@@ -14,9 +14,6 @@ from langgraph.graph import StateGraph, END
 
 from llm_factory import LLMFactory
 from schemas import NPC
-# core.utils의 renumber_scenes_bfs는 이제 사용하지 않으므로 임포트에서 제거해도 되지만,
-# 호환성을 위해 남겨두거나 사용하지 않음 처리합니다.
-from core.utils import renumber_scenes_bfs
 
 # [NEW] 검수 서비스 임포트
 try:
@@ -509,6 +506,7 @@ def finalize_build(state: BuilderState):
     """
     최종 단계에서 직접 BFS 탐색을 수행하여
     Scene과 Ending을 명확히 구분하고 ID를 Scene-N, Ending-N으로 재할당합니다.
+    [수정] 트리거 생성 로직 개선: 하드코딩 제거 및 AI 생성값/제목 우선 사용
     """
     report_progress("building", "4/5", "데이터 통합 및 최종 마무리 중...", 90, phase="finalizing")
 
@@ -569,7 +567,7 @@ def finalize_build(state: BuilderState):
         if v is not None and k not in initial_player_state:
             initial_player_state[k] = v
 
-    # --- [핵심 수정] BFS 기반 리넘버링 및 Scene/Ending 분리 ---
+    # --- BFS 기반 리넘버링 및 Scene/Ending 분리 ---
 
     # 3. AI가 생성한 Scene/Ending 데이터 매핑 (ID는 lowercase로 비교)
     generated_scene_map = {s["scene_id"].lower(): s for s in state["scenes"]}
@@ -658,15 +656,14 @@ def finalize_build(state: BuilderState):
 
     # 4. Transitions 연결 및 프롤로그 연결 업데이트
 
-    # 4-1. 씬들의 Transitions 업데이트
+    # 4-1. 씬들의 Transitions 업데이트 (Smart Trigger Generation)
     for scene in final_scenes:
-        # 원래 Old ID 찾기 (역추적은 비효율적이니 순서대로 처리했다 가정하거나, Old ID를 임시 저장했어야 함)
-        # -> 간단하게: id_map을 뒤집어서 Old ID를 찾거나, 애초에 final_scenes 생성 시 Old ID를 저장해두면 됨.
-        # 여기서는 raw_edges를 다시 순회하며 처리
-
-        # 현재 씬의 New ID -> Old ID 찾기
+        # 현재 씬의 Old ID 찾기 (역매핑)
         old_id = next((k for k, v in id_map.items() if v == scene["scene_id"]), None)
-        if not old_id: continue
+
+        # LLM이 생성했던 원본 Transitions 정보를 가져옴 (AI가 만든 트리거가 있는지 확인용)
+        base_data = generated_scene_map.get(old_id.lower() if old_id else "", {})
+        llm_transitions = base_data.get("transitions", [])
 
         # 이 노드에서 나가는 엣지 찾기
         out_edges = [e for e in raw_edges if e.get("source") == old_id]
@@ -677,22 +674,30 @@ def finalize_build(state: BuilderState):
             if tgt_old in id_map:
                 tgt_new = id_map[tgt_old]
 
-                # 유저가 작성한 트리거가 있다면 사용, 없으면 AI 생성 데이터에서 찾아보기(복잡하므로 생략하거나 기본값)
-                # 우선순위: 유저 그래프의 trigger -> 노드 데이터 -> 기본값
-                # 근데 엣지에는 데이터가 별로 없으므로 타겟 노드의 트리거를 주로 씀.
-                # 여기서는 씬 생성 시점에 AI가 만든 transition 텍스트를 가져오기 어려우므로(매핑이 꼬임),
-                # 타겟 씬의 'trigger' 필드를 가져와서 사용함.
+                # 1. AI 생성값 확인: LLM이 이 타겟을 향해 특별한 트리거를 만들었는지 확인
+                llm_trigger = None
+                for t in llm_transitions:
+                    # Blueprint 상의 ID(Raw ID)와 일치하는지 확인
+                    if t.get('target_scene_id') == tgt_old:
+                        llm_trigger = t.get('trigger')
+                        break
 
-                trigger_text = "이동"
-                # 타겟이 씬이면 그 씬의 진입 트리거를 사용
-                tgt_scene = next((s for s in final_scenes if s["scene_id"] == tgt_new), None)
-                if tgt_scene and tgt_scene.get("trigger"):
-                    trigger_text = tgt_scene["trigger"]
+                trigger_text = "이동"  # 최후의 수단
 
-                # 타겟이 엔딩이면?
-                tgt_ending = next((e for e in final_endings if e["ending_id"] == tgt_new), None)
-                if tgt_ending:  # 엔딩은 트리거가 보통 없으므로 적절히 처리하거나 이전 씬에서 정해야 함
-                    trigger_text = "엔딩으로"
+                if llm_trigger:
+                    trigger_text = llm_trigger
+                else:
+                    # 2. 스마트 폴백: 타겟 노드의 정보를 이용해 트리거 자동 생성
+
+                    # A. 타겟이 엔딩인 경우 -> 엔딩 제목을 트리거로 사용 (예: "해피 엔딩", "배드 엔딩")
+                    tgt_ending = next((e for e in final_endings if e["ending_id"] == tgt_new), None)
+                    if tgt_ending:
+                        trigger_text = tgt_ending.get("title", "엔딩")
+
+                    # B. 타겟이 씬인 경우 -> 그 씬의 진입 트리거 사용 (예: "문을 연다")
+                    tgt_scene = next((s for s in final_scenes if s["scene_id"] == tgt_new), None)
+                    if tgt_scene:
+                        trigger_text = tgt_scene.get("trigger") or tgt_scene.get("name") or "이동"
 
                 transitions.append({
                     "trigger": trigger_text,
@@ -733,7 +738,7 @@ def finalize_build(state: BuilderState):
         "worlds": state["worlds"],
         "npcs": final_npcs,
         "scenes": final_scenes,
-        "endings": final_endings,  # 이제 엔딩은 여기에만 들어감
+        "endings": final_endings,
         "start_scene_id": start_scene_id,
         "initial_state": initial_player_state,
         "raw_graph": state["graph_data"]
