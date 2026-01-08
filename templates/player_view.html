@@ -791,7 +791,8 @@
             <div class="space-y-2">`;
 
         for (const [k, v] of Object.entries(statsData)) {
-            if (k !== 'inventory' && !k.startsWith('max_')) {
+            // [FIX] 내부 플래그 필터링 (npc_appeared_, _internal 등)
+            if (k !== 'inventory' && !k.startsWith('max_') && !k.startsWith('npc_appeared_') && !k.startsWith('_')) {
                 const config = statConfig[k.toLowerCase()] || { icon: 'circle', color: 'gray' };
                 const colorClass = `text-${config.color}-400`;
                 const bgColorClass = `bg-${config.color}-500`;
