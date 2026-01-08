@@ -31,8 +31,8 @@ from services.mermaid_service import MermaidService
 from game_engine import create_game_graph
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
 
-# [수정] NPC 모델 추가 임포트
-from models import get_db, Preset, NPC
+# [수정] NPC -> CustomNPC 로 변경 (models.py에 정의된 클래스명 사용)
+from models import get_db, Preset, CustomNPC
 
 logger = logging.getLogger(__name__)
 
@@ -334,10 +334,7 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
         )
 
         user_id = user.id if user.is_authenticated else None
-
-        # [FIX] initial_state를 player_vars로 전달
-        initial_player_vars = scenario_json.get('initial_state', {})
-        fid, error = ScenarioService.save_scenario(scenario_json, player_vars=initial_player_vars, user_id=user_id)
+        fid, error = ScenarioService.save_scenario(scenario_json, user_id=user_id)
 
         if error:
             update_build_progress(status="error", detail=f"저장 오류: {error}")
@@ -347,11 +344,7 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
         game_state.state = {
             "scenario": scenario_json,
             "current_scene_id": pick_start_scene_id(scenario_json),
-            "player_vars": initial_player_vars,  # [FIX] 빈 딕셔너리 대신 초기 상태 사용
-            "history": [],
-            "last_user_choice_idx": -1,
-            "system_message": "Init",
-            "npc_output": "",
+            "player_vars": {}, "history": [], "last_user_choice_idx": -1, "system_message": "Init", "npc_output": "",
             "narrator_output": ""
         }
         game_state.game_graph = create_game_graph()
@@ -403,7 +396,7 @@ async def save_npc(request: Request, user: CurrentUser = Depends(get_current_use
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
-# [수정] NPC 목록 조회 API 추가
+# [수정] NPC 목록 조회 API (CustomNPC 사용)
 @api_router.get('/npc/list')
 async def get_npc_list(
         user: CurrentUser = Depends(get_current_user),
@@ -414,12 +407,28 @@ async def get_npc_list(
         return JSONResponse({"success": False, "error": "로그인이 필요합니다."}, status_code=401)
 
     try:
-        # NPC 모델이 models.py에 정의되어 있다고 가정
-        # user_id로 필터링하여 조회
-        npcs = db.query(NPC).filter(NPC.user_id == user.id).order_by(NPC.created_at.desc()).all()
+        # models.py의 CustomNPC 테이블 조회
+        # CustomNPC는 user_id 대신 author_id를 사용함
+        npcs = db.query(CustomNPC).filter(CustomNPC.author_id == user.id).order_by(CustomNPC.created_at.desc()).all()
 
-        # models.py의 NPC 클래스에 to_dict() 메서드가 있어야 함
-        return [npc.to_dict() for npc in npcs]
+        # 프론트엔드 호환을 위한 데이터 변환
+        results = []
+        for npc in npcs:
+            # CustomNPC의 상세 정보는 'data' JSON 컬럼에 저장되어 있음
+            npc_data = npc.data if npc.data else {}
+
+            results.append({
+                "id": npc.id,
+                "name": npc.name,
+                "role": npc_data.get('role', '역할 미정'),
+                "description": npc_data.get('description', '') or npc_data.get('personality', ''),
+                "is_enemy": npc.type == 'enemy',
+                "created_at": npc.created_at.timestamp() if npc.created_at else 0,
+                # 필요하다면 전체 데이터도 포함
+                "data": npc_data
+            })
+
+        return results
     except Exception as e:
         logger.error(f"NPC List Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
