@@ -188,66 +188,110 @@ async def list_scenarios(
     user_id = user.id if user.is_authenticated else None
     file_infos = ScenarioService.list_scenarios(sort, user_id, filter, limit)
 
-    if not file_infos:
-        return '<div class="col-span-1 md:col-span-2 text-center text-gray-500 py-8">표시할 시나리오가 없습니다.</div>'
+    filter_mode = filter
 
+    # 2. 마이페이지 접근 시 로그인 체크
+    if filter_mode == 'my' and not user.is_authenticated:
+        return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10">로그인이 필요합니다.</div>')
+
+    user_id = user.id if user.is_authenticated else None
+
+    # 3. 데이터 조회
+    file_infos = ScenarioService.list_scenarios(sort, user_id, filter_mode, limit)
+
+    if not file_infos:
+        return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10">표시할 시나리오가 없습니다.</div>')
+
+    # 시간 처리를 위한 모듈 임포트
     import time as time_module
     from datetime import datetime
     current_time = time_module.time()
     NEW_THRESHOLD = 30 * 60
 
+    # 4. HTML 생성 (index.html의 새로운 디자인 적용)
     html = ""
     for info in file_infos:
         fid = info['filename']
         title = info['title']
         desc = info['desc']
+        if not desc: desc = "설명이 없습니다."
+
         author = info['author']
         is_owner = info['is_owner']
         is_public = info['is_public']
         created_time = info.get('created_time', 0)
 
+        # 이미지 (기본값)
+        img_src = info.get('image') or "https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=800"
+
+        # 시간 표시
         if created_time:
             created_dt = datetime.fromtimestamp(created_time)
             time_str = created_dt.strftime('%Y-%m-%d %H:%M')
         else:
-            time_str = "알 수 없음"
+            time_str = ""
 
+        # 뱃지 (NEW / PUBLIC)
         is_new = (current_time - created_time) < NEW_THRESHOLD if created_time else False
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
-        status_badge = '<span class="ml-2 text-[10px] bg-green-900 text-green-300 px-1 rounded">PUBLIC</span>' if is_public else '<span class="ml-2 text-[10px] bg-gray-700 text-gray-300 px-1 rounded">PRIVATE</span>'
+        status_text = "PUBLIC" if is_public else "PRIVATE"
+        status_class = "bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"
+        status_badge = f'<span class="ml-2 text-[10px] {status_class} px-1 rounded font-bold">{status_text}</span>' if is_owner else ''
 
-        title_escaped = title.replace("'", "\\'").replace('"', '&quot;')
-
+        # [마이페이지 기능] 관리자 버튼 (수정/공유/삭제)
+        # 내 시나리오(filter='my')이고 본인 소유일 때만 표시
         action_buttons = ""
-        if is_owner:
-            action_buttons += f"""
-            <button onclick="editScenario('{fid}')" class="text-gray-500 hover:text-blue-400 p-1" title="수정"><i data-lucide="pencil" class="w-4 h-4"></i></button>
-            <button onclick="publishScenario('{fid}', this)" class="text-gray-500 hover:text-green-400 p-1" title="공유"><i data-lucide="share-2" class="w-4 h-4"></i></button>
-            <button onclick="deleteScenario('{fid}', '{title_escaped}', this)" class="text-gray-500 hover:text-red-400 p-1" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-            """
+        if filter_mode == 'my' and is_owner:
+            action_buttons = f"""
+                <div class="flex gap-2 mt-3 pt-3 border-t border-rpg-700">
+                    <button onclick="editScenario('{fid}')" class="flex-1 py-2 rounded-lg bg-rpg-900 border border-rpg-700 hover:border-rpg-accent text-gray-400 hover:text-white transition-colors flex items-center justify-center gap-1" title="수정">
+                        <i data-lucide="edit" class="w-3 h-3"></i> <span class="text-xs">수정</span>
+                    </button>
+                    <button onclick="publishScenario('{fid}', this)" class="flex-1 py-2 rounded-lg bg-rpg-900 border border-rpg-700 hover:border-green-500 hover:text-green-400 text-gray-400 transition-colors flex items-center justify-center gap-1" title="공개 전환">
+                        <i data-lucide="share-2" class="w-3 h-3"></i> <span class="text-xs">공유</span>
+                    </button>
+                    <button onclick="deleteScenario('{fid}', this)" class="flex-1 py-2 rounded-lg bg-rpg-900 border border-rpg-700 hover:border-danger hover:text-danger text-gray-400 transition-colors flex items-center justify-center gap-1" title="삭제">
+                        <i data-lucide="trash" class="w-3 h-3"></i> <span class="text-xs">삭제</span>
+                    </button>
+                </div>
+                """
 
-        html += f"""
-        <div class="bg-dark-800 p-5 rounded-lg border border-white/5 hover:border-brand-purple/50 transition-colors flex flex-col justify-between h-full group relative">
-            <div>
-                <div class="flex justify-between items-start mb-2">
-                    <h4 class="font-bold text-white text-lg flex items-center">{title} {new_badge} {status_badge if is_owner else ''}</h4>
-                    <div class="opacity-0 group-hover:opacity-100 transition-opacity flex">{action_buttons}</div>
+        # [HTML 조립] index.html의 CSS(.bg-dark-800)와 완벽 호환되는 구조
+        card_html = f"""
+            <div class="bg-dark-800 group relative rounded-xl overflow-hidden border border-rpg-700 bg-rpg-800 flex flex-col h-full hover:border-rpg-accent hover:shadow-lg transition-all">
+                <div class="relative h-48 overflow-hidden bg-black">
+                    <img src="{img_src}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
+                    <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-rpg-accent border border-rpg-accent/30">
+                        Fantasy
+                    </div>
                 </div>
-                <div class="flex justify-between items-center text-xs text-gray-500 mb-1">
-                    <span>{author}</span>
-                    <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
+
+                <div class="p-5 flex-1 flex flex-col gap-3">
+                    <div>
+                        <div class="flex justify-between items-start mb-1">
+                            <h3 class="text-lg font-bold text-white font-title tracking-wide truncate">{title} {new_badge}</h3>
+                            {status_badge}
+                        </div>
+                        <div class="flex justify-between items-center text-xs text-gray-500 mb-2">
+                            <span>{author}</span>
+                            <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
+                        </div>
+                        <p class="text-sm text-gray-400 line-clamp-2 min-h-[2.5rem]">{desc}</p>
+                    </div>
+
+                    <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 mt-auto">
+                        <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
+                    </button>
+
+                    {action_buttons}
                 </div>
-                <p class="text-sm text-gray-400 mb-4 line-clamp-2">{desc}</p>
             </div>
-            <button onclick="playScenario('{fid}', this)"
-                    class="w-full bg-brand-purple/10 hover:bg-brand-purple/20 text-brand-light py-2 rounded text-sm font-bold flex justify-center gap-2 border border-brand-purple/30 transition-all">
-                <i data-lucide="play" class="w-4 h-4"></i> 플레이
-            </button>
-        </div>
-        """
+            """
+        html += card_html
+
     html += '<script>lucide.createIcons();</script>'
-    return html
+    return HTMLResponse(content=html)
 
 
 @api_router.post('/load_scenario')
