@@ -80,10 +80,26 @@ def normalize_text(text: str) -> str:
 
 def format_player_status(scenario: Dict[str, Any]) -> str:
     """
-    시나리오의 initial_state를 기반으로 플레이어 상태를 포맷팅
-    player_vars가 아닌 initial_state만 참조
+    시나리오의 variables 필드를 기반으로 플레이어 초기 상태를 포맷팅
+    variables 필드가 없으면 initial_state 참조 (하위 호환성)
     """
-    initial_state = scenario.get('initial_state', {})
+    initial_state = {}
+
+    # 1. variables 필드에서 초기 상태 구성
+    if 'variables' in scenario and isinstance(scenario['variables'], list):
+        for var in scenario['variables']:
+            if isinstance(var, dict) and 'name' in var and 'initial_value' in var:
+                var_name = var['name'].lower()
+                initial_state[var_name] = var['initial_value']
+
+    # 2. initial_state 필드도 확인 (하위 호환성)
+    if 'initial_state' in scenario:
+        initial_state.update(scenario['initial_state'])
+
+    # 상태가 비어있으면 빈 문자열 반환
+    if not initial_state:
+        return "초기 상태 없음"
+
     status_lines = []
     inventory = initial_state.get('inventory', [])
 
