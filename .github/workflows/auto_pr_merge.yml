@@ -1,0 +1,33 @@
+name: Auto PR and Merge
+
+on:
+  push:
+    branches:
+      - ajh
+#      - ksy
+#      - jjw
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  create-and-merge-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create Pull Request
+        id: open-pr
+        uses: repo-sync/pull-request@v2
+        with:
+          source_branch: "${{ github.ref_name }}"
+          destination_branch: "develop"
+          github_token: ${{ secrets.MY_PAT }}
+
+      - name: Enable auto-merge
+        if: steps.open-pr.outputs.pr_url != ''
+        run: gh pr merge --auto --merge "${{ steps.open-pr.outputs.pr_url }}"
+        env:
+          GH_TOKEN: ${{ secrets.MY_PAT }}
