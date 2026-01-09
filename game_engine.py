@@ -225,10 +225,10 @@ def check_victory_condition(user_input: str, scenario: Dict[str, Any], curr_scen
 
 def intent_parser_node(state: PlayerState):
     """
-    [최적화됨] 의도 파서
-    - LLM 호출 제거: 오직 파이썬 내부 연산(Fast-Track)만 수행하여 속도 극대화
-    - 매칭 실패 시 -> 지체 없이 Chat/Hint 모드로 전환
-    - [수정] 전투 씬에서 단순 공격은 바로 승리로 연결하지 않음
+    [2단계 API 호출 구조로 변경됨]
+    1단계: LLM을 통한 의도 분류 (intent_classifier)
+    - transitions 목록을 참고하여 유저 입력의 의도를 파악
+    - transition/chat/investigate/attack/defend 등으로 분류
     """
 
     # 0. 상태 초기화 (중요: 이전 턴의 찌꺼기 제거)
@@ -239,7 +239,6 @@ def intent_parser_node(state: PlayerState):
         state['previous_scene_id'] = state['current_scene_id']
 
     user_input = state.get('last_user_input', '').strip()
-    norm_input = normalize_text(user_input)
     logger.info(f"🟢 [USER INPUT]: {user_input}")
 
     if not user_input:
@@ -268,26 +267,143 @@ def intent_parser_node(state: PlayerState):
         return state
 
     transitions = curr_scene.get('transitions', [])
+    scene_type = curr_scene.get('type', 'normal')
+    scene_title = curr_scene.get('title', 'Untitled')
+    npc_names = curr_scene.get('npcs', [])
+    enemy_names = curr_scene.get('enemies', [])
+
+    # =============================================================================
+    # [1단계 API 호출] LLM을 통한 의도 분류
+    # =============================================================================
+
+    try:
+        # transitions 목록을 문자열로 포맷팅
+        transitions_list = ""
+        if transitions:
+            for idx, trans in enumerate(transitions):
+                trigger = trans.get('trigger', '').strip()
+                target = trans.get('target_scene_id', '')
+                transitions_list += f"{idx}. {trigger} (→ {target})\n"
+        else:
+            transitions_list = "없음"
+
+        # YAML에서 intent_classifier 프롬프트 로드
+        prompts = load_player_prompts()
+        intent_classifier_template = prompts.get('intent_classifier', '')
+
+        if not intent_classifier_template:
+            # 프롬프트 로드 실패 시 기존 Fast-Track 방식 사용
+            logger.warning("⚠️ intent_classifier prompt not found, falling back to fast-track")
+            return _fast_track_intent_parser(state, user_input, curr_scene, scenario, endings)
+
+        # 프롬프트 생성
+        intent_prompt = intent_classifier_template.format(
+            scene_title=scene_title,
+            scene_type=scene_type,
+            npc_list=', '.join(npc_names) if npc_names else '없음',
+            enemy_list=', '.join(enemy_names) if enemy_names else '없음',
+            transitions_list=transitions_list,
+            user_input=user_input
+        )
+
+        # LLM 호출 (non-streaming)
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+        llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
+
+        response = llm.invoke(intent_prompt).content.strip()
+        logger.info(f"🤖 [INTENT CLASSIFIER] Raw response: {response}")
+
+        # JSON 파싱 시도
+        # JSON이 마크다운 코드블록에 싸여있을 수 있으므로 추출
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(0)
+            intent_result = json.loads(json_str)
+
+            intent_type = intent_result.get('intent', 'chat')
+            transition_index = intent_result.get('transition_index', -1)
+            confidence = intent_result.get('confidence', 0.0)
+            reasoning = intent_result.get('reasoning', '')
+
+            logger.info(f"🎯 [INTENT] Type: {intent_type}, Confidence: {confidence:.2f}, Reasoning: {reasoning}")
+
+            # 의도에 따른 처리
+            if intent_type == 'transition' and 0 <= transition_index < len(transitions):
+                # 전투 씬에서 엔딩으로 가는 transition은 승리 조건 체크
+                target_trans = transitions[transition_index]
+                target = target_trans.get('target_scene_id', '').lower()
+                is_ending_transition = target.startswith('ending') or target in endings
+
+                if scene_type == 'battle' and is_ending_transition:
+                    if not check_victory_condition(user_input, scenario, curr_scene):
+                        logger.info(f"⚔️ [BATTLE] Transition blocked - victory condition not met")
+                        state['parsed_intent'] = 'attack'
+                        state['_internal_flags'] = state.get('_internal_flags', {})
+                        state['_internal_flags']['battle_attack'] = True
+                        return state
+
+                state['last_user_choice_idx'] = transition_index
+                state['parsed_intent'] = 'transition'
+                return state
+
+            elif intent_type == 'investigate':
+                state['parsed_intent'] = 'investigate'
+                return state
+
+            elif intent_type == 'attack':
+                # 승리 조건 확인
+                if scene_type == 'battle' and not check_victory_condition(user_input, scenario, curr_scene):
+                    state['parsed_intent'] = 'attack'
+                    state['_internal_flags'] = state.get('_internal_flags', {})
+                    state['_internal_flags']['battle_attack'] = True
+                    return state
+                else:
+                    # 승리 조건 충족 시 transition으로 처리
+                    state['parsed_intent'] = 'transition'
+                    return state
+
+            elif intent_type == 'defend':
+                state['parsed_intent'] = 'defend'
+                return state
+
+            else:  # chat
+                state['parsed_intent'] = 'chat'
+                return state
+
+        else:
+            # JSON 파싱 실패 시 폴백
+            logger.warning("⚠️ Failed to parse JSON from intent classifier, falling back to fast-track")
+            return _fast_track_intent_parser(state, user_input, curr_scene, scenario, endings)
+
+    except Exception as e:
+        logger.error(f"❌ [INTENT CLASSIFIER] Error: {e}, falling back to fast-track")
+        return _fast_track_intent_parser(state, user_input, curr_scene, scenario, endings)
+
+
+def _fast_track_intent_parser(state: PlayerState, user_input: str, curr_scene: Dict, scenario: Dict, endings: Dict):
+    """기존 Fast-Track 의도 파서 (폴백용)"""
+    norm_input = normalize_text(user_input)
+    transitions = curr_scene.get('transitions', [])
+    scene_type = curr_scene.get('type', 'normal')
+
     if not transitions:
         state['parsed_intent'] = 'chat'
         return state
 
-    # [신규] 전투 씬 감지 및 공격 행동 처리
-    scene_type = curr_scene.get('type', 'normal')
+    # 공격 행동 감지
     attack_keywords = ['공격', '때리', '치', '베', '찌르', '쏘', '던지', '싸우', 'attack', 'hit', 'strike', 'fight', 'kill', '처치', '죽이', '무찌']
     is_attack_action = any(kw in user_input.lower() for kw in attack_keywords)
 
     if scene_type == 'battle' and is_attack_action:
-        # 승리 조건 확인
         if not check_victory_condition(user_input, scenario, curr_scene):
-            # 승리 조건 미충족 -> 전투 지속 (chat 모드로 유지하되 전투 묘사)
             logger.info(f"⚔️ [BATTLE] Attack detected but victory condition not met. Continuing battle.")
-            state['parsed_intent'] = 'chat'
+            state['parsed_intent'] = 'attack'
             state['_internal_flags'] = state.get('_internal_flags', {})
             state['_internal_flags']['battle_attack'] = True
             return state
 
-    # 🚀 [SPEED-UP] Fast-Track 매칭
+    # Fast-Track 매칭
     best_idx = -1
     highest_ratio = 0.0
     best_trigger_text = ""
@@ -297,29 +413,25 @@ def intent_parser_node(state: PlayerState):
         if not trigger: continue
         norm_trigger = normalize_text(trigger)
         target = trans.get('target_scene_id', '').lower()
-
-        # [수정] 전투 씬에서 엔딩으로 가는 transition은 높은 유사도 요구
         is_ending_transition = target.startswith('ending') or target in endings
 
-        # 1. 완전 포함 관계 확인 (가장 확실함 -> 즉시 리턴 가능)
+        # 완전 포함 관계
         if norm_input in norm_trigger or norm_trigger in norm_input:
             if len(norm_input) >= 2:
-                # [수정] 전투 씬에서 엔딩 transition은 승리 조건 체크
                 if scene_type == 'battle' and is_ending_transition:
                     if not check_victory_condition(user_input, scenario, curr_scene):
-                        continue  # 승리 조건 미충족 시 이 transition 건너뜀
+                        continue
 
                 logger.info(f"⚡ [FAST-TRACK] Direct Match: '{user_input}' matched '{trigger}'")
                 state['last_user_choice_idx'] = idx
                 state['parsed_intent'] = 'transition'
                 return state
 
-        # 2. 유사도 계산 (Best Match 찾기 위해 루프 돎)
+        # 유사도 계산
         similarity = difflib.SequenceMatcher(None, norm_input, norm_trigger).ratio()
 
-        # [수정] 전투 씬에서 엔딩 transition은 더 높은 threshold 요구
         if scene_type == 'battle' and is_ending_transition:
-            if similarity < 0.8:  # 엔딩은 0.8 이상 필요
+            if similarity < 0.8:
                 continue
 
         if similarity > highest_ratio:
@@ -327,18 +439,16 @@ def intent_parser_node(state: PlayerState):
             best_idx = idx
             best_trigger_text = trigger
 
-    # [수정] 루프 종료 후 '가장 높은 점수'로 최종 판단
     # 0.6 이상: 성공
     if highest_ratio >= 0.6:
         target_trans = transitions[best_idx]
         target = target_trans.get('target_scene_id', '').lower()
         is_ending_transition = target.startswith('ending') or target in endings
 
-        # [수정] 전투 씬에서 엔딩으로 가려면 승리 조건 충족 필요
         if scene_type == 'battle' and is_ending_transition:
             if not check_victory_condition(user_input, scenario, curr_scene):
                 logger.info(f"⚔️ [BATTLE] Fuzzy match to ending blocked - victory condition not met")
-                state['parsed_intent'] = 'chat'
+                state['parsed_intent'] = 'attack'
                 state['_internal_flags'] = state.get('_internal_flags', {})
                 state['_internal_flags']['battle_attack'] = True
                 return state
@@ -348,7 +458,7 @@ def intent_parser_node(state: PlayerState):
         state['parsed_intent'] = 'transition'
         return state
 
-    # 0.4 ~ 0.59: 아까운 실패 (Near Miss)
+    # 0.4 ~ 0.59: Near Miss
     elif highest_ratio >= 0.4:
         logger.info(f"⚡ [FAST-TRACK] Near Miss ({highest_ratio:.2f}): '{user_input}' vs '{best_trigger_text}'")
         state['near_miss_trigger'] = best_trigger_text
@@ -729,15 +839,18 @@ def get_narrative_fallback_message(scenario: Dict[str, Any]) -> str:
 
 def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries: int = 2):
     """
-    나레이션 스트리밍
-    [MODE 1] 힌트 모드 (이동 X)
-    [MODE 2] 묘사 모드 (이동 O)
-    [MODE 3] 전투 지속 모드 (battle 씬에서 chat일 때)
+    [2단계 API 호출 구조 - 2단계: 서사 생성]
+    1단계에서 분류된 의도(parsed_intent)에 따라 전용 서사 프롬프트를 선택하여 스트리밍
+
+    나레이션 모드:
+    [MODE 1] 씬 유지 + 의도별 분기 (investigate/attack/defend/chat/near_miss)
+    [MODE 2] 씬 변경 -> 장면 묘사
     """
     scenario = state['scenario']
     curr_id = state['current_scene_id']
     prev_id = state.get('previous_scene_id')
     user_input = state.get('last_user_input', '')
+    parsed_intent = state.get('parsed_intent', 'chat')
 
     all_scenes = {s['scene_id']: s for s in scenario['scenes']}
     all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
@@ -772,191 +885,126 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
     scene_title = curr_scene.get('title', 'Untitled')
     scene_type = curr_scene.get('type', 'normal')
-    transitions = curr_scene.get('transitions', [])
     enemy_names = curr_scene.get('enemies', [])
+    npc_names = curr_scene.get('npcs', [])
 
-    # [MODE 1] 씬 유지됨 (탐색/대화) -> 힌트 모드
+    # =============================================================================
+    # [MODE 1] 씬 유지됨 -> 의도(parsed_intent)에 따른 전용 서사 프롬프트 선택
+    # =============================================================================
     if prev_id == curr_id and user_input:
-        internal_flags = state.get('_internal_flags', {})
-        is_battle_attack = internal_flags.get('battle_attack', False)
+        prompts = load_player_prompts()
+        weakness_hint = get_npc_weakness_hint(scenario, enemy_names) or "주변을 살펴보니 활용할 수 있는 것이 보입니다."
 
-        # [신규 MODE 3] 전투 씬에서 공격 행동 - 전투 지속 묘사
-        if scene_type == 'battle' and is_battle_attack:
-            # 플래그 초기화
-            state['_internal_flags']['battle_attack'] = False
+        # [2단계] parsed_intent에 따라 전용 프롬프트 선택
+        prompt_template = None
+        prompt_key = None
 
-            # YAML에서 프롬프트 로드
-            prompts = load_player_prompts()
-            weakness_hint = get_npc_weakness_hint(scenario, enemy_names) or "주변을 살펴보니 활용할 수 있는 것이 보입니다."
-            attack_prompt_template = prompts.get('battle_attack_result', '')
-
-            if attack_prompt_template:
-                attack_result_prompt = attack_prompt_template.format(
-                    user_input=user_input,
-                    scene_title=scene_title,
-                    weakness_hint=weakness_hint
-                )
-            else:
-                # 폴백
-                attack_result_prompt = f"""당신은 텍스트 RPG의 게임 마스터입니다.
-유저 행동: "{user_input}"
-장면: "{scene_title}" (전투 중)
-약점 힌트: {weakness_hint}
-2-3문장으로 공격 결과를 서술하세요."""
-
-            try:
-                api_key = os.getenv("OPENROUTER_API_KEY")
-                model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
-                llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
-                for chunk in llm.stream(attack_result_prompt):
-                    if chunk.content: yield chunk.content
-            except Exception:
-                yield random.choice(get_battle_attack_messages())
-            return
-
-        # [개선] 전투 씬에서 조사/탐색 행동 감지 - 약점 노출 강화
-        investigation_keywords = ['조사', '살펴', '찾', '둘러', '관찰', '확인', '생각', '방법', '전략', '약점', '탐색', 'look', 'search', 'examine', 'think', 'find']
-        is_investigation = any(kw in user_input.lower() for kw in investigation_keywords)
-
-        if scene_type == 'battle' and is_investigation:
-            # [필수] 약점을 명확히 보여주는 환경 묘사 생성
-            weakness_hint = get_npc_weakness_hint(scenario, enemy_names)
-
-            # YAML에서 프롬프트 로드
-            prompts = load_player_prompts()
-            investigation_prompt_template = prompts.get('battle_investigation', '')
-
-            if investigation_prompt_template:
-                investigation_prompt = investigation_prompt_template.format(
+        if parsed_intent == 'investigate':
+            # 조사/탐색 행동
+            prompt_key = 'battle_investigation' if scene_type == 'battle' else 'battle_investigation'
+            prompt_template = prompts.get(prompt_key, '')
+            if prompt_template:
+                narrative_prompt = prompt_template.format(
                     user_input=user_input,
                     scene_title=scene_title,
                     weakness_hint=weakness_hint if weakness_hint else "주변을 살펴보니 특이한 물건이 눈에 띕니다."
                 )
-            else:
-                # 폴백
-                investigation_prompt = f"""당신은 텍스트 RPG의 게임 마스터입니다.
-유저 행동: "{user_input}" (조사/탐색)
-장면: "{scene_title}" (전투 중)
-필수 약점 힌트: {weakness_hint if weakness_hint else "특이한 물건이 보입니다."}
-2-3문장으로 조사 결과를 서술하세요."""
 
-            try:
-                api_key = os.getenv("OPENROUTER_API_KEY")
-                model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
-                llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
-                for chunk in llm.stream(investigation_prompt):
-                    if chunk.content: yield chunk.content
-            except Exception:
-                # 폴백: 약점 힌트 직접 출력
-                if weakness_hint:
-                    yield f"주변을 살핍니다. {weakness_hint}"
-                else:
-                    yield "주변을 둘러보니 활용할 수 있는 것들이 보입니다."
-            return
-
-        # [개선] 방어 행동 감지 (전투 씬에서)
-        defensive_keywords = ['방어', '회피', '막', '피하', '버티', '숨', '엄폐', '도망', '후퇴', '수비', 'block', 'defend', 'dodge', 'hide', 'retreat']
-        is_defensive_action = any(kw in user_input.lower() for kw in defensive_keywords)
-
-        if scene_type == 'battle' and is_defensive_action:
-            # YAML에서 프롬프트 로드
-            prompts = load_player_prompts()
-            weakness_hint = get_npc_weakness_hint(scenario, enemy_names) or "주변에 활용할 수 있는 것들이 있습니다."
-            defense_prompt_template = prompts.get('battle_defense', '')
-
-            if defense_prompt_template:
-                defense_prompt = defense_prompt_template.format(
+        elif parsed_intent == 'attack':
+            # 공격 행동 (승리 조건 미충족)
+            prompt_key = 'battle_attack_result'
+            prompt_template = prompts.get(prompt_key, '')
+            if prompt_template:
+                narrative_prompt = prompt_template.format(
                     user_input=user_input,
                     scene_title=scene_title,
                     weakness_hint=weakness_hint
                 )
-            else:
-                # 폴백
-                defense_prompt = f"""당신은 텍스트 RPG의 게임 마스터입니다.
-유저 행동: "{user_input}" (방어)
-장면: "{scene_title}" (전투 중)
-약점 힌트: {weakness_hint}
-2-3문장으로 방어 결과를 서술하세요."""
 
-            try:
-                api_key = os.getenv("OPENROUTER_API_KEY")
-                model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
-                llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
-                for chunk in llm.stream(defense_prompt):
-                    if chunk.content: yield chunk.content
-            except Exception:
-                yield random.choice(get_battle_defensive_messages())
-            return
+        elif parsed_intent == 'defend':
+            # 방어 행동
+            prompt_key = 'battle_defense'
+            prompt_template = prompts.get(prompt_key, '')
+            if prompt_template:
+                narrative_prompt = prompt_template.format(
+                    user_input=user_input,
+                    scene_title=scene_title,
+                    weakness_hint=weakness_hint
+                )
 
-        # [개선] Near Miss 감지 시 서사적 힌트 반환 (LLM 사용)
+        # Near Miss 처리
         near_miss = state.get('near_miss_trigger')
-        if near_miss:
-            # YAML에서 프롬프트 로드
-            prompts = load_player_prompts()
-            near_miss_prompt_template = prompts.get('near_miss', '')
-
-            if near_miss_prompt_template:
-                near_miss_prompt = near_miss_prompt_template.format(
+        if near_miss and parsed_intent == 'chat':
+            prompt_key = 'near_miss'
+            prompt_template = prompts.get(prompt_key, '')
+            if prompt_template:
+                narrative_prompt = prompt_template.format(
                     user_input=user_input,
                     near_miss_trigger=near_miss
                 )
-            else:
-                # 폴백
-                near_miss_prompt = f"""당신은 텍스트 RPG의 게임 마스터입니다.
-유저 시도: "{user_input}"
-정답에 가까움: "{near_miss}"
-1-2문장으로 아쉬운 실패를 서술하세요."""
 
+        # 의도별 프롬프트가 설정되었으면 LLM 스트리밍
+        if prompt_template and 'narrative_prompt' in locals():
             try:
                 api_key = os.getenv("OPENROUTER_API_KEY")
                 model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
                 llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
-                for chunk in llm.stream(near_miss_prompt):
-                    if chunk.content: yield chunk.content
-            except Exception:
-                yield random.choice(get_near_miss_narrative_hints())
-            return
 
-        # [최적화] NPC 대화 있으면 스킵
+                logger.info(f"🎬 [NARRATIVE] Using prompt: {prompt_key} for intent: {parsed_intent}")
+
+                for chunk in llm.stream(narrative_prompt):
+                    if chunk.content:
+                        yield chunk.content
+                return
+
+            except Exception as e:
+                logger.error(f"Narrative generation error for intent '{parsed_intent}': {e}")
+                # 폴백 메시지
+                if parsed_intent == 'investigate':
+                    if weakness_hint:
+                        yield f"주변을 살핍니다. {weakness_hint}"
+                    else:
+                        yield "주변을 둘러보니 활용할 수 있는 것들이 보입니다."
+                    return
+                elif parsed_intent == 'attack':
+                    yield random.choice(get_battle_attack_messages())
+                    return
+                elif parsed_intent == 'defend':
+                    yield random.choice(get_battle_defensive_messages())
+                    return
+                elif near_miss:
+                    yield random.choice(get_near_miss_narrative_hints())
+                    return
+
+        # NPC 대화가 있으면 나레이션 스킵
         npc_output = state.get('npc_output', '')
         if npc_output:
             yield ""
             return
 
-        # [신규] 전투 씬에서 일반 행동 시에도 전투 상황 유지 (LLM 사용)
-        if scene_type == 'battle':
-            # YAML에서 프롬프트 로드
-            prompts = load_player_prompts()
-            weakness_hint = get_npc_weakness_hint(scenario, enemy_names) or "주변에 활용할 수 있는 것이 있습니다."
+        # 전투 씬에서 일반 chat 행동 (프롬프트 없을 때)
+        if scene_type == 'battle' and parsed_intent == 'chat':
             battle_continue_template = prompts.get('battle_continue', '')
-
             if battle_continue_template:
                 battle_continue_prompt = battle_continue_template.format(
                     user_input=user_input,
                     scene_title=scene_title,
                     weakness_hint=weakness_hint
                 )
-            else:
-                # 폴백
-                battle_continue_prompt = f"""당신은 텍스트 RPG의 게임 마스터입니다.
-유저 행동: "{user_input}"
-장면: "{scene_title}" (전투 교착 상태)
-약점 힌트: {weakness_hint}
-2-3문장으로 전투 상황을 서술하세요."""
+                try:
+                    api_key = os.getenv("OPENROUTER_API_KEY")
+                    model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+                    llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
+                    for chunk in llm.stream(battle_continue_prompt):
+                        if chunk.content: yield chunk.content
+                except Exception:
+                    yield random.choice(get_battle_stalemate_messages())
+                return
 
-            try:
-                api_key = os.getenv("OPENROUTER_API_KEY")
-                model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
-                llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
-                for chunk in llm.stream(battle_continue_prompt):
-                    if chunk.content: yield chunk.content
-            except Exception:
-                yield random.choice(get_battle_stalemate_messages())
-            return
-
-    # [MODE 2] 씬 변경됨 -> 전체 묘사
+    # =============================================================================
+    # [MODE 2] 씬 변경됨 -> 장면 묘사
+    # =============================================================================
     scene_desc = curr_scene.get('description', '')
-    npc_names = curr_scene.get('npcs', [])
 
     npc_intro = check_npc_appearance(state)
     if npc_intro: yield npc_intro + "<br><br>"
@@ -967,7 +1015,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     scene_prompt_template = prompts.get('scene_description', '')
 
     if scene_prompt_template:
-        # [개선] 씬 변경 시에도 유저 입력 컨텍스트 포함
+        # 씬 변경 시 유저 입력 컨텍스트 포함
         if user_input:
             context_prefix = f"""**최우선 지침: 유저의 마지막 입력("{user_input}")이 이 장면으로의 전환을 일으켰습니다. 그 결과를 먼저 서술하세요.**
 
@@ -998,7 +1046,6 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     try:
         api_key = os.getenv("OPENROUTER_API_KEY")
         model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
-        # [최적화] 캐시된 LLM 사용
         llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
 
         accumulated_text = ""
