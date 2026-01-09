@@ -1,13 +1,70 @@
 import json
 import time
 import logging
+import re
+import os
+import yaml
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
 from config import DEFAULT_PLAYER_VARS
 from models import SessionLocal, Scenario, ScenarioHistory, TempScenario
+from llm_factory import LLMFactory
 
 logger = logging.getLogger(__name__)
+
+
+def parse_settings_with_llm(text_content: str) -> Dict[str, Any]:
+    """
+    LLM을 사용하여 문자열로 된 설정을 자동 파싱
+    (world_settings, player_status 등)
+    """
+    if not text_content or not isinstance(text_content, str):
+        return {
+            "world_settings": {},
+            "custom_variables": [],
+            "automatic_rules": []
+        }
+
+    try:
+        # prompt_player.yaml에서 파서 프롬프트 로드
+        prompt_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'prompt_player.yaml')
+        with open(prompt_path, 'r', encoding='utf-8') as f:
+            prompts = yaml.safe_load(f)
+
+        parser_template = prompts.get('scenario_settings_parser', '')
+        if not parser_template:
+            logger.warning("⚠️ scenario_settings_parser prompt not found")
+            return {"world_settings": {}, "custom_variables": [], "automatic_rules": []}
+
+        # 프롬프트 생성
+        parser_prompt = parser_template.format(text_content=text_content)
+
+        # LLM 호출 (non-streaming)
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        llm = LLMFactory.get_llm(
+            api_key=api_key,
+            model_name='openai/tngtech/deepseek-r1t2-chimera:free',
+            streaming=False
+        )
+
+        response = llm.invoke(parser_prompt).content.strip()
+        logger.info(f"📝 [PARSER] Raw response: {response[:200]}...")
+
+        # JSON 파싱
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(0)
+            parsed_data = json.loads(json_str)
+            logger.info(f"✅ [PARSER] Successfully parsed settings")
+            return parsed_data
+        else:
+            logger.warning("⚠️ [PARSER] No JSON found in response")
+            return {"world_settings": {}, "custom_variables": [], "automatic_rules": []}
+
+    except Exception as e:
+        logger.error(f"❌ [PARSER] Error parsing settings: {e}")
+        return {"world_settings": {}, "custom_variables": [], "automatic_rules": []}
 
 
 class ScenarioService:
@@ -122,7 +179,90 @@ class ScenarioService:
                     if key not in initial_vars:
                         initial_vars[key] = value
 
-            # 4. DEFAULT_PLAYER_VARS로 누락된 필드만 채움
+            # [NEW] 4. world_settings 문자열 파싱 (LLM 사용)
+            if 'world_settings' in s_content:
+                ws = s_content['world_settings']
+
+                # 문자열이면 LLM으로 파싱
+                if isinstance(ws, str) and ws.strip():
+                    logger.info(f"📝 [PARSER] Parsing world_settings string...")
+                    parsed = parse_settings_with_llm(ws)
+
+                    # 파싱된 world_settings를 시나리오에 적용
+                    if 'world_settings' in parsed and parsed['world_settings']:
+                        s_content['world_settings'] = parsed['world_settings']
+                        logger.info(f"✅ [PARSER] Applied world_settings: {parsed['world_settings']}")
+
+                    # 커스텀 변수를 variables 배열에 추가
+                    if 'custom_variables' in parsed and parsed['custom_variables']:
+                        if 'variables' not in s_content:
+                            s_content['variables'] = []
+
+                        for custom_var in parsed['custom_variables']:
+                            var_name = custom_var['name'].lower()
+                            var_value = custom_var['initial_value']
+
+                            # variables 배열에 추가 (중복 체크)
+                            exists = False
+                            for existing_var in s_content['variables']:
+                                if existing_var.get('name', '').lower() == var_name:
+                                    exists = True
+                                    break
+
+                            if not exists:
+                                s_content['variables'].append({
+                                    'name': var_name.upper(),
+                                    'initial_value': var_value,
+                                    'type': 'int'
+                                })
+                                logger.info(f"✅ [PARSER] Added custom variable: {var_name.upper()} = {var_value}")
+
+                            # initial_vars에도 추가
+                            if var_name not in initial_vars:
+                                initial_vars[var_name] = var_value
+
+                # 이미 객체면 그대로 사용
+                elif isinstance(ws, dict):
+                    s_content['world_settings'] = ws
+
+            # [NEW] 5. player_status 문자열 파싱 (LLM 사용)
+            if 'player_status' in s_content:
+                ps = s_content['player_status']
+
+                # 문자열이면 LLM으로 파싱
+                if isinstance(ps, str) and ps.strip():
+                    logger.info(f"📝 [PARSER] Parsing player_status string...")
+                    parsed = parse_settings_with_llm(ps)
+
+                    # 커스텀 변수를 variables 배열에 추가
+                    if 'custom_variables' in parsed and parsed['custom_variables']:
+                        if 'variables' not in s_content:
+                            s_content['variables'] = []
+
+                        for custom_var in parsed['custom_variables']:
+                            var_name = custom_var['name'].lower()
+                            var_value = custom_var['initial_value']
+
+                            # variables 배열에 추가 (중복 체크)
+                            exists = False
+                            for existing_var in s_content['variables']:
+                                if existing_var.get('name', '').lower() == var_name:
+                                    exists = True
+                                    break
+
+                            if not exists:
+                                s_content['variables'].append({
+                                    'name': var_name.upper(),
+                                    'initial_value': var_value,
+                                    'type': 'int'
+                                })
+                                logger.info(f"✅ [PARSER] Added custom variable from player_status: {var_name.upper()} = {var_value}")
+
+                            # initial_vars에도 추가
+                            if var_name not in initial_vars:
+                                initial_vars[var_name] = var_value
+
+            # 6. DEFAULT_PLAYER_VARS로 누락된 필드만 채움
             for key, value in DEFAULT_PLAYER_VARS.items():
                 if key not in initial_vars:
                     initial_vars[key] = value

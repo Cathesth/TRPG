@@ -4,6 +4,17 @@ from typing import List, Any, Optional
 
 # --- Basic Components ---
 
+class WorldSettings(BaseModel):
+    """
+    월드 규칙 설정 (Python으로만 처리)
+    """
+    hp_loss_per_move: int = Field(default=0, description="이동할 때마다 감소하는 HP (0이면 비활성화)")
+    hp_zero_ending_id: Optional[str] = Field(None, description="HP가 0 이하가 되면 강제 이동할 엔딩 ID")
+    sanity_loss_per_move: int = Field(default=0, description="이동할 때마다 감소하는 SANITY")
+    sanity_zero_ending_id: Optional[str] = Field(None, description="SANITY가 0 이하가 되면 강제 이동할 엔딩 ID")
+    auto_save_on_move: bool = Field(default=True, description="이동 시 자동 저장 여부")
+
+
 class GlobalVariable(BaseModel):
     name: str = Field(description="Variable name (e.g., 'hp', 'gold', 'sanity')")
     initial_value: int = Field(default=0, description="Starting value")
@@ -94,3 +105,5 @@ class GameScenario(BaseModel):
     npcs: List[NPC]
     scenes: List[Scene]
     endings: List[Ending]
+
+    world_settings: WorldSettings = Field(default=WorldSettings(), description="Rules that govern the game world")

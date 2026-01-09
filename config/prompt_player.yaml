@@ -2,6 +2,60 @@
 # 프롬프트 동작 순서: 게임 엔진 실행 흐름에 따라 재정리됨
 
 # =============================================================================
+# [시나리오 파싱] 문자열로 된 설정을 자동 파싱
+# =============================================================================
+
+# 시나리오 설정 파서 프롬프트 (world_settings, player_status 등 문자열을 JSON으로 변환)
+scenario_settings_parser: |
+  당신은 시나리오 설정 텍스트를 분석하는 파서입니다.
+  
+  **원본 텍스트:**
+  {text_content}
+  
+  **당신의 임무:**
+  위 텍스트에서 다음 정보를 추출하여 JSON으로 변환하세요.
+  
+  **추출 항목:**
+  1. **world_settings** - 월드 규칙
+     - hp_loss_per_move: 이동당 HP 감소량 (숫자)
+     - hp_zero_ending_id: HP 0시 이동할 엔딩 ID (문자열)
+     - sanity_loss_per_move: 이동당 SANITY 감소량 (숫자)
+     - sanity_zero_ending_id: SANITY 0시 이동할 엔딩 ID (문자열)
+  
+  2. **custom_variables** - 커스텀 변수
+     - 텍스트에서 "Oxygen: 100", "Panic: 0" 같은 패턴을 찾아 추출
+     - 각 변수의 이름과 초기값
+  
+  3. **automatic_rules** - 자동 규칙
+     - "이동/탐색 시 Oxygen -5" 같은 패턴 찾기
+     - 조건과 효과를 분리
+  
+  **응답 형식 (JSON):**
+  {{
+    "world_settings": {{
+      "hp_loss_per_move": 0,
+      "hp_zero_ending_id": "ending-death",
+      "sanity_loss_per_move": 0,
+      "sanity_zero_ending_id": null
+    }},
+    "custom_variables": [
+      {{"name": "Oxygen", "initial_value": 100}},
+      {{"name": "Panic", "initial_value": 0}}
+    ],
+    "automatic_rules": [
+      {{"trigger": "move", "effect": "Oxygen", "operation": "subtract", "value": 5}},
+      {{"trigger": "horror_event", "effect": "Panic", "operation": "add", "value": 10}}
+    ]
+  }}
+  
+  **중요:**
+  - 숫자는 정수로 변환
+  - 없는 항목은 null 또는 0으로 설정
+  - 반드시 유효한 JSON만 반환
+  - HP 0시 특정 엔딩 이동 규칙이 있으면 hp_zero_ending_id에 엔딩 ID 추출
+  - 추출할 수 없는 정보는 기본값 사용
+
+# =============================================================================
 # [0단계] 의도 분류 (Intent Classification) - 새로 추가
 # =============================================================================
 

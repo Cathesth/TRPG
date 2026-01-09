@@ -78,10 +78,10 @@ def normalize_text(text: str) -> str:
     return text.lower().replace(" ", "")
 
 
-def format_player_status(scenario: Dict[str, Any]) -> str:
+def format_player_status(scenario: Dict[str, Any], player_vars: Dict[str, Any] = None) -> str:
     """
-    시나리오의 variables 필드를 기반으로 플레이어 초기 상태를 포맷팅
-    variables 필드가 없으면 initial_state 참조 (하위 호환성)
+    시나리오의 variables 필드와 현재 player_vars를 기반으로 플레이어 상태를 포맷팅
+    player_vars가 제공되면 현재 상태를, 없으면 초기 상태를 반환
     """
     initial_state = {}
 
@@ -96,12 +96,18 @@ def format_player_status(scenario: Dict[str, Any]) -> str:
     if 'initial_state' in scenario:
         initial_state.update(scenario['initial_state'])
 
+    # 3. player_vars가 제공되면 현재 상태로 업데이트
+    if player_vars:
+        for key, value in player_vars.items():
+            if key != 'inventory':
+                initial_state[key.lower()] = value
+
     # 상태가 비어있으면 빈 문자열 반환
     if not initial_state:
         return "초기 상태 없음"
 
     status_lines = []
-    inventory = initial_state.get('inventory', [])
+    inventory = player_vars.get('inventory', []) if player_vars else initial_state.get('inventory', [])
 
     for key, value in initial_state.items():
         if key == 'inventory':
@@ -341,7 +347,8 @@ def intent_parser_node(state: PlayerState):
 
         # 프롬프트 생성
         scenario = state.get('scenario', {})
-        player_status = format_player_status(scenario)
+        player_vars = state.get('player_vars', {})
+        player_status = format_player_status(scenario, player_vars)
 
         intent_prompt = intent_classifier_template.format(
             player_status=player_status,
@@ -531,6 +538,10 @@ def rule_node(state: PlayerState):
     curr_scene = all_scenes.get(curr_scene_id)
     transitions = curr_scene.get('transitions', []) if curr_scene else []
 
+    # [NEW] 씬 이동 플래그
+    scene_moved = False
+    previous_scene = curr_scene_id
+
     if state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
         trans = transitions[idx]
         effects = trans.get('effects', [])
@@ -580,7 +591,60 @@ def rule_node(state: PlayerState):
         # 씬 이동
         if next_id:
             state['current_scene_id'] = next_id
+            scene_moved = True
             logger.info(f"👣 [MOVE] {curr_scene_id} -> {next_id}")
+
+    # [NEW] World Settings 적용 (이동 시에만)
+    if scene_moved:
+        world_settings = scenario.get('world_settings', {})
+
+        # HP 감소
+        hp_loss = world_settings.get('hp_loss_per_move', 0)
+        if hp_loss > 0:
+            hp_key = None
+            for key in state['player_vars'].keys():
+                if key.lower() == 'hp':
+                    hp_key = key
+                    break
+
+            if hp_key:
+                current_hp = state['player_vars'].get(hp_key, 0)
+                new_hp = max(0, current_hp - hp_loss)
+                state['player_vars'][hp_key] = new_hp
+                sys_msg.append(f"⚠️ 이동으로 인한 피로: HP -{hp_loss}")
+                logger.info(f"🩸 [WORLD RULE] HP decreased by {hp_loss} ({current_hp} -> {new_hp})")
+
+                # HP 0 이하 체크
+                if new_hp <= 0:
+                    hp_zero_ending = world_settings.get('hp_zero_ending_id')
+                    if hp_zero_ending and hp_zero_ending in all_endings:
+                        state['current_scene_id'] = hp_zero_ending
+                        sys_msg.append(f"💀 체력이 바닥났습니다!")
+                        logger.info(f"☠️ [WORLD RULE] HP reached 0, forced to ending: {hp_zero_ending}")
+
+        # SANITY 감소
+        sanity_loss = world_settings.get('sanity_loss_per_move', 0)
+        if sanity_loss > 0:
+            sanity_key = None
+            for key in state['player_vars'].keys():
+                if key.lower() == 'sanity':
+                    sanity_key = key
+                    break
+
+            if sanity_key:
+                current_sanity = state['player_vars'].get(sanity_key, 0)
+                new_sanity = max(0, current_sanity - sanity_loss)
+                state['player_vars'][sanity_key] = new_sanity
+                sys_msg.append(f"🌀 정신력 감소: SANITY -{sanity_loss}")
+                logger.info(f"🧠 [WORLD RULE] SANITY decreased by {sanity_loss} ({current_sanity} -> {new_sanity})")
+
+                # SANITY 0 이하 체크
+                if new_sanity <= 0:
+                    sanity_zero_ending = world_settings.get('sanity_zero_ending_id')
+                    if sanity_zero_ending and sanity_zero_ending in all_endings:
+                        state['current_scene_id'] = sanity_zero_ending
+                        sys_msg.append(f"😵 정신이 붕괴되었습니다!")
+                        logger.info(f"🤯 [WORLD RULE] SANITY reached 0, forced to ending: {sanity_zero_ending}")
 
     # 엔딩 체크
     if state['current_scene_id'] in all_endings:
@@ -637,7 +701,8 @@ def npc_node(state: PlayerState):
 
     if prompt_template:
         scenario = state.get('scenario', {})
-        player_status = format_player_status(scenario)
+        player_vars = state.get('player_vars', {})
+        player_status = format_player_status(scenario, player_vars)
 
         prompt = prompt_template.format(
             player_status=player_status,
@@ -1104,7 +1169,8 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
     if scene_prompt_template:
         scenario_data = state.get('scenario', {})
-        player_status = format_player_status(scenario_data)
+        player_vars = state.get('player_vars', {})
+        player_status = format_player_status(scenario_data, player_vars)
 
         # 씬 변경 시 유저 입력 컨텍스트 포함
         if user_input:
