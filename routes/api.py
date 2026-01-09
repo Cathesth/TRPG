@@ -4,20 +4,18 @@ import logging
 import time
 import threading
 from typing import Optional
-from fastapi import APIRouter, Request, Depends, Form, HTTPException
+from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from starlette.concurrency import run_in_threadpool
 
 # builder_agent에서 필요한 함수들 임포트
-from builder_agent import (
-    generate_scenario_from_graph,
-    set_progress_callback,
-    generate_single_npc
-)
 
+
+from builder_agent import generate_scenario_from_graph, set_progress_callback, generate_single_npc
 from core.state import game_state
 from core.utils import parse_request_data, pick_start_scene_id, validate_scenario_graph, can_publish_scenario
 from services.scenario_service import ScenarioService
@@ -36,7 +34,13 @@ from models import get_db, Preset, CustomNPC
 
 logger = logging.getLogger(__name__)
 
+router = APIRouter(prefix="/views", tags=["views"])
+templates = Jinja2Templates(directory="templates")
+
 api_router = APIRouter(prefix="/api", tags=["api"])
+
+
+
 
 
 # --- Pydantic 모델 정의 ---
@@ -178,23 +182,21 @@ async def reset_build_progress():
 # --- [시나리오 관리] ---
 
 @api_router.get('/scenarios', response_class=HTMLResponse)
+
 async def list_scenarios(
         request: Request,
         sort: str = 'newest',
-        filter: str = 'public',
+        filter: str = Query('public'), # 기본값 public
         limit: Optional[int] = None,
         user: CurrentUser = Depends(get_current_user_optional)
 ):
     user_id = user.id if user.is_authenticated else None
+    # ScenarioService에서 데이터 가져오기
     file_infos = ScenarioService.list_scenarios(sort, user_id, filter, limit)
 
     if not file_infos:
-        return '<div class="col-span-1 md:col-span-2 text-center text-gray-500 py-8">표시할 시나리오가 없습니다.</div>'
-
-    import time as time_module
-    from datetime import datetime
-    current_time = time_module.time()
-    NEW_THRESHOLD = 30 * 60
+        msg = "아직 생성한 시나리오가 없습니다." if filter == 'my' else "표시할 시나리오가 없습니다."
+        return f'<div class="col-span-full text-center text-gray-500 py-10">{msg}</div>'
 
     html = ""
     for info in file_infos:
@@ -204,50 +206,31 @@ async def list_scenarios(
         author = info['author']
         is_owner = info['is_owner']
         is_public = info['is_public']
-        created_time = info.get('created_time', 0)
 
-        if created_time:
-            created_dt = datetime.fromtimestamp(created_time)
-            time_str = created_dt.strftime('%Y-%m-%d %H:%M')
-        else:
-            time_str = "알 수 없음"
+        # 마이페이지와 메인페이지 카드 스타일 통합
+        is_my_page = (filter == 'my')
 
-        is_new = (current_time - created_time) < NEW_THRESHOLD if created_time else False
-        new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
-
-        status_badge = '<span class="ml-2 text-[10px] bg-green-900 text-green-300 px-1 rounded">PUBLIC</span>' if is_public else '<span class="ml-2 text-[10px] bg-gray-700 text-gray-300 px-1 rounded">PRIVATE</span>'
-
-        title_escaped = title.replace("'", "\\'").replace('"', '&quot;')
-
-        action_buttons = ""
-        if is_owner:
-            action_buttons += f"""
-            <button onclick="editScenario('{fid}')" class="text-gray-500 hover:text-blue-400 p-1" title="수정"><i data-lucide="pencil" class="w-4 h-4"></i></button>
-            <button onclick="publishScenario('{fid}', this)" class="text-gray-500 hover:text-green-400 p-1" title="공유"><i data-lucide="share-2" class="w-4 h-4"></i></button>
-            <button onclick="deleteScenario('{fid}', '{title_escaped}', this)" class="text-gray-500 hover:text-red-400 p-1" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-            """
-
+        # 카드 HTML (mypage.html에서 사용한 고급스러운 스타일로 통일)
         html += f"""
-        <div class="bg-dark-800 p-5 rounded-lg border border-white/5 hover:border-brand-purple/50 transition-colors flex flex-col justify-between h-full group relative">
-            <div>
-                <div class="flex justify-between items-start mb-2">
-                    <h4 class="font-bold text-white text-lg flex items-center">{title} {new_badge} {status_badge if is_owner else ''}</h4>
-                    <div class="opacity-0 group-hover:opacity-100 transition-opacity flex">{action_buttons}</div>
-                </div>
-                <div class="flex justify-between items-center text-xs text-gray-500 mb-1">
-                    <span>{author}</span>
-                    <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
-                </div>
-                <p class="text-sm text-gray-400 mb-4 line-clamp-2">{desc}</p>
+          <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent transition-all flex flex-col h-full">
+            <div class="relative h-48 overflow-hidden">
+                <img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=800" class="w-full h-full object-cover">
             </div>
-            <button onclick="playScenario('{fid}', this)"
-                    class="w-full bg-brand-purple/10 hover:bg-brand-purple/20 text-brand-light py-2 rounded text-sm font-bold flex justify-center gap-2 border border-brand-purple/30 transition-all">
-                <i data-lucide="play" class="w-4 h-4"></i> 플레이
-            </button>
+            <div class="p-5 flex-1 flex flex-col gap-3">
+                <h3 class="text-lg font-bold text-white truncate">{title}</h3>
+                <p class="text-sm text-gray-400 line-clamp-2">{desc}</p>
+                <div class="mt-auto pt-2 flex gap-2">
+                    <button onclick="playScenario('{fid}', this)" class="flex-1 py-3 bg-rpg-700 hover:bg-rpg-accent text-white font-bold rounded-lg transition-all">PLAY</button>
+                    {" " if not is_my_page else f'''
+                    <button onclick="editScenario('{fid}')" class="p-2 rounded-lg bg-rpg-900 text-gray-400 hover:text-white border border-rpg-700"><i data-lucide="edit" class="w-4 h-4"></i></button>
+                    <button onclick="deleteScenario('{fid}', this)" class="p-2 rounded-lg bg-rpg-900 text-gray-400 hover:text-rpg-danger border border-rpg-700"><i data-lucide="trash" class="w-4 h-4"></i></button>
+                    '''}
+                </div>
+            </div>
         </div>
         """
-    html += '<script>lucide.createIcons();</script>'
-    return html
+
+    return html + '<script>lucide.createIcons();</script>'
 
 
 @api_router.post('/load_scenario')
@@ -555,51 +538,6 @@ async def delete_preset(
         db.rollback()
         logger.error(f"프리셋 삭제 실패: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
-
-
-@api_router.post('/load_preset')
-async def load_preset_old(
-        filename: str = Form(...),
-        user: CurrentUser = Depends(get_current_user_optional),
-        db: Session = Depends(get_db)
-):
-    # [수정] HTML 응답용 구버전 로드 함수도 DB 연동
-    try:
-        preset = db.query(Preset).filter(Preset.filename == filename).first()
-
-        if not preset:
-            return HTMLResponse(
-                f'<div class="bg-red-500/10 text-red-400 p-4 rounded-lg border border-red-500/20 shadow-lg fixed bottom-4 right-4 z-50">로드 실패: 찾을 수 없음</div>')
-
-        # 데이터 구조 매핑 (DB JSON 구조 -> 게임 상태 구조)
-        preset_data = preset.data
-
-        # 만약 저장된 데이터가 graph_data(nodes, edges) 형태라면 변환 필요할 수도 있음
-        # 여기서는 단순히 세팅한다고 가정
-
-        game_state.config['title'] = preset.name
-        # 주의: graph_data만으로는 바로 플레이 가능한 시나리오(scenario json)가 아님.
-        # 프리셋은 보통 Builder에서 불러와서 편집하는 용도.
-        # 바로 플레이하려면 'generate' 과정을 거쳐야 함.
-
-        return HTMLResponse(f'''
-        <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 animate-bounce-in">
-            <div class="bg-green-900/90 border border-green-500/30 text-green-100 px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-4">
-                <div class="bg-green-500/20 p-2 rounded-full">
-                    <i data-lucide="check" class="w-6 h-6 text-green-400"></i>
-                </div>
-                <div>
-                    <div class="font-bold text-lg">프리셋 로드 완료!</div>
-                    <div class="text-sm text-green-300/80">"{preset.name}"</div>
-                </div>
-            </div>
-        </div>
-        <script>lucide.createIcons();</script>
-        ''')
-    except Exception as e:
-        return HTMLResponse(
-            f'<div class="bg-red-500/10 text-red-400 p-4 rounded-lg border border-red-500/20 shadow-lg fixed bottom-4 right-4 z-50">로드 오류: {e}</div>')
-
 
 # --- [Draft 시스템 API] ---
 
@@ -1089,3 +1027,16 @@ async def get_undo_redo_status(scenario_id: int, user: CurrentUser = Depends(get
     status = HistoryService.get_undo_redo_status(scenario_id, user.id)
 
     return {"success": True, **status}
+
+# api.py 파일의 해당 부분을 아래와 같이 수정하세요.
+
+# --- [시나리오 관리] ---
+
+# 1. 마이페이지 뷰를 /views/mypage 경로로 설정 (api_router가 아닌 router 사용)
+@router.get('/mypage', response_class=HTMLResponse)
+async def mypage_view(request: Request, user: CurrentUser = Depends(get_current_user_optional)):
+    """
+    마이페이지 뷰를 반환합니다.
+    """
+    return templates.TemplateResponse("mypage.html", {"request": request, "user": user})
+

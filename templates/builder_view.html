@@ -305,10 +305,43 @@
                 };
 
                 // 선택한 시나리오로 이동 (편집 모드 전환)
-                const loadSelectedScenario = (id) => {
-                    if (confirm("현재 작업 중인 내용은 저장되지 않음. 이동하겠음?")) {
-                        window.location.href = `/views/builder?id=${id}`;
-                        // 참고: 서버 라우팅 설정에 따라 /editor/${id} 등으로 바뀔 수 있음
+                const loadSelectedScenario = async (id) => {
+                    if (!confirm("현재 작업 중인 내용은 저장되지 않습니다. 이 시나리오를 불러오겠습니까?")) return;
+
+                    setIsLoading(true);
+                    setIsScenarioListModalOpen(false); // 모달 닫기
+
+                    try {
+                        // 1. 서버에서 해당 시나리오의 상세 데이터 가져오기
+                        const response = await fetch(`/api/scenario/${id}`);
+                        if (!response.ok) throw new Error("시나리오를 가져오는데 실패함");
+
+                        const result = await response.json();
+
+                        // 2. React 상태 업데이트 (화면 갱신)
+                        // 서버 응답 구조(nodes, edges, npcs 등)에 맞춰서 세팅
+                        if (result.nodes) setNodes(result.nodes);
+                        if (result.edges) setConnections(result.edges);
+
+                        // NPC 및 적 목록 업데이트
+                        if (result.npcs) {
+                            setGlobalNpcs(result.npcs.filter(n => !n.isEnemy && !n.is_enemy));
+                            setGlobalEnemies(result.npcs.filter(n => n.isEnemy || n.is_enemy));
+                        }
+
+                        // 3. 현재 편집 중인 ID 설정 및 모드 변경
+                        setScenarioId(id);
+                        setIsEditMode(true);
+
+                        // URL 주소도 새로고침 없이 변경 (선택 사항)
+                        window.history.pushState({}, '', `/views/scenes/edit/${id}`);
+
+                        showToast("시나리오 로드 완료!", "success");
+                    } catch (e) {
+                        console.error(e);
+                        showToast("불러오기 실패: " + e.message, "error");
+                    } finally {
+                        setIsLoading(false);
                     }
                 };
                 const [dbNpcList, setDbNpcList] = useState([]);
