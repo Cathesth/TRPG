@@ -312,32 +312,41 @@
                     setIsScenarioListModalOpen(false);
 
                     try {
-                        // 경로 수정: /api/scenario/${id}/edit
+                        // 서버의 실제 편집 데이터 경로 호출
                         const response = await fetch(`/api/scenario/${id}/edit`);
-                        if (!response.ok) throw new Error("시나리오를 가져오는데 실패함");
+                        if (!response.ok) throw new Error("시나리오 데이터를 가져오지 못함");
 
                         const result = await response.json();
 
-                        // ScenarioService.get_scenario_for_edit 응답 구조는 { success: true, data: { nodes, edges, npcs ... } } 임
+                        // 중요: result.data 안에 실제 노드와 엣지 정보가 들어있음
                         const scenarioData = result.data;
 
-                        if (scenarioData.nodes) setNodes(scenarioData.nodes);
-                        if (scenarioData.edges) setConnections(scenarioData.edges);
+                        if (scenarioData && scenarioData.nodes) {
+                            // 1. 노드 세팅
+                            setNodes(scenarioData.nodes);
 
-                        if (scenarioData.npcs) {
-                            setGlobalNpcs(scenarioData.npcs.filter(n => !n.isEnemy && !n.is_enemy));
-                            setGlobalEnemies(scenarioData.npcs.filter(n => n.isEnemy || n.is_enemy));
+                            // 2. 연결선(엣지) 세팅
+                            setConnections(scenarioData.edges || []);
+
+                            // 3. NPC 및 적 목록 세팅
+                            if (scenarioData.npcs) {
+                                setGlobalNpcs(scenarioData.npcs.filter(n => !n.isEnemy && !n.is_enemy));
+                                setGlobalEnemies(scenarioData.npcs.filter(n => n.isEnemy || n.is_enemy));
+                            }
+
+                            // 4. 편집 모드 활성화 및 ID 저장
+                            setScenarioId(id);
+                            setIsEditMode(true);
+
+                            // 주소창 업데이트 (새로고침 없이 주소만 변경)
+                            window.history.pushState({}, '', `/views/scenes/edit/${id}`);
+
+                            showToast("시나리오를 성공적으로 불러왔음!", "success");
+                        } else {
+                            throw new Error("데이터 형식이 올바르지 않음");
                         }
-
-                        setScenarioId(id);
-                        setIsEditMode(true);
-
-                        // 브라우저 주소창 업데이트
-                        window.history.pushState({}, '', `/views/scenes/edit/${id}`);
-
-                        showToast("시나리오 로드 완료!", "success");
                     } catch (e) {
-                        console.error(e);
+                        console.error("Load Error:", e);
                         showToast("불러오기 실패: " + e.message, "error");
                     } finally {
                         setIsLoading(false);
