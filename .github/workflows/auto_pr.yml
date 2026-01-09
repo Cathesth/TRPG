@@ -2,7 +2,6 @@ name: Auto Pull Request
 
 on:
   push:
-    # 오직 ajh 브랜치에 푸시될 때만 작동한다
     branches:
       - ajh
 
@@ -17,5 +16,5 @@ jobs:
         uses: repo-sync/pull-request@v2
         with:
           source_branch: "ajh"
-          destination_branch: "dev"
+          destination_branch: "develop"
           github_token: ${{ secrets.GITHUB_TOKEN }}
