@@ -36,11 +36,6 @@ from models import get_db, Preset, CustomNPC
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-# --- [FastAPI 앱 초기화] ---
-# api.py가 메인 앱 역할을 하도록 app 객체 생성
-app = FastAPI(title="TRPG Studio", version="1.0.0")
-
 templates = Jinja2Templates(directory="templates")
 #router = APIRouter(prefix="/views", tags=["views"])
 
@@ -253,37 +248,41 @@ async def list_scenarios(
 
         if is_my_page and is_owner:
             buttons = f"""
-                    <div class="flex gap-2 mt-auto pt-2">
-                        <button onclick="playScenario('{fid}', this)" class="flex-1 py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2">
-                            <i data-lucide="play" class="w-4 h-4"></i> PLAY
-                        </button>
-                        <button onclick="editScenario('{fid}')" class="p-3 bg-rpg-800 border border-rpg-700 rounded-lg hover:border-rpg-accent text-gray-400 hover:text-white transition-colors" title="수정">
-                            <i data-lucide="edit" class="w-4 h-4"></i>
-                        </button>
-                        <button onclick="deleteScenario('{fid}', this)" class="p-3 bg-rpg-800 border border-rpg-700 rounded-lg hover:border-danger hover:text-danger text-gray-400 transition-colors" title="삭제">
-                            <i data-lucide="trash" class="w-4 h-4"></i>
-                        </button>
-                    </div>
-                    """
+            <div class="flex gap-2 mt-auto pt-2">
+                <button onclick="playScenario('{fid}', this)" class="flex-1 py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2">
+                    <i data-lucide="play" class="w-4 h-4"></i> PLAY
+                </button>
+                <button onclick="editScenario('{fid}')" class="p-3 bg-rpg-800 border border-rpg-700 rounded-lg hover:border-rpg-accent text-gray-400 hover:text-white transition-colors" title="수정">
+                    <i data-lucide="edit" class="w-4 h-4"></i>
+                </button>
+                <button onclick="deleteScenario('{fid}', this)" class="p-3 bg-rpg-800 border border-rpg-700 rounded-lg hover:border-danger hover:text-danger text-gray-400 transition-colors" title="삭제">
+                    <i data-lucide="trash" class="w-4 h-4"></i>
+                </button>
+            </div>
+            """
+        else:
+             buttons = f"""
+            <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 mt-auto">
+                <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
+            </button>
+            """
 
         html += f"""
-                  <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] transition-all flex flex-col h-full">
-                    <div class="relative h-48 overflow-hidden bg-black">
-                        <img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=800" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
-                        <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-rpg-accent border border-rpg-accent/30">
-                            Fantasy
-                        </div>
-                    </div>
-                    <div class="p-5 flex-1 flex flex-col gap-3">
-                        <div>
-                            <h3 class="text-lg font-bold text-white mb-1 font-title tracking-wide truncate flex items-center gap-2">
-                                {title} {status_badge}
-                            </h3>
-                            <p class="text-sm text-gray-400 line-clamp-2 min-h-[2.5rem]">{desc}</p>
-                            
-                            
-                            </div>
-
+        <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] transition-all flex flex-col h-full">
+            <div class="relative h-48 overflow-hidden bg-black">
+                <img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=800" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
+                <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-rpg-accent border border-rpg-accent/30">
+                    Fantasy
+                </div>
+            </div>
+            <div class="p-5 flex-1 flex flex-col gap-3">
+                <div>
+                    <h3 class="text-lg font-bold text-white mb-1 font-title tracking-wide truncate flex items-center gap-2">
+                        {title} {status_badge}
+                    </h3>
+                    <p class="text-sm text-gray-400 line-clamp-2 min-h-[2.5rem]">{desc}</p>
+                </div>
+                
                 {buttons}
             </div>
         </div>
@@ -596,6 +595,17 @@ async def delete_preset(
         db.rollback()
         logger.error(f"프리셋 삭제 실패: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+@api_router.post('/load_preset')
+async def load_preset_old(filename: str = Form(...), user: CurrentUser = Depends(get_current_user_optional), db: Session = Depends(get_db)):
+    try:
+        preset = db.query(Preset).filter(Preset.filename == filename).first()
+        if not preset: return HTMLResponse('<div class="error">로드 실패</div>')
+        game_state.config['title'] = preset.name
+        return HTMLResponse(f'<div class="success">프리셋 로드 완료! "{preset.name}"</div><script>lucide.createIcons();</script>')
+    except Exception as e:
+        return HTMLResponse(f'<div class="error">로드 오류: {e}</div>')
 
 # --- [Draft 시스템 API] ---
 
