@@ -42,9 +42,10 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="TRPG Studio", version="1.0.0")
 
 templates = Jinja2Templates(directory="templates")
-router = APIRouter(prefix="/views", tags=["views"])
+#router = APIRouter(prefix="/views", tags=["views"])
 
 # 라우터 정의 (기존과 동일)
+views_router = APIRouter(prefix="/views", tags=["views"])
 api_router = APIRouter(prefix="/api", tags=["api"])
 
 
@@ -96,12 +97,8 @@ class AuditRequest(BaseModel):
 # ==========================================
 # [View 라우트] 화면 연결 (마이페이지 포함)
 # ==========================================
-@router.get('/mypage', response_class=HTMLResponse)
+@views_router.get('/mypage', response_class=HTMLResponse)
 async def mypage_view(request: Request, user: CurrentUser = Depends(get_current_user_optional)):
-    """
-    마이페이지 뷰를 반환합니다.
-    """
-    # 템플릿에 user 정보를 함께 전달하여 로그인 상태를 처리
     return templates.TemplateResponse("mypage.html", {"request": request, "user": user})
 
 
