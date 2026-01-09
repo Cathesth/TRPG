@@ -78,18 +78,21 @@ def normalize_text(text: str) -> str:
     return text.lower().replace(" ", "")
 
 
-def format_player_status(player_vars: Dict[str, Any]) -> str:
+def format_player_status(scenario: Dict[str, Any]) -> str:
     """
-    플레이어 상태를 동적으로 포맷팅
-    시나리오의 variables 정의에 따라 자동으로 상태를 문자열로 변환
+    시나리오의 initial_state를 기반으로 플레이어 상태를 포맷팅
+    player_vars가 아닌 initial_state만 참조
     """
+    initial_state = scenario.get('initial_state', {})
     status_lines = []
-    inventory = player_vars.get('inventory', [])
+    inventory = initial_state.get('inventory', [])
 
-    for key, value in player_vars.items():
+    for key, value in initial_state.items():
         if key == 'inventory':
             continue
         if isinstance(value, (int, float)):
+            status_lines.append(f"- {key}: {value}")
+        elif isinstance(value, str):
             status_lines.append(f"- {key}: {value}")
 
     # 인벤토리는 마지막에 추가
@@ -321,8 +324,8 @@ def intent_parser_node(state: PlayerState):
             return _fast_track_intent_parser(state, user_input, curr_scene, scenario, endings)
 
         # 프롬프트 생성
-        player_vars = state.get('player_vars', {})
-        player_status = format_player_status(player_vars)
+        scenario = state.get('scenario', {})
+        player_status = format_player_status(scenario)
 
         intent_prompt = intent_classifier_template.format(
             player_status=player_status,
@@ -617,8 +620,8 @@ def npc_node(state: PlayerState):
     prompt_template = prompts.get('npc_dialogue', '')
 
     if prompt_template:
-        player_vars = state.get('player_vars', {})
-        player_status = format_player_status(player_vars)
+        scenario = state.get('scenario', {})
+        player_status = format_player_status(scenario)
 
         prompt = prompt_template.format(
             player_status=player_status,
@@ -1033,6 +1036,43 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                     yield random.choice(get_battle_stalemate_messages())
                 return
 
+        # 일반 씬에서 chat 행동 시 힌트 모드 (transitions 기반)
+        if parsed_intent == 'chat' and not npc_output:
+            transitions = curr_scene.get('transitions', [])
+            filtered_transitions = filter_negative_transitions(transitions, scenario)
+
+            if filtered_transitions:
+                # transitions_hints 생성
+                transitions_hints = "\n".join([f"- {t.get('trigger', '')}" for t in filtered_transitions])
+
+                hint_mode_template = prompts.get('hint_mode', '')
+                if hint_mode_template:
+                    scenario_data = state.get('scenario', {})
+                    player_status = format_player_status(scenario_data)
+
+                    hint_prompt = hint_mode_template.format(
+                        user_input=user_input,
+                        player_status=player_status,
+                        scene_title=scene_title,
+                        transitions_hints=transitions_hints
+                    )
+                    try:
+                        api_key = os.getenv("OPENROUTER_API_KEY")
+                        model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+                        llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
+                        for chunk in llm.stream(hint_prompt):
+                            if chunk.content: yield chunk.content
+                        return
+                    except Exception as e:
+                        logger.error(f"Hint mode generation error: {e}")
+                        # 폴백
+                        yield "주변을 둘러보니 여러 가지 시도해볼 수 있을 것 같습니다."
+                        return
+
+            # transitions가 없으면 일반 메시지
+            yield "당신은 잠시 주변을 살핍니다."
+            return
+
     # =============================================================================
     # [MODE 2] 씬 변경됨 -> 장면 묘사
     # =============================================================================
@@ -1047,8 +1087,8 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     scene_prompt_template = prompts.get('scene_description', '')
 
     if scene_prompt_template:
-        player_vars = state.get('player_vars', {})
-        player_status = format_player_status(player_vars)
+        scenario_data = state.get('scenario', {})
+        player_status = format_player_status(scenario_data)
 
         # 씬 변경 시 유저 입력 컨텍스트 포함
         if user_input:
