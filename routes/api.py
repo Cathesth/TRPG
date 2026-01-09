@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 # builder_agent에서 필요한 함수들 임포트
 
 
+
 from builder_agent import generate_scenario_from_graph, set_progress_callback, generate_single_npc
 from core.state import game_state
 from core.utils import parse_request_data, pick_start_scene_id, validate_scenario_graph, can_publish_scenario
@@ -249,7 +250,7 @@ async def list_scenarios(
         if is_my_page and is_owner:
             buttons = f"""
             <div class="flex gap-2 mt-auto pt-2">
-                <button onclick="playScenario('{fid}', this)" class="flex-1 py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2">
+                <button onclick="playScenario('{fid}', this)" class="flex-1 py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md">
                     <i data-lucide="play" class="w-4 h-4"></i> PLAY
                 </button>
                 <button onclick="editScenario('{fid}')" class="p-3 bg-rpg-800 border border-rpg-700 rounded-lg hover:border-rpg-accent text-gray-400 hover:text-white transition-colors" title="수정">
@@ -1054,10 +1055,8 @@ async def get_scenarios_data(
 ):
     """빌더 모달용 JSON 응답 API"""
     user_id = user.id if user.is_authenticated else None
-
     # ScenarioService를 통해 데이터 배열(list)을 가져옴
     file_infos = ScenarioService.list_scenarios(sort, user_id, filter)
-
     # 별도의 HTML 처리 없이 리스트 그대로 반환 (FastAPI가 JSON으로 자동 변환)
     return file_infos
 
