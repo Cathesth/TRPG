@@ -101,8 +101,28 @@ class ScenarioService:
 
             full_data = scenario.data
             s_content = full_data.get('scenario', full_data)
-            initial_vars = full_data.get('player_vars', s_content.get('initial_state', {}))
 
+            # 시나리오의 variables 필드에서 initial_state 구성
+            initial_vars = {}
+
+            # 1. 시나리오의 variables 필드 파싱
+            if 'variables' in s_content and isinstance(s_content['variables'], list):
+                for var in s_content['variables']:
+                    if isinstance(var, dict) and 'name' in var and 'initial_value' in var:
+                        var_name = var['name'].lower()
+                        initial_vars[var_name] = var['initial_value']
+
+            # 2. 시나리오의 initial_state 필드도 확인 (하위 호환성)
+            if 'initial_state' in s_content:
+                initial_vars.update(s_content['initial_state'])
+
+            # 3. player_vars도 확인 (하위 호환성)
+            if 'player_vars' in full_data:
+                for key, value in full_data['player_vars'].items():
+                    if key not in initial_vars:
+                        initial_vars[key] = value
+
+            # 4. DEFAULT_PLAYER_VARS로 누락된 필드만 채움
             for key, value in DEFAULT_PLAYER_VARS.items():
                 if key not in initial_vars:
                     initial_vars[key] = value
