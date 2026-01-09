@@ -316,36 +316,35 @@
                         if (!response.ok) throw new Error("시나리오 데이터를 가져오지 못함");
 
                         const result = await response.json();
-                        console.log("서버 응답 데이터:", result); // 구조 확인용 로그
+                        console.log("서버 응답:", result);
 
-                        // 서버 응답이 { success: true, data: { nodes: [], edges: [], npcs: [] } } 형태인지 확인
-                        // 만약 result.data.scenario 안에 데이터가 있다면 result.data.scenario를 써야 함
-                        const scenarioData = result.data.scenario || result.data;
+                        // 핵심: 보내준 JSON 구조에 따라 result.data.scenario.raw_graph를 참조해야 함
+                        const scenarioObj = result.data?.scenario;
+                        const graphData = scenarioObj?.raw_graph;
 
-                        if (scenarioData && (scenarioData.nodes || scenarioData.scenes)) {
-                            // 1. 노드 설정 (서버에 따라 nodes 대신 scenes를 쓸 수도 있음)
-                            const nodesToSet = scenarioData.nodes || scenarioData.scenes || [];
-                            setNodes(nodesToSet);
+                        if (graphData && graphData.nodes) {
+                            // 1. 노드 데이터 세팅
+                            setNodes(graphData.nodes);
 
-                            // 2. 연결선 설정 (edges 또는 connections)
-                            setConnections(scenarioData.edges || scenarioData.connections || []);
+                            // 2. 연결선(edges) 데이터 세팅
+                            setConnections(graphData.edges || []);
 
-                            // 3. NPC 및 적 목록 설정
-                            const npcs = scenarioData.npcs || [];
-                            setGlobalNpcs(npcs.filter(n => !n.isEnemy && !n.is_enemy));
-                            setGlobalEnemies(npcs.filter(n => n.isEnemy || n.is_enemy));
+                            // 3. NPC 데이터 세팅 (scenarioObj.npcs에 리스트가 있음)
+                            if (scenarioObj.npcs) {
+                                setGlobalNpcs(scenarioObj.npcs.filter(n => !n.isEnemy && !n.is_enemy));
+                                setGlobalEnemies(scenarioObj.npcs.filter(n => n.isEnemy || n.is_enemy));
+                            }
 
-                            // 4. 상태 업데이트
+                            // 4. 기타 상태 업데이트
                             setScenarioId(id);
                             setIsEditMode(true);
 
                             // 주소창 업데이트
                             window.history.pushState({}, '', `/views/scenes/edit/${id}`);
 
-                            showToast("시나리오를 성공적으로 불러왔음!", "success");
+                            showToast("시나리오 로드 완료!", "success");
                         } else {
-                            console.error("형식 오류 데이터:", scenarioData);
-                            throw new Error("데이터 구조(nodes/scenes)를 찾을 수 없음");
+                            throw new Error("JSON 내부에 raw_graph 데이터를 찾을 수 없음");
                         }
                     } catch (e) {
                         console.error("Load Error:", e);
@@ -353,7 +352,7 @@
                     } finally {
                         setIsLoading(false);
                     }
-};
+                };
                 const [dbNpcList, setDbNpcList] = useState([]);
 
                 // 모델 선택
