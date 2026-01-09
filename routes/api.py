@@ -1039,10 +1039,21 @@ async def redo_action(scenario_id: int, user: CurrentUser = Depends(get_current_
         "undo_redo_status": undo_redo_status
     }
 
-@api_router.get("/scenarios")
-async def get_scenarios(filter: str = None, user=Depends(get_current_user)):
-    # 내 시나리오 목록을 가져오는 로직 (ScenarioService 활용 등)
-    pass
+
+@api_router.get('/scenarios/data')
+async def get_scenarios_data(
+        sort: str = 'newest',
+        filter: str = 'my',  # 빌더에서는 보통 '내 시나리오'를 불러오므로 'my' 권장
+        user: CurrentUser = Depends(get_current_user)
+):
+    """빌더 모달용 JSON 응답 API"""
+    user_id = user.id if user.is_authenticated else None
+
+    # ScenarioService를 통해 데이터 배열(list)을 가져옴
+    file_infos = ScenarioService.list_scenarios(sort, user_id, filter)
+
+    # 별도의 HTML 처리 없이 리스트 그대로 반환 (FastAPI가 JSON으로 자동 변환)
+    return file_infos
 
 @api_router.post('/draft/{scenario_id}/history/restore/{history_id}')
 async def restore_to_history_point(scenario_id: int, history_id: int, user: CurrentUser = Depends(get_current_user)):
