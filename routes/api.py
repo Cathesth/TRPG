@@ -230,37 +230,24 @@ async def list_scenarios(
         status_class = "bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"
         status_badge = f'<span class="ml-2 text-[10px] {status_class} px-1 rounded font-bold">{status_text}</span>' if is_owner else ''
 
-        # 마이페이지와 메인페이지 카드 스타일 통합
-        is_my_page = (filter == 'my')
+        # [핵심 수정] 마이페이지 필터이거나, 혹은 로그인한 사용자가 작성자인 경우 관리 버튼 노출
+        # 이렇게 하면 'My Archives'에서는 무조건 관리 버튼이 보입니다.
+        show_admin_buttons = (filter == 'my') or is_owner
 
-        # 버튼 생성
-
-        buttons = f"""
-
-                    <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 mt-auto">
-
-                        <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
-
-                    </button>
-
-                """
-
-        # 마이페이지 + 소유자일 경우 관리 버튼 추가
-
-        if is_my_page and is_owner:
+        if show_admin_buttons:
             buttons = f"""
-            <div class="flex gap-2 mt-auto pt-2">
-                <button onclick="playScenario('{fid}', this)" class="flex-1 py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md">
-                    <i data-lucide="play" class="w-4 h-4"></i> PLAY
-                </button>
-                <button onclick="editScenario('{fid}')" class="p-3 bg-rpg-800 border border-rpg-700 rounded-lg hover:border-rpg-accent text-gray-400 hover:text-white transition-colors" title="수정">
-                    <i data-lucide="edit" class="w-4 h-4"></i>
-                </button>
-                <button onclick="deleteScenario('{fid}', this)" class="p-3 bg-rpg-800 border border-rpg-700 rounded-lg hover:border-danger hover:text-danger text-gray-400 transition-colors" title="삭제">
-                    <i data-lucide="trash" class="w-4 h-4"></i>
-                </button>
-            </div>
-            """
+                    <div class="flex gap-2 mt-auto pt-2">
+                        <button onclick="playScenario('{fid}', this)" class="flex-1 py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700" title="플레이">
+                            <i data-lucide="play" class="w-4 h-4"></i> PLAY
+                        </button>
+                        <button onclick="editScenario('{fid}')" class="p-3 bg-rpg-800 border border-rpg-700 rounded-lg hover:border-rpg-accent text-gray-400 hover:text-white transition-colors" title="수정">
+                            <i data-lucide="edit" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="deleteScenario('{fid}', this)" class="p-3 bg-rpg-800 border border-rpg-700 rounded-lg hover:border-danger hover:text-danger text-gray-400 transition-colors" title="삭제">
+                            <i data-lucide="trash" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    """
         else:
              buttons = f"""
             <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 mt-auto">
