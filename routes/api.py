@@ -40,7 +40,7 @@ templates = Jinja2Templates(directory="templates")
 #router = APIRouter(prefix="/views", tags=["views"])
 
 # 라우터 정의 (기존과 동일)
-views_router = APIRouter(prefix="/views", tags=["views"])
+mypage_router = APIRouter(prefix="/views", tags=["views"])
 api_router = APIRouter(prefix="/api", tags=["api"])
 
 
@@ -92,7 +92,7 @@ class AuditRequest(BaseModel):
 # ==========================================
 # [View 라우트] 화면 연결 (마이페이지 포함)
 # ==========================================
-@views_router.get('/mypage', response_class=HTMLResponse)
+@mypage_router.get('/mypage', response_class=HTMLResponse)
 async def mypage_view(request: Request, user: CurrentUser = Depends(get_current_user_optional)):
     return templates.TemplateResponse("mypage.html", {"request": request, "user": user})
 
