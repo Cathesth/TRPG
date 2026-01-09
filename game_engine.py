@@ -500,14 +500,21 @@ NPC로서 1-2문장으로 응답하세요."""
         llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
         response = llm.invoke(prompt).content.strip()
 
-        # [추가] 응답 검증 - 사용자 입력을 그대로 반복하는 경우 필터링
+        # [추가] 응답 검증 - 사용자 입력을 그대로 반복하는 경우 LLM으로 재생성
         normalized_input = user_input.lower().replace(" ", "")
         normalized_response = response.lower().replace(" ", "")
 
         if normalized_input in normalized_response and len(normalized_response) < len(normalized_input) + 10:
-            # 사용자 입력을 단순 반복한 경우 기본 응답 생성
-            logger.warning(f"⚠️ NPC response too similar to user input, using fallback")
-            response = f"(잠시 생각하더니) 알겠습니다."
+            # 사용자 입력을 단순 반복한 경우 폴백 프롬프트로 재시도
+            logger.warning(f"⚠️ NPC response too similar to user input, retrying with fallback prompt")
+            fallback_template = prompts.get('npc_fallback', '')
+            if fallback_template:
+                fallback_prompt = fallback_template.format(
+                    npc_name=npc_info['name'],
+                    npc_role=npc_info['role'],
+                    user_input=user_input
+                )
+                response = llm.invoke(fallback_prompt).content.strip()
 
         state['npc_output'] = response
 
@@ -518,13 +525,28 @@ NPC로서 1-2문장으로 응답하세요."""
         logger.info(f"💬 [NPC] {target_npc_name}: {response}")
     except Exception as e:
         logger.error(f"NPC generation error: {e}")
-        state['npc_output'] = f"(말없이 고개를 끄덕입니다)"
+        # 에러 시에도 LLM으로 간단한 응답 생성 시도
+        try:
+            fallback_template = prompts.get('npc_fallback', '')
+            if fallback_template:
+                fallback_prompt = fallback_template.format(
+                    npc_name=npc_info['name'],
+                    npc_role=npc_info['role'],
+                    user_input=user_input
+                )
+                api_key = os.getenv("OPENROUTER_API_KEY")
+                llm = get_cached_llm(api_key=api_key, model_name='openai/gpt-3.5-turbo', streaming=False)
+                state['npc_output'] = llm.invoke(fallback_prompt).content.strip()
+            else:
+                state['npc_output'] = ""
+        except Exception:
+            state['npc_output'] = ""
 
     return state
 
 
 def check_npc_appearance(state: PlayerState) -> str:
-    """NPC 및 적 등장 (템플릿 기반)"""
+    """NPC 및 적 등장 (LLM 기반 생성)"""
     scenario = state['scenario']
     curr_id = state['current_scene_id']
 
@@ -539,7 +561,8 @@ def check_npc_appearance(state: PlayerState) -> str:
     # [FIX] NPC와 적을 모두 처리
     npc_names = curr_scene.get('npcs', [])
     enemy_names = curr_scene.get('enemies', [])
-    scene_type = curr_scene.get('type', 'normal')  # [FIX] 장면 유형 확인
+    scene_type = curr_scene.get('type', 'normal')
+    scene_title = curr_scene.get('title', 'Untitled')
 
     if not npc_names and not enemy_names: return ""
 
@@ -550,43 +573,110 @@ def check_npc_appearance(state: PlayerState) -> str:
     state['player_vars'][scene_history_key] = True
     introductions = []
 
-    # [FIX] 장면 유형에 따른 메시지 차별화
+    # YAML에서 프롬프트 로드
+    prompts = load_player_prompts()
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+
+    # [FIX] 장면 유형에 따른 메시지 - LLM으로 생성
     if scene_type == 'battle':
-        introductions.append("""
-        <div class='battle-alert text-red-400 font-bold my-3 p-3 bg-red-900/30 rounded border-2 border-red-500 animate-pulse'>
-            ⚔️ 전투 시작! 적과의 전투가 시작됩니다!
-        </div>
-        """)
+        battle_start_template = prompts.get('battle_start', '')
+        if battle_start_template:
+            battle_start_prompt = battle_start_template.format(
+                scene_title=scene_title,
+                enemy_names=', '.join(enemy_names) if enemy_names else '알 수 없는 적'
+            )
+            try:
+                llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
+                battle_msg = llm.invoke(battle_start_prompt).content.strip()
+                introductions.append(f"""
+                <div class='battle-alert text-red-400 font-bold my-3 p-3 bg-red-900/30 rounded border-2 border-red-500 animate-pulse'>
+                    ⚔️ {battle_msg}
+                </div>
+                """)
+            except Exception as e:
+                logger.error(f"Battle start message generation error: {e}")
+                introductions.append("""
+                <div class='battle-alert text-red-400 font-bold my-3 p-3 bg-red-900/30 rounded border-2 border-red-500 animate-pulse'>
+                    ⚔️ 전투가 시작됩니다!
+                </div>
+                """)
 
-    # NPC 등장
+    # NPC 등장 - LLM으로 생성
     if npc_names:
-        npc_action_templates = [
-            "당신을 바라봅니다.", "무언가를 하고 있습니다.", "조용히 서 있습니다.",
-            "경계하는 눈빛입니다.", "당신을 흥미롭게 쳐다봅니다."
-        ]
+        npc_appearance_template = prompts.get('npc_appearance', '')
         for npc_name in npc_names:
-            action = random.choice(npc_action_templates)
-            intro_html = f"""
-            <div class='npc-intro text-green-300 italic my-2 p-2 bg-green-900/20 rounded border-l-2 border-green-500'>
-                👀 <span class='font-bold'>{npc_name}</span>이(가) {action}
-            </div>
-            """
-            introductions.append(intro_html)
+            # NPC 역할 찾기
+            npc_role = "Unknown"
+            for npc in scenario.get('npcs', []):
+                if npc.get('name') == npc_name:
+                    npc_role = npc.get('role', 'Unknown')
+                    break
 
-    # [FIX] 적 등장 처리
+            if npc_appearance_template:
+                npc_prompt = npc_appearance_template.format(
+                    scene_title=scene_title,
+                    npc_name=npc_name,
+                    npc_role=npc_role
+                )
+                try:
+                    llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
+                    npc_action = llm.invoke(npc_prompt).content.strip()
+                    intro_html = f"""
+                    <div class='npc-intro text-green-300 italic my-2 p-2 bg-green-900/20 rounded border-l-2 border-green-500'>
+                        👀 {npc_action}
+                    </div>
+                    """
+                    introductions.append(intro_html)
+                except Exception as e:
+                    logger.error(f"NPC appearance generation error: {e}")
+                    intro_html = f"""
+                    <div class='npc-intro text-green-300 italic my-2 p-2 bg-green-900/20 rounded border-l-2 border-green-500'>
+                        👀 <span class='font-bold'>{npc_name}</span>이(가) 당신을 바라봅니다.
+                    </div>
+                    """
+                    introductions.append(intro_html)
+            else:
+                intro_html = f"""
+                <div class='npc-intro text-green-300 italic my-2 p-2 bg-green-900/20 rounded border-l-2 border-green-500'>
+                    👀 <span class='font-bold'>{npc_name}</span>이(가) 당신을 바라봅니다.
+                </div>
+                """
+                introductions.append(intro_html)
+
+    # [FIX] 적 등장 처리 - LLM으로 생성
     if enemy_names:
-        enemy_action_templates = [
-            "적대적인 기색을 보입니다!", "공격 태세를 갖춥니다!", "위협적으로 다가옵니다!",
-            "살기를 내뿜습니다!", "전투를 준비합니다!"
-        ]
+        enemy_appearance_template = prompts.get('enemy_appearance', '')
         for enemy_name in enemy_names:
-            action = random.choice(enemy_action_templates)
-            intro_html = f"""
-            <div class='enemy-intro text-red-400 font-bold my-2 p-2 bg-red-900/30 rounded border-l-2 border-red-500'>
-                ⚔️ <span class='font-bold'>{enemy_name}</span>이(가) 나타났습니다! {action}
-            </div>
-            """
-            introductions.append(intro_html)
+            if enemy_appearance_template:
+                enemy_prompt = enemy_appearance_template.format(
+                    scene_title=scene_title,
+                    enemy_name=enemy_name
+                )
+                try:
+                    llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
+                    enemy_action = llm.invoke(enemy_prompt).content.strip()
+                    intro_html = f"""
+                    <div class='enemy-intro text-red-400 font-bold my-2 p-2 bg-red-900/30 rounded border-l-2 border-red-500'>
+                        ⚔️ {enemy_action}
+                    </div>
+                    """
+                    introductions.append(intro_html)
+                except Exception as e:
+                    logger.error(f"Enemy appearance generation error: {e}")
+                    intro_html = f"""
+                    <div class='enemy-intro text-red-400 font-bold my-2 p-2 bg-red-900/30 rounded border-l-2 border-red-500'>
+                        ⚔️ <span class='font-bold'>{enemy_name}</span>이(가) 나타났습니다!
+                    </div>
+                    """
+                    introductions.append(intro_html)
+            else:
+                intro_html = f"""
+                <div class='enemy-intro text-red-400 font-bold my-2 p-2 bg-red-900/30 rounded border-l-2 border-red-500'>
+                    ⚔️ <span class='font-bold'>{enemy_name}</span>이(가) 나타났습니다!
+                </div>
+                """
+                introductions.append(intro_html)
 
     return "\n".join(introductions)
 
