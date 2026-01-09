@@ -152,24 +152,22 @@
                 formData.append('filename', fid);
 
                 const res = await fetch('/api/load_scenario', {
-                    method: 'POST',
-                    body: formData
-                });
+                 method: 'POST',
+                 body: formData
+                 });
 
                 if (res.ok) {
-                    window.location.href = '/views/player';
-                } else {
-                    alert('시나리오를 불러오는 데 실패했습니다.');
+                 window.location.href = '/views/player';
+                 }else {
+                    alert('로드 실패');
                     btn.innerHTML = originalText;
                     btn.disabled = false;
-                    lucide.createIcons();
-                }
+                    }
             } catch (e) {
-                console.error('Play Error:', e);
                 btn.innerHTML = originalText;
                 btn.disabled = false;
-                lucide.createIcons();
-            }
+               }
+
         };
 
 
@@ -202,27 +200,13 @@
             }
         });
 
-        document.body.addEventListener('htmx:error', function(evt) {
-            console.error('HTMX Error:', evt.detail);
-        });
+         // HTMX 이벤트 리스너
 
-        // 사이드바 프로필 클릭 시 마이페이지로 이동하는 로직은 HTML href='/views/mypage'로 처리됨
+        document.body.addEventListener('htmx:afterOnLoad', function(evt) {
 
-        document.body.addEventListener('htmx:afterSwap', function(evt) {
-            lucide.createIcons();
-            // 백엔드에서 통일된 클래스로 내려주므로 추가 JS 스타일링이 필요 없음
-        });
+            if (evt.detail.target.id === "my-scenario-grid") { lucide.createIcons(); }
+          });
 
-        // 시나리오 삭제/플레이/수정 함수는 index.html과 동일하게 window 전역 객체에 등록하여 사용
-        window.deleteScenario = async function(filename, btn) {
-            if(!confirm('정말 삭제하시겠습니까?')) return;
-            const res = await fetch('/api/delete_scenario', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({filename: filename})
-            });
-            if((await res.json()).success) window.location.reload();
-        };
     </script>
 </body>
 </html>

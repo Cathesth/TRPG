@@ -13,12 +13,9 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 # builder_agent에서 필요한 함수들 임포트
-from builder_agent import (
-    generate_scenario_from_graph,
-    set_progress_callback,
-    generate_single_npc
-)
 
+
+from builder_agent import generate_scenario_from_graph, set_progress_callback, generate_single_npc
 from core.state import game_state
 from core.utils import parse_request_data, pick_start_scene_id, validate_scenario_graph, can_publish_scenario
 from services.scenario_service import ScenarioService
@@ -215,33 +212,25 @@ async def list_scenarios(
 
         # 카드 HTML (mypage.html에서 사용한 고급스러운 스타일로 통일)
         html += f"""
-        <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] transition-all flex flex-col h-full">
+          <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent transition-all flex flex-col h-full">
             <div class="relative h-48 overflow-hidden">
-                <img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=800" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
-                <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-rpg-accent border border-rpg-accent/30">SCENARIO</div>
+                <img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=800" class="w-full h-full object-cover">
             </div>
-            <div class="p-5 flex-1 flex flex-col gap-3 bg-rpg-800">
-                <h3 class="text-lg font-bold text-white font-title tracking-wide truncate">{title}</h3>
+            <div class="p-5 flex-1 flex flex-col gap-3">
+                <h3 class="text-lg font-bold text-white truncate">{title}</h3>
                 <p class="text-sm text-gray-400 line-clamp-2">{desc}</p>
-
                 <div class="mt-auto pt-2 flex gap-2">
-                    <button onclick="playScenario('{fid}', this)" class="flex-1 py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 border border-rpg-700">
-                        <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
-                    </button>
+                    <button onclick="playScenario('{fid}', this)" class="flex-1 py-3 bg-rpg-700 hover:bg-rpg-accent text-white font-bold rounded-lg transition-all">PLAY</button>
                     {" " if not is_my_page else f'''
-                    <button onclick="editScenario('{fid}')" class="p-2 rounded-lg bg-rpg-900 text-gray-400 hover:text-white border border-rpg-700 hover:border-rpg-accent transition-all" title="수정">
-                        <i data-lucide="edit" class="w-4 h-4"></i>
-                    </button>
-                    <button onclick="deleteScenario('{fid}', this)" class="p-2 rounded-lg bg-rpg-900 text-gray-400 hover:text-rpg-danger border border-rpg-700 hover:border-rpg-danger transition-all" title="삭제">
-                        <i data-lucide="trash" class="w-4 h-4"></i>
-                    </button>
+                    <button onclick="editScenario('{fid}')" class="p-2 rounded-lg bg-rpg-900 text-gray-400 hover:text-white border border-rpg-700"><i data-lucide="edit" class="w-4 h-4"></i></button>
+                    <button onclick="deleteScenario('{fid}', this)" class="p-2 rounded-lg bg-rpg-900 text-gray-400 hover:text-rpg-danger border border-rpg-700"><i data-lucide="trash" class="w-4 h-4"></i></button>
                     '''}
                 </div>
             </div>
         </div>
         """
-    html += '<script>lucide.createIcons();</script>'
-    return html
+
+    return html + '<script>lucide.createIcons();</script>'
 
 
 @api_router.post('/load_scenario')
