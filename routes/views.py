@@ -95,14 +95,12 @@ async def view_scenes(request: Request, user=Depends(get_current_user_optional))
 async def view_scenes_edit(request: Request, scenario_id: str, user=Depends(get_current_user)):
     """
     기존 씬 맵 편집 라우트를 시나리오 빌더(builder_view.html)로 연결
-    이제 scenes_view.html 대신 builder_view.html을 사용함
     """
     from services.scenario_service import ScenarioService
 
-    # 시나리오 권한 및 존재 여부 확인
+    # 1. 시나리오 권한 및 존재 여부 확인
     result, error = ScenarioService.get_scenario_for_edit(scenario_id, user.id)
     if error:
-        # 권한이 없는 경우 index.html로 리다이렉트하거나 에러 표시
         return templates.TemplateResponse("index.html", {
             "request": request,
             "error": "접근 권한이 없거나 존재하지 않는 시나리오입니다.",
@@ -110,37 +108,12 @@ async def view_scenes_edit(request: Request, scenario_id: str, user=Depends(get_
             "user": user
         })
 
-    # builder_view.html을 반환하여 새로운 빌더 UI 사용
+    # 2. builder_view.html 반환 (이게 실행되면 함수 종료)
     return templates.TemplateResponse("builder_view.html", {
         "request": request,
         "version": get_full_version(),
         "user": user,
         "scenario_id": scenario_id
-    })
-
-    scenario = result['scenario']
-    title = scenario.get('title', 'Untitled')
-
-    # Mermaid 서비스로 차트 생성
-    chart_data = MermaidService.generate_chart(scenario, None)
-
-    return templates.TemplateResponse("scenes_view.html", {
-        "request": request,
-        "title": title,
-        "scenario": scenario,
-        "scenes": chart_data['filtered_scenes'],
-        "incoming_conditions": chart_data['incoming_conditions'],
-        "ending_incoming_conditions": chart_data['ending_incoming_conditions'],
-        "ending_names": chart_data['ending_names'],
-        "scene_names": chart_data['scene_names'],
-        "scene_display_ids": chart_data['scene_display_ids'],
-        "ending_display_ids": chart_data['ending_display_ids'],
-        "current_scene_id": None,
-        "mermaid_code": chart_data['mermaid_code'],
-        "edit_mode": True,
-        "scenario_id": scenario_id,
-        "version": get_full_version(),
-        "user": user
     })
 @views_router.get("/builder/npc-generator", response_class=HTMLResponse)
 async def view_npc_generator(request: Request):
