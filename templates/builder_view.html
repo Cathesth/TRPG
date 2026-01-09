@@ -1001,9 +1001,9 @@
                                             </>
                                         )}
 
-                                        {/* Scene Node Form */}
+                                        /* Scene Node Form 수정본 */
                                         {node.type === 'scene' && (
-                                            <>
+                                            <> {/* Fragment 시작 */}
                                                 <div><label className="text-xs text-gray-400 block mb-1">장면 유형</label>
                                                     <select className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" value={node.data.scene_type||'normal'} onChange={e=>updateNodeData('scene_type',e.target.value)}>
                                                         <option value="normal">일반 (Normal)</option>
@@ -1019,7 +1019,7 @@
                                                     <h3 className="text-xs font-bold text-gray-500 mb-2">선택 사항 (Optional)</h3>
                                                     <div className="mb-2"><label className="text-xs text-gray-400 block mb-1">추가 룰</label><textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={2} value={node.data.rule||''} onChange={e=>updateNodeData('rule', e.target.value)} /></div>
 
-                                                    {/* NPC 선택 영역 (글로벌 목록 사용) */}
+                                                    {/* NPC 선택 영역 */}
                                                     <div className="mt-3">
                                                         <div className="flex justify-between items-center mb-1">
                                                             <label className="text-xs text-green-400 font-bold">NPC 등장</label>
@@ -1043,10 +1043,7 @@
                                                                             />
                                                                             {n.name}
                                                                         </label>
-                                                                        <button
-                                                                            onClick={() => setNpcEditModal({open: true, npc: n, isEnemy: false})}
-                                                                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-600 rounded transition-opacity"
-                                                                        >
+                                                                        <button onClick={() => setNpcEditModal({open: true, npc: n, isEnemy: false})} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-600 rounded transition-opacity">
                                                                             <Icon name="edit" size={12} className="text-green-400"/>
                                                                         </button>
                                                                     </div>
@@ -1055,7 +1052,7 @@
                                                         </div>
                                                     </div>
 
-                                                    {/* 적 선택 영역 (글로벌 목록 사용) */}
+                                                    {/* 적 선택 영역 */}
                                                     <div className="mt-3">
                                                         <div className="flex justify-between items-center mb-1">
                                                             <label className="text-xs text-red-400 font-bold">적(Enemy) 등장</label>
@@ -1079,10 +1076,7 @@
                                                                             />
                                                                             {e.name} (LV.{e.difficulty})
                                                                         </label>
-                                                                        <button
-                                                                            onClick={() => setNpcEditModal({open: true, npc: e, isEnemy: true})}
-                                                                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-600 rounded transition-opacity"
-                                                                        >
+                                                                        <button onClick={() => setNpcEditModal({open: true, npc: e, isEnemy: true})} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-600 rounded transition-opacity">
                                                                             <Icon name="edit" size={12} className="text-red-400"/>
                                                                         </button>
                                                                     </div>
@@ -1090,8 +1084,9 @@
                                                             )}
                                                         </div>
                                                     </div>
-                                                </>
-                                            )}
+                                                </div>
+                                            </> // Fragment 마침
+                                        )}
 
                                         {/* Ending Node Form */}
                                         {node.type === 'ending' && (
