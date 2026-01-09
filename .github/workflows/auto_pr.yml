@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - ajh
+#      - ksy
+#      - jjw
 
 permissions:
   contents: write
@@ -19,6 +21,6 @@ jobs:
       - name: Create Pull Request
         uses: repo-sync/pull-request@v2
         with:
-          source_branch: "ajh"
+          source_branch: ${{ github.ref_name }}
           destination_branch: "develop"
           github_token: ${{ secrets.MY_PAT }}
