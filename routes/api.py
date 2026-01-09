@@ -977,6 +977,10 @@ async def redo_action(scenario_id: int, user: CurrentUser = Depends(get_current_
         "undo_redo_status": undo_redo_status
     }
 
+@api_router.get("/scenarios")
+async def get_scenarios(filter: str = None, user=Depends(get_current_user)):
+    # 내 시나리오 목록을 가져오는 로직 (ScenarioService 활용 등)
+    pass
 
 @api_router.post('/draft/{scenario_id}/history/restore/{history_id}')
 async def restore_to_history_point(scenario_id: int, history_id: int, user: CurrentUser = Depends(get_current_user)):

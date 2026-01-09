@@ -292,12 +292,14 @@
                 // 시나리오 목록 가져오기 함수
                 const handleOpenScenarioList = async () => {
                     try {
-                        const response = await fetch('/api/scenarios?filter=my'); // 내 시나리오 필터링
-                        const data = await response.json();
+                        const response = await fetch('/api/scenarios?filter=my'); // 이 경로가 서버에 실재해야 함
+                        if (!response.ok) throw new Error('서버 응답 이상');
+                        const data = await response.json(); // 여기서 에러 발생 중
                         setUserScenarios(data);
                         setIsScenarioListModalOpen(true);
                     } catch (e) {
-                        showToast("시나리오 목록을 불러오지 못했음: " + e.message, "error");
+                        console.error(e); // 콘솔에서 정확히 어떤 에러인지 확인 가능
+                        showToast("목록 로드 실패", "error");
                     }
                 };
 
