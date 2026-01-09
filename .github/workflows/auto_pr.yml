@@ -20,5 +20,5 @@ jobs:
         uses: repo-sync/pull-request@v2
         with:
           source_branch: "ajh"
-          destination_branch: "dev"
+          destination_branch: "develop"
           github_token: ${{ secrets.MY_PAT }}
