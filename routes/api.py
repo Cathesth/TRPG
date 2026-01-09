@@ -36,9 +36,14 @@ from routes.auth import get_current_user, get_current_user_optional, login_user,
 from models import get_db, Preset, CustomNPC
 
 logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/views", tags=["views"])
 templates = Jinja2Templates(directory="templates")
 
 api_router = APIRouter(prefix="/api", tags=["api"])
+
+
+
 
 
 # --- Pydantic 모델 정의 ---
@@ -180,10 +185,11 @@ async def reset_build_progress():
 # --- [시나리오 관리] ---
 
 @api_router.get('/scenarios', response_class=HTMLResponse)
+
 async def list_scenarios(
         request: Request,
         sort: str = 'newest',
-        filter: str = 'public',
+        filter: str = Query('public'), # 기본값 public
         limit: Optional[int] = None,
         user: CurrentUser = Depends(get_current_user_optional)
 ):
@@ -192,7 +198,8 @@ async def list_scenarios(
     file_infos = ScenarioService.list_scenarios(sort, user_id, filter, limit)
 
     if not file_infos:
-        return '<div class="col-span-full text-center text-gray-500 py-10">표시할 시나리오가 없습니다.</div>'
+        msg = "아직 생성한 시나리오가 없습니다." if filter == 'my' else "표시할 시나리오가 없습니다."
+        return f'<div class="col-span-full text-center text-gray-500 py-10">{msg}</div>'
 
     html = ""
     for info in file_infos:
@@ -222,10 +229,10 @@ async def list_scenarios(
                         <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
                     </button>
                     {" " if not is_my_page else f'''
-                    <button onclick="editScenario('{fid}')" class="p-2 rounded-lg bg-rpg-900 text-gray-400 hover:text-white border border-rpg-700 hover:border-rpg-accent transition-all">
+                    <button onclick="editScenario('{fid}')" class="p-2 rounded-lg bg-rpg-900 text-gray-400 hover:text-white border border-rpg-700 hover:border-rpg-accent transition-all" title="수정">
                         <i data-lucide="edit" class="w-4 h-4"></i>
                     </button>
-                    <button onclick="deleteScenario('{fid}', this)" class="p-2 rounded-lg bg-rpg-900 text-gray-400 hover:text-rpg-danger border border-rpg-700 hover:border-rpg-danger transition-all">
+                    <button onclick="deleteScenario('{fid}', this)" class="p-2 rounded-lg bg-rpg-900 text-gray-400 hover:text-rpg-danger border border-rpg-700 hover:border-rpg-danger transition-all" title="삭제">
                         <i data-lucide="trash" class="w-4 h-4"></i>
                     </button>
                     '''}
@@ -1016,3 +1023,16 @@ async def get_undo_redo_status(scenario_id: int, user: CurrentUser = Depends(get
     status = HistoryService.get_undo_redo_status(scenario_id, user.id)
 
     return {"success": True, **status}
+
+# api.py 파일의 해당 부분을 아래와 같이 수정하세요.
+
+# --- [시나리오 관리] ---
+
+# 1. 마이페이지 뷰를 /views/mypage 경로로 설정 (api_router가 아닌 router 사용)
+@router.get('/mypage', response_class=HTMLResponse)
+async def mypage_view(request: Request, user: CurrentUser = Depends(get_current_user_optional)):
+    """
+    마이페이지 뷰를 반환합니다.
+    """
+    return templates.TemplateResponse("mypage.html", {"request": request, "user": user})
+
