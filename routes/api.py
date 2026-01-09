@@ -4,7 +4,7 @@ import logging
 import time
 import threading
 from typing import Optional
-from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query
+from fastapi import FastAPI, APIRouter, Request, Depends, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -32,11 +32,19 @@ from routes.auth import get_current_user, get_current_user_optional, login_user,
 # [수정] NPC -> CustomNPC 로 변경 (models.py에 정의된 클래스명 사용)
 from models import get_db, Preset, CustomNPC
 
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/views", tags=["views"])
-templates = Jinja2Templates(directory="templates")
 
+# --- [FastAPI 앱 초기화] ---
+# api.py가 메인 앱 역할을 하도록 app 객체 생성
+app = FastAPI(title="TRPG Studio", version="1.0.0")
+
+templates = Jinja2Templates(directory="templates")
+router = APIRouter(prefix="/views", tags=["views"])
+
+# 라우터 정의 (기존과 동일)
 api_router = APIRouter(prefix="/api", tags=["api"])
 
 
@@ -83,6 +91,18 @@ class AuditRequest(BaseModel):
     scene_id: Optional[str] = None
     audit_type: str = 'full'
     model: Optional[str] = None
+
+
+# ==========================================
+# [View 라우트] 화면 연결 (마이페이지 포함)
+# ==========================================
+@router.get('/mypage', response_class=HTMLResponse)
+async def mypage_view(request: Request, user: CurrentUser = Depends(get_current_user_optional)):
+    """
+    마이페이지 뷰를 반환합니다.
+    """
+    # 템플릿에 user 정보를 함께 전달하여 로그인 상태를 처리
+    return templates.TemplateResponse("mypage.html", {"request": request, "user": user})
 
 
 # --- [인증 API] ---
@@ -191,6 +211,12 @@ async def list_scenarios(
         user: CurrentUser = Depends(get_current_user_optional)
 ):
     user_id = user.id if user.is_authenticated else None
+
+
+    # 마이페이지 필터일 때 로그인 체크
+    if filter == 'my' and not user_id:
+        return '<div class="col-span-full text-center text-gray-500 py-10">로그인이 필요합니다.</div>'
+
     # ScenarioService에서 데이터 가져오기
     file_infos = ScenarioService.list_scenarios(sort, user_id, filter, limit)
 
@@ -207,29 +233,64 @@ async def list_scenarios(
         is_owner = info['is_owner']
         is_public = info['is_public']
 
+        status_text = "PUBLIC" if is_public else "PRIVATE"
+        status_class = "bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"
+        status_badge = f'<span class="ml-2 text-[10px] {status_class} px-1 rounded font-bold">{status_text}</span>' if is_owner else ''
+
         # 마이페이지와 메인페이지 카드 스타일 통합
         is_my_page = (filter == 'my')
 
-        # 카드 HTML (mypage.html에서 사용한 고급스러운 스타일로 통일)
+        # 버튼 생성
+
+        buttons = f"""
+
+                    <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 mt-auto">
+
+                        <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
+
+                    </button>
+
+                """
+
+        # 마이페이지 + 소유자일 경우 관리 버튼 추가
+
+        if is_my_page and is_owner:
+            buttons = f"""
+                    <div class="flex gap-2 mt-auto pt-2">
+                        <button onclick="playScenario('{fid}', this)" class="flex-1 py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2">
+                            <i data-lucide="play" class="w-4 h-4"></i> PLAY
+                        </button>
+                        <button onclick="editScenario('{fid}')" class="p-3 bg-rpg-800 border border-rpg-700 rounded-lg hover:border-rpg-accent text-gray-400 hover:text-white transition-colors" title="수정">
+                            <i data-lucide="edit" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="deleteScenario('{fid}', this)" class="p-3 bg-rpg-800 border border-rpg-700 rounded-lg hover:border-danger hover:text-danger text-gray-400 transition-colors" title="삭제">
+                            <i data-lucide="trash" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    """
+
         html += f"""
-          <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent transition-all flex flex-col h-full">
-            <div class="relative h-48 overflow-hidden">
-                <img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=800" class="w-full h-full object-cover">
-            </div>
-            <div class="p-5 flex-1 flex flex-col gap-3">
-                <h3 class="text-lg font-bold text-white truncate">{title}</h3>
-                <p class="text-sm text-gray-400 line-clamp-2">{desc}</p>
-                <div class="mt-auto pt-2 flex gap-2">
-                    <button onclick="playScenario('{fid}', this)" class="flex-1 py-3 bg-rpg-700 hover:bg-rpg-accent text-white font-bold rounded-lg transition-all">PLAY</button>
-                    {" " if not is_my_page else f'''
-                    <button onclick="editScenario('{fid}')" class="p-2 rounded-lg bg-rpg-900 text-gray-400 hover:text-white border border-rpg-700"><i data-lucide="edit" class="w-4 h-4"></i></button>
-                    <button onclick="deleteScenario('{fid}', this)" class="p-2 rounded-lg bg-rpg-900 text-gray-400 hover:text-rpg-danger border border-rpg-700"><i data-lucide="trash" class="w-4 h-4"></i></button>
-                    '''}
-                </div>
+                  <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] transition-all flex flex-col h-full">
+                    <div class="relative h-48 overflow-hidden bg-black">
+                        <img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=800" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
+                        <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-rpg-accent border border-rpg-accent/30">
+                            Fantasy
+                        </div>
+                    </div>
+                    <div class="p-5 flex-1 flex flex-col gap-3">
+                        <div>
+                            <h3 class="text-lg font-bold text-white mb-1 font-title tracking-wide truncate flex items-center gap-2">
+                                {title} {status_badge}
+                            </h3>
+                            <p class="text-sm text-gray-400 line-clamp-2 min-h-[2.5rem]">{desc}</p>
+                            
+                            
+                            </div>
+
+                {buttons}
             </div>
         </div>
         """
-
     return html + '<script>lucide.createIcons();</script>'
 
 
@@ -1013,15 +1074,4 @@ async def get_undo_redo_status(scenario_id: int, user: CurrentUser = Depends(get
 
     return {"success": True, **status}
 
-# api.py 파일의 해당 부분을 아래와 같이 수정하세요.
-
-# --- [시나리오 관리] ---
-
-# 1. 마이페이지 뷰를 /views/mypage 경로로 설정 (api_router가 아닌 router 사용)
-@router.get('/mypage', response_class=HTMLResponse)
-async def mypage_view(request: Request, user: CurrentUser = Depends(get_current_user_optional)):
-    """
-    마이페이지 뷰를 반환합니다.
-    """
-    return templates.TemplateResponse("mypage.html", {"request": request, "user": user})
 
