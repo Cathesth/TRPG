@@ -72,13 +72,20 @@
                     'swords': 'M14.5 17.5L3 6V3h3l11.5 11.5 M13 19l6-6 M16 16l4 4 M19 21l2-2',
                     'plus': 'M12 5v14 M5 12h14',
                     'minus': 'M5 12h14',
-                    'download': 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3'
+                    'download': 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3',
+                    'edit': 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7 M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z',
+                    'save': 'M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z M17 21v-8H7v8 M7 3v5h8'
                 };
                 return icons[name] || 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z';
             };
             const Icon = ({ name, size = 20, className = "" }) => {
                 const pathData = getIconPath(name);
                 return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{pathData.startsWith('polygon|') ? <polygon points={pathData.split('|')[1]} /> : <path d={pathData} />}</svg>;
+            };
+            const getScenarioIdFromURL = () => {
+                const path = window.location.pathname;
+                const match = path.match(/\/editor\/(\d+)/);
+                return match ? match[1] : null;
             };
 
             // --- UI 컴포넌트 ---
@@ -97,7 +104,46 @@
                     </div>
                 );
             };
+            const NpcEditModal = ({ isOpen, onClose, npc, onSave, isEnemy }) => {
+            const [editData, setEditData] = useState(npc || {});
 
+            useEffect(() => {
+                if (npc) setEditData(npc);
+            }, [npc]);
+
+            if (!isOpen || !npc) return null;
+
+            return (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+                    <div className="bg-gray-900 border border-gray-700 w-full max-w-2xl rounded-xl shadow-2xl flex flex-col max-h-[80vh]">
+                        <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800">
+                            <h3 className="text-lg font-bold text-white"><Icon name="edit" /> {isEnemy ? '적' : 'NPC'} 수정</h3>
+                            <button onClick={onClose}><Icon name="x" /></button>
+                        </div>
+                        <div className="p-6 overflow-y-auto flex-1 space-y-4">
+                            <div><label className="text-xs text-gray-400 block mb-1">이름</label>
+                                <input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm"
+                                       value={editData.name || ''} onChange={e => setEditData({...editData, name: e.target.value})} /></div>
+                            <div><label className="text-xs text-gray-400 block mb-1">역할</label>
+                                <input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm"
+                                       value={editData.role || ''} onChange={e => setEditData({...editData, role: e.target.value})} /></div>
+                            <div><label className="text-xs text-gray-400 block mb-1">성격</label>
+                                <textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm" rows={3}
+                                       value={editData.personality || ''} onChange={e => setEditData({...editData, personality: e.target.value})} /></div>
+                            {isEnemy && (
+                                <div><label className="text-xs text-gray-400 block mb-1">난이도</label>
+                                    <input type="number" min="1" max="10" className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm"
+                                           value={editData.difficulty || 5} onChange={e => setEditData({...editData, difficulty: parseInt(e.target.value)})} /></div>
+                            )}
+                        </div>
+                        <div className="p-4 border-t border-gray-700 flex justify-end gap-2">
+                            <button onClick={onClose} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded">취소</button>
+                            <button onClick={() => { onSave(editData); onClose(); }} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded">저장</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
             // [추가] NPC 목록 불러오기 모달
             const NpcListModal = ({ isOpen, onClose, npcList, onAdd }) => {
                 if (!isOpen) return null;
@@ -202,18 +248,13 @@
 
             // --- 메인 컴포넌트 ---
             function ScenarioBuilder() {
-                // 노드 기본값 설정 (필수 항목 포함)
-                const [nodes, setNodes] = useState([
-                    {
-                        id: 'start', type: 'start', x: 50, y: 50,
-                        data: {
-                            label: '시나리오 설정', prologue: '', gm_notes: '', background: '',
-                            initial_hp: 100, initial_items: '',
-                            custom_stats: [], stat_rules: ''
-                        }
-                    },
-                    { id: 'scene-1', type: 'scene', x: 400, y: 150, data: { title: '첫 번째 장면', description: '', background: '', trigger: '', npcs: [], enemies: [], rule: '', scene_type: 'normal' } },
-                ]);
+                const [isEditMode, setIsEditMode] = useState(false);
+                const [scenarioId, setScenarioId] = useState(null);
+
+                // ⭐ 기존: const [nodes, setNodes] = useState([기본값...]);
+                // ⭐ 수정: 빈 배열로 시작
+                const [nodes, setNodes] = useState([]);
+
                 const [connections, setConnections] = useState([]);
                 const [selectedNodeId, setSelectedNodeId] = useState(null);
                 const [globalNpcs, setGlobalNpcs] = useState([]);
@@ -221,6 +262,9 @@
 
                 const [isNpcGeneratorOpen, setIsNpcGeneratorOpen] = useState(false);
                 const [toast, setToast] = useState({ show: false, message: '', type: 'info' });
+
+                // ⭐ 추가: NPC 수정 모달 상태
+                const [npcEditModal, setNpcEditModal] = useState({ open: false, npc: null, isEnemy: false });
 
                 // UI 상태
                 const [zoom, setZoom] = useState(1);
@@ -240,7 +284,6 @@
                 const [isPresetLoadModalOpen, setIsPresetLoadModalOpen] = useState(false);
                 const [presetList, setPresetList] = useState([]);
 
-                // [추가] NPC 목록 모달 관련 상태
                 const [isNpcListModalOpen, setIsNpcListModalOpen] = useState(false);
                 const [dbNpcList, setDbNpcList] = useState([]);
 
@@ -291,6 +334,65 @@
                         { value: "openai/xiaomi/mimo-v2-flash:free", label: "Xiaomi MiMo V2 (Free)" }
                     ]}
                 ];
+
+                // ⭐ useEffect 수정
+                useEffect(() => {
+                    const loadScenario = async () => {
+                        const id = getScenarioIdFromURL();
+                        if (id) {
+                            // 수정 모드
+                            setIsEditMode(true);
+                            setScenarioId(id);
+                            setIsLoading(true);
+
+                            try {
+                                const response = await fetch(`/api/scenario/${id}`);
+                                const result = await response.json();
+
+                                setNodes(result.nodes || []);
+                                setConnections(result.edges || []);
+                                setGlobalNpcs((result.npcs || []).filter(n => !n.isEnemy && !n.is_enemy));
+                                setGlobalEnemies((result.npcs || []).filter(n => n.isEnemy || n.is_enemy));
+
+                                showToast("시나리오를 불러왔습니다!", "success");
+                            } catch (e) {
+                                showToast("시나리오 로드 실패: " + e.message, "error");
+                            } finally {
+                                setIsLoading(false);
+                            }
+                        } else {
+                            // ⭐⭐⭐ 신규 생성 모드일 때만 기본 노드 설정
+                            setNodes([
+                                {
+                                    id: 'start', type: 'start', x: 50, y: 50,
+                                    data: {
+                                        label: '시나리오 설정', prologue: '', gm_notes: '', background: '',
+                                        initial_hp: 100, initial_items: '',
+                                        custom_stats: [], stat_rules: ''
+                                    }
+                                },
+                                { id: 'scene-1', type: 'scene', x: 400, y: 150, data: { title: '첫 번째 장면', description: '', background: '', trigger: '', npcs: [], enemies: [], rule: '', scene_type: 'normal' } }
+                            ]);
+                        }
+                    };
+                    loadScenario();
+                }, []);
+
+                // ⭐ NPC 수정 핸들러 추가
+                const handleNpcEditSave = (editedNpc) => {
+                    if (npcEditModal.isEnemy) {
+                        setGlobalEnemies(prev => prev.map(e =>
+                            e.name === npcEditModal.npc.name ? editedNpc : e
+                        ));
+                        showToast(`적 '${editedNpc.name}' 수정됨`, 'success');
+                    } else {
+                        setGlobalNpcs(prev => prev.map(n =>
+                            n.name === npcEditModal.npc.name ? editedNpc : n
+                        ));
+                        showToast(`NPC '${editedNpc.name}' 수정됨`, 'success');
+                    }
+                };
+
                 // Validation Logic
                 const validateNode = (node) => {
                     const d = node.data;
@@ -366,7 +468,29 @@
                         setDraggingNodeId(id);
                     }
                 };
+                const handleSaveEdit = async () => {
+                    if (!scenarioId) return;
 
+                    setIsLoading(true);
+                    try {
+                        const response = await fetch(`/api/scenario/${scenarioId}/update`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                nodes, edges: connections,
+                                npcs: [...globalNpcs, ...globalEnemies]
+                            })
+                        });
+
+                        if (!response.ok) throw new Error('저장 실패');
+
+                        setResultModal({ open: true, type: 'success', title: '저장 완료', message: '시나리오가 성공적으로 수정되었습니다.' });
+                    } catch (e) {
+                        showToast("저장 실패: " + e.message, "error");
+                    } finally {
+                        setIsLoading(false);
+                    }
+                };
                 const handleCanvasMouseMove = (e) => {
                     if(!canvasRef.current) return;
                     const rect = canvasRef.current.getBoundingClientRect();
@@ -394,7 +518,23 @@
 
                 const updateNodeData = (key, value) => {
                     if (!selectedNodeId) return;
-                    setNodes(p => p.map(n => n.id === selectedNodeId ? { ...n, data: { ...n.data, [key]: value } } : n));
+                    setNodes(p => {
+                        const newNodes = p.map(n => n.id === selectedNodeId ? { ...n, data: { ...n.data, [key]: value } } : n);
+                        // [추가] 실시간 저장 API 호출 (디바운스 처리를 권장하지만, 일단 직접 호출)
+                        saveDraftToServer(newNodes, connections);
+                        return newNodes;
+                    });
+                };
+
+                // [신규 함수 추가]
+                const saveDraftToServer = async (currentNodes, currentConnections) => {
+                    const scenarioId = getScenarioIdFromURL();
+                    if (!scenarioId) return;
+                    await fetch(`/api/draft/${scenarioId}/save`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ nodes: currentNodes, edges: currentConnections })
+                    });
                 };
 
                 // 커스텀 스탯 관리 함수들
@@ -681,6 +821,13 @@
                             npcList={dbNpcList}
                             onAdd={handleAddNpcFromDb}
                         />
+                        <NpcEditModal
+                            isOpen={npcEditModal.open}
+                            onClose={() => setNpcEditModal({ open: false, npc: null, isEnemy: false })}
+                            npc={npcEditModal.npc}
+                            onSave={handleNpcEditSave}
+                            isEnemy={npcEditModal.isEnemy}
+                        />
 
                         {/* 사이드바 */}
                         <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col z-20 shadow-xl">
@@ -736,10 +883,15 @@
                                     </div>
                                 </div>
 
-                                {/* 기존 생성 버튼 유지 */}
-                                <button onClick={handleGenerate} className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-lg shadow-lg flex items-center justify-center gap-2 transition-all">
-                                    <Icon name="play" size={18} /> 시나리오 생성
-                                </button>
+                                {isEditMode ? (
+                                    <button onClick={handleSaveEdit} className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold rounded-lg shadow-lg flex items-center justify-center gap-2">
+                                        <Icon name="save" size={18} /> 수정 완료
+                                    </button>
+                                ) : (
+                                    <button onClick={handleGenerate} className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-lg shadow-lg flex items-center justify-center gap-2">
+                                        <Icon name="play" size={18} /> 시나리오 생성
+                                    </button>
+                                )}
                             </div>
                         </div>
 
@@ -876,9 +1028,31 @@
                                                                 <button onClick={()=>setIsNpcGeneratorOpen(true)} className="text-[10px] bg-green-900/50 hover:bg-green-800 px-1.5 py-0.5 rounded text-green-300">+생성</button>
                                                             </div>
                                                         </div>
-                                                        <div className="max-h-32 overflow-y-auto border border-gray-800 rounded p-1 bg-gray-800/50">{globalNpcs.length === 0 ? <p className="text-[10px] text-gray-600 p-1">생성/불러온 NPC 없음</p> : globalNpcs.map((n,i)=>(
-                                                            <label key={i} className="flex items-center gap-2 text-xs p-1.5 hover:bg-gray-700 rounded cursor-pointer"><input type="checkbox" checked={(node.data.npcs||[]).includes(n.name)} onChange={e=>updateNodeData('npcs', e.target.checked?[...(node.data.npcs||[]),n.name]:(node.data.npcs||[]).filter(x=>x!==n.name))} className="rounded bg-gray-600 border-gray-500 text-green-500" />{n.name}</label>
-                                                        ))}</div>
+                                                        <div className="max-h-32 overflow-y-auto border border-gray-800 rounded p-1 bg-gray-800/50">
+                                                            {globalNpcs.length === 0 ? (
+                                                                <p className="text-[10px] text-gray-600 p-1">생성/불러온 NPC 없음</p>
+                                                            ) : (
+                                                                globalNpcs.map((n,i)=>(
+                                                                    <div key={i} className="flex items-center justify-between p-1.5 hover:bg-gray-700 rounded group">
+                                                                        <label className="flex items-center gap-2 text-xs cursor-pointer flex-1">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={(node.data.npcs||[]).includes(n.name)}
+                                                                                onChange={e=>updateNodeData('npcs', e.target.checked?[...(node.data.npcs||[]),n.name]:(node.data.npcs||[]).filter(x=>x!==n.name))}
+                                                                                className="rounded bg-gray-600 border-gray-500 text-green-500"
+                                                                            />
+                                                                            {n.name}
+                                                                        </label>
+                                                                        <button
+                                                                            onClick={() => setNpcEditModal({open: true, npc: n, isEnemy: false})}
+                                                                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-600 rounded transition-opacity"
+                                                                        >
+                                                                            <Icon name="edit" size={12} className="text-green-400"/>
+                                                                        </button>
+                                                                    </div>
+                                                                ))
+                                                            )}
+                                                        </div>
                                                     </div>
 
                                                     {/* 적 선택 영역 (글로벌 목록 사용) */}
@@ -890,13 +1064,34 @@
                                                                 <button onClick={()=>setIsNpcGeneratorOpen(true)} className="text-[10px] bg-red-900/50 hover:bg-red-800 px-1.5 py-0.5 rounded text-red-300">+생성</button>
                                                             </div>
                                                         </div>
-                                                        <div className="max-h-32 overflow-y-auto border border-gray-800 rounded p-1 bg-gray-800/50">{globalEnemies.length === 0 ? <p className="text-[10px] text-gray-600 p-1">생성/불러온 적 없음</p> : globalEnemies.map((e,i)=>(
-                                                            <label key={i} className="flex items-center gap-2 text-xs p-1.5 hover:bg-gray-700 rounded cursor-pointer"><input type="checkbox" checked={(node.data.enemies||[]).includes(e.name)} onChange={ev=>updateNodeData('enemies', ev.target.checked?[...(node.data.enemies||[]),e.name]:(node.data.enemies||[]).filter(x=>x!==e.name))} className="rounded bg-gray-600 border-gray-500 text-red-500" />{e.name} (LV.{e.difficulty})</label>
-                                                        ))}</div>
+                                                        <div className="max-h-32 overflow-y-auto border border-gray-800 rounded p-1 bg-gray-800/50">
+                                                            {globalEnemies.length === 0 ? (
+                                                                <p className="text-[10px] text-gray-600 p-1">생성/불러온 적 없음</p>
+                                                            ) : (
+                                                                globalEnemies.map((e,i)=>(
+                                                                    <div key={i} className="flex items-center justify-between p-1.5 hover:bg-gray-700 rounded group">
+                                                                        <label className="flex items-center gap-2 text-xs cursor-pointer flex-1">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={(node.data.enemies||[]).includes(e.name)}
+                                                                                onChange={ev=>updateNodeData('enemies', ev.target.checked?[...(node.data.enemies||[]),e.name]:(node.data.enemies||[]).filter(x=>x!==e.name))}
+                                                                                className="rounded bg-gray-600 border-gray-500 text-red-500"
+                                                                            />
+                                                                            {e.name} (LV.{e.difficulty})
+                                                                        </label>
+                                                                        <button
+                                                                            onClick={() => setNpcEditModal({open: true, npc: e, isEnemy: true})}
+                                                                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-600 rounded transition-opacity"
+                                                                        >
+                                                                            <Icon name="edit" size={12} className="text-red-400"/>
+                                                                        </button>
+                                                                    </div>
+                                                                ))
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            </>
-                                        )}
+                                                </>
+                                            )}
 
                                         {/* Ending Node Form */}
                                         {node.type === 'ending' && (
