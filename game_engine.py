@@ -78,6 +78,30 @@ def normalize_text(text: str) -> str:
     return text.lower().replace(" ", "")
 
 
+def format_player_status(player_vars: Dict[str, Any]) -> str:
+    """
+    플레이어 상태를 동적으로 포맷팅
+    시나리오의 variables 정의에 따라 자동으로 상태를 문자열로 변환
+    """
+    status_lines = []
+    inventory = player_vars.get('inventory', [])
+
+    for key, value in player_vars.items():
+        if key == 'inventory':
+            continue
+        if isinstance(value, (int, float)):
+            status_lines.append(f"- {key}: {value}")
+
+    # 인벤토리는 마지막에 추가
+    if inventory:
+        items_str = ', '.join(inventory)
+        status_lines.append(f"- 소지품: {items_str}")
+    else:
+        status_lines.append(f"- 소지품: 없음")
+
+    return '\n  '.join(status_lines)
+
+
 # --- Nodes ---
 
 # 부정적 결말로 가는 transition 필터링 함수
@@ -297,7 +321,11 @@ def intent_parser_node(state: PlayerState):
             return _fast_track_intent_parser(state, user_input, curr_scene, scenario, endings)
 
         # 프롬프트 생성
+        player_vars = state.get('player_vars', {})
+        player_status = format_player_status(player_vars)
+
         intent_prompt = intent_classifier_template.format(
+            player_status=player_status,
             scene_title=scene_title,
             scene_type=scene_type,
             npc_list=', '.join(npc_names) if npc_names else '없음',
@@ -589,7 +617,11 @@ def npc_node(state: PlayerState):
     prompt_template = prompts.get('npc_dialogue', '')
 
     if prompt_template:
+        player_vars = state.get('player_vars', {})
+        player_status = format_player_status(player_vars)
+
         prompt = prompt_template.format(
+            player_status=player_status,
             npc_name=npc_info['name'],
             npc_role=npc_info['role'],
             npc_personality=npc_info['personality'],
@@ -1015,18 +1047,23 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     scene_prompt_template = prompts.get('scene_description', '')
 
     if scene_prompt_template:
+        player_vars = state.get('player_vars', {})
+        player_status = format_player_status(player_vars)
+
         # 씬 변경 시 유저 입력 컨텍스트 포함
         if user_input:
             context_prefix = f"""**최우선 지침: 유저의 마지막 입력("{user_input}")이 이 장면으로의 전환을 일으켰습니다. 그 결과를 먼저 서술하세요.**
 
 """
             prompt = context_prefix + scene_prompt_template.format(
+                player_status=player_status,
                 scene_title=scene_title,
                 scene_desc=scene_desc,
                 npc_list=npc_list
             )
         else:
             prompt = scene_prompt_template.format(
+                player_status=player_status,
                 scene_title=scene_title,
                 scene_desc=scene_desc,
                 npc_list=npc_list
