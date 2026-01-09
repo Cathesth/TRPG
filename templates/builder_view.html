@@ -84,7 +84,8 @@
             };
             const getScenarioIdFromURL = () => {
                 const path = window.location.pathname;
-                const match = path.match(/\/editor\/(\d+)/);
+                // 수정된 경로 패턴에 맞게 변경
+                const match = path.match(/\/views\/scenes\/edit\/(\d+)/);
                 return match ? match[1] : null;
             };
 
@@ -285,6 +286,28 @@
                 const [presetList, setPresetList] = useState([]);
 
                 const [isNpcListModalOpen, setIsNpcListModalOpen] = useState(false);
+                const [isScenarioListModalOpen, setIsScenarioListModalOpen] = useState(false);
+                const [userScenarios, setUserScenarios] = useState([]);
+
+                // 시나리오 목록 가져오기 함수
+                const handleOpenScenarioList = async () => {
+                    try {
+                        const response = await fetch('/api/scenarios?filter=my'); // 내 시나리오 필터링
+                        const data = await response.json();
+                        setUserScenarios(data);
+                        setIsScenarioListModalOpen(true);
+                    } catch (e) {
+                        showToast("시나리오 목록을 불러오지 못했음: " + e.message, "error");
+                    }
+                };
+
+                // 선택한 시나리오로 이동 (편집 모드 전환)
+                const loadSelectedScenario = (id) => {
+                    if (confirm("현재 작업 중인 내용은 저장되지 않음. 이동하겠음?")) {
+                        window.location.href = `/views/builder?id=${id}`;
+                        // 참고: 서버 라우팅 설정에 따라 /editor/${id} 등으로 바뀔 수 있음
+                    }
+                };
                 const [dbNpcList, setDbNpcList] = useState([]);
 
                 // 모델 선택
@@ -855,6 +878,9 @@
                                 <button onClick={handleOpenLoadModal} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-blue-300 flex items-center justify-center gap-2">
                                     <Icon name="redo" size={16} /> 프리셋 불러오기
                                 </button>
+                                <button onClick={handleOpenScenarioList} className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-purple-300 flex items-center justify-center gap-2">
+                                    <Icon name="edit" size={16} /> 시나리오 불러오기
+                                </button>
                             </div>
                             <div className="mt-auto p-4 border-t border-gray-800 space-y-3">
                                 {/* [추가] 모델 선택 드롭다운 */}
@@ -1133,6 +1159,27 @@
                                                     className="p-2 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <Icon name="x" size={16} />
                                             </button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </Modal>
+                        {/* 시나리오 불러오기 모달 */}
+                        <Modal isOpen={isScenarioListModalOpen} title="내 시나리오 목록" onClose={() => setIsScenarioListModalOpen(false)}>
+                            <div className="space-y-2">
+                                {userScenarios.length === 0 ? (
+                                    <p className="text-gray-500 text-center py-4">저장된 시나리오가 없음.</p>
+                                ) : (
+                                    userScenarios.map((s) => (
+                                        <div key={s.id}
+                                             onClick={() => loadSelectedScenario(s.id)}
+                                             className="flex justify-between items-center p-3 bg-gray-800 hover:bg-gray-700 rounded cursor-pointer border border-gray-700 hover:border-purple-500 transition-colors group">
+                                            <div>
+                                                <div className="font-bold text-white">{s.title || '제목 없음'}</div>
+                                                <div className="text-xs text-gray-400 line-clamp-1">{s.prologue || '설명 없음'}</div>
+                                                <div className="text-[10px] text-gray-500 mt-1">최종 수정: {s.updated_at}</div>
+                                            </div>
+                                            <Icon name="play" size={16} className="text-gray-600 group-hover:text-purple-400" />
                                         </div>
                                     ))
                                 )}

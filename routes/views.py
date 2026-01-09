@@ -93,25 +93,30 @@ async def view_scenes(request: Request, user=Depends(get_current_user_optional))
 
 @views_router.get("/views/scenes/edit/{scenario_id}", response_class=HTMLResponse)
 async def view_scenes_edit(request: Request, scenario_id: str, user=Depends(get_current_user)):
-    """씬 맵 편집 모드 (로그인 필수)"""
+    """
+    기존 씬 맵 편집 라우트를 시나리오 빌더(builder_view.html)로 연결
+    이제 scenes_view.html 대신 builder_view.html을 사용함
+    """
     from services.scenario_service import ScenarioService
 
+    # 시나리오 권한 및 존재 여부 확인
     result, error = ScenarioService.get_scenario_for_edit(scenario_id, user.id)
     if error:
-        return templates.TemplateResponse("scenes_view.html", {
+        # 권한이 없는 경우 index.html로 리다이렉트하거나 에러 표시
+        return templates.TemplateResponse("index.html", {
             "request": request,
-            "title": "접근 권한 없음",
-            "scenario": {"endings": [], "prologue_text": ""},
-            "scenes": [],
-            "current_scene_id": None,
-            "mermaid_code": "graph TD\n    A[접근 권한이 없습니다]",
-            "scene_display_ids": {},
-            "ending_display_ids": {},
-            "edit_mode": False,
-            "scenario_id": None,
+            "error": "접근 권한이 없거나 존재하지 않는 시나리오입니다.",
             "version": get_full_version(),
             "user": user
         })
+
+    # builder_view.html을 반환하여 새로운 빌더 UI 사용
+    return templates.TemplateResponse("builder_view.html", {
+        "request": request,
+        "version": get_full_version(),
+        "user": user,
+        "scenario_id": scenario_id
+    })
 
     scenario = result['scenario']
     title = scenario.get('title', 'Untitled')
