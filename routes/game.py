@@ -186,9 +186,6 @@ async def game_act_stream(
                 yield f"data: {json.dumps({'type': 'error', 'content': '시나리오를 찾을 수 없습니다.'})}\n\n"
                 return
 
-            # [FIX] scenario를 processed_state에 추가 (NPC 정보 조회용)
-            processed_state['scenario'] = scenario
-
             if is_game_start:
                 # 게임 시작 시: WorldState 초기화
                 world_state_instance = WorldState()
@@ -313,7 +310,7 @@ async def game_act_stream(
                 world_state_with_scene['current_scene_id'] = curr_scene_id
                 world_state_with_scene['current_scene_title'] = scene_title
 
-                # [FIX] location이 씬 ID로만 되어 있는 경우 씬 제목으로 업데이트
+                # [FIX] location이 씬 ID로만 되어 있는 경우 씬 제목로 업데이트
                 if world_state_with_scene.get('location') == curr_scene_id or not world_state_with_scene.get('location'):
                     world_state_with_scene['location'] = curr_scene_id
 
@@ -324,7 +321,9 @@ async def game_act_stream(
                 yield f"data: {json.dumps({'type': 'world_state', 'content': world_state_with_scene})}\n\n"
 
             # NPC 정보 전송 (WorldState에서 추출 + 시나리오 전체 NPC)
-            scenario = processed_state.get('scenario', {})
+            # [FIX] scenario_id로 시나리오 조회 (경량화 유지)
+            scenario_id = processed_state.get('scenario_id')
+            scenario = get_scenario_by_id(scenario_id) if scenario_id else {}
             curr_scene_id = processed_state.get('current_scene_id', '')
 
             # 시나리오의 모든 NPC 정보를 딕셔너리로 구성
