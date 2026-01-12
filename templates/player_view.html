@@ -345,6 +345,8 @@
     const MODEL_PROVIDER_KEY = 'trpg_model_provider';
     const MODEL_VERSION_KEY = 'trpg_model_version';
     const DEBUG_MODE_KEY = 'trpg_debug_mode';
+    const GAME_ENDED_KEY = 'trpg_game_ended';
+    const NAVIGATION_FLAG_KEY = 'trpg_navigation_flag';
 
     // 새로고침 감지 및 경고
     window.addEventListener('beforeunload', function(e) {
@@ -1086,6 +1088,34 @@
     }
 
     document.addEventListener('DOMContentLoaded', function() {
+        // 모델 버전 초기화 (가장 먼저 실행)
+        const providerSelect = document.getElementById('provider-select');
+        const modelVersionSelect = document.getElementById('model-version-select');
+
+        if (providerSelect && modelVersionSelect) {
+            // 이전에 저장된 제공사 복원
+            const savedProvider = sessionStorage.getItem(MODEL_PROVIDER_KEY);
+            if (savedProvider) {
+                providerSelect.value = savedProvider;
+            }
+
+            // 모델 버전 옵션 초기화
+            updateModelVersions();
+
+            // 제공사 변경 시 처리
+            providerSelect.addEventListener('change', function() {
+                updateModelVersions();
+                console.log('🤖 제공사 변경됨:', this.value);
+            });
+
+            // 모델 버전 변경 시 저장
+            modelVersionSelect.addEventListener('change', function() {
+                sessionStorage.setItem(MODEL_VERSION_KEY, this.value);
+                console.log('🤖 모델 저장됨:', this.value);
+            });
+        }
+
+        // 채팅 로그 복원
         restoreChatLog();
 
         // 디버그 모드 상태 복원
@@ -1510,38 +1540,4 @@
         // 제공사 선택 저장 (옵션 추가 후에 저장)
         sessionStorage.setItem(MODEL_PROVIDER_KEY, provider);
     }
-
-    // 페이지 로드 시 모델 버전 초기화
-    (function() {
-        const providerSelect = document.getElementById('provider-select');
-        const modelVersionSelect = document.getElementById('model-version-select');
-
-        // 이전에 저장된 제공사 복원
-        const savedProvider = sessionStorage.getItem(MODEL_PROVIDER_KEY);
-        if (savedProvider && providerSelect) {
-            providerSelect.value = savedProvider;
-        }
-
-        // 모델 버전 옵션 초기화
-        updateModelVersions();
-
-        // 제공사 변경 시 처리
-        if (providerSelect) {
-            providerSelect.addEventListener('change', function() {
-                updateModelVersions();
-                console.log('🤖 제공사 변경됨:', this.value);
-            });
-        }
-
-        // 모델 버전 변경 시 저장
-        if (modelVersionSelect) {
-            modelVersionSelect.addEventListener('change', function() {
-                sessionStorage.setItem(MODEL_VERSION_KEY, this.value);
-                console.log('🤖 모델 저장됨:', this.value);
-            });
-        }
-    })();
-</script>
-</body>
-</html>
 
