@@ -272,10 +272,9 @@
                     <i data-lucide="user" class="w-4 h-4"></i>
                     PLAYER STATUS
                 </h3>
-                <label class="flex items-center gap-1.5 cursor-pointer group" title="디버그 모드">
-                    <input type="checkbox" id="debug-toggle" class="w-3.5 h-3.5 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-1 focus:ring-indigo-500 focus:ring-offset-0 cursor-pointer" onchange="toggleDebugInfo()">
-                    <i data-lucide="bug" class="w-3.5 h-3.5 text-gray-500 group-hover:text-indigo-400 transition-colors"></i>
-                </label>
+                <button type="button" onclick="toggleDebugInfo()" class="cursor-pointer group hover:bg-gray-800 rounded p-1 transition-colors" title="디버그 모드">
+                    <i id="debug-icon" data-lucide="bug" class="w-4 h-4 text-gray-500 group-hover:text-indigo-400 transition-colors"></i>
+                </button>
             </div>
             <div id="player-stats-area">
                 {% if vars %}
