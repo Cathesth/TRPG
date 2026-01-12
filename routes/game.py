@@ -279,41 +279,58 @@ async def game_act_stream(
 
             # F. 스탯 업데이트 및 세션 키 전송
             stats_data = processed_state.get('player_vars', {})
+
+            # 🛠️ WorldState를 stats에 포함
+            world_state_data = processed_state.get('world_state', {})
+            if world_state_data:
+                # stats에 world_state 추가 (클라이언트에서 접근 가능하도록)
+                stats_data['world_state'] = world_state_data
+
             yield f"data: {json.dumps({'type': 'stats', 'content': stats_data})}\n\n"
 
-            # 🛠️ 디버깅 정보 전송 (WorldState, NPC 정보)
-            world_state_data = processed_state.get('world_state', {})
+            # 🛠️ WorldState 별도 전송 (디버그 정보용)
             if world_state_data:
                 yield f"data: {json.dumps({'type': 'world_state', 'content': world_state_data})}\n\n"
 
-            # NPC 정보 전송
-            scenario = processed_state.get('scenario', {})
-            curr_scene_id = processed_state.get('current_scene_id', '')
-            all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
-            curr_scene = all_scenes.get(curr_scene_id)
+            # NPC 정보 전송 (WorldState에서 추출)
+            if world_state_data and 'npcs' in world_state_data:
+                npc_status_info = world_state_data['npcs']
+                yield f"data: {json.dumps({'type': 'npc_status', 'content': npc_status_info})}\n\n"
+            else:
+                # WorldState에 NPC 정보가 없으면 시나리오에서 가져오기
+                scenario = processed_state.get('scenario', {})
+                curr_scene_id = processed_state.get('current_scene_id', '')
+                all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
+                curr_scene = all_scenes.get(curr_scene_id)
 
-            if curr_scene:
-                npc_info = {
-                    'npcs': curr_scene.get('npcs', []),
-                    'enemies': curr_scene.get('enemies', []),
-                    'scene_type': curr_scene.get('type', 'normal')
-                }
+                if curr_scene:
+                    npc_info = {
+                        'npcs': curr_scene.get('npcs', []),
+                        'enemies': curr_scene.get('enemies', []),
+                        'scene_type': curr_scene.get('type', 'normal')
+                    }
 
-                # NPC 상세 정보 추가
-                npc_details = []
-                for npc_name in npc_info['npcs'] + npc_info['enemies']:
-                    for npc in scenario.get('npcs', []):
-                        if npc.get('name') == npc_name:
-                            npc_details.append({
-                                'name': npc.get('name'),
-                                'role': npc.get('role', 'Unknown'),
-                                'personality': npc.get('personality', '보통'),
-                                'weakness': npc.get('weakness', npc.get('약점', ''))
-                            })
-                            break
+                    # NPC 상세 정보 추가
+                    npc_details = {}
+                    for npc_name in npc_info['npcs'] + npc_info['enemies']:
+                        for npc in scenario.get('npcs', []):
+                            if npc.get('name') == npc_name:
+                                npc_details[npc_name] = {
+                                    'name': npc.get('name'),
+                                    'role': npc.get('role', 'Unknown'),
+                                    'personality': npc.get('personality', '보통'),
+                                    'hp': npc.get('hp', 100),
+                                    'max_hp': npc.get('max_hp', 100),
+                                    'status': 'alive',
+                                    'relationship': 50,
+                                    'emotion': 'neutral',
+                                    'location': curr_scene.get('title', '현재 위치'),
+                                    'is_hostile': npc_name in npc_info['enemies']
+                                }
+                                break
 
-                npc_info['details'] = npc_details
-                yield f"data: {json.dumps({'type': 'npc_status', 'content': npc_info})}\n\n"
+                    if npc_details:
+                        yield f"data: {json.dumps({'type': 'npc_status', 'content': npc_details})}\n\n"
 
             # 🛠️ 세션 키 전송 (클라이언트가 다음 요청에 사용)
             if session_key:
