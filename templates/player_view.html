@@ -267,10 +267,16 @@
 
         <!-- 스탯 사이드바 -->
         <div class="w-80 bg-gray-900 border-l border-gray-800 p-4 overflow-y-auto hidden lg:block">
-            <h3 class="text-gray-400 font-bold mb-4 flex items-center gap-2">
-                <i data-lucide="user" class="w-4 h-4"></i>
-                PLAYER STATUS
-            </h3>
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-gray-400 font-bold flex items-center gap-2">
+                    <i data-lucide="user" class="w-4 h-4"></i>
+                    PLAYER STATUS
+                </h3>
+                <label class="flex items-center gap-1.5 cursor-pointer group" title="디버그 모드">
+                    <input type="checkbox" id="debug-toggle" class="w-3.5 h-3.5 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-1 focus:ring-indigo-500 focus:ring-offset-0 cursor-pointer" onchange="toggleDebugInfo()">
+                    <i data-lucide="bug" class="w-3.5 h-3.5 text-gray-500 group-hover:text-indigo-400 transition-colors"></i>
+                </label>
+            </div>
             <div id="player-stats-area">
                 {% if vars %}
                     <!-- 서버 사이드 렌더링 유지 -->
@@ -284,6 +290,35 @@
                         <span class="text-xs">상단 [시나리오 불러오기]를 눌러주세요.</span>
                     </div>
                 {% endif %}
+            </div>
+
+            <!-- 디버그 정보 영역 (체크박스 활성화 시 표시) -->
+            <div id="debug-info-area" class="hidden mt-4 space-y-4">
+                <!-- NPC 상태 -->
+                <div class="border-t border-gray-800 pt-4">
+                    <h4 class="text-gray-400 font-bold text-sm mb-3 flex items-center gap-2">
+                        <i data-lucide="users" class="w-3.5 h-3.5"></i>
+                        NPC STATUS
+                    </h4>
+                    <div id="npc-status-area" class="space-y-2">
+                        <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                            NPC 데이터 없음
+                        </div>
+                    </div>
+                </div>
+
+                <!-- World State Manager -->
+                <div class="border-t border-gray-800 pt-4">
+                    <h4 class="text-gray-400 font-bold text-sm mb-3 flex items-center gap-2">
+                        <i data-lucide="globe" class="w-3.5 h-3.5"></i>
+                        WORLD STATE
+                    </h4>
+                    <div id="world-state-area" class="text-xs">
+                        <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                            World State 데이터 없음
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -847,6 +882,190 @@
         statsArea.innerHTML = html;
         lucide.createIcons();
         sessionStorage.setItem(STATS_KEY, JSON.stringify(statsData));
+
+        // 디버그 모드가 활성화되어 있으면 디버그 정보도 업데이트
+        const debugToggle = document.getElementById('debug-toggle');
+        if (debugToggle && debugToggle.checked) {
+            updateDebugInfo(statsData);
+        }
+    }
+
+    // 디버그 정보 토글 함수
+    function toggleDebugInfo() {
+        const debugToggle = document.getElementById('debug-toggle');
+        const debugInfoArea = document.getElementById('debug-info-area');
+
+        if (debugToggle.checked) {
+            debugInfoArea.classList.remove('hidden');
+            // 현재 저장된 스탯 데이터가 있으면 디버그 정보 업데이트
+            const savedStats = sessionStorage.getItem(STATS_KEY);
+            if (savedStats) {
+                try {
+                    updateDebugInfo(JSON.parse(savedStats));
+                } catch (e) {
+                    console.error('Failed to parse stats:', e);
+                }
+            }
+        } else {
+            debugInfoArea.classList.add('hidden');
+        }
+
+        lucide.createIcons();
+    }
+
+    // 디버그 정보 업데이트 함수
+    function updateDebugInfo(statsData) {
+        updateNPCStatus(statsData);
+        updateWorldState(statsData);
+    }
+
+    // NPC 상태 업데이트 함수
+    function updateNPCStatus(statsData) {
+        const npcStatusArea = document.getElementById('npc-status-area');
+        if (!npcStatusArea) return;
+
+        // statsData에서 world_state 추출
+        const worldState = statsData.world_state || statsData._world_state || {};
+        const npcs = worldState.npcs || {};
+
+        if (Object.keys(npcs).length === 0) {
+            npcStatusArea.innerHTML = `
+                <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                    NPC 데이터 없음
+                </div>
+            `;
+            return;
+        }
+
+        let html = '';
+        for (const [npcName, npcData] of Object.entries(npcs)) {
+            const status = npcData.status || 'alive';
+            const hp = npcData.hp || '?';
+            const maxHp = npcData.max_hp || 100;
+            const relationship = npcData.relationship || 50;
+            const emotion = npcData.emotion || 'neutral';
+            const location = npcData.location || '?';
+            const isHostile = npcData.is_hostile || false;
+
+            // 상태에 따른 색상
+            const statusColor = status === 'alive' ? 'text-green-400' :
+                              status === 'dead' ? 'text-red-400' : 'text-yellow-400';
+
+            // 관계도에 따른 색상
+            const relationColor = relationship >= 70 ? 'text-green-400' :
+                                relationship >= 40 ? 'text-blue-400' :
+                                relationship >= 20 ? 'text-yellow-400' : 'text-red-400';
+
+            html += `
+                <div class="bg-gray-800/50 rounded p-2 border border-gray-700 text-xs">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="font-bold text-white flex items-center gap-1">
+                            <i data-lucide="${isHostile ? 'skull' : 'user'}" class="w-3 h-3 ${isHostile ? 'text-red-500' : 'text-blue-400'}"></i>
+                            ${npcName}
+                        </span>
+                        <span class="${statusColor} text-[10px] font-bold">${status.toUpperCase()}</span>
+                    </div>
+                    <div class="space-y-0.5 text-[10px] text-gray-400">
+                        <div class="flex justify-between">
+                            <span>HP:</span>
+                            <span class="text-white">${hp}/${maxHp}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>관계도:</span>
+                            <span class="${relationColor}">${relationship}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>감정:</span>
+                            <span class="text-white">${emotion}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>위치:</span>
+                            <span class="text-white">${location}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        npcStatusArea.innerHTML = html;
+        lucide.createIcons();
+    }
+
+    // World State 업데이트 함수
+    function updateWorldState(statsData) {
+        const worldStateArea = document.getElementById('world-state-area');
+        if (!worldStateArea) return;
+
+        // statsData에서 world_state 추출
+        const worldState = statsData.world_state || statsData._world_state || {};
+
+        if (Object.keys(worldState).length === 0) {
+            worldStateArea.innerHTML = `
+                <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                    World State 데이터 없음
+                </div>
+            `;
+            return;
+        }
+
+        const time = worldState.time || {};
+        const day = time.day || 1;
+        const phase = time.phase || 'morning';
+        const location = worldState.location || '?';
+        const turnCount = worldState.turn_count || 0;
+        const globalFlags = worldState.global_flags || {};
+
+        // 시간대에 따른 아이콘
+        const phaseIcon = phase === 'morning' ? 'sunrise' :
+                         phase === 'afternoon' ? 'sun' : 'moon';
+
+        let html = `
+            <div class="bg-gray-800/50 rounded p-2 border border-gray-700 space-y-1.5">
+                <div class="flex justify-between items-center">
+                    <span class="text-gray-400">시간:</span>
+                    <span class="text-white flex items-center gap-1">
+                        <i data-lucide="${phaseIcon}" class="w-3 h-3 text-yellow-400"></i>
+                        Day ${day}, ${phase}
+                    </span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-gray-400">위치:</span>
+                    <span class="text-white">${location}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-gray-400">턴 수:</span>
+                    <span class="text-white">${turnCount}</span>
+                </div>
+        `;
+
+        // 전역 플래그가 있으면 표시
+        if (Object.keys(globalFlags).length > 0) {
+            html += `
+                <div class="border-t border-gray-700 pt-1.5 mt-1.5">
+                    <div class="text-gray-500 text-[10px] mb-1">전역 플래그:</div>
+                    <div class="space-y-0.5">
+            `;
+            for (const [flag, value] of Object.entries(globalFlags)) {
+                const icon = value ? 'check-circle' : 'x-circle';
+                const color = value ? 'text-green-400' : 'text-gray-500';
+                html += `
+                    <div class="flex items-center gap-1 text-[10px]">
+                        <i data-lucide="${icon}" class="w-2.5 h-2.5 ${color}"></i>
+                        <span class="text-gray-400">${flag}:</span>
+                        <span class="${color}">${value}</span>
+                    </div>
+                `;
+            }
+            html += `
+                    </div>
+                </div>
+            `;
+        }
+
+        html += `</div>`;
+
+        worldStateArea.innerHTML = html;
+        lucide.createIcons();
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -1219,66 +1438,63 @@
             case 'xai':
                 options = [
                     { value: 'openai/x-ai/grok-code-fast-1', label: 'Grok Code Fast 1 (128K)' },
-                    { value: 'openai/x-ai/grok-4-fast', label: 'Grok 4 Fast (256K)' },
-                    { value: 'openai/x-ai/grok-4.1-fast', label: 'Grok 4.1 Fast (1M)' }
+                    { value: 'openai/x-ai/grok-4-fast', label: 'Grok 4 Fast (128K)' },
+                    { value: 'openai/x-ai/grok-vision-1', label: 'Grok Vision 1 (128K)' }
                 ];
                 break;
             case 'mistral':
                 options = [
-                    { value: 'openai/mistralai/devstral-2512:free', label: 'Devstral 2512 (Free) ⭐' }
+                    { value: 'openai/mistralai/mistral-7b-instruct', label: 'Mistral 7B Instruct (32K)' },
+                    { value: 'openai/mistralai/mixtral-8x7b-instruct', label: 'Mixtral 8x7B Instruct (32K)' }
                 ];
                 break;
             case 'xiaomi':
                 options = [
-                    { value: 'openai/xiaomi/mimo-v2-flash:free', label: 'MiMo V2 Flash (Free) ⭐' }
+                    { value: 'openai/xiaomi/minicpm-v-2.6-instruct', label: 'MiniCPM V 2.6 Instruct (32K)' }
                 ];
                 break;
+            default:
+                options = [{ value: 'openai/tngtech/deepseek-r1t2-chimera:free', label: 'R1 Chimera (Free) ⭐' }];
         }
 
         // 옵션 추가
         options.forEach(opt => {
-            const optionElement = document.createElement('option');
-            optionElement.value = opt.value;
-            optionElement.textContent = opt.label;
-            modelVersionSelect.appendChild(optionElement);
+            const option = document.createElement('option');
+            option.value = opt.value;
+            option.textContent = opt.label;
+            modelVersionSelect.appendChild(option);
         });
 
-        // 저장된 모델 버전이 있고 해당 provider와 일치하면 복원
+        // 이전에 저장된 모델 버전 복원 (같은 제공사인 경우)
         const savedModelVersion = sessionStorage.getItem(MODEL_VERSION_KEY);
-        const savedProvider = sessionStorage.getItem(MODEL_PROVIDER_KEY);
-
-        if (savedModelVersion && savedProvider === provider) {
-            // 해당 옵션이 존재하는지 확인
-            const optionExists = options.some(opt => opt.value === savedModelVersion);
-            if (optionExists) {
-                modelVersionSelect.value = savedModelVersion;
-            } else {
-                modelVersionSelect.value = options.length > 0 ? options[0].value : '';
-                sessionStorage.setItem(MODEL_VERSION_KEY, modelVersionSelect.value);
-            }
-        } else {
-            // 모델 버전 선택 초기화
-            modelVersionSelect.value = options.length > 0 ? options[0].value : '';
-            sessionStorage.setItem(MODEL_VERSION_KEY, modelVersionSelect.value);
+        if (savedModelVersion && Array.from(modelVersionSelect.options).some(opt => opt.value === savedModelVersion)) {
+            modelVersionSelect.value = savedModelVersion;
         }
     }
 
-    // 페이지 로드 시 모델 버전 초기화 및 복원
+    // 페이지 로드 시 모델 버전 초기화
     (function() {
+        updateModelVersions();
+
+        // 이전에 저장된 제공사 복원
+        const savedProvider = sessionStorage.getItem(MODEL_PROVIDER_KEY);
         const providerSelect = document.getElementById('provider-select');
+        if (savedProvider && providerSelect) {
+            providerSelect.value = savedProvider;
+            updateModelVersions();
+        }
+
+        // 제공사 변경 시 저장
+        if (providerSelect) {
+            providerSelect.addEventListener('change', function() {
+                sessionStorage.setItem(MODEL_PROVIDER_KEY, this.value);
+                console.log('🤖 제공사 저장됨:', this.value);
+            });
+        }
+
+        // 모델 버전 변경 시 저장
         const modelVersionSelect = document.getElementById('model-version-select');
-
-        if (providerSelect && modelVersionSelect) {
-            // 저장된 제공사 복원
-            const savedProvider = sessionStorage.getItem(MODEL_PROVIDER_KEY);
-            if (savedProvider) {
-                providerSelect.value = savedProvider;
-            }
-
-            // 모델 버전 업데이트 (복원 포함)
-            providerSelect.dispatchEvent(new Event('change'));
-
-            // 모델 버전 변경 시 저장
+        if (modelVersionSelect) {
             modelVersionSelect.addEventListener('change', function() {
                 sessionStorage.setItem(MODEL_VERSION_KEY, this.value);
                 console.log('🤖 모델 저장됨:', this.value);
@@ -1288,3 +1504,4 @@
 </script>
 </body>
 </html>
+
