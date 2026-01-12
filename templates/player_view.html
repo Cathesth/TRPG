@@ -968,7 +968,28 @@
             npcs = npcData;
         }
 
-        if (!npcs || Object.keys(npcs).length === 0) {
+        // player_vars의 키들을 필터링 (NPC가 아닌 것들 제거)
+        const invalidKeys = ['hp', 'max_hp', 'mp', 'max_mp', 'gold', 'sanity', 'radiation', 'inventory', 'quests', 'flags', 'custom_stats'];
+        const filteredNpcs = {};
+
+        for (const [npcName, npcData] of Object.entries(npcs)) {
+            // 키가 invalidKeys에 없고, 값이 객체(NPC 데이터)인 경우만 추가
+            if (!invalidKeys.includes(npcName) &&
+                typeof npcData === 'object' &&
+                npcData !== null &&
+                !Array.isArray(npcData)) {
+
+                // NPC 데이터인지 확인 (status, emotion, relationship 등의 속성이 있어야 함)
+                if (npcData.hasOwnProperty('status') ||
+                    npcData.hasOwnProperty('emotion') ||
+                    npcData.hasOwnProperty('relationship') ||
+                    npcData.hasOwnProperty('name')) {
+                    filteredNpcs[npcName] = npcData;
+                }
+            }
+        }
+
+        if (!filteredNpcs || Object.keys(filteredNpcs).length === 0) {
             npcStatusArea.innerHTML = `
                 <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
                     NPC 데이터 없음
@@ -978,7 +999,7 @@
         }
 
         let html = '';
-        for (const [npcName, npcData] of Object.entries(npcs)) {
+        for (const [npcName, npcData] of Object.entries(filteredNpcs)) {
             const status = npcData.status || 'alive';
             const hp = npcData.hp !== undefined ? npcData.hp : '?';
             const maxHp = npcData.max_hp || 100;

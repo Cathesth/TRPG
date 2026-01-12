@@ -286,46 +286,70 @@ async def game_act_stream(
             # world_state 별도 전송 제거 (일반 플레이어에게 노출되지 않음)
             # 디버그가 필요한 경우 별도 엔드포인트를 통해 접근
 
-            # NPC 정보 전송 (WorldState에서 추출)
+            # NPC 정보 전송 (WorldState에서 추출 + 시나리오 전체 NPC)
             world_state_data = processed_state.get('world_state', {})
-            if world_state_data and 'npcs' in world_state_data:
-                npc_status_info = world_state_data['npcs']
-                yield f"data: {json.dumps({'type': 'npc_status', 'content': npc_status_info})}\n\n"
-            else:
-                # WorldState에 NPC 정보가 없으면 시나리오에서 가져오기
-                scenario = processed_state.get('scenario', {})
-                curr_scene_id = processed_state.get('current_scene_id', '')
-                all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
-                curr_scene = all_scenes.get(curr_scene_id)
+            scenario = processed_state.get('scenario', {})
+            curr_scene_id = processed_state.get('current_scene_id', '')
 
-                if curr_scene:
-                    npc_info = {
-                        'npcs': curr_scene.get('npcs', []),
-                        'enemies': curr_scene.get('enemies', []),
-                        'scene_type': curr_scene.get('type', 'normal')
+            # 시나리오의 모든 NPC 정보를 딕셔너리로 구성
+            all_scenario_npcs = {}
+            for npc in scenario.get('npcs', []):
+                if isinstance(npc, dict) and 'name' in npc:
+                    npc_name = npc['name']
+                    all_scenario_npcs[npc_name] = {
+                        'name': npc_name,
+                        'role': npc.get('role', 'Unknown'),
+                        'personality': npc.get('personality', '보통'),
+                        'hp': npc.get('hp', 100),
+                        'max_hp': npc.get('max_hp', 100),
+                        'status': 'alive',
+                        'relationship': 50,
+                        'emotion': 'neutral',
+                        'location': '알 수 없음',
+                        'is_hostile': npc.get('isEnemy', False)
                     }
 
-                    # NPC 상세 정보 추가
-                    npc_details = {}
-                    for npc_name in npc_info['npcs'] + npc_info['enemies']:
-                        for npc in scenario.get('npcs', []):
-                            if npc.get('name') == npc_name:
-                                npc_details[npc_name] = {
-                                    'name': npc.get('name'),
-                                    'role': npc.get('role', 'Unknown'),
-                                    'personality': npc.get('personality', '보통'),
-                                    'hp': npc.get('hp', 100),
-                                    'max_hp': npc.get('max_hp', 100),
-                                    'status': 'alive',
-                                    'relationship': 50,
-                                    'emotion': 'neutral',
-                                    'location': curr_scene.get('title', '현재 위치'),
-                                    'is_hostile': npc_name in npc_info['enemies']
-                                }
-                                break
+            # WorldState의 NPC 정보로 업데이트
+            if world_state_data and 'npcs' in world_state_data:
+                world_npcs = world_state_data['npcs']
+                for npc_name, npc_state in world_npcs.items():
+                    if npc_name in all_scenario_npcs:
+                        # 기존 시나리오 정보에 WorldState 정보 덮어쓰기
+                        all_scenario_npcs[npc_name].update({
+                            'hp': npc_state.get('hp', all_scenario_npcs[npc_name]['hp']),
+                            'max_hp': npc_state.get('max_hp', all_scenario_npcs[npc_name]['max_hp']),
+                            'status': npc_state.get('status', 'alive'),
+                            'relationship': npc_state.get('relationship', 50),
+                            'emotion': npc_state.get('emotion', 'neutral'),
+                            'location': npc_state.get('location', all_scenario_npcs[npc_name]['location']),
+                            'is_hostile': npc_state.get('is_hostile', all_scenario_npcs[npc_name]['is_hostile'])
+                        })
+                    else:
+                        # WorldState에만 있는 NPC (동적 생성된 NPC)
+                        all_scenario_npcs[npc_name] = {
+                            'name': npc_name,
+                            'role': 'Unknown',
+                            'personality': '보통',
+                            'hp': npc_state.get('hp', 100),
+                            'max_hp': npc_state.get('max_hp', 100),
+                            'status': npc_state.get('status', 'alive'),
+                            'relationship': npc_state.get('relationship', 50),
+                            'emotion': npc_state.get('emotion', 'neutral'),
+                            'location': npc_state.get('location', '알 수 없음'),
+                            'is_hostile': npc_state.get('is_hostile', False)
+                        }
 
-                    if npc_details:
-                        yield f"data: {json.dumps({'type': 'npc_status', 'content': npc_details})}\n\n"
+            # 현재 씬의 NPC 위치 정보 업데이트
+            all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
+            for scene_id, scene in all_scenes.items():
+                scene_title = scene.get('title', scene_id)
+                for npc_name in scene.get('npcs', []) + scene.get('enemies', []):
+                    if npc_name in all_scenario_npcs and all_scenario_npcs[npc_name]['location'] == '알 수 없음':
+                        all_scenario_npcs[npc_name]['location'] = scene_title
+
+            # 전체 NPC 정보 전송
+            if all_scenario_npcs:
+                yield f"data: {json.dumps({'type': 'npc_status', 'content': all_scenario_npcs})}\n\n"
 
             # 🛠️ 세션 키 전송 (클라이언트가 다음 요청에 사용)
             if session_key:
