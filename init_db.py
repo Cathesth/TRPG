@@ -25,12 +25,21 @@ def main():
         logger.info("📋 Creating tables...")
         create_tables()
 
-        # 2. 오래된 세션 정리 (선택사항)
+        # 2. 마이그레이션 실행 (컬럼 추가)
+        logger.info("📋 Running migrations...")
+        try:
+            from migrate_db import run_migration
+            run_migration()
+        except Exception as e:
+            logger.warning(f"⚠️ Migration skipped or failed: {e}")
+
+        # 3. 오래된 세션 정리 (선택사항)
         logger.info("🧹 Cleaning up old sessions...")
         deleted = cleanup_old_sessions(days=7)
 
         logger.info(f"✅ Database initialization completed successfully!")
         logger.info(f"   - Tables created")
+        logger.info(f"   - Migrations applied")
         logger.info(f"   - {deleted} old sessions cleaned up")
 
         return True
@@ -45,4 +54,3 @@ def main():
 if __name__ == "__main__":
     success = main()
     exit(0 if success else 1)
-
