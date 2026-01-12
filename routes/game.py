@@ -186,6 +186,9 @@ async def game_act_stream(
                 yield f"data: {json.dumps({'type': 'error', 'content': '시나리오를 찾을 수 없습니다.'})}\n\n"
                 return
 
+            # [FIX] scenario를 processed_state에 추가 (NPC 정보 조회용)
+            processed_state['scenario'] = scenario
+
             if is_game_start:
                 # 게임 시작 시: WorldState 초기화
                 world_state_instance = WorldState()
@@ -198,6 +201,9 @@ async def game_act_stream(
                 current_state['current_scene_id'] = start_scene_id
                 current_state['system_message'] = 'Game Started'
                 current_state['world_state'] = world_state_instance.to_dict()
+
+                # [FIX] 게임 시작 시에도 location을 start_scene_id로 설정
+                current_state['world_state']['location'] = start_scene_id
             else:
                 # 일반 턴: LangGraph 실행
                 logger.info(f"🎮 Action: {action_text}")

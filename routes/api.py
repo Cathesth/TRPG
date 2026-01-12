@@ -335,11 +335,19 @@ async def load_scenario(
     # [경량화] scenario 전체 대신 scenario_id만 저장
     scenario_id = scenario.get('id', 0)
 
+    # [FIX] WorldState 초기화
+    from core.state import WorldState
+    world_state_instance = WorldState()
+    world_state_instance.reset()
+    world_state_instance.initialize_from_scenario(scenario)
+    initial_world_state = world_state_instance.to_dict()
+
     game_state.state = {
         "scenario_id": scenario_id,  # [경량화] ID만 저장
         "current_scene_id": "prologue",
         "start_scene_id": start_id,
         "player_vars": result['player_vars'],
+        "world_state": initial_world_state,  # [FIX] WorldState 초기화
         "history": [],
         "last_user_choice_idx": -1,
         "last_user_input": "",
@@ -807,3 +815,4 @@ async def restore_history(scenario_id: int, history_id: int, user: CurrentUser =
     undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, user.id)
     return {"success": True, "scenario": restored_data, "mermaid_code": mermaid_code,
             "undo_redo_status": undo_redo_status}
+
