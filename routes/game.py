@@ -302,10 +302,18 @@ async def game_act_stream(
                         scene_title = scene.get('title', curr_scene_id)
                         break
 
-                # World State에 씬 정보 추가
+                # World State에 씬 정보 추가 및 location 업데이트
                 world_state_with_scene = world_state_data.copy()
                 world_state_with_scene['current_scene_id'] = curr_scene_id
                 world_state_with_scene['current_scene_title'] = scene_title
+
+                # [FIX] location이 씬 ID로만 되어 있는 경우 씬 제목으로 업데이트
+                if world_state_with_scene.get('location') == curr_scene_id or not world_state_with_scene.get('location'):
+                    world_state_with_scene['location'] = curr_scene_id
+
+                # [FIX] turn_count가 없는 경우 0으로 초기화
+                if 'turn_count' not in world_state_with_scene:
+                    world_state_with_scene['turn_count'] = 0
 
                 yield f"data: {json.dumps({'type': 'world_state', 'content': world_state_with_scene})}\n\n"
 
