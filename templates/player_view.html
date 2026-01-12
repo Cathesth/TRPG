@@ -1317,7 +1317,7 @@
             const result = await response.json();
 
             if (result.success) {
-                const card = btnElement.closest('.bg-gray-800');
+                const card = btnElement.closest('.bg-gray-800, .bg-rpg-800');
                 if (card) {
                     card.style.transition = 'opacity 0.3s, transform 0.3s';
                     card.style.opacity = '0';
@@ -1422,9 +1422,6 @@
 
         const provider = providerSelect.value;
 
-        // 제공사 선택 저장
-        sessionStorage.setItem(MODEL_PROVIDER_KEY, provider);
-
         // 기본 옵션 지우기
         modelVersionSelect.innerHTML = '';
 
@@ -1509,30 +1506,34 @@
         if (savedModelVersion && Array.from(modelVersionSelect.options).some(opt => opt.value === savedModelVersion)) {
             modelVersionSelect.value = savedModelVersion;
         }
+
+        // 제공사 선택 저장 (옵션 추가 후에 저장)
+        sessionStorage.setItem(MODEL_PROVIDER_KEY, provider);
     }
 
     // 페이지 로드 시 모델 버전 초기화
     (function() {
-        updateModelVersions();
+        const providerSelect = document.getElementById('provider-select');
+        const modelVersionSelect = document.getElementById('model-version-select');
 
         // 이전에 저장된 제공사 복원
         const savedProvider = sessionStorage.getItem(MODEL_PROVIDER_KEY);
-        const providerSelect = document.getElementById('provider-select');
         if (savedProvider && providerSelect) {
             providerSelect.value = savedProvider;
-            updateModelVersions();
         }
 
-        // 제공사 변경 시 저장
+        // 모델 버전 옵션 초기화
+        updateModelVersions();
+
+        // 제공사 변경 시 처리
         if (providerSelect) {
             providerSelect.addEventListener('change', function() {
-                sessionStorage.setItem(MODEL_PROVIDER_KEY, this.value);
-                console.log('🤖 제공사 저장됨:', this.value);
+                updateModelVersions();
+                console.log('🤖 제공사 변경됨:', this.value);
             });
         }
 
         // 모델 버전 변경 시 저장
-        const modelVersionSelect = document.getElementById('model-version-select');
         if (modelVersionSelect) {
             modelVersionSelect.addEventListener('change', function() {
                 sessionStorage.setItem(MODEL_VERSION_KEY, this.value);
