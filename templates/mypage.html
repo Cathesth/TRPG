@@ -9,7 +9,6 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
-        <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
@@ -63,9 +62,34 @@
             color: #e2e8f0;
         }
 
-        .modal { transition: opacity 0.25s ease; }
-        body.modal-active { overflow-x: hidden; overflow-y: hidden !important; }
+        .font-title {
+            font-family: 'Cinzel', serif;
+        }
     </style>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        rpg: {
+                            900: '#020617', // Main Background
+                            800: '#0f172a', // Panel Background
+                            700: '#1e293b', // Border
+                            accent: '#38bdf8', // Cyan
+                            hover: '#0ea5e9', // Blue
+                            danger: '#ef4444', // Red
+                        }
+                    },
+                    fontFamily: {
+                        title: ['Cinzel', 'serif'],
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
 </head>
 <body class="min-h-screen bg-rpg-900 text-gray-200 overflow-x-hidden">
 
@@ -88,12 +112,13 @@
             </div>
 
             <div class="flex items-center gap-4 bg-rpg-800/50 backdrop-blur-sm p-4 rounded-2xl border border-rpg-700/50">
-                 {% if user and user.is_authenticated %}
-                <div class="w-12 h-12 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-purple-500/20">
-                    {{ user.id[:2].upper() }}
+                 {% if user %}
+                 <div class="flex items-center gap-4 bg-rpg-800/50 backdrop-blur-sm p-4 rounded-2xl border border-rpg-700/50">
+                 <div class="w-12 h-12 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-purple-500/20">
+                    {{ user.id[:2].upper() if user and user.id else 'G' }}
                 </div>
                 <div class="text-right hidden sm:block">
-                    <p class="text-white font-bold">{{ user.id }}</p>
+                    <p class="text-white font-bold">{{ user.id if user and user.id else 'Guest' }}</p>
                     <p class="text-xs text-rpg-accent">Master Weaver</p>
                 </div>
                 <button onclick="logout()" class="ml-4 p-2 text-gray-400 hover:text-red-400 transition-colors" title="로그아웃">
@@ -108,6 +133,30 @@
         <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
 
             <div class="lg:col-span-1 space-y-6">
+
+                <nav class="bg-rpg-800/80 backdrop-blur border border-rpg-700 rounded-2xl p-4 shadow-xl overflow-hidden">
+                    <ul class="space-y-1">
+                        <li>
+                            <a href="/my_page" class="flex items-center gap-3 px-4 py-3 rounded-xl bg-rpg-700/50 text-rpg-accent font-bold border border-rpg-700/50 transition-all">
+                                <i data-lucide="book" class="w-5 h-5"></i>
+                                내 작품 보기
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/profile/edit" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-rpg-700 hover:text-white transition-all">
+                                <i data-lucide="user-cog" class="w-5 h-5"></i>
+                                회원 정보 수정
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/billing" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-rpg-700 hover:text-white transition-all">
+                                <i data-lucide="credit-card" class="w-5 h-5"></i>
+                                결제 / 플랜 변경
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+
                 <div class="bg-rpg-800/80 backdrop-blur border border-rpg-700 rounded-2xl p-6 shadow-xl">
                     <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
                         <i data-lucide="bar-chart-2" class="w-5 h-5 text-rpg-accent"></i> Statistics
@@ -115,24 +164,24 @@
                     <div class="space-y-4">
                         <div class="flex justify-between items-center p-3 bg-rpg-900/50 rounded-lg border border-rpg-700/50">
                             <span class="text-gray-400 text-sm">Created Scenarios</span>
-                            <span class="text-white font-bold text-xl">--</span>
+                            <span class="text-white font-bold text-xl">12</span>
                         </div>
                         <div class="flex justify-between items-center p-3 bg-rpg-900/50 rounded-lg border border-rpg-700/50">
                             <span class="text-gray-400 text-sm">Published</span>
-                            <span class="text-rpg-accent font-bold text-xl">--</span>
+                            <span class="text-rpg-accent font-bold text-xl">3</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="bg-gradient-to-br from-rpg-800 to-rpg-900 border border-rpg-700 rounded-2xl p-6 shadow-xl text-center">
+                <div class="bg-gradient-to-br from-rpg-800 to-rpg-900 border border-rpg-700 rounded-2xl p-6 shadow-xl text-center group cursor-pointer hover:border-rpg-accent/50 transition-all" onclick="location.href='/views/builder'">
                     <div class="mb-4 flex justify-center">
-                        <div class="p-3 bg-rpg-accent/10 rounded-full">
+                        <div class="p-3 bg-rpg-accent/10 rounded-full group-hover:bg-rpg-accent/20 transition-all">
                             <i data-lucide="plus" class="w-8 h-8 text-rpg-accent"></i>
                         </div>
                     </div>
                     <h3 class="text-lg font-bold text-white mb-2">New Adventure</h3>
                     <p class="text-sm text-gray-400 mb-6">새로운 세계를 창조할 준비가 되셨나요?</p>
-                    <button onclick="location.href='/views/builder'" class="w-full py-3 bg-rpg-accent hover:bg-rpg-hover text-black font-bold rounded-xl transition-all shadow-lg shadow-rpg-accent/20 flex items-center justify-center gap-2">
+                    <button class="w-full py-3 bg-rpg-accent hover:bg-white text-black font-bold rounded-xl transition-all shadow-lg shadow-rpg-accent/20 flex items-center justify-center gap-2">
                         <i data-lucide="pen-tool" class="w-4 h-4"></i> Create New
                     </button>
                 </div>
