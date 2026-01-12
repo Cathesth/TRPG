@@ -574,8 +574,16 @@ def rule_node(state: PlayerState):
     curr_scene = all_scenes.get(curr_scene_id)
     transitions = curr_scene.get('transitions', []) if curr_scene else []
 
-    # WorldState 인스턴스 가져오기
+    # WorldState 인스턴스 가져오기 및 복원
     world_state = WorldState()
+
+    # [FIX] 기존 world_state가 있으면 복원
+    if 'world_state' in state and state['world_state']:
+        world_state.from_dict(state['world_state'])
+    else:
+        # 처음 생성하는 경우 시나리오로 초기화
+        scenario = get_scenario_by_id(scenario_id)
+        world_state.initialize_from_scenario(scenario)
 
     if state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
         trans = transitions[idx]
