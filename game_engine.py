@@ -35,14 +35,25 @@ def get_scenario_by_id(scenario_id: int) -> Dict[str, Any]:
         scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
         if scenario:
             scenario_data = scenario.data
+
+            # [Fix] 중첩된 scenario 구조 처리
+            if 'scenario' in scenario_data and isinstance(scenario_data['scenario'], dict):
+                scenario_data = scenario_data['scenario']
+
+            # [Fix] 필수 키가 없으면 기본값 설정
+            if 'scenes' not in scenario_data:
+                scenario_data['scenes'] = []
+            if 'endings' not in scenario_data:
+                scenario_data['endings'] = []
+
             _scenario_cache[scenario_id] = scenario_data
             return scenario_data
         else:
             logger.error(f"❌ Scenario not found: {scenario_id}")
-            return {}
+            return {'scenes': [], 'endings': []}
     except Exception as e:
         logger.error(f"❌ Failed to load scenario {scenario_id}: {e}")
-        return {}
+        return {'scenes': [], 'endings': []}
     finally:
         db.close()
 
