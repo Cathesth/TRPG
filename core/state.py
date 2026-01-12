@@ -133,68 +133,45 @@ class WorldState:
         Args:
             scenario_data: 시나리오 JSON 데이터
         """
-        # 플레이어 초기 스탯 설정
-        initial_state = scenario_data.get("initial_state", {})
-
-        if "hp" in initial_state:
-            self.player["hp"] = initial_state["hp"]
-            self.player["max_hp"] = initial_state.get("max_hp", initial_state["hp"])
-
-        if "inventory" in initial_state:
-            self.player["inventory"] = list(initial_state["inventory"])
-
-        # 커스텀 스탯 로드 (sanity, radiation 등)
-        for key, value in initial_state.items():
-            if key not in ["hp", "max_hp", "inventory"]:
-                self.player["custom_stats"][key] = value
+        # [삭제] 플레이어 초기 스탯 설정 - player_vars로 이동
+        # player_state의 player_vars가 플레이어 스탯을 관리함
 
         # 시작 위치 설정
-        self.location = scenario_data.get("start_scene_id")
+        start_scene_id = scenario_data.get('start_scene_id')
+        if start_scene_id:
+            self.location = start_scene_id
 
-        # 씬 정보로부터 NPC 위치 매핑 생성
-        scene_npc_map = {}  # {npc_name: scene_id}
-        for scene in scenario_data.get("scenes", []):
-            scene_id = scene.get("scene_id") or scene.get("name", "알 수 없음")
-            for npc_name in scene.get("npcs", []) + scene.get("enemies", []):
-                if npc_name not in scene_npc_map:
-                    scene_npc_map[npc_name] = scene_id
+        # NPC 초기화
+        npcs_data = scenario_data.get('npcs', [])
+        scenes_data = scenario_data.get('scenes', [])
 
-        # NPC 초기 상태 설정
-        npcs_data = scenario_data.get("npcs", [])
         for npc in npcs_data:
-            if isinstance(npc, dict) and "name" in npc:
-                name = npc["name"]
-                is_enemy = npc.get("isEnemy", False)
+            npc_name = npc.get('name')
+            if not npc_name:
+                continue
 
-                # HP 처리: 문자열이면 정수로 변환
-                npc_hp = npc.get("hp", 100)
-                if isinstance(npc_hp, str):
-                    try:
-                        npc_hp = int(npc_hp)
-                    except ValueError:
-                        npc_hp = 100
+            # NPC 위치 찾기
+            npc_location = None
+            for scene in scenes_data:
+                scene_npcs = scene.get('npcs', [])
+                scene_enemies = scene.get('enemies', [])
+                if npc_name in scene_npcs or npc_name in scene_enemies:
+                    npc_location = scene.get('scene_id')
+                    break
 
-                npc_max_hp = npc.get("max_hp", npc_hp)
-                if isinstance(npc_max_hp, str):
-                    try:
-                        npc_max_hp = int(npc_max_hp)
-                    except ValueError:
-                        npc_max_hp = npc_hp
+            # NPC 초기 상태 설정
+            self.npcs[npc_name] = {
+                "status": "alive",
+                "hp": npc.get('hp', 100),
+                "max_hp": npc.get('max_hp', npc.get('hp', 100)),
+                "emotion": "neutral",
+                "relationship": 50,
+                "is_hostile": npc.get('isEnemy', False),
+                "location": npc_location or "unknown",
+                "flags": {}
+            }
 
-                self.npcs[name] = {
-                    "status": "alive",
-                    "hp": npc_hp,
-                    "max_hp": npc_max_hp,
-                    "emotion": "hostile" if is_enemy else "neutral",
-                    "relationship": 0 if is_enemy else 50,  # 적은 0, 중립은 50
-                    "location": scene_npc_map.get(name, "알 수 없음"),
-                    "is_hostile": is_enemy,
-                    "flags": {}
-                }
-
-        logger.info(f"WorldState initialized from scenario: {scenario_data.get('title', 'Unknown')}")
-        logger.info(f"Initialized {len(self.npcs)} NPCs: {list(self.npcs.keys())}")
-        logger.info(f"Player custom stats: {self.player['custom_stats']}")
+        logger.info(f"🌍 [WORLD STATE] Initialized with {len(self.npcs)} NPCs")
 
     # ========================================
     # 2. 상태 업데이트 (핵심 로직)
@@ -474,127 +451,39 @@ class WorldState:
     # 4. 상태 조회 (Getter)
     # ========================================
 
-    def get_stat(self, stat_name: str) -> Optional[Union[int, float]]:
-        """플레이어 스탯 조회"""
-        if stat_name in self.player:
-            return self.player[stat_name]
-        if stat_name in self.player["custom_stats"]:
-            return self.player["custom_stats"][stat_name]
-        return None
-
     def get_npc_state(self, npc_name: str) -> Optional[Dict[str, Any]]:
         """NPC 상태 조회"""
         return self.npcs.get(npc_name)
 
-    def has_item(self, item_name: str) -> bool:
-        """아이템 소지 여부 확인"""
-        return item_name in self.player["inventory"]
-
-    def get_inventory(self) -> List[str]:
-        """인벤토리 목록 반환"""
-        return list(self.player["inventory"])
-
-    # ========================================
-    # 5. LLM 프롬프트용 컨텍스트 생성
-    # ========================================
-
-    def get_context_for_llm(self) -> str:
-        """
-        LLM 프롬프트에 주입할 현재 상태를 텍스트로 변환
-
-        Returns:
-            현재 상태를 요약한 텍스트
-        """
-        lines = ["=== 현재 게임 상태 ===\n"]
-
-        # 플레이어 상태
-        lines.append("[플레이어]")
-        lines.append(f"- HP: {self.player['hp']}/{self.player['max_hp']}")
-        lines.append(f"- 골드: {self.player.get('gold', 0)}")
-
-        for key, value in self.player["custom_stats"].items():
-            lines.append(f"- {key}: {value}")
-
-        if self.player["inventory"]:
-            lines.append(f"- 소지품: {', '.join(self.player['inventory'])}")
+    def set_npc_state(self, npc_name: str, state_data: Dict[str, Any]):
+        """NPC 상태 설정"""
+        if npc_name in self.npcs:
+            self.npcs[npc_name].update(state_data)
         else:
-            lines.append("- 소지품: 없음")
+            self.npcs[npc_name] = state_data
 
-        # 위치
-        if self.location:
-            lines.append(f"\n[현재 위치] {self.location}")
-
-        # 시간
-        lines.append(f"\n[시간] {self.time['day']}일차 - {self.time['phase']}")
-
-        # NPC 관계도 (중요한 것만)
-        if self.npcs:
-            lines.append("\n[NPC 상태]")
-            for npc_name, npc_data in self.npcs.items():
-                if npc_data["status"] != "alive":
-                    lines.append(f"- {npc_name}: {npc_data['status']}")
-                elif npc_data["relationship"] != 50:
-                    lines.append(f"- {npc_name}: 관계도 {npc_data['relationship']}, {npc_data['emotion']}")
-
-        # 전역 플래그 (활성화된 것만)
-        active_flags = [k for k, v in self.global_flags.items() if v]
-        if active_flags:
-            lines.append(f"\n[활성 플래그] {', '.join(active_flags)}")
-
-        return "\n".join(lines)
-
-    # ========================================
-    # 6. 시간 진행
-    # ========================================
-
-    def advance_time(self, steps: int = 1):
-        """
-        서사적 시간을 진행
-
-        Args:
-            steps: 진행할 단계 수 (1 = 한 단계)
-        """
-        phases = ["morning", "afternoon", "night"]
-
-        for _ in range(steps):
-            current_idx = phases.index(self.time["phase"])
-            next_idx = (current_idx + 1) % len(phases)
-
-            self.time["phase"] = phases[next_idx]
-
-            # 하루가 지남
-            if next_idx == 0:
-                self.time["day"] += 1
-
-        logger.info(f"Time advanced to Day {self.time['day']}, {self.time['phase']}")
-
-    # ========================================
-    # 7. 데이터 영속성 (Persistence)
-    # ========================================
+    def increment_turn(self):
+        """턴 증가"""
+        self.turn_count += 1
 
     def to_dict(self) -> Dict[str, Any]:
-        """현재 상태를 딕셔너리로 직렬화 (저장용)"""
+        """딕셔너리로 변환 (직렬화)"""
         return {
-            "time": copy.deepcopy(self.time),
+            "time": self.time,
             "location": self.location,
-            "turn_count": self.turn_count,  # 턴 카운트 추가
-            "global_flags": copy.deepcopy(self.global_flags),
-            "npcs": copy.deepcopy(self.npcs),
-            "player": copy.deepcopy(self.player),
-            "history": copy.deepcopy(self.history[-50:])  # 최근 50개만
+            "global_flags": self.global_flags,
+            "turn_count": self.turn_count,
+            "npcs": self.npcs,
+            "history": self.history
         }
 
     def from_dict(self, data: Dict[str, Any]):
-        """딕셔너리로부터 상태 복원 (로드용)"""
-        if not data:
-            return
-
+        """딕셔너리에서 복원 (역직렬화)"""
         self.time = data.get("time", {"day": 1, "phase": "morning"})
         self.location = data.get("location")
-        self.turn_count = data.get("turn_count", 0)  # 턴 카운트 복원
         self.global_flags = data.get("global_flags", {})
+        self.turn_count = data.get("turn_count", 0)
         self.npcs = data.get("npcs", {})
-        self.player = data.get("player", {})
         self.history = data.get("history", [])
 
         logger.info(f"WorldState restored from saved data (Turn: {self.turn_count})")

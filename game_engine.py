@@ -571,28 +571,33 @@ def rule_node(state: PlayerState):
         effects = trans.get('effects', [])
         next_id = trans.get('target_scene_id')
 
-        # 🛠️ WorldState를 통한 효과 적용 (규칙 기반)
-        effect_list = []
+        # 효과 적용
         for eff in effects:
             try:
                 if isinstance(eff, dict):
                     key = eff.get("target", "").lower()
                     operation = eff.get("operation", "add")
                     raw_val = eff.get("value", 0)
-                    eff_type = eff.get("type", "variable")
 
-                    # 아이템 효과
+                    # 아이템 효과 - player_vars에 직접 적용
                     if operation in ["gain_item", "lose_item"]:
                         item_name = str(raw_val)
+                        inventory = state['player_vars'].get('inventory', [])
+                        if not isinstance(inventory, list):
+                            inventory = []
+
                         if operation == "gain_item":
-                            effect_list.append({"item_add": item_name})
+                            inventory.append(item_name)
                             sys_msg.append(f"📦 획득: {item_name}")
                         elif operation == "lose_item":
-                            effect_list.append({"item_remove": item_name})
+                            if item_name in inventory:
+                                inventory.remove(item_name)
                             sys_msg.append(f"🗑️ 사용: {item_name}")
+
+                        state['player_vars']['inventory'] = inventory
                         continue
 
-                    # 수치 효과 (HP, Gold 등)
+                    # 수치 효과 (HP, Gold 등) - player_vars에 직접 적용
                     val = 0
                     if isinstance(raw_val, (int, float)):
                         val = int(raw_val)
@@ -601,50 +606,29 @@ def rule_node(state: PlayerState):
                             val = int(raw_val)
 
                     if key:
-                        if operation == "add":
-                            effect_list.append({key: val})
-                            if val > 0:
-                                sys_msg.append(f"{key.upper()} +{val}")
-                            else:
-                                sys_msg.append(f"{key.upper()} {val}")
-                        elif operation == "subtract":
-                            effect_list.append({key: -abs(val)})
-                            sys_msg.append(f"{key.upper()} -{abs(val)}")
-                        elif operation == "set":
-                            # set은 현재값을 무시하고 절대값 설정
-                            current_val = world_state.get_stat(key) or 0
-                            delta = val - current_val
-                            effect_list.append({key: delta})
-                            sys_msg.append(f"{key.upper()} = {val}")
-
-                        # 레거시 player_vars도 동기화 (하위 호환성)
-                        # 먼저 world_state에서 현재값 가져오기 시도
-                        current_val = world_state.get_stat(key)
-                        if current_val is None:
-                            current_val = state['player_vars'].get(key, 0)
-
+                        current_val = state['player_vars'].get(key, 0)
                         if not isinstance(current_val, (int, float)):
                             current_val = 0
 
                         if operation == "add":
                             new_val = current_val + val
+                            if val > 0:
+                                sys_msg.append(f"{key.upper()} +{val}")
+                            else:
+                                sys_msg.append(f"{key.upper()} {val}")
                         elif operation == "subtract":
                             new_val = max(0, current_val - abs(val))
+                            sys_msg.append(f"{key.upper()} -{abs(val)}")
                         elif operation == "set":
                             new_val = val
+                            sys_msg.append(f"{key.upper()} = {val}")
                         else:
                             new_val = current_val
 
-                        # player_vars에 저장 (하위 호환성)
                         state['player_vars'][key] = new_val
 
             except Exception as e:
                 logger.error(f"Effect application error: {e}")
-
-        # WorldState 업데이트 (순수 규칙 기반)
-        if effect_list:
-            world_state.update_state(effect_list)
-            logger.info(f"🔧 [WORLD STATE] Effects applied: {effect_list}")
 
         # 씬 이동
         if next_id:
