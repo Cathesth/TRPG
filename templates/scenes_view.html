@@ -151,13 +151,22 @@
     let panZoom = { scale: 1, x: 0, y: 0, isDragging: false, startX: 0, startY: 0 };
 
     // --- Graph Logic ---
-    async function renderGraph() {
+    async function renderGraph(code = null) {
         const el = document.getElementById('mermaid-graph');
+        if(code) el.textContent = code; // 새 코드가 있으면 업데이트
+
+        // Mermaid가 다시 그릴 수 있도록 속성 초기화
+        el.removeAttribute('data-processed');
+
         try {
             await mermaid.run({ nodes: [el] });
             el.classList.remove('opacity-0');
             setupNodeClicks();
-        } catch(e) { console.error(e); }
+        } catch(e) {
+            console.error(e);
+            el.innerHTML = '<div class="text-red-500 text-center p-4">그래프 렌더링 실패<br>데이터를 확인해주세요.</div>';
+            el.classList.remove('opacity-0');
+        }
     }
 
     // --- Editor Logic ---
@@ -424,7 +433,7 @@
     };
 
     // Init
-    renderGraph();
+    // renderGraph(); // 제거: 데이터 로드 후 렌더링해야 함
     lucide.createIcons();
 
     // Initial Data Load
@@ -436,6 +445,13 @@
                 document.getElementById('saveDraftBtn').disabled = false;
                 document.getElementById('publishBtn').disabled = false;
             }
+            // [Fix] 데이터를 받은 후 Mermaid 코드 업데이트 및 렌더링 호출
+            if (d.mermaid_code) {
+                renderGraph(d.mermaid_code);
+            } else {
+                renderGraph(); // 코드가 없어도 일단 호출 (초기화)
+            }
+
             // Check history status
             fetch(`/api/draft/${SCENARIO_ID}/history/status`).then(r=>r.json()).then(s => {
                 if(s.success) {
