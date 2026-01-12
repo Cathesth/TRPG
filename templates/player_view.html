@@ -1088,6 +1088,9 @@
     }
 
     document.addEventListener('DOMContentLoaded', function() {
+        // 아이콘 초기화
+        lucide.createIcons();
+
         // 모델 버전 초기화 (가장 먼저 실행)
         const providerSelect = document.getElementById('provider-select');
         const modelVersionSelect = document.getElementById('model-version-select');
@@ -1113,6 +1116,8 @@
                 sessionStorage.setItem(MODEL_VERSION_KEY, this.value);
                 console.log('🤖 모델 저장됨:', this.value);
             });
+        } else {
+            console.error('❌ 모델 선택 요소를 찾을 수 없습니다:', { providerSelect, modelVersionSelect });
         }
 
         // 채팅 로그 복원
@@ -1148,6 +1153,11 @@
                 if (input.value.trim()) submitWithStreaming(input.value.trim());
             });
         }
+
+        // 아이콘 재생성 (모든 초기화 후)
+        setTimeout(() => {
+            lucide.createIcons();
+        }, 100);
     });
 
     document.body.addEventListener('htmx:afterSwap', function(evt) {
@@ -1540,4 +1550,6 @@
         // 제공사 선택 저장 (옵션 추가 후에 저장)
         sessionStorage.setItem(MODEL_PROVIDER_KEY, provider);
     }
-
+</script>
+</body>
+</html>
