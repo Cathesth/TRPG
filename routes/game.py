@@ -312,9 +312,15 @@ async def game_act_stream(
                 world_state_with_scene['current_scene_id'] = curr_scene_id
                 world_state_with_scene['current_scene_title'] = scene_title
 
-                # [FIX] location이 씬 ID로만 되어 있는 경우 씬 제목로 업데이트
-                if world_state_with_scene.get('location') == curr_scene_id or not world_state_with_scene.get('location'):
-                    world_state_with_scene['location'] = curr_scene_id
+                # [FIX] location을 "Scene-id (Scene-title)" 형식으로 표시
+                if world_state_with_scene.get('location'):
+                    location_scene_id = world_state_with_scene['location']
+                    location_scene_title = '알 수 없음'
+                    for scene in scenario.get('scenes', []):
+                        if scene.get('scene_id') == location_scene_id:
+                            location_scene_title = scene.get('title', location_scene_id)
+                            break
+                    world_state_with_scene['location'] = f"{location_scene_id} ({location_scene_title})"
 
                 # [FIX] turn_count가 없는 경우 0으로 초기화
                 if 'turn_count' not in world_state_with_scene:
