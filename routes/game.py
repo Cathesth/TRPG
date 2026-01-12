@@ -58,10 +58,13 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
                 db.commit()
                 logger.info(f"✅ [DB] Game session updated: {session_key}")
                 return session_key
+            else:
+                # 세션이 없으면 신규 생성
+                logger.warning(f"⚠️ [DB] Session key provided but not found, creating new: {session_key}")
 
         # 신규 세션 생성
         import uuid
-        new_session_key = str(uuid.uuid4())
+        new_session_key = session_key if session_key else str(uuid.uuid4())
 
         game_session = GameSession(
             user_id=user_id,
@@ -82,7 +85,7 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
     except Exception as e:
         logger.error(f"❌ [DB] Failed to save game session: {e}")
         db.rollback()
-        return None
+        return session_key  # 실패 시 기존 세션 키 반환
 
 
 def load_game_session(db: Session, session_key: str):
@@ -277,6 +280,40 @@ async def game_act_stream(
             # F. 스탯 업데이트 및 세션 키 전송
             stats_data = processed_state.get('player_vars', {})
             yield f"data: {json.dumps({'type': 'stats', 'content': stats_data})}\n\n"
+
+            # 🛠️ 디버깅 정보 전송 (WorldState, NPC 정보)
+            world_state_data = processed_state.get('world_state', {})
+            if world_state_data:
+                yield f"data: {json.dumps({'type': 'world_state', 'content': world_state_data})}\n\n"
+
+            # NPC 정보 전송
+            scenario = processed_state.get('scenario', {})
+            curr_scene_id = processed_state.get('current_scene_id', '')
+            all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
+            curr_scene = all_scenes.get(curr_scene_id)
+
+            if curr_scene:
+                npc_info = {
+                    'npcs': curr_scene.get('npcs', []),
+                    'enemies': curr_scene.get('enemies', []),
+                    'scene_type': curr_scene.get('type', 'normal')
+                }
+
+                # NPC 상세 정보 추가
+                npc_details = []
+                for npc_name in npc_info['npcs'] + npc_info['enemies']:
+                    for npc in scenario.get('npcs', []):
+                        if npc.get('name') == npc_name:
+                            npc_details.append({
+                                'name': npc.get('name'),
+                                'role': npc.get('role', 'Unknown'),
+                                'personality': npc.get('personality', '보통'),
+                                'weakness': npc.get('weakness', npc.get('약점', ''))
+                            })
+                            break
+
+                npc_info['details'] = npc_details
+                yield f"data: {json.dumps({'type': 'npc_status', 'content': npc_info})}\n\n"
 
             # 🛠️ 세션 키 전송 (클라이언트가 다음 요청에 사용)
             if session_key:
