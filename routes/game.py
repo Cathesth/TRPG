@@ -283,11 +283,28 @@ async def game_act_stream(
             # world_state는 stats에 포함하지 않음 (디버그 전용)
             yield f"data: {json.dumps({'type': 'stats', 'content': stats_data})}\n\n"
 
-            # world_state 별도 전송 제거 (일반 플레이어에게 노출되지 않음)
-            # 디버그가 필요한 경우 별도 엔드포인트를 통해 접근
+            # World State 정보 전송 (디버그 모드용)
+            world_state_data = processed_state.get('world_state', {})
+            if world_state_data:
+                # 현재 씬 정보를 World State에 추가
+                scenario = processed_state.get('scenario', {})
+                curr_scene_id = processed_state.get('current_scene_id', '')
+
+                # 씬 정보 찾기
+                scene_title = '알 수 없음'
+                for scene in scenario.get('scenes', []):
+                    if scene.get('scene_id') == curr_scene_id:
+                        scene_title = scene.get('title', curr_scene_id)
+                        break
+
+                # World State에 씬 정보 추가
+                world_state_with_scene = world_state_data.copy()
+                world_state_with_scene['current_scene_id'] = curr_scene_id
+                world_state_with_scene['current_scene_title'] = scene_title
+
+                yield f"data: {json.dumps({'type': 'world_state', 'content': world_state_with_scene})}\n\n"
 
             # NPC 정보 전송 (WorldState에서 추출 + 시나리오 전체 NPC)
-            world_state_data = processed_state.get('world_state', {})
             scenario = processed_state.get('scenario', {})
             curr_scene_id = processed_state.get('current_scene_id', '')
 

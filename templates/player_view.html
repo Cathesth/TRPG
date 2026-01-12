@@ -1080,29 +1080,23 @@
         const time = worldState.time || {};
         const day = time.day || 1;
         const phase = time.phase || 'morning';
-        let location = worldState.location || '?';
         const turnCount = worldState.turn_count || 0;
         const globalFlags = worldState.global_flags || {};
 
-        // 위치를 Scene ID에서 제목으로 변환
-        // 현재 저장된 시나리오 데이터를 sessionStorage에서 가져와서 변환
-        try {
-            const savedStats = sessionStorage.getItem(STATS_KEY);
-            if (savedStats) {
-                const statsData = JSON.parse(savedStats);
-                const scenario = statsData.scenario || window.currentScenario;
-                if (scenario && scenario.scenes) {
-                    // location이 Scene-X 형식이면 제목으로 변환
-                    if (location && location.startsWith('Scene-')) {
-                        const scene = scenario.scenes.find(s => s.scene_id === location);
-                        if (scene && scene.title) {
-                            location = scene.title;
-                        }
-                    }
-                }
-            }
-        } catch (e) {
-            console.error('Failed to convert location:', e);
+        // 위치 정보 처리: Scene ID와 제목을 함께 표시
+        let locationDisplay = '?';
+        const sceneId = worldState.current_scene_id || worldState.location;
+        const sceneTitle = worldState.current_scene_title;
+
+        if (sceneId && sceneTitle) {
+            // Scene ID와 제목 모두 있는 경우: "Scene-2 (폐허 입구)"
+            locationDisplay = `${sceneId} (${sceneTitle})`;
+        } else if (sceneTitle) {
+            // 제목만 있는 경우
+            locationDisplay = sceneTitle;
+        } else if (sceneId) {
+            // ID만 있는 경우
+            locationDisplay = sceneId;
         }
 
         // 시간대에 따른 아이콘
@@ -1124,7 +1118,7 @@
                 </div>
                 <div class="flex justify-between items-center">
                     <span class="text-gray-400">위치:</span>
-                    <span class="text-white">${location}</span>
+                    <span class="text-white text-xs">${locationDisplay}</span>
                 </div>
                 <div class="flex justify-between items-center">
                     <span class="text-gray-400">턴 수:</span>
