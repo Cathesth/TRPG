@@ -290,12 +290,28 @@ async def load_scenario(
     start_id = pick_start_scene_id(scenario)
 
     game_state.config['title'] = scenario.get('title', 'Loaded')
+
+    # [경량화] scenario 전체 대신 scenario_id만 저장
+    scenario_id = scenario.get('id', 0)
+
     game_state.state = {
-        "scenario": scenario,
+        "scenario_id": scenario_id,  # [경량화] ID만 저장
         "current_scene_id": "prologue",
         "start_scene_id": start_id,
         "player_vars": result['player_vars'],
-        "history": [], "last_user_choice_idx": -1, "system_message": "Loaded", "npc_output": "", "narrator_output": ""
+        "history": [],
+        "last_user_choice_idx": -1,
+        "last_user_input": "",
+        "parsed_intent": "",
+        "system_message": "Loaded",
+        "npc_output": "",
+        "narrator_output": "",
+        "critic_feedback": "",
+        "retry_count": 0,
+        "chat_log_html": "",
+        "near_miss_trigger": None,
+        "model": "openai/tngtech/deepseek-r1t2-chimera:free",
+        "_internal_flags": {}
     }
     game_state.game_graph = create_game_graph()
     return {"success": True}
@@ -360,7 +376,7 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
         game_state.config['title'] = scenario_json.get('title')
         game_state.state = {
             "scenario": scenario_json,
-            "current_scene_id": pick_start_scene_id(scenario_json),
+            "current_scene_id": pick_sta어rt_scene_id(scenario_json),
             "player_vars": {}, "history": [], "last_user_choice_idx": -1, "system_message": "Init", "npc_output": "",
             "narrator_output": ""
         }

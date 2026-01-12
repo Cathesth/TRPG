@@ -15,6 +15,38 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# [최적화] 시나리오 데이터 캐시
+_scenario_cache: Dict[int, Dict[str, Any]] = {}
+
+
+def get_scenario_by_id(scenario_id: int) -> Dict[str, Any]:
+    """
+    시나리오 ID로 데이터 조회 (캐싱)
+    PlayerState에서 시나리오 전체 데이터를 제거하고 필요 시 이 함수로 조회
+    """
+    if scenario_id in _scenario_cache:
+        return _scenario_cache[scenario_id]
+
+    # DB에서 조회
+    from models import SessionLocal, Scenario
+
+    db = SessionLocal()
+    try:
+        scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if scenario:
+            scenario_data = scenario.data
+            _scenario_cache[scenario_id] = scenario_data
+            return scenario_data
+        else:
+            logger.error(f"❌ Scenario not found: {scenario_id}")
+            return {}
+    except Exception as e:
+        logger.error(f"❌ Failed to load scenario {scenario_id}: {e}")
+        return {}
+    finally:
+        db.close()
+
+
 # [최적화] 프롬프트 캐시 (YAML 파일에서 한 번만 로드)
 _prompt_cache: Dict[str, Any] = {}
 
@@ -55,7 +87,7 @@ def get_cached_llm(api_key: str, model_name: str, streaming: bool = False):
 
 
 class PlayerState(TypedDict):
-    scenario: Dict[str, Any]
+    scenario_id: int  # [경량화] 시나리오 전체 대신 ID만 저장
     current_scene_id: str
     previous_scene_id: str
     player_vars: Dict[str, Any]
@@ -295,9 +327,9 @@ def intent_parser_node(state: PlayerState):
         state['parsed_intent'] = 'transition'
         return state
 
-    scenario = state['scenario']
+    scenario_id = state['scenario_id']
     curr_scene_id = state['current_scene_id']
-    scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
+    scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id).get('scenes', [])}
 
     curr_scene = scenes.get(curr_scene_id)
     if not curr_scene:
@@ -305,7 +337,7 @@ def intent_parser_node(state: PlayerState):
         return state
 
     # 엔딩 체크
-    endings = {e['ending_id']: e for e in scenario.get('endings', [])}
+    endings = {e['ending_id']: e for e in get_scenario_by_id(scenario_id).get('endings', [])}
     if curr_scene_id in endings:
         state['parsed_intent'] = 'ending'
         return state
@@ -521,11 +553,11 @@ def _fast_track_intent_parser(state: PlayerState, user_input: str, curr_scene: D
 def rule_node(state: PlayerState):
     """규칙 엔진 (이동 및 상태 변경) - WorldState 통합"""
     idx = state['last_user_choice_idx']
-    scenario = state['scenario']
+    scenario_id = state['scenario_id']
     curr_scene_id = state['current_scene_id']
 
-    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
-    all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
+    all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
+    all_endings = {e['ending_id']: e for e in get_scenario_by_id(scenario_id).get('endings', [])}
 
     sys_msg = []
     curr_scene = all_scenes.get(curr_scene_id)
@@ -539,28 +571,33 @@ def rule_node(state: PlayerState):
         effects = trans.get('effects', [])
         next_id = trans.get('target_scene_id')
 
-        # 🛠️ WorldState를 통한 효과 적용 (규칙 기반)
-        effect_list = []
+        # 효과 적용
         for eff in effects:
             try:
                 if isinstance(eff, dict):
                     key = eff.get("target", "").lower()
                     operation = eff.get("operation", "add")
                     raw_val = eff.get("value", 0)
-                    eff_type = eff.get("type", "variable")
 
-                    # 아이템 효과
+                    # 아이템 효과 - player_vars에 직접 적용
                     if operation in ["gain_item", "lose_item"]:
                         item_name = str(raw_val)
+                        inventory = state['player_vars'].get('inventory', [])
+                        if not isinstance(inventory, list):
+                            inventory = []
+
                         if operation == "gain_item":
-                            effect_list.append({"item_add": item_name})
+                            inventory.append(item_name)
                             sys_msg.append(f"📦 획득: {item_name}")
                         elif operation == "lose_item":
-                            effect_list.append({"item_remove": item_name})
+                            if item_name in inventory:
+                                inventory.remove(item_name)
                             sys_msg.append(f"🗑️ 사용: {item_name}")
+
+                        state['player_vars']['inventory'] = inventory
                         continue
 
-                    # 수치 효과 (HP, Gold 등)
+                    # 수치 효과 (HP, Gold 등) - player_vars에 직접 적용
                     val = 0
                     if isinstance(raw_val, (int, float)):
                         val = int(raw_val)
@@ -569,50 +606,29 @@ def rule_node(state: PlayerState):
                             val = int(raw_val)
 
                     if key:
-                        if operation == "add":
-                            effect_list.append({key: val})
-                            if val > 0:
-                                sys_msg.append(f"{key.upper()} +{val}")
-                            else:
-                                sys_msg.append(f"{key.upper()} {val}")
-                        elif operation == "subtract":
-                            effect_list.append({key: -abs(val)})
-                            sys_msg.append(f"{key.upper()} -{abs(val)}")
-                        elif operation == "set":
-                            # set은 현재값을 무시하고 절대값 설정
-                            current_val = world_state.get_stat(key) or 0
-                            delta = val - current_val
-                            effect_list.append({key: delta})
-                            sys_msg.append(f"{key.upper()} = {val}")
-
-                        # 레거시 player_vars도 동기화 (하위 호환성)
-                        # 먼저 world_state에서 현재값 가져오기 시도
-                        current_val = world_state.get_stat(key)
-                        if current_val is None:
-                            current_val = state['player_vars'].get(key, 0)
-
+                        current_val = state['player_vars'].get(key, 0)
                         if not isinstance(current_val, (int, float)):
                             current_val = 0
 
                         if operation == "add":
                             new_val = current_val + val
+                            if val > 0:
+                                sys_msg.append(f"{key.upper()} +{val}")
+                            else:
+                                sys_msg.append(f"{key.upper()} {val}")
                         elif operation == "subtract":
                             new_val = max(0, current_val - abs(val))
+                            sys_msg.append(f"{key.upper()} -{abs(val)}")
                         elif operation == "set":
                             new_val = val
+                            sys_msg.append(f"{key.upper()} = {val}")
                         else:
                             new_val = current_val
 
-                        # player_vars에 저장 (하위 호환성)
                         state['player_vars'][key] = new_val
 
             except Exception as e:
                 logger.error(f"Effect application error: {e}")
-
-        # WorldState 업데이트 (순수 규칙 기반)
-        if effect_list:
-            world_state.update_state(effect_list)
-            logger.info(f"🔧 [WORLD STATE] Effects applied: {effect_list}")
 
         # 씬 이동
         if next_id:
@@ -652,9 +668,9 @@ def npc_node(state: PlayerState):
         state['npc_output'] = ""
         return state
 
-    scenario = state['scenario']
+    scenario_id = state['scenario_id']
     curr_id = state['current_scene_id']
-    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
+    all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
     curr_scene = all_scenes.get(curr_id)
     npc_names = curr_scene.get('npcs', []) if curr_scene else []
 
@@ -665,7 +681,7 @@ def npc_node(state: PlayerState):
     target_npc_name = npc_names[0]
     npc_info = {"name": target_npc_name, "role": "Unknown", "personality": "보통"}
 
-    for npc in scenario.get('npcs', []):
+    for npc in get_scenario_by_id(scenario_id).get('npcs', []):
         if npc.get('name') == target_npc_name:
             npc_info['role'] = npc.get('role', 'Unknown')
             npc_info['personality'] = npc.get('personality', '보통')
@@ -753,14 +769,14 @@ NPC로서 1-2문장으로 응답하세요."""
 
 def check_npc_appearance(state: PlayerState) -> str:
     """NPC 및 적 등장 (LLM 기반 생성)"""
-    scenario = state['scenario']
+    scenario_id = state['scenario_id']
     curr_id = state['current_scene_id']
 
     # 씬 변경 없으면 등장 메시지 생략
     if state.get('previous_scene_id') == curr_id:
         return ""
 
-    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
+    all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
     curr_scene = all_scenes.get(curr_id)
     if not curr_scene: return ""
 
@@ -814,7 +830,7 @@ def check_npc_appearance(state: PlayerState) -> str:
         for npc_name in npc_names:
             # NPC 역할 찾기
             npc_role = "Unknown"
-            for npc in scenario.get('npcs', []):
+            for npc in get_scenario_by_id(scenario_id).get('npcs', []):
                 if npc.get('name') == npc_name:
                     npc_role = npc.get('role', 'Unknown')
                     break
@@ -942,14 +958,14 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     [MODE 1] 씬 유지 + 의도별 분기 (investigate/attack/defend/chat/near_miss)
     [MODE 2] 씬 변경 -> 장면 묘사
     """
-    scenario = state['scenario']
+    scenario_id = state['scenario_id']
     curr_id = state['current_scene_id']
     prev_id = state.get('previous_scene_id')
     user_input = state.get('last_user_input', '')
     parsed_intent = state.get('parsed_intent', 'chat')
 
-    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
-    all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
+    all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
+    all_endings = {e['ending_id']: e for e in get_scenario_by_id(scenario_id).get('endings', [])}
 
     if curr_id in all_endings:
         ending = all_endings[curr_id]

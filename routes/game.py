@@ -33,8 +33,8 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
         session_key: 세션 키
     """
     try:
-        scenario = state.get('scenario', {})
-        scenario_id = scenario.get('id', 0)
+        # [경량화] scenario 전체가 아닌 scenario_id만 사용
+        scenario_id = state.get('scenario_id', 0)
         current_scene_id = state.get('current_scene_id', '')
         world_state_data = state.get('world_state', {})
 
@@ -59,7 +59,6 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
                 logger.info(f"✅ [DB] Game session updated: {session_key}")
                 return session_key
             else:
-                # 세션이 없으면 신규 생성
                 logger.warning(f"⚠️ [DB] Session key provided but not found, creating new: {session_key}")
 
         # 신규 세션 생성
@@ -181,8 +180,9 @@ async def game_act_stream(
                 world_state_instance = WorldState()
                 world_state_instance.reset()
 
-                # 시나리오 데이터로부터 초기 상태 설정
-                scenario = current_state.get('scenario', {})
+                # [경량화] scenario_id로 시나리오 조회
+                from game_engine import get_scenario_by_id
+                scenario = get_scenario_by_id(current_state['scenario_id'])
                 world_state_instance.initialize_from_scenario(scenario)
 
                 start_scene_id = current_state.get('start_scene_id') or current_state.get('current_scene_id')
