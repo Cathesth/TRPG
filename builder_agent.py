@@ -543,8 +543,10 @@ def finalize_build(state: BuilderState):
     if isinstance(custom_stats, list):
         for stat in custom_stats:
             if isinstance(stat, dict) and stat.get("name"):
-                initial_player_state[stat["name"]] = stat.get("value")
-                custom_stats_text.append(f"{stat['name']}: {stat.get('value')}")
+                # 스탯 이름을 소문자로 정규화하여 저장
+                stat_name = stat["name"].lower()
+                initial_player_state[stat_name] = stat.get("value")
+                custom_stats_text.append(f"{stat_name}: {stat.get('value')}")
 
     if custom_stats_text: final_hidden += "\n\n[추가 스탯 설정]\n" + "\n".join(custom_stats_text)
     if stat_rules: final_hidden += "\n\n[스탯 규칙]\n" + str(stat_rules)
@@ -563,9 +565,12 @@ def finalize_build(state: BuilderState):
         retries=2,
         fallback={}
     )
+    # 대소문자 구분 없이 중복 체크
+    existing_stats_lower = {k.lower() for k in initial_player_state.keys()}
     for k, v in extracted_stats.items():
-        if v is not None and k not in initial_player_state:
-            initial_player_state[k] = v
+        k_lower = k.lower()
+        if v is not None and k_lower not in existing_stats_lower:
+            initial_player_state[k_lower] = v
 
     # --- BFS 기반 리넘버링 및 Scene/Ending 분리 ---
 
