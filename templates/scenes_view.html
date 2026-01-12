@@ -66,7 +66,7 @@
     <header class="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-dark-900/80 backdrop-blur-md sticky top-0 z-20">
         <div class="flex items-center gap-4">
             <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                <i data-lucide="git-merge" class="text-pink-500"></i> {{ title }}
+                <i data-lucide="git-merge" class="text-pink-500"></i> <span id="scenarioTitle">{{ title }}</span>
                 <span id="draftIndicator" class="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/30 hidden">Draft</span>
             </h2>
         </div>
@@ -78,7 +78,7 @@
                 <button onclick="toggleHistorySidebar()" class="p-2 text-gray-400 hover:text-white" title="히스토리"><i data-lucide="history" class="w-4 h-4"></i></button>
             </div>
 
-            <!-- [추가] 시나리오 불러오기 버튼 -->
+            <!-- [수정] 불러오기 버튼 -->
             <button onclick="showScenarioListModal()" class="bg-gray-800 hover:bg-gray-700 text-purple-300 px-3 py-2 rounded-lg border border-purple-700/50 flex items-center gap-2 text-sm font-bold transition-all">
                 <i data-lucide="folder-open" class="w-4 h-4"></i>
                 <span class="hidden sm:inline">불러오기</span>
@@ -144,7 +144,7 @@
     window.mermaidInstance = mermaid;
 
     // --- State ---
-    const SCENARIO_ID = '{{ scenario_id }}';
+    let SCENARIO_ID = '{{ scenario_id }}';
     let scenarioData = {};
     let isEditModeActive = false;
     let hasChanges = false;
@@ -153,9 +153,8 @@
     // --- Graph Logic ---
     async function renderGraph(code = null) {
         const el = document.getElementById('mermaid-graph');
-        if(code) el.textContent = code; // 새 코드가 있으면 업데이트
+        if(code) el.textContent = code;
 
-        // Mermaid가 다시 그릴 수 있도록 속성 초기화
         el.removeAttribute('data-processed');
 
         try {
@@ -164,18 +163,27 @@
             setupNodeClicks();
         } catch(e) {
             console.error(e);
-            el.innerHTML = '<div class="text-red-500 text-center p-4">그래프 렌더링 실패<br>데이터를 확인해주세요.</div>';
-            el.classList.remove('opacity-0');
+            // Fallback: 에러 발생 시 초기화 시도
+            el.innerHTML = 'graph TD\nStart[시나리오를 불러오세요]';
+            el.removeAttribute('data-processed');
+            try { await mermaid.run({ nodes: [el] }); el.classList.remove('opacity-0'); } catch(e2){}
         }
     }
 
     // --- Editor Logic ---
     window.toggleEditMode = () => {
         isEditModeActive = !isEditModeActive;
-        document.getElementById('editModeToggle').classList.toggle('bg-amber-600', isEditModeActive);
-        document.getElementById('editModeToggle').classList.toggle('text-white', isEditModeActive);
-        document.getElementById('graph-container').classList.toggle('edit-mode-active', isEditModeActive);
-        if(!isEditModeActive) closeEditSidebar();
+        const btn = document.getElementById('editModeToggle');
+        if(isEditModeActive) {
+            btn.classList.add('bg-amber-600', 'text-white');
+            btn.classList.remove('bg-gray-800', 'text-gray-300');
+            document.getElementById('graph-container').classList.add('edit-mode-active');
+        } else {
+            btn.classList.remove('bg-amber-600', 'text-white');
+            btn.classList.add('bg-gray-800', 'text-gray-300');
+            document.getElementById('graph-container').classList.remove('edit-mode-active');
+            closeEditSidebar();
+        }
     };
 
     function setupNodeClicks() {
@@ -183,6 +191,7 @@
             node.onclick = (e) => {
                 if(!isEditModeActive) return;
                 e.stopPropagation();
+                // Mermaid ID 파싱 (flowchart-id-123 형태에서 id 추출)
                 const rawId = node.id.split('-').slice(1, -1).join('-');
                 openEditSidebar(rawId);
 
@@ -200,7 +209,7 @@
         // 데이터 찾기
         let nodeData = null;
         let type = 'scene';
-        if (id === 'PROLOGUE') {
+        if (id === 'PROLOGUE' || id === 'start') {
             nodeData = { title: '프롤로그', description: scenarioData.prologue || '' };
             type = 'prologue';
         } else {
@@ -209,8 +218,8 @@
         }
 
         if (!nodeData) {
-            content.innerHTML = '<p class="text-gray-500">데이터를 찾을 수 없습니다.</p>';
-            return;
+            // 데이터가 없으면 기본값으로라도 보여줌 (오류 방지)
+            nodeData = { title: id, description: '' };
         }
 
         titleEl.textContent = `${nodeData.title || id} 편집`;
@@ -283,7 +292,7 @@
         const json = await res.json();
         if(json.success) {
             alert('삭제되었습니다.');
-            location.reload();
+            loadScenario(SCENARIO_ID); // 전체 리로드 대신 데이터 갱신
         } else {
             alert(json.error);
         }
@@ -310,7 +319,7 @@
             const json = await res.json();
             if(json.success) {
                 alert('반영 완료');
-                location.reload();
+                loadScenario(SCENARIO_ID);
             } else {
                 alert(json.error);
             }
@@ -332,7 +341,6 @@
 
     // --- Scenario Load Modal ---
     window.showScenarioListModal = async () => {
-        // 모달 HTML 생성
         const modalId = 'scenarioListModal';
         if (document.getElementById(modalId)) document.getElementById(modalId).remove();
 
@@ -352,7 +360,6 @@
         document.body.insertAdjacentHTML('beforeend', modalHtml);
         lucide.createIcons();
 
-        // 데이터 로드
         try {
             const res = await fetch('/api/scenarios/data?filter=my');
             const scenarios = await res.json();
@@ -364,7 +371,7 @@
             }
 
             container.innerHTML = scenarios.map(s => `
-                <div onclick="window.location.href='/views/scenes/edit/${s.filename}'"
+                <div onclick="switchScenario('${s.filename}')"
                      class="p-4 bg-gray-800 hover:bg-gray-750 border border-gray-700 rounded-lg cursor-pointer transition flex justify-between items-center group">
                     <div>
                         <div class="font-bold text-white group-hover:text-purple-400 transition">${s.title}</div>
@@ -377,6 +384,14 @@
         } catch (e) {
             document.getElementById('scenarioListContent').innerHTML = '<div class="text-center py-8 text-red-400">목록을 불러오지 못했습니다.</div>';
         }
+    };
+
+    // [New] 시나리오 전환 (페이지 이동 없이 데이터 교체)
+    window.switchScenario = (newId) => {
+        document.getElementById('scenarioListModal').remove();
+        history.pushState(null, '', `/views/scenes/edit/${newId}`); // URL 변경
+        SCENARIO_ID = newId; // 전역 ID 교체
+        loadScenario(newId); // 데이터 새로 로드
     };
 
     // --- PanZoom ---
@@ -420,47 +435,67 @@
     window.restoreHistory = async (hid) => {
         if(!confirm('이 시점으로 복원하시겠습니까?')) return;
         await fetch(`/api/draft/${SCENARIO_ID}/history/restore/${hid}`, { method: 'POST' });
-        location.reload();
+        loadScenario(SCENARIO_ID);
     };
 
     window.performUndo = async () => {
         await fetch(`/api/draft/${SCENARIO_ID}/history/undo`, { method: 'POST' });
-        location.reload();
+        loadScenario(SCENARIO_ID);
     };
     window.performRedo = async () => {
         await fetch(`/api/draft/${SCENARIO_ID}/history/redo`, { method: 'POST' });
-        location.reload();
+        loadScenario(SCENARIO_ID);
     };
 
-    // Init
-    // renderGraph(); // 제거: 데이터 로드 후 렌더링해야 함
-    lucide.createIcons();
+    // [New] 데이터 로드 함수 분리 (재사용을 위해)
+    async function loadScenario(id) {
+        // UI 초기화
+        document.getElementById('mermaid-graph').innerHTML = '';
+        document.getElementById('draftIndicator').classList.add('hidden');
+        document.getElementById('saveDraftBtn').disabled = true;
+        document.getElementById('publishBtn').disabled = true;
 
-    // Initial Data Load
-    fetch(`/api/draft/${SCENARIO_ID}`).then(r=>r.json()).then(d => {
-        if(d.success) {
-            scenarioData = d.scenario;
-            if(d.is_draft) {
-                document.getElementById('draftIndicator').classList.remove('hidden');
-                document.getElementById('saveDraftBtn').disabled = false;
-                document.getElementById('publishBtn').disabled = false;
-            }
-            // [Fix] 데이터를 받은 후 Mermaid 코드 업데이트 및 렌더링 호출
-            if (d.mermaid_code) {
-                renderGraph(d.mermaid_code);
-            } else {
-                renderGraph(); // 코드가 없어도 일단 호출 (초기화)
-            }
+        try {
+            const res = await fetch(`/api/draft/${id}`);
+            const d = await res.json();
 
-            // Check history status
-            fetch(`/api/draft/${SCENARIO_ID}/history/status`).then(r=>r.json()).then(s => {
-                if(s.success) {
-                    document.getElementById('undoBtn').disabled = !s.undo_redo_status.can_undo;
-                    document.getElementById('redoBtn').disabled = !s.undo_redo_status.can_redo;
+            if(d.success) {
+                scenarioData = d.scenario;
+                // 타이틀 업데이트
+                const title = scenarioData.title || scenarioData.label || 'Untitled';
+                document.getElementById('scenarioTitle').textContent = title;
+
+                if(d.is_draft) {
+                    document.getElementById('draftIndicator').classList.remove('hidden');
+                    document.getElementById('saveDraftBtn').disabled = false;
+                    document.getElementById('publishBtn').disabled = false;
                 }
-            });
+
+                if (d.mermaid_code) {
+                    renderGraph(d.mermaid_code);
+                } else {
+                    renderGraph();
+                }
+
+                // 히스토리 상태 확인
+                fetch(`/api/draft/${id}/history/status`).then(r=>r.json()).then(s => {
+                    if(s.success) {
+                        document.getElementById('undoBtn').disabled = !s.undo_redo_status.can_undo;
+                        document.getElementById('redoBtn').disabled = !s.undo_redo_status.can_redo;
+                    }
+                });
+            } else {
+                alert('시나리오 로드 실패: ' + d.error);
+            }
+        } catch(e) {
+            console.error(e);
+            alert('데이터 로드 중 오류 발생');
         }
-    });
+    }
+
+    // Init Logic
+    lucide.createIcons();
+    loadScenario(SCENARIO_ID); // 초기 로드 실행
 </script>
 </body>
 </html>
