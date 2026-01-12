@@ -51,7 +51,7 @@ class HistoryService:
                 snapshot_data=copy.deepcopy(initial_data),
                 sequence=0,
                 is_current=True,
-                created_at=datetime.utcnow()
+                created_at=datetime.now()
             )
 
             db.add(history_entry)
@@ -261,7 +261,7 @@ class HistoryService:
 
             if draft:
                 draft.data = restored_data
-                draft.updated_at = datetime.utcnow()
+                draft.updated_at = datetime.now()
             else:
                 # Draft가 없으면 새로 생성 (방어 코드)
                 draft = TempScenario(
@@ -317,7 +317,7 @@ class HistoryService:
 
             if draft:
                 draft.data = restored_data
-                draft.updated_at = datetime.utcnow()
+                draft.updated_at = datetime.now()
             else:
                 draft = TempScenario(
                     original_scenario_id=scenario_id,
@@ -369,7 +369,7 @@ class HistoryService:
 
             if draft:
                 draft.data = restored_data
-                draft.updated_at = datetime.utcnow()
+                draft.updated_at = datetime.now()
             else:
                 db.add(TempScenario(
                     original_scenario_id=scenario_id,

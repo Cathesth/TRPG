@@ -281,7 +281,7 @@ class ScenarioService:
                 "scenario": current_scenario,
                 "player_vars": current_data.get('player_vars', DEFAULT_PLAYER_VARS.copy())
             }
-            scenario.updated_at = datetime.utcnow()
+            scenario.updated_at = datetime.now()
 
             db.commit()
             return True, None
