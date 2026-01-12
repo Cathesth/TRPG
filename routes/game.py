@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from core.state import game_state, WorldState
-from game_engine import scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message
+from game_engine import scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message, get_scenario_by_id
 from routes.auth import get_current_user_optional, CurrentUser
 from models import GameSession, get_db
 
@@ -175,14 +175,22 @@ async def game_act_stream(
         try:
             processed_state = current_state
 
+            # [FIX] scenario_id로 시나리오 조회
+            scenario_id = current_state.get('scenario_id')
+            if not scenario_id:
+                yield f"data: {json.dumps({'type': 'error', 'content': '시나리오 ID가 없습니다.'})}\n\n"
+                return
+
+            scenario = get_scenario_by_id(scenario_id)
+            if not scenario:
+                yield f"data: {json.dumps({'type': 'error', 'content': '시나리오를 찾을 수 없습니다.'})}\n\n"
+                return
+
             if is_game_start:
                 # 게임 시작 시: WorldState 초기화
                 world_state_instance = WorldState()
                 world_state_instance.reset()
 
-                # [경량화] scenario_id로 시나리오 조회
-                from game_engine import get_scenario_by_id
-                scenario = get_scenario_by_id(current_state['scenario_id'])
                 world_state_instance.initialize_from_scenario(scenario)
 
                 start_scene_id = current_state.get('start_scene_id') or current_state.get('current_scene_id')
@@ -216,7 +224,6 @@ async def game_act_stream(
             # B. NPC 대화 (NPC 이름 표시)
             if npc_say:
                 # 현재 씬에서 NPC 이름 가져오기
-                scenario = processed_state['scenario']
                 curr_scene_id = processed_state['current_scene_id']
                 all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
                 curr_scene = all_scenes.get(curr_scene_id)
@@ -236,7 +243,6 @@ async def game_act_stream(
 
             # C. 프롤로그 (게임 시작 시)
             if is_game_start:
-                scenario = processed_state['scenario']
                 prologue_text = scenario.get('prologue') or scenario.get('prologue_text', '')
 
                 if prologue_text and prologue_text.strip():
@@ -287,7 +293,6 @@ async def game_act_stream(
             world_state_data = processed_state.get('world_state', {})
             if world_state_data:
                 # 현재 씬 정보를 World State에 추가
-                scenario = processed_state.get('scenario', {})
                 curr_scene_id = processed_state.get('current_scene_id', '')
 
                 # 씬 정보 찾기
