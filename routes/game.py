@@ -300,27 +300,23 @@ async def game_act_stream(
                 # 현재 씬 정보를 World State에 추가
                 curr_scene_id = processed_state.get('current_scene_id', '')
 
-                # 씬 정보 찾기
-                scene_title = '알 수 없음'
-                for scene in scenario.get('scenes', []):
-                    if scene.get('scene_id') == curr_scene_id:
-                        scene_title = scene.get('title', curr_scene_id)
-                        break
-
-                # World State에 씬 정보 추가 및 location 업데이트
+                # World State에 씬 정보 추가
                 world_state_with_scene = world_state_data.copy()
                 world_state_with_scene['current_scene_id'] = curr_scene_id
-                world_state_with_scene['current_scene_title'] = scene_title
 
-                # [FIX] location을 "Scene-id (Scene-title)" 형식으로 표시
-                if world_state_with_scene.get('location'):
-                    location_scene_id = world_state_with_scene['location']
-                    location_scene_title = '알 수 없음'
-                    for scene in scenario.get('scenes', []):
-                        if scene.get('scene_id') == location_scene_id:
-                            location_scene_title = scene.get('title', location_scene_id)
-                            break
-                    world_state_with_scene['location'] = f"{location_scene_id} ({location_scene_title})"
+                # location 필드 처리: scene_id로부터 title 찾기
+                location_scene_id = world_state_with_scene.get('location', curr_scene_id)
+                location_scene_title = None
+
+                # 시나리오에서 해당 씬의 title 찾기
+                for scene in scenario.get('scenes', []):
+                    if scene.get('scene_id') == location_scene_id:
+                        location_scene_title = scene.get('title', '')
+                        break
+
+                # location_scene_id를 그대로 유지하고 title을 별도 필드로 추가
+                world_state_with_scene['current_scene_id'] = location_scene_id
+                world_state_with_scene['current_scene_title'] = location_scene_title if location_scene_title else location_scene_id
 
                 # [FIX] turn_count가 없는 경우 0으로 초기화
                 if 'turn_count' not in world_state_with_scene:
