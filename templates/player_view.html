@@ -852,8 +852,8 @@
             <div class="space-y-2">`;
 
         for (const [k, v] of Object.entries(statsData)) {
-            // [FIX] 내부 플래그 필터링 (npc_appeared_, _internal 등)
-            if (k !== 'inventory' && !k.startsWith('max_') && !k.startsWith('npc_appeared_') && !k.startsWith('_')) {
+            // [FIX] world_state와 내부 플래그 필터링
+            if (k !== 'inventory' && k !== 'world_state' && !k.startsWith('max_') && !k.startsWith('npc_appeared_') && !k.startsWith('_')) {
                 const config = statConfig[k.toLowerCase()] || { icon: 'circle', color: 'gray' };
                 const colorClass = `text-${config.color}-400`;
                 const bgColorClass = `bg-${config.color}-500`;
@@ -907,13 +907,29 @@
 
     // 디버그 정보 토글 함수
     function toggleDebugInfo() {
-        const debugToggle = document.getElementById('debug-toggle');
         const debugInfoArea = document.getElementById('debug-info-area');
+        const debugIcon = document.getElementById('debug-icon');
 
-        if (debugToggle.checked) {
+        // 현재 상태 확인 (sessionStorage 기준)
+        const isDebugActive = sessionStorage.getItem(DEBUG_MODE_KEY) === 'true';
+
+        if (isDebugActive) {
+            // 디버그 모드 끄기
+            debugInfoArea.classList.add('hidden');
+            sessionStorage.setItem(DEBUG_MODE_KEY, 'false');
+            if (debugIcon) {
+                debugIcon.classList.remove('text-indigo-400');
+                debugIcon.classList.add('text-gray-500');
+            }
+        } else {
+            // 디버그 모드 켜기
             debugInfoArea.classList.remove('hidden');
-            // 디버그 모드 상태 저장
             sessionStorage.setItem(DEBUG_MODE_KEY, 'true');
+            if (debugIcon) {
+                debugIcon.classList.remove('text-gray-500');
+                debugIcon.classList.add('text-indigo-400');
+            }
+
             // 현재 저장된 스탯 데이터가 있으면 디버그 정보 업데이트
             const savedStats = sessionStorage.getItem(STATS_KEY);
             if (savedStats) {
@@ -923,10 +939,6 @@
                     console.error('Failed to parse stats:', e);
                 }
             }
-        } else {
-            debugInfoArea.classList.add('hidden');
-            // 디버그 모드 상태 저장
-            sessionStorage.setItem(DEBUG_MODE_KEY, 'false');
         }
 
         lucide.createIcons();
@@ -1143,12 +1155,15 @@
 
         // 디버그 모드 상태 복원
         const savedDebugMode = sessionStorage.getItem(DEBUG_MODE_KEY);
-        const debugToggle = document.getElementById('debug-toggle');
-        if (savedDebugMode === 'true' && debugToggle) {
-            debugToggle.checked = true;
+        const debugIcon = document.getElementById('debug-icon');
+        if (savedDebugMode === 'true') {
             const debugInfoArea = document.getElementById('debug-info-area');
             if (debugInfoArea) {
                 debugInfoArea.classList.remove('hidden');
+                if (debugIcon) {
+                    debugIcon.classList.remove('text-gray-500');
+                    debugIcon.classList.add('text-indigo-400');
+                }
                 // 저장된 스탯이 있으면 디버그 정보 업데이트
                 const savedStats = sessionStorage.getItem(STATS_KEY);
                 if (savedStats) {
