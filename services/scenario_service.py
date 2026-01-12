@@ -127,6 +127,9 @@ class ScenarioService:
                 if key not in initial_vars:
                     initial_vars[key] = value
 
+            # 5. 시나리오 데이터에 DB ID 추가 (Foreign Key 참조용)
+            s_content['id'] = scenario.id
+
             return {
                 'scenario': s_content,
                 'player_vars': initial_vars
