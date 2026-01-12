@@ -294,20 +294,20 @@ async def load_scenario(
     # [경량화] scenario 전체 대신 scenario_id만 저장
     scenario_id = scenario.get('id', 0)
 
-    # [FIX] WorldState 초기화
+    # [FIX] WorldState 초기화 (싱글톤 인스턴스 사용)
     from core.state import WorldState
     world_state_instance = WorldState()
     world_state_instance.reset()
     world_state_instance.initialize_from_scenario(scenario)
-    initial_world_state = world_state_instance.to_dict()
 
+    # [경량화] player_state에는 world_state를 포함하지 않음
     game_state.state = {
         "scenario_id": scenario_id,  # [경량화] ID만 저장
         "current_scene_id": "prologue",
         "start_scene_id": start_id,
         "player_vars": result['player_vars'],
-        "world_state": initial_world_state,  # [FIX] WorldState 초기화
-        "history": [],
+        # [경량화] world_state 제거 - WorldState 싱글톤 인스턴스에서 관리
+        # [경량화] history 제거 - WorldState에서 관리
         "last_user_choice_idx": -1,
         "last_user_input": "",
         "parsed_intent": "",
@@ -382,11 +382,37 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
             return JSONResponse({"error": error}, status_code=500)
 
         game_state.config['title'] = scenario_json.get('title')
+
+        # [경량화] scenario 전체 대신 scenario_id만 저장
+        scenario_id = scenario_json.get('id', 0)
+        start_scene_id = pick_start_scene_id(scenario_json)
+
+        # [FIX] WorldState 초기화
+        from core.state import WorldState
+        world_state_instance = WorldState()
+        world_state_instance.reset()
+        world_state_instance.initialize_from_scenario(scenario_json)
+
+        # [경량화] player_state에는 world_state와 history를 포함하지 않음
         game_state.state = {
-            "scenario": scenario_json,
-            "current_scene_id": pick_sta어rt_scene_id(scenario_json),
-            "player_vars": {}, "history": [], "last_user_choice_idx": -1, "system_message": "Init", "npc_output": "",
-            "narrator_output": ""
+            "scenario_id": scenario_id,  # [경량화] ID만 저장
+            "current_scene_id": start_scene_id,
+            "start_scene_id": start_scene_id,
+            "player_vars": {},
+            # [경량화] world_state 제거 - WorldState 싱글톤 인스턴스에서 관리
+            # [경량화] history 제거 - WorldState에서 관리
+            "last_user_choice_idx": -1,
+            "last_user_input": "",
+            "parsed_intent": "",
+            "system_message": "Init",
+            "npc_output": "",
+            "narrator_output": "",
+            "critic_feedback": "",
+            "retry_count": 0,
+            "chat_log_html": "",
+            "near_miss_trigger": None,
+            "model": selected_model,
+            "_internal_flags": {}
         }
         game_state.game_graph = create_game_graph()
 

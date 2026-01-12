@@ -21,7 +21,7 @@ MAX_RETRIES = 2
 
 def save_game_session(db: Session, state: dict, user_id: str = None, session_key: str = None):
     """
-    🛠️ WorldState를 DB에 영속적으로 저장
+    🛠️ WorldState를 DB에 영속적으로 저장 (경량화 버전)
 
     Args:
         db: DB 세션
@@ -36,7 +36,9 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
         # [경량화] scenario 전체가 아닌 scenario_id만 사용
         scenario_id = state.get('scenario_id', 0)
         current_scene_id = state.get('current_scene_id', '')
-        world_state_data = state.get('world_state', {})
+
+        # [경량화] world_state는 별도 추출 (player_state에서 제거)
+        world_state_data = state.pop('world_state', {})
 
         # WorldState 인스턴스에서 직접 가져오기
         if not world_state_data:
@@ -49,8 +51,8 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
             # 기존 세션 업데이트
             game_session = db.query(GameSession).filter_by(session_key=session_key).first()
             if game_session:
-                game_session.player_state = state
-                game_session.world_state = world_state_data
+                game_session.player_state = state  # world_state 제외된 경량화된 상태
+                game_session.world_state = world_state_data  # 별도 컬럼에 저장
                 game_session.current_scene_id = current_scene_id
                 game_session.turn_count = turn_count
                 game_session.last_played_at = datetime.utcnow()
@@ -69,8 +71,8 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
             user_id=user_id,
             session_key=new_session_key,
             scenario_id=scenario_id,
-            player_state=state,
-            world_state=world_state_data,
+            player_state=state,  # world_state 제외된 경량화된 상태
+            world_state=world_state_data,  # 별도 컬럼에 저장
             current_scene_id=current_scene_id,
             turn_count=turn_count
         )
@@ -89,7 +91,7 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
 
 def load_game_session(db: Session, session_key: str):
     """
-    🛠️ DB에서 WorldState 복원
+    🛠️ DB에서 WorldState 복원 (경량화 버전)
 
     Args:
         db: DB 세션
@@ -105,13 +107,12 @@ def load_game_session(db: Session, session_key: str):
             logger.warning(f"⚠️ [DB] Game session not found: {session_key}")
             return None
 
-        # WorldState 복원
+        # WorldState 복원 (싱글톤 인스턴스에 로드)
         world_state_instance = WorldState()
         world_state_instance.from_dict(game_session.world_state)
 
-        # PlayerState 복원
+        # [경량화] PlayerState는 world_state를 포함하지 않음
         player_state = game_session.player_state
-        player_state['world_state'] = game_session.world_state
 
         logger.info(f"✅ [DB] Game session loaded: {session_key} (Turn: {game_session.turn_count})")
 
@@ -186,28 +187,31 @@ async def game_act_stream(
                 yield f"data: {json.dumps({'type': 'error', 'content': '시나리오를 찾을 수 없습니다.'})}\n\n"
                 return
 
+            # [경량화] WorldState 싱글톤 인스턴스 사용
+            world_state_instance = WorldState()
+
             if is_game_start:
                 # 게임 시작 시: WorldState 초기화
-                world_state_instance = WorldState()
                 world_state_instance.reset()
-
                 world_state_instance.initialize_from_scenario(scenario)
 
                 start_scene_id = current_state.get('start_scene_id') or current_state.get('current_scene_id')
                 logger.info(f"🎮 [GAME START] Start Scene: {start_scene_id}")
                 current_state['current_scene_id'] = start_scene_id
                 current_state['system_message'] = 'Game Started'
-                current_state['world_state'] = world_state_instance.to_dict()
 
                 # [FIX] 게임 시작 시에도 location을 start_scene_id로 설정
-                current_state['world_state']['location'] = start_scene_id
+                world_state_instance.location = start_scene_id
             else:
                 # 일반 턴: LangGraph 실행
                 logger.info(f"🎮 Action: {action_text}")
                 processed_state = game_state.game_graph.invoke(current_state)
                 game_state.state = processed_state
 
-            # 🛠️ WorldState DB 저장 (매 턴마다)
+            # [경량화] WorldState를 player_state에 임시 추가 (저장용)
+            processed_state['world_state'] = world_state_instance.to_dict()
+
+            # 🛠️ WorldState DB 저장 (매 턴마다) - save_game_session에서 world_state를 분리 저장
             user_id = user.id if user else None
             session_key = save_game_session(db, processed_state, user_id, session_key)
 
@@ -288,12 +292,10 @@ async def game_act_stream(
 
             # F. 스탯 업데이트 및 세션 키 전송
             stats_data = processed_state.get('player_vars', {})
-
-            # world_state는 stats에 포함하지 않음 (디버그 전용)
             yield f"data: {json.dumps({'type': 'stats', 'content': stats_data})}\n\n"
 
-            # World State 정보 전송 (디버그 모드용)
-            world_state_data = processed_state.get('world_state', {})
+            # [경량화] World State는 싱글톤 인스턴스에서 직접 가져옴 (디버그 모드용)
+            world_state_data = world_state_instance.to_dict()
             if world_state_data:
                 # 현재 씬 정보를 World State에 추가
                 curr_scene_id = processed_state.get('current_scene_id', '')
@@ -321,9 +323,6 @@ async def game_act_stream(
                 yield f"data: {json.dumps({'type': 'world_state', 'content': world_state_with_scene})}\n\n"
 
             # NPC 정보 전송 (WorldState에서 추출 + 시나리오 전체 NPC)
-            # [FIX] scenario_id로 시나리오 조회 (경량화 유지)
-            scenario_id = processed_state.get('scenario_id')
-            scenario = get_scenario_by_id(scenario_id) if scenario_id else {}
             curr_scene_id = processed_state.get('current_scene_id', '')
 
             # 시나리오의 모든 NPC 정보를 딕셔너리로 구성
