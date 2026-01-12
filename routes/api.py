@@ -3,7 +3,7 @@ import json
 import logging
 import time
 import threading
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, APIRouter, Request, Depends, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -12,13 +12,13 @@ from sqlalchemy.orm import Session
 
 from starlette.concurrency import run_in_threadpool
 
-# builder_agent에서 필요한 함수들 임포트
-
-
-
+# 빌더 에이전트 및 코어 유틸리티
 from builder_agent import generate_scenario_from_graph, set_progress_callback, generate_single_npc
 from core.state import game_state
 from core.utils import parse_request_data, pick_start_scene_id, validate_scenario_graph, can_publish_scenario
+from game_engine import create_game_graph
+
+# 서비스 계층 임포트
 from services.scenario_service import ScenarioService
 from services.user_service import UserService
 from services.draft_service import DraftService
@@ -27,10 +27,8 @@ from services.history_service import HistoryService
 from services.npc_service import save_custom_npc
 from services.mermaid_service import MermaidService
 
-from game_engine import create_game_graph
+# 인증 및 모델
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
-
-# [수정] NPC -> CustomNPC 로 변경 (models.py에 정의된 클래스명 사용)
 from models import get_db, Preset, CustomNPC
 
 # 로깅 설정
@@ -38,14 +36,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory="templates")
-#router = APIRouter(prefix="/views", tags=["views"])
 
-# 라우터 정의 (기존과 동일)
+# 라우터 정의
 mypage_router = APIRouter(prefix="/views", tags=["views"])
 api_router = APIRouter(prefix="/api", tags=["api"])
-
-
-
 
 
 # --- Pydantic 모델 정의 ---
@@ -91,14 +85,16 @@ class AuditRequest(BaseModel):
 
 
 # ==========================================
-# [View 라우트] 화면 연결 (마이페이지 포함)
+# [View 라우트] 마이페이지
 # ==========================================
 @mypage_router.get('/mypage', response_class=HTMLResponse)
 async def mypage_view(request: Request, user: CurrentUser = Depends(get_current_user_optional)):
     return templates.TemplateResponse("mypage.html", {"request": request, "user": user})
 
 
-# --- [인증 API] ---
+# ==========================================
+# [API 라우트] 인증 (Auth)
+# ==========================================
 @api_router.post('/auth/register')
 async def register(data: AuthRequest):
     if not data.username or not data.password:
@@ -134,7 +130,9 @@ async def get_current_user_info(user: CurrentUser = Depends(get_current_user_opt
     }
 
 
-# --- [빌드 진행률] ---
+# ==========================================
+# [API 라우트] 빌드 진행률 (SSE)
+# ==========================================
 build_progress = {"status": "idle", "progress": 0}
 build_lock = threading.Lock()
 
@@ -152,14 +150,12 @@ async def get_build_progress_sse():
         start_time = time.time()
         max_duration = 300  # 5분 타임아웃
 
-        # 즉시 현재 상태 전송
         with build_lock:
             current_data = json.dumps(build_progress)
         yield f"data: {current_data}\n\n"
         last_data = current_data
 
         while True:
-            # 타임아웃 체크
             if time.time() - start_time > max_duration:
                 with build_lock:
                     build_progress.update({"status": "error", "detail": "시간 초과"})
@@ -173,11 +169,9 @@ async def get_build_progress_sse():
                 yield f"data: {current_data}\n\n"
                 last_data = current_data
 
-            # 완료 또는 에러 상태면 종료
             with build_lock:
                 if build_progress["status"] in ["completed", "error"]:
                     break
-
             time.sleep(0.3)
 
     return StreamingResponse(generate(), media_type='text/event-stream')
@@ -185,32 +179,28 @@ async def get_build_progress_sse():
 
 @api_router.post('/reset_build_progress')
 async def reset_build_progress():
-    """빌드 시작 전 진행 상태 초기화"""
     global build_progress
     with build_lock:
         build_progress = {"status": "idle", "progress": 0}
     return {"success": True}
 
 
-# --- [시나리오 관리] ---
-
+# ==========================================
+# [API 라우트] 시나리오 관리 (CRUD)
+# ==========================================
 @api_router.get('/scenarios', response_class=HTMLResponse)
-
 async def list_scenarios(
         request: Request,
         sort: str = 'newest',
-        filter: str = Query('public'), # 기본값 public
+        filter: str = Query('public'),
         limit: Optional[int] = None,
         user: CurrentUser = Depends(get_current_user_optional)
 ):
     user_id = user.id if user.is_authenticated else None
 
-
-    # 마이페이지 필터일 때 로그인 체크
     if filter == 'my' and not user_id:
         return '<div class="col-span-full text-center text-gray-500 py-10">로그인이 필요합니다.</div>'
 
-    # ScenarioService에서 데이터 가져오기
     file_infos = ScenarioService.list_scenarios(sort, user_id, filter, limit)
 
     if not file_infos:
@@ -222,7 +212,6 @@ async def list_scenarios(
         fid = info['filename']
         title = info['title']
         desc = info['desc']
-        author = info['author']
         is_owner = info['is_owner']
         is_public = info['is_public']
 
@@ -230,8 +219,6 @@ async def list_scenarios(
         status_class = "bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"
         status_badge = f'<span class="ml-2 text-[10px] {status_class} px-1 rounded font-bold">{status_text}</span>' if is_owner else ''
 
-        # [핵심 수정] 마이페이지 필터이거나, 혹은 로그인한 사용자가 작성자인 경우 관리 버튼 노출
-        # 이렇게 하면 'My Archives'에서는 무조건 관리 버튼이 보입니다.
         show_admin_buttons = (filter == 'my') or is_owner
 
         if show_admin_buttons:
@@ -249,7 +236,7 @@ async def list_scenarios(
                     </div>
                     """
         else:
-             buttons = f"""
+            buttons = f"""
             <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 mt-auto">
                 <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
             </button>
@@ -270,12 +257,23 @@ async def list_scenarios(
                     </h3>
                     <p class="text-sm text-gray-400 line-clamp-2 min-h-[2.5rem]">{desc}</p>
                 </div>
-                
                 {buttons}
             </div>
         </div>
         """
     return html + '<script>lucide.createIcons();</script>'
+
+
+@api_router.get('/scenarios/data')
+async def get_scenarios_data(
+        sort: str = 'newest',
+        filter: str = 'my',
+        user: CurrentUser = Depends(get_current_user)
+):
+    """빌더 모달용 JSON 응답 API"""
+    user_id = user.id if user.is_authenticated else None
+    file_infos = ScenarioService.list_scenarios(sort, user_id, filter)
+    return file_infos
 
 
 @api_router.post('/load_scenario')
@@ -284,7 +282,6 @@ async def load_scenario(
         user: CurrentUser = Depends(get_current_user_optional)
 ):
     user_id = user.id if user.is_authenticated else None
-
     result, error = ScenarioService.load_scenario(filename, user_id)
     if error:
         return JSONResponse({"error": error}, status_code=400)
@@ -301,24 +298,17 @@ async def load_scenario(
         "history": [], "last_user_choice_idx": -1, "system_message": "Loaded", "npc_output": "", "narrator_output": ""
     }
     game_state.game_graph = create_game_graph()
-
     return {"success": True}
 
 
 @api_router.post('/publish_scenario')
-async def publish_scenario(
-        data: ScenarioIdRequest,
-        user: CurrentUser = Depends(get_current_user)
-):
+async def publish_scenario(data: ScenarioIdRequest, user: CurrentUser = Depends(get_current_user)):
     success, msg = ScenarioService.publish_scenario(data.filename, user.id)
     return {"success": success, "message": msg, "error": msg}
 
 
 @api_router.post('/delete_scenario')
-async def delete_scenario(
-        data: ScenarioIdRequest,
-        user: CurrentUser = Depends(get_current_user)
-):
+async def delete_scenario(data: ScenarioIdRequest, user: CurrentUser = Depends(get_current_user)):
     success, msg = ScenarioService.delete_scenario(data.filename, user.id)
     return {"success": success, "message": msg, "error": msg}
 
@@ -353,7 +343,6 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
 
     try:
         set_progress_callback(update_build_progress)
-
         scenario_json = await run_in_threadpool(
             generate_scenario_from_graph,
             api_key,
@@ -386,12 +375,12 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
-# --- [NPC/Enemy 생성 및 저장 API] ---
-
+# ==========================================
+# [API 라우트] NPC 관리
+# ==========================================
 @api_router.post('/npc/generate')
 async def generate_npc_api(data: NPCGenerateRequest):
     try:
-        # [수정] run_in_threadpool 적용 (LLM 호출 비동기 처리)
         npc_data = await run_in_threadpool(
             generate_single_npc,
             data.scenario_title,
@@ -411,40 +400,22 @@ async def save_npc(request: Request, user: CurrentUser = Depends(get_current_use
         data = await request.json()
         if not data:
             return JSONResponse({"success": False, "error": "No data provided"}, status_code=400)
-
         saved_entity = save_custom_npc(data, user.id if user.is_authenticated else None)
-
-        return {
-            "success": True,
-            "message": "저장되었습니다.",
-            "data": saved_entity
-        }
+        return {"success": True, "message": "저장되었습니다.", "data": saved_entity}
     except Exception as e:
         logger.error(f"NPC Save Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
-# [수정] NPC 목록 조회 API (CustomNPC 사용)
 @api_router.get('/npc/list')
-async def get_npc_list(
-        user: CurrentUser = Depends(get_current_user),
-        db: Session = Depends(get_db)
-):
-    """사용자의 NPC 목록 조회"""
+async def get_npc_list(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     if not user.is_authenticated:
         return JSONResponse({"success": False, "error": "로그인이 필요합니다."}, status_code=401)
-
     try:
-        # models.py의 CustomNPC 테이블 조회
-        # CustomNPC는 user_id 대신 author_id를 사용함
         npcs = db.query(CustomNPC).filter(CustomNPC.author_id == user.id).order_by(CustomNPC.created_at.desc()).all()
-
-        # 프론트엔드 호환을 위한 데이터 변환
         results = []
         for npc in npcs:
-            # CustomNPC의 상세 정보는 'data' JSON 컬럼에 저장되어 있음
             npc_data = npc.data if npc.data else {}
-
             results.append({
                 "id": npc.id,
                 "name": npc.name,
@@ -452,39 +423,23 @@ async def get_npc_list(
                 "description": npc_data.get('description', '') or npc_data.get('personality', ''),
                 "is_enemy": npc.type == 'enemy',
                 "created_at": npc.created_at.timestamp() if npc.created_at else 0,
-                # 필요하다면 전체 데이터도 포함
                 "data": npc_data
             })
-
         return results
     except Exception as e:
         logger.error(f"NPC List Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
-# --- [프리셋 관리 (DB 직접 연결)] ---
-
+# ==========================================
+# [API 라우트] 프리셋 관리
+# ==========================================
 @api_router.get('/presets')
-async def list_presets(
-        sort: str = 'newest',
-        limit: Optional[int] = None,
-        user: CurrentUser = Depends(get_current_user_optional),
-        db: Session = Depends(get_db)
-):
-    """DB에서 프리셋 목록 조회"""
+async def list_presets(sort: str = 'newest', limit: Optional[int] = None, db: Session = Depends(get_db)):
     try:
         query = db.query(Preset)
-
-        # 개인용/공용 필터가 필요하다면 여기서 추가 (현재는 전체 공개)
-        # if user.is_authenticated:
-        #     query = query.filter(Preset.author_id == user.id)
-
-        if sort == 'newest':
-            query = query.order_by(Preset.created_at.desc())
-
-        if limit:
-            query = query.limit(limit)
-
+        if sort == 'newest': query = query.order_by(Preset.created_at.desc())
+        if limit: query = query.limit(limit)
         presets = query.all()
         return [p.to_dict() for p in presets]
     except Exception as e:
@@ -493,33 +448,20 @@ async def list_presets(
 
 
 @api_router.post('/presets/save')
-async def save_preset(
-        request: Request,
-        user: CurrentUser = Depends(get_current_user),
-        db: Session = Depends(get_db)
-):
-    """DB에 프리셋 저장"""
+async def save_preset(request: Request, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
         data = await request.json()
         name = data.get('name')
         description = data.get('description', '')
         graph_data = data.get('data')
-
         if not name or not graph_data:
             return JSONResponse({"success": False, "error": "필수 데이터 누락"}, status_code=400)
 
-        # 새 프리셋 객체 생성
-        new_preset = Preset(
-            name=name,
-            description=description,
-            data=graph_data,
-            author_id=user.id if user.is_authenticated else None
-        )
-
+        new_preset = Preset(name=name, description=description, data=graph_data,
+                            author_id=user.id if user.is_authenticated else None)
         db.add(new_preset)
         db.commit()
         db.refresh(new_preset)
-
         return {"success": True, "filename": new_preset.filename, "message": "프리셋이 저장되었습니다."}
     except Exception as e:
         db.rollback()
@@ -528,56 +470,27 @@ async def save_preset(
 
 
 @api_router.post('/presets/load')
-async def load_preset_api(
-        request: Request,
-        user: CurrentUser = Depends(get_current_user_optional),
-        db: Session = Depends(get_db)
-):
-    """DB에서 프리셋 로드"""
+async def load_preset_api(request: Request, db: Session = Depends(get_db)):
     try:
         data = await request.json()
-        filename = data.get('filename')  # 프론트엔드에서 보낸 filename (UUID)
-
+        filename = data.get('filename')
         preset = db.query(Preset).filter(Preset.filename == filename).first()
-
-        if not preset:
-            return JSONResponse({"success": False, "error": "프리셋을 찾을 수 없습니다."}, status_code=404)
-
-        return {
-            "success": True,
-            "data": preset.to_dict(),  # to_dict() 내부에 data 필드 포함
-            "message": f"'{preset.name}' 프리셋을 불러왔습니다."
-        }
+        if not preset: return JSONResponse({"success": False, "error": "프리셋을 찾을 수 없습니다."}, status_code=404)
+        return {"success": True, "data": preset.to_dict(), "message": f"'{preset.name}' 프리셋을 불러왔습니다."}
     except Exception as e:
         logger.error(f"프리셋 로드 실패: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 @api_router.post('/presets/delete')
-async def delete_preset(
-        request: Request,
-        user: CurrentUser = Depends(get_current_user),
-        db: Session = Depends(get_db)
-):
-    """DB에서 프리셋 삭제"""
+async def delete_preset(request: Request, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
         data = await request.json()
         filename = data.get('filename')
-
         preset = db.query(Preset).filter(Preset.filename == filename).first()
-
-        if not preset:
-            return JSONResponse({"success": False, "error": "삭제할 프리셋이 없습니다."}, status_code=404)
-
-        # 권한 체크 (본인 것만 삭제 가능)
-        if user.is_authenticated and preset.author_id != user.id:
-            # 관리자가 아니면 차단하는 로직 등 추가 가능
-            # 일단은 작성자만 삭제 허용
-            pass
-
+        if not preset: return JSONResponse({"success": False, "error": "삭제할 프리셋이 없습니다."}, status_code=404)
         db.delete(preset)
         db.commit()
-
         return {"success": True, "message": "삭제 완료"}
     except Exception as e:
         db.rollback()
@@ -586,19 +499,22 @@ async def delete_preset(
 
 
 @api_router.post('/load_preset')
-async def load_preset_old(filename: str = Form(...), user: CurrentUser = Depends(get_current_user_optional), db: Session = Depends(get_db)):
+async def load_preset_old(filename: str = Form(...), db: Session = Depends(get_db)):
     try:
         preset = db.query(Preset).filter(Preset.filename == filename).first()
         if not preset: return HTMLResponse('<div class="error">로드 실패</div>')
         game_state.config['title'] = preset.name
-        return HTMLResponse(f'<div class="success">프리셋 로드 완료! "{preset.name}"</div><script>lucide.createIcons();</script>')
+        return HTMLResponse(
+            f'<div class="success">프리셋 로드 완료! "{preset.name}"</div><script>lucide.createIcons();</script>')
     except Exception as e:
         return HTMLResponse(f'<div class="error">로드 오류: {e}</div>')
 
-# --- [Draft 시스템 API] ---
+
+# ==========================================
+# [API 라우트] Draft 및 편집 시스템
+# ==========================================
 
 def _generate_mermaid_for_response(scenario_data):
-    """응답용 Mermaid 코드 생성"""
     try:
         chart_data = MermaidService.generate_chart(scenario_data, None)
         return chart_data.get('mermaid_code', '')
@@ -610,9 +526,7 @@ def _generate_mermaid_for_response(scenario_data):
 @api_router.get('/draft/{scenario_id}')
 async def get_draft(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
     result, error = DraftService.get_draft(scenario_id, user.id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=403)
-
+    if error: return JSONResponse({"success": False, "error": error}, status_code=403)
     mermaid_code = _generate_mermaid_for_response(result['scenario'])
     return {"success": True, "mermaid_code": mermaid_code, **result}
 
@@ -621,8 +535,9 @@ async def get_draft(scenario_id: int, user: CurrentUser = Depends(get_current_us
 async def save_draft(scenario_id: int, request: Request, user: CurrentUser = Depends(get_current_user)):
     data = await request.json()
     success, error = DraftService.save_draft(scenario_id, user.id, data)
-    if not success:
-        return JSONResponse({"success": False, "error": error}, status_code=400)
+    if not success: return JSONResponse({"success": False, "error": error}, status_code=400)
+    # 자동 히스토리 추가
+    HistoryService.add_snapshot(scenario_id, user.id, data, "Draft 저장")
     return {"success": True, "message": "Draft가 저장되었습니다."}
 
 
@@ -630,52 +545,23 @@ async def save_draft(scenario_id: int, request: Request, user: CurrentUser = Dep
 async def publish_draft(scenario_id: int, request: Request, user: CurrentUser = Depends(get_current_user)):
     data = await request.json() if await request.body() else {}
     force = data.get('force', False)
-
     success, error, validation_result = DraftService.publish_draft(scenario_id, user.id, force=force)
-
     if not success:
-        return JSONResponse({
-            "success": False,
-            "error": error,
-            "validation": validation_result
-        }, status_code=400)
-
-    return {
-        "success": True,
-        "message": "시나리오에 최종 반영되었습니다.",
-        "validation": validation_result
-    }
-
-
-@api_router.api_route('/draft/{scenario_id}/validate', methods=['GET', 'POST'])
-async def validate_draft(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
-    result, error = DraftService.get_draft(scenario_id, user.id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=403)
-
-    scenario_data = result['scenario']
-    validation_result = validate_scenario_graph(scenario_data)
-
-    return {
-        "success": True,
-        "can_publish": validation_result.is_valid,
-        "validation": validation_result.to_dict()
-    }
+        return JSONResponse({"success": False, "error": error, "validation": validation_result}, status_code=400)
+    return {"success": True, "message": "시나리오에 최종 반영되었습니다.", "validation": validation_result}
 
 
 @api_router.post('/draft/{scenario_id}/discard')
 async def discard_draft(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
     success, error = DraftService.discard_draft(scenario_id, user.id)
-    if not success:
-        return JSONResponse({"success": False, "error": error}, status_code=400)
+    if not success: return JSONResponse({"success": False, "error": error}, status_code=400)
     return {"success": True, "message": "변경사항이 취소되었습니다."}
 
 
 @api_router.post('/draft/{scenario_id}/reorder')
 async def reorder_scene_ids(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
     result, error = DraftService.get_draft(scenario_id, user.id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=403)
+    if error: return JSONResponse({"success": False, "error": error}, status_code=403)
 
     scenario_data = result['scenario']
     reordered_data, id_mapping = DraftService.reorder_scene_ids(scenario_data)
@@ -684,402 +570,175 @@ async def reorder_scene_ids(scenario_id: int, user: CurrentUser = Depends(get_cu
         return {"success": True, "message": "재정렬할 필요가 없습니다.", "changes": 0}
 
     success, save_error = DraftService.save_draft(scenario_id, user.id, reordered_data)
-    if not success:
-        return JSONResponse({"success": False, "error": save_error}, status_code=400)
+    if not success: return JSONResponse({"success": False, "error": save_error}, status_code=400)
 
-    return {
-        "success": True,
-        "message": f"{len(id_mapping)}개의 씬 ID가 재정렬되었습니다.",
-        "id_mapping": id_mapping,
-        "scenario": reordered_data
-    }
+    return {"success": True, "message": f"{len(id_mapping)}개의 씬 ID가 재정렬되었습니다.", "id_mapping": id_mapping,
+            "scenario": reordered_data}
 
 
 @api_router.post('/draft/{scenario_id}/check-references')
 async def check_scene_references(scenario_id: int, data: DraftSceneRequest,
                                  user: CurrentUser = Depends(get_current_user)):
-    if not data.scene_id:
-        return JSONResponse({"success": False, "error": "scene_id가 필요합니다."}, status_code=400)
-
+    if not data.scene_id: return JSONResponse({"success": False, "error": "scene_id 필요"}, status_code=400)
     result, error = DraftService.get_draft(scenario_id, user.id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=403)
-
+    if error: return JSONResponse({"success": False, "error": error}, status_code=403)
     references = DraftService.check_scene_references(result['scenario'], data.scene_id)
-
-    return {
-        "success": True,
-        "scene_id": data.scene_id,
-        "references": references,
-        "has_references": len(references) > 0
-    }
-
-
-@api_router.post('/draft/{scenario_id}/delete-scene')
-async def delete_scene(scenario_id: int, data: DraftSceneRequest, user: CurrentUser = Depends(get_current_user)):
-    if not data.scene_id:
-        return JSONResponse({"success": False, "error": "scene_id가 필요합니다."}, status_code=400)
-
-    result, error = DraftService.get_draft(scenario_id, user.id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=403)
-
-    updated_scenario, warnings = DraftService.delete_scene(result['scenario'], data.scene_id, data.handle_mode)
-
-    success, save_error = DraftService.save_draft(scenario_id, user.id, updated_scenario)
-    if not success:
-        return JSONResponse({"success": False, "error": save_error}, status_code=400)
-
-    return {
-        "success": True,
-        "message": f"씬 '{data.scene_id}'이(가) 삭제되었습니다.",
-        "warnings": warnings,
-        "scenario": updated_scenario
-    }
+    return {"success": True, "scene_id": data.scene_id, "references": references, "has_references": len(references) > 0}
 
 
 @api_router.post('/draft/{scenario_id}/add-scene')
 async def add_scene(scenario_id: int, data: DraftSceneRequest, user: CurrentUser = Depends(get_current_user)):
     result, error = DraftService.get_draft(scenario_id, user.id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=403)
+    if error: return JSONResponse({"success": False, "error": error}, status_code=403)
 
     updated_scenario = DraftService.add_scene(result['scenario'], data.scene or {}, data.after_scene_id)
-
     success, save_error = DraftService.save_draft(scenario_id, user.id, updated_scenario)
-    if not success:
-        return JSONResponse({"success": False, "error": save_error}, status_code=400)
+    if not success: return JSONResponse({"success": False, "error": save_error}, status_code=400)
 
-    added_scene = updated_scenario['scenes'][-1] if not data.after_scene_id else None
-    if data.after_scene_id:
-        for i, s in enumerate(updated_scenario['scenes']):
-            if s.get('scene_id') == data.after_scene_id and i + 1 < len(updated_scenario['scenes']):
-                added_scene = updated_scenario['scenes'][i + 1]
-                break
-
-    return {
-        "success": True,
-        "message": "새 씬이 추가되었습니다.",
-        "scene": added_scene,
-        "scenario": updated_scenario
-    }
+    # 추가된 씬 찾기
+    added_scene = updated_scenario['scenes'][-1]
+    return {"success": True, "message": "새 씬 추가됨", "scene": added_scene, "scenario": updated_scenario}
 
 
 @api_router.post('/draft/{scenario_id}/add-ending')
 async def add_ending(scenario_id: int, data: DraftEndingRequest, user: CurrentUser = Depends(get_current_user)):
     result, error = DraftService.get_draft(scenario_id, user.id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=403)
+    if error: return JSONResponse({"success": False, "error": error}, status_code=403)
 
     updated_scenario = DraftService.add_ending(result['scenario'], data.ending or {})
-
     success, save_error = DraftService.save_draft(scenario_id, user.id, updated_scenario)
-    if not success:
-        return JSONResponse({"success": False, "error": save_error}, status_code=400)
+    if not success: return JSONResponse({"success": False, "error": save_error}, status_code=400)
 
     added_ending = updated_scenario['endings'][-1]
+    return {"success": True, "message": "새 엔딩 추가됨", "ending": added_ending, "scenario": updated_scenario}
 
-    return {
-        "success": True,
-        "message": "새 엔딩이 추가되었습니다.",
-        "ending": added_ending,
-        "scenario": updated_scenario
-    }
+
+@api_router.post('/draft/{scenario_id}/delete-scene')
+async def delete_scene(scenario_id: int, data: DraftSceneRequest, user: CurrentUser = Depends(get_current_user)):
+    if not data.scene_id: return JSONResponse({"success": False, "error": "scene_id 필요"}, status_code=400)
+    result, error = DraftService.get_draft(scenario_id, user.id)
+    if error: return JSONResponse({"success": False, "error": error}, status_code=403)
+
+    updated_scenario, warnings = DraftService.delete_scene(result['scenario'], data.scene_id, data.handle_mode)
+    success, save_error = DraftService.save_draft(scenario_id, user.id, updated_scenario)
+    if not success: return JSONResponse({"success": False, "error": save_error}, status_code=400)
+
+    return {"success": True, "message": "씬 삭제 완료", "warnings": warnings, "scenario": updated_scenario}
 
 
 @api_router.post('/draft/{scenario_id}/delete-ending')
 async def delete_ending(scenario_id: int, data: DraftEndingRequest, user: CurrentUser = Depends(get_current_user)):
-    if not data.ending_id:
-        return JSONResponse({"success": False, "error": "ending_id가 필요합니다."}, status_code=400)
-
+    if not data.ending_id: return JSONResponse({"success": False, "error": "ending_id 필요"}, status_code=400)
     result, error = DraftService.get_draft(scenario_id, user.id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=403)
+    if error: return JSONResponse({"success": False, "error": error}, status_code=403)
 
     updated_scenario, warnings = DraftService.delete_ending(result['scenario'], data.ending_id)
-
     success, save_error = DraftService.save_draft(scenario_id, user.id, updated_scenario)
-    if not success:
-        return JSONResponse({"success": False, "error": save_error}, status_code=400)
+    if not success: return JSONResponse({"success": False, "error": save_error}, status_code=400)
 
-    return {
-        "success": True,
-        "message": f"엔딩 '{data.ending_id}'이(가) 삭제되었습니다.",
-        "warnings": warnings,
-        "scenario": updated_scenario
-    }
+    return {"success": True, "message": "엔딩 삭제 완료", "warnings": warnings, "scenario": updated_scenario}
 
 
-# --- [AI 서사 일관성 검사 API (run_in_threadpool 적용)] ---
-
+# ==========================================
+# [API 라우트] AI Audit & Recommendation
+# ==========================================
 @api_router.post('/draft/{scenario_id}/ai-audit')
 async def ai_audit_scene(scenario_id: int, data: AuditRequest, user: CurrentUser = Depends(get_current_user)):
-    if not data.scene_id:
-        return JSONResponse({"success": False, "error": "scene_id가 필요합니다."}, status_code=400)
-
+    if not data.scene_id: return JSONResponse({"success": False, "error": "scene_id 필요"}, status_code=400)
     result, error = DraftService.get_draft(scenario_id, user.id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=403)
+    if error: return JSONResponse({"success": False, "error": error}, status_code=403)
 
-    scenario_data = result['scenario']
-
-    # [수정] run_in_threadpool로 감싸서 서버 멈춤 방지
+    # 비동기 실행으로 서버 블로킹 방지
+    method = AIAuditService.full_audit
     if data.audit_type == 'coherence':
-        audit_result = await run_in_threadpool(
-            AIAuditService.audit_scene_coherence,
-            scenario_data,
-            data.scene_id,
-            data.model
-        )
-        return {
-            "success": audit_result.success,
-            "audit_type": "coherence",
-            "result": audit_result.to_dict()
-        }
+        method = AIAuditService.audit_scene_coherence
     elif data.audit_type == 'trigger':
-        audit_result = await run_in_threadpool(
-            AIAuditService.audit_trigger_consistency,
-            scenario_data,
-            data.scene_id,
-            data.model
-        )
-        return {
-            "success": audit_result.success,
-            "audit_type": "trigger",
-            "result": audit_result.to_dict()
-        }
-    else:  # full
-        full_result = await run_in_threadpool(
-            AIAuditService.full_audit,
-            scenario_data,
-            data.scene_id,
-            data.model
-        )
-        return {
-            "success": full_result.get('success', False),
-            "audit_type": "full",
-            "result": full_result
-        }
+        method = AIAuditService.audit_trigger_consistency
 
+    audit_result = await run_in_threadpool(method, result['scenario'], data.scene_id, data.model)
 
-@api_router.post('/draft/{scenario_id}/ai-audit-all')
-async def ai_audit_all_scenes(scenario_id: int, request: Request, user: CurrentUser = Depends(get_current_user)):
-    data = await request.json() if await request.body() else {}
-    model_name = data.get('model')
-
-    result, error = DraftService.get_draft(scenario_id, user.id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=403)
-
-    scenario_data = result['scenario']
-    scenes = scenario_data.get('scenes', [])
-
-    all_results = []
-    total_issues = 0
-    has_errors = False
-
-    # [참고] 반복문 + LLM 호출은 시간이 걸리므로 클라이언트 타임아웃 주의 필요
-    for scene in scenes:
-        scene_id = scene.get('scene_id')
-        if not scene_id:
-            continue
-
-        # [수정] 비동기 실행으로 변경
-        audit_result = await run_in_threadpool(
-            AIAuditService.full_audit,
-            scenario_data,
-            scene_id,
-            model_name
-        )
-
-        all_results.append({
-            'scene_id': scene_id,
-            'scene_title': scene.get('title') or scene.get('name') or scene_id,
-            'result': audit_result
-        })
-
-        total_issues += audit_result.get('total_issues', 0)
-        if audit_result.get('has_errors'):
-            has_errors = True
-
-    return {
-        "success": True,
-        "total_scenes": len(scenes),
-        "total_issues": total_issues,
-        "has_errors": has_errors,
-        "results": all_results
-    }
+    return {"success": True, "audit_type": data.audit_type, "result": audit_result}
 
 
 @api_router.post('/draft/{scenario_id}/audit-recommend')
-async def recommend_audit_targets_api(scenario_id: int, request: Request,
-                                      user: CurrentUser = Depends(get_current_user)):
-    """[신규] AI 검수 추천 API"""
+async def audit_recommend(scenario_id: int, request: Request, user: CurrentUser = Depends(get_current_user)):
     data = await request.json() if await request.body() else {}
-    model_name = data.get('model')
-
     result, error = DraftService.get_draft(scenario_id, user.id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=403)
+    if error: return JSONResponse({"success": False, "error": error}, status_code=403)
 
-    scenario_data = result['scenario']
-
-    # [수정] 서비스 호출 비동기 처리
-    recommendation_result = await run_in_threadpool(
-        AIAuditService.recommend_audit_targets,
-        scenario_data,
-        model_name
-    )
-
-    if not recommendation_result.get("success"):
-        return JSONResponse(recommendation_result, status_code=500)
-
+    recommendation_result = await run_in_threadpool(AIAuditService.recommend_audit_targets, result['scenario'],
+                                                    data.get('model'))
+    if not recommendation_result.get("success"): return JSONResponse(recommendation_result, status_code=500)
     return recommendation_result
 
 
-# --- [변경 이력 관리 API] ---
-
+# ==========================================
+# [API 라우트] History (Undo/Redo)
+# ==========================================
 @api_router.get('/draft/{scenario_id}/history')
 async def get_history_list(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
     history_list, current_sequence, error = HistoryService.get_history_list(scenario_id, user.id)
-
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=400)
-
+    if error: return JSONResponse({"success": False, "error": error}, status_code=400)
     undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, user.id)
+    return {"success": True, "history": history_list, "current_sequence": current_sequence,
+            "undo_redo_status": undo_redo_status}
 
-    return {
-        "success": True,
-        "history": history_list,
-        "current_sequence": current_sequence,
-        "undo_redo_status": undo_redo_status
-    }
+
+@api_router.get('/draft/{scenario_id}/history/status')
+async def get_history_status(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
+    status = HistoryService.get_undo_redo_status(scenario_id, user.id)
+    return {"success": True, **status}
 
 
 @api_router.post('/draft/{scenario_id}/history/init')
 async def init_history(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
     result, error = DraftService.get_draft(scenario_id, user.id)
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=403)
-
+    if error: return JSONResponse({"success": False, "error": error}, status_code=403)
     success, hist_error = HistoryService.initialize_history(scenario_id, user.id, result['scenario'])
-
-    if not success:
-        return JSONResponse({"success": False, "error": hist_error}, status_code=400)
-
-    return {"success": True, "message": "이력이 초기화되었습니다."}
+    if not success: return JSONResponse({"success": False, "error": hist_error}, status_code=400)
+    return {"success": True, "message": "History Initialized"}
 
 
 @api_router.post('/draft/{scenario_id}/history/add')
 async def add_history(scenario_id: int, data: HistoryAddRequest, user: CurrentUser = Depends(get_current_user)):
     snapshot = data.snapshot
-
     if not snapshot:
         result, error = DraftService.get_draft(scenario_id, user.id)
-        if error:
-            return JSONResponse({"success": False, "error": error}, status_code=403)
+        if error: return JSONResponse({"success": False, "error": error}, status_code=403)
         snapshot = result['scenario']
 
-    success, hist_error = HistoryService.add_history(
-        scenario_id, user.id, data.action_type, data.action_description, snapshot
-    )
-
-    if not success:
-        return JSONResponse({"success": False, "error": hist_error}, status_code=400)
-
+    success, hist_error = HistoryService.add_history(scenario_id, user.id, data.action_type, data.action_description,
+                                                     snapshot)
+    if not success: return JSONResponse({"success": False, "error": hist_error}, status_code=400)
     undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, user.id)
-
-    return {
-        "success": True,
-        "message": "이력이 추가되었습니다.",
-        "undo_redo_status": undo_redo_status
-    }
+    return {"success": True, "message": "History Added", "undo_redo_status": undo_redo_status}
 
 
 @api_router.post('/draft/{scenario_id}/history/undo')
-async def undo_action(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
+async def undo_history(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
     restored_data, error = HistoryService.undo(scenario_id, user.id)
-
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=400)
-
+    if error: return JSONResponse({"success": False, "error": error}, status_code=400)
     mermaid_code = _generate_mermaid_for_response(restored_data)
     undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, user.id)
-
-    return {
-        "success": True,
-        "message": "이전 상태로 복원되었습니다.",
-        "scenario": restored_data,
-        "mermaid_code": mermaid_code,
-        "undo_redo_status": undo_redo_status
-    }
+    return {"success": True, "scenario": restored_data, "mermaid_code": mermaid_code,
+            "undo_redo_status": undo_redo_status}
 
 
 @api_router.post('/draft/{scenario_id}/history/redo')
-async def redo_action(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
+async def redo_history(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
     restored_data, error = HistoryService.redo(scenario_id, user.id)
-
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=400)
-
+    if error: return JSONResponse({"success": False, "error": error}, status_code=400)
     mermaid_code = _generate_mermaid_for_response(restored_data)
     undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, user.id)
+    return {"success": True, "scenario": restored_data, "mermaid_code": mermaid_code,
+            "undo_redo_status": undo_redo_status}
 
-    return {
-        "success": True,
-        "message": "다음 상태로 복원되었습니다.",
-        "scenario": restored_data,
-        "mermaid_code": mermaid_code,
-        "undo_redo_status": undo_redo_status
-    }
-
-
-@api_router.get('/scenarios/data')
-async def get_scenarios_data(
-        sort: str = 'newest',
-        filter: str = 'my',  # 빌더에서는 보통 '내 시나리오'를 불러오므로 'my' 권장
-        user: CurrentUser = Depends(get_current_user)
-):
-    """빌더 모달용 JSON 응답 API"""
-    user_id = user.id if user.is_authenticated else None
-    # ScenarioService를 통해 데이터 배열(list)을 가져옴
-    file_infos = ScenarioService.list_scenarios(sort, user_id, filter)
-    # 별도의 HTML 처리 없이 리스트 그대로 반환 (FastAPI가 JSON으로 자동 변환)
-    return file_infos
 
 @api_router.post('/draft/{scenario_id}/history/restore/{history_id}')
-async def restore_to_history_point(scenario_id: int, history_id: int, user: CurrentUser = Depends(get_current_user)):
+async def restore_history(scenario_id: int, history_id: int, user: CurrentUser = Depends(get_current_user)):
     restored_data, error = HistoryService.restore_to_point(scenario_id, user.id, history_id)
-
-    if error:
-        return JSONResponse({"success": False, "error": error}, status_code=400)
-
+    if error: return JSONResponse({"success": False, "error": error}, status_code=400)
     mermaid_code = _generate_mermaid_for_response(restored_data)
     undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, user.id)
-
-    return {
-        "success": True,
-        "message": "해당 시점으로 복원되었습니다.",
-        "scenario": restored_data,
-        "mermaid_code": mermaid_code,
-        "undo_redo_status": undo_redo_status
-    }
-
-
-@api_router.post('/draft/{scenario_id}/history/clear')
-async def clear_history(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
-    success, error = HistoryService.clear_history(scenario_id, user.id)
-
-    if not success:
-        return JSONResponse({"success": False, "error": error}, status_code=400)
-
-    return {"success": True, "message": "이력이 삭제되었습니다."}
-
-
-@api_router.get('/draft/{scenario_id}/history/status')
-async def get_undo_redo_status(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
-    status = HistoryService.get_undo_redo_status(scenario_id, user.id)
-
-    return {"success": True, **status}
-
-
+    return {"success": True, "scenario": restored_data, "mermaid_code": mermaid_code,
+            "undo_redo_status": undo_redo_status}
