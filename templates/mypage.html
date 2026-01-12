@@ -9,6 +9,30 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
+        <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        rpg: {
+                            900: '#020617', // Main Background
+                            800: '#0f172a', // Panel Background
+                            700: '#1e293b', // Border
+                            accent: '#38bdf8', // Cyan
+                            hover: '#0ea5e9', // Blue
+                            danger: '#ef4444', // Red
+                        }
+                    },
+                    fontFamily: {
+                        title: ['Cinzel', 'serif'],
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
         /* 텍스트 글로우 애니메이션 효과 */
         @keyframes textGlow {
             0%, 100% { text-shadow: 0 0 5px rgba(56, 189, 248, 0.2); }
@@ -39,37 +63,12 @@
             color: #e2e8f0;
         }
 
-        .font-title {
-            font-family: 'Cinzel', serif;
-        }
+        .modal { transition: opacity 0.25s ease; }
+        body.modal-active { overflow-x: hidden; overflow-y: hidden !important; }
     </style>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        rpg: {
-                            900: '#020617', // Main Background
-                            800: '#0f172a', // Panel Background
-                            700: '#1e293b', // Border
-                            accent: '#38bdf8', // Cyan
-                            hover: '#0ea5e9', // Blue
-                            danger: '#ef4444', // Red
-                        }
-                    },
-                    fontFamily: {
-                        title: ['Cinzel', 'serif'],
-                        sans: ['Inter', 'sans-serif'],
-                    }
-                }
-            }
-        }
-    </script>
 </head>
 <body class="min-h-screen bg-rpg-900 text-gray-200 overflow-x-hidden">
 
-    <!-- 배경 효과 -->
     <div class="fixed inset-0 pointer-events-none z-0">
         <div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/10 rounded-full blur-[100px]"></div>
         <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/10 rounded-full blur-[100px]"></div>
@@ -77,7 +76,6 @@
 
     <div class="relative z-10 max-w-7xl mx-auto px-6 py-12">
 
-        <!-- 상단 헤더 -->
         <div class="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
             <div class="flex items-center gap-4">
                 <button onclick="location.href='/'" class="p-3 bg-rpg-800 rounded-full hover:bg-rpg-700 text-gray-400 hover:text-white transition-all group border border-rpg-700">
@@ -90,24 +88,25 @@
             </div>
 
             <div class="flex items-center gap-4 bg-rpg-800/50 backdrop-blur-sm p-4 rounded-2xl border border-rpg-700/50">
-                 <!-- 유저 아이콘 및 정보 (user 객체 없을 시 대비) -->
+                 {% if user and user.is_authenticated %}
                 <div class="w-12 h-12 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-purple-500/20">
-                    {{ user.id[:2].upper() if user and user.id else 'G' }}
+                    {{ user.id[:2].upper() }}
                 </div>
                 <div class="text-right hidden sm:block">
-                    <p class="text-white font-bold">{{ user.id if user and user.id else 'Guest' }}</p>
+                    <p class="text-white font-bold">{{ user.id }}</p>
                     <p class="text-xs text-rpg-accent">Master Weaver</p>
                 </div>
                 <button onclick="logout()" class="ml-4 p-2 text-gray-400 hover:text-red-400 transition-colors" title="로그아웃">
                     <i data-lucide="log-out" class="w-5 h-5"></i>
                 </button>
+                {% else %}
+                <button onclick="openModal('login-modal')" class="px-4 py-2 bg-rpg-accent text-black font-bold rounded hover:bg-white transition-all">LOGIN</button>
+                {% endif %}
             </div>
         </div>
 
-        <!-- 메인 컨텐츠 영역 -->
         <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
 
-            <!-- 왼쪽 사이드바 (통계 등) -->
             <div class="lg:col-span-1 space-y-6">
                 <div class="bg-rpg-800/80 backdrop-blur border border-rpg-700 rounded-2xl p-6 shadow-xl">
                     <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
@@ -116,7 +115,7 @@
                     <div class="space-y-4">
                         <div class="flex justify-between items-center p-3 bg-rpg-900/50 rounded-lg border border-rpg-700/50">
                             <span class="text-gray-400 text-sm">Created Scenarios</span>
-                            <span class="text-white font-bold text-xl">--</span> <!-- 실제 데이터 연결 필요 -->
+                            <span class="text-white font-bold text-xl">--</span>
                         </div>
                         <div class="flex justify-between items-center p-3 bg-rpg-900/50 rounded-lg border border-rpg-700/50">
                             <span class="text-gray-400 text-sm">Published</span>
@@ -139,29 +138,24 @@
                 </div>
             </div>
 
-            <!-- 오른쪽 시나리오 그리드 -->
             <div class="lg:col-span-3">
                 <div class="flex items-center justify-between mb-6">
                     <h2 class="text-xl font-bold text-white flex items-center gap-2">
                         <i data-lucide="book-open" class="w-5 h-5 text-rpg-accent"></i> My Scenarios
                     </h2>
                     <div class="flex gap-2">
-                        <!-- 필터 버튼 예시 (기능 미구현) -->
                         <button class="px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors">All</button>
                         <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Public</button>
                         <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Private</button>
                     </div>
                 </div>
 
-                <!-- HTMX Grid Container -->
-                <!-- [수정] hx-get 경로에 슬래시(/) 추가하여 절대 경로로 설정 -->
                 <div id="my-scenario-grid"
                      class="grid grid-cols-1 md:grid-cols-2 gap-6"
                      hx-get="/api/scenarios?filter=my"
                      hx-trigger="load"
                      hx-swap="innerHTML">
 
-                    <!-- Loading Placeholder (Canvas 미리보기용 예시 데이터) -->
                     <div class="col-span-full py-12 flex flex-col items-center justify-center text-gray-500 animate-pulse">
                         <i data-lucide="loader-2" class="w-8 h-8 mb-4 animate-spin"></i>
                         <p>Loading your archives...</p>
@@ -171,7 +165,62 @@
         </div>
     </div>
 
-    <!-- 스크립트 영역 -->
+    <div id="login-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-[100]">
+        <div class="modal-overlay absolute w-full h-full bg-black/80 backdrop-blur-sm" onclick="closeModal('login-modal')"></div>
+        <div class="modal-container bg-rpg-800 w-11/12 md:max-w-md mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-rpg-700 transform transition-all scale-95 opacity-0 duration-300">
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-title font-bold text-white">LOGIN</h3>
+                    <button onclick="closeModal('login-modal')" class="text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
+                </div>
+                <form onsubmit="handleLogin(event)" class="space-y-6">
+                    <div>
+                        <label class="block text-gray-400 text-xs font-bold mb-2 uppercase">Username</label>
+                        <input type="text" name="username" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all font-bold">
+                    </div>
+                    <div>
+                        <label class="block text-gray-400 text-xs font-bold mb-2 uppercase">Password</label>
+                        <input type="password" name="password" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all font-bold">
+                    </div>
+                    <div id="login-error" class="text-red-400 text-xs bg-red-500/10 p-3 rounded border border-red-500/20 hidden font-bold"></div>
+                    <button type="submit" class="w-full bg-rpg-accent hover:bg-white text-black font-black py-4 rounded-lg shadow-lg shadow-rpg-accent/20 transition-all text-lg">ACCESS SYSTEM</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="register-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-[100]">
+        <div class="modal-overlay absolute w-full h-full bg-black/80 backdrop-blur-sm" onclick="closeModal('register-modal')"></div>
+        <div class="modal-container bg-rpg-800 w-11/12 md:max-w-md mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-rpg-700 transform transition-all scale-95 opacity-0 duration-300">
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-title font-bold text-white">REGISTER</h3>
+                    <button onclick="closeModal('register-modal')" class="text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
+                </div>
+                <form onsubmit="handleRegister(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Username</label>
+                        <input type="text" name="username" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Email</label>
+                        <input type="email" name="email" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Password</label>
+                        <input type="password" name="password" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Confirm Password</label>
+                        <input type="password" name="confirm_password" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
+                    </div>
+                    <div id="register-error" class="text-red-400 text-xs bg-red-500/10 p-3 rounded border border-red-500/20 hidden font-bold"></div>
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-500 text-white font-black py-4 rounded-lg shadow-lg transition-all text-lg mt-2">CREATE ACCOUNT</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script>
         lucide.createIcons();
 
@@ -182,7 +231,7 @@
             }
         }
 
-        // 시나리오 플레이 (FormData 사용 필수 - api.py 사양)
+        // 시나리오 플레이
         window.playScenario = async function(fid, btn) {
             const originalText = btn.innerHTML;
             btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin w-4 h-4"></i>';
@@ -240,6 +289,73 @@
                 console.error('Delete Error:', e);
                 alert('서버 통신 오류가 발생했습니다.');
             }
+        };
+
+        // [수정된 모달 제어 함수들]
+        window.openModal = function(id) {
+            const modal = document.getElementById(id);
+            const container = modal.querySelector('.modal-container');
+
+            const form = modal.querySelector('form');
+            if (form) form.reset();
+            const errorMsg = modal.querySelector('[id$="-error"]');
+            if (errorMsg) errorMsg.classList.add('hidden');
+
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            document.body.classList.add('modal-active');
+
+            setTimeout(() => {
+                if (container) {
+                    container.classList.remove('scale-95', 'opacity-0');
+                    container.classList.add('scale-100', 'opacity-100');
+                }
+            }, 10);
+        };
+
+        window.closeModal = function(id) {
+            const modal = document.getElementById(id);
+            const container = modal.querySelector('.modal-container');
+
+            if (container) {
+                container.classList.remove('scale-100', 'opacity-100');
+                container.classList.add('scale-95', 'opacity-0');
+            }
+
+            setTimeout(() => {
+                modal.classList.add('opacity-0', 'pointer-events-none');
+                document.body.classList.remove('modal-active');
+            }, 300);
+        };
+
+        window.handleLogin = async function(e) {
+            e.preventDefault(); const form = e.target;
+            const errorMsg = document.getElementById('login-error');
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: form.username.value, password: form.password.value})
+                });
+                const data = await res.json();
+                if (data.success) window.location.reload();
+                else { errorMsg.innerText = data.error; errorMsg.classList.remove('hidden'); }
+            } catch(e) { errorMsg.innerText = "서버 통신 오류"; errorMsg.classList.remove('hidden'); }
+        };
+
+        window.handleRegister = async function(e) {
+            e.preventDefault(); const form = e.target;
+            const errorMsg = document.getElementById('register-error');
+            if (form.password.value !== form.confirm_password.value) { errorMsg.innerText = "비밀번호 불일치"; errorMsg.classList.remove('hidden'); return; }
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: form.username.value, password: form.password.value, email: form.email.value})
+                });
+                const data = await res.json();
+                if (data.success) { alert('가입 성공!'); closeModal('register-modal'); openModal('login-modal'); }
+                else { errorMsg.innerText = data.error; errorMsg.classList.remove('hidden'); }
+            } catch(e) { errorMsg.innerText = "서버 오류"; errorMsg.classList.remove('hidden'); }
         };
 
         // HTMX 로드 후 아이콘 재생성
