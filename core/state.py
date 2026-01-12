@@ -151,21 +151,31 @@ class WorldState:
         # 시작 위치 설정
         self.location = scenario_data.get("start_scene_id")
 
+        # 씬 정보로부터 NPC 위치 매핑 생성
+        scene_npc_map = {}  # {npc_name: scene_title}
+        for scene in scenario_data.get("scenes", []):
+            scene_title = scene.get("title", scene.get("scene_id", "알 수 없음"))
+            for npc_name in scene.get("npcs", []) + scene.get("enemies", []):
+                if npc_name not in scene_npc_map:
+                    scene_npc_map[npc_name] = scene_title
+
         # NPC 초기 상태 설정
         npcs_data = scenario_data.get("npcs", [])
         for npc in npcs_data:
             if isinstance(npc, dict) and "name" in npc:
                 name = npc["name"]
+                is_enemy = npc.get("isEnemy", False)
+
                 self.npcs[name] = {
                     "status": "alive",
-                    "emotion": "neutral",
-                    "relationship": 50,  # 중립
+                    "hp": npc.get("hp", 100),
+                    "max_hp": npc.get("max_hp", npc.get("hp", 100)),
+                    "emotion": "hostile" if is_enemy else "neutral",
+                    "relationship": 0 if is_enemy else 50,  # 적은 0, 중립은 50
+                    "location": scene_npc_map.get(name, "알 수 없음"),
+                    "is_hostile": is_enemy,
                     "flags": {}
                 }
-                # 적인 경우 초기 관계도를 낮게 설정
-                if npc.get("isEnemy"):
-                    self.npcs[name]["relationship"] = 0
-                    self.npcs[name]["emotion"] = "hostile"
 
         logger.info(f"WorldState initialized from scenario: {scenario_data.get('title', 'Unknown')}")
 

@@ -1080,13 +1080,38 @@
         const time = worldState.time || {};
         const day = time.day || 1;
         const phase = time.phase || 'morning';
-        const location = worldState.location || '?';
+        let location = worldState.location || '?';
         const turnCount = worldState.turn_count || 0;
         const globalFlags = worldState.global_flags || {};
+
+        // 위치를 Scene ID에서 제목으로 변환
+        // 현재 저장된 시나리오 데이터를 sessionStorage에서 가져와서 변환
+        try {
+            const savedStats = sessionStorage.getItem(STATS_KEY);
+            if (savedStats) {
+                const statsData = JSON.parse(savedStats);
+                const scenario = statsData.scenario || window.currentScenario;
+                if (scenario && scenario.scenes) {
+                    // location이 Scene-X 형식이면 제목으로 변환
+                    if (location && location.startsWith('Scene-')) {
+                        const scene = scenario.scenes.find(s => s.scene_id === location);
+                        if (scene && scene.title) {
+                            location = scene.title;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Failed to convert location:', e);
+        }
 
         // 시간대에 따른 아이콘
         const phaseIcon = phase === 'morning' ? 'sunrise' :
                          phase === 'afternoon' ? 'sun' : 'moon';
+
+        // 시간대 한글 변환
+        const phaseText = phase === 'morning' ? '아침' :
+                         phase === 'afternoon' ? '오후' : '밤';
 
         let html = `
             <div class="bg-gray-800/50 rounded p-2 border border-gray-700 space-y-1.5">
@@ -1094,7 +1119,7 @@
                     <span class="text-gray-400">시간:</span>
                     <span class="text-white flex items-center gap-1">
                         <i data-lucide="${phaseIcon}" class="w-3 h-3 text-yellow-400"></i>
-                        Day ${day}, ${phase}
+                        ${day}일차, ${phaseText}
                     </span>
                 </div>
                 <div class="flex justify-between items-center">
