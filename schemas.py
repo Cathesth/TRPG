@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Dict
 
 
 # --- Basic Components ---
@@ -94,3 +94,5 @@ class GameScenario(BaseModel):
     npcs: List[NPC]
     scenes: List[Scene]
     endings: List[Ending]
+
+    world_state: Optional[Dict[str, Any]] = Field(default=None, description="The state of the world, affecting all scenes and characters")

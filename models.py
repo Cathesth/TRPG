@@ -5,6 +5,9 @@ from sqlalchemy.types import JSON
 from datetime import datetime
 import os
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 # SQLAlchemy Base
 Base = declarative_base()
@@ -23,7 +26,20 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # Engine 및 Session 생성
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+try:
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=10,
+        max_overflow=20,
+        pool_recycle=3600,  # 1시간마다 연결 재활용 (Railway 타임아웃 방지)
+        echo=False  # 프로덕션에서는 False
+    )
+    logger.info(f"✅ Database engine created: {DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else 'SQLite'}")
+except Exception as e:
+    logger.error(f"❌ Failed to create database engine: {e}")
+    raise
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -200,28 +216,99 @@ class ScenarioHistory(Base):
 
     # 이력 순서
     sequence = Column(Integer, nullable=False)
-
-    # 현재 위치 표시
-    is_current = Column(Boolean, default=False)
-
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # 관계 설정
     scenario = relationship('Scenario', back_populates='history_entries')
 
+
+class GameSession(Base):
+    """
+    🛠️ 게임 세션 저장 테이블 (WorldState 영속성 관리)
+
+    세션은 휘발성이므로, WorldState를 DB에 저장하여
+    유저가 게임을 종료하고 다시 시작해도 진행 상황을 복원
+
+    Railway PostgreSQL 환경 최적화:
+    - JSONB 타입 사용 (쿼리 성능 향상)
+    - 인덱스 설정 (session_key, user_id, scenario_id)
+    - 자동 정리 (오래된 세션 삭제)
+    """
+    __tablename__ = 'game_sessions'
+
+    id = Column(Integer, primary_key=True)
+
+    # 세션 식별자 (인덱스 추가)
+    user_id = Column(String(50), ForeignKey('users.id'), nullable=True, index=True)
+    session_key = Column(String(100), unique=True, nullable=False, default=lambda: str(uuid.uuid4()), index=True)
+
+    # 시나리오 정보 (인덱스 추가)
+    scenario_id = Column(Integer, ForeignKey('scenarios.id', ondelete='CASCADE'), nullable=False, index=True)
+
+    # 게임 상태 (PlayerState 전체 직렬화) - JSONB로 효율적 저장
+    player_state = Column(JSON_TYPE, nullable=False)
+
+    # WorldState 스냅샷 (규칙 기반 상태) - JSONB로 효율적 저장
+    world_state = Column(JSON_TYPE, nullable=False)
+
+    # 메타 정보
+    current_scene_id = Column(String(100), nullable=False, index=True)
+    turn_count = Column(Integer, default=0)
+
+    # 타임스탬프 (인덱스 추가 - 오래된 세션 정리용)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_played_at = Column(DateTime, default=datetime.utcnow, index=True)
+
     def to_dict(self):
         return {
             'id': self.id,
+            'session_key': self.session_key,
+            'user_id': self.user_id,
             'scenario_id': self.scenario_id,
-            'editor_id': self.editor_id,
-            'action_type': self.action_type,
-            'action_description': self.action_description,
-            'sequence': self.sequence,
-            'is_current': self.is_current,
-            'created_at': self.created_at.timestamp() if self.created_at else None
+            'current_scene_id': self.current_scene_id,
+            'turn_count': self.turn_count,
+            'player_state': self.player_state,
+            'world_state': self.world_state,
+            'created_at': self.created_at.timestamp() if self.created_at else None,
+            'updated_at': self.updated_at.timestamp() if self.updated_at else None,
+            'last_played_at': self.last_played_at.timestamp() if self.last_played_at else None
         }
 
 
 # 테이블 생성 함수
 def create_tables():
-    Base.metadata.create_all(bind=engine)
+    """Railway PostgreSQL에 테이블 생성"""
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ All database tables created successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to create tables: {e}")
+        raise
+
+
+# 오래된 세션 정리 함수 (Railway 리소스 최적화)
+def cleanup_old_sessions(days=7):
+    """
+    N일 이상 접근하지 않은 세션 삭제
+
+    Args:
+        days: 보관 기간 (기본 7일)
+    """
+    try:
+        from datetime import timedelta
+        db = SessionLocal()
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        deleted_count = db.query(GameSession).filter(
+            GameSession.last_played_at < cutoff_date
+        ).delete()
+
+        db.commit()
+        db.close()
+
+        logger.info(f"🧹 Cleaned up {deleted_count} old game sessions")
+        return deleted_count
+    except Exception as e:
+        logger.error(f"❌ Failed to cleanup sessions: {e}")
+        return 0

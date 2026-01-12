@@ -518,8 +518,7 @@ def _fast_track_intent_parser(state: PlayerState, user_input: str, curr_scene: D
 
 
 def rule_node(state: PlayerState):
-    """규칙 엔진 (이동 및 상태 변경)"""
-    # ... (기존 코드 동일) ...
+    """규칙 엔진 (이동 및 상태 변경) - WorldState 통합"""
     idx = state['last_user_choice_idx']
     scenario = state['scenario']
     curr_scene_id = state['current_scene_id']
@@ -531,56 +530,88 @@ def rule_node(state: PlayerState):
     curr_scene = all_scenes.get(curr_scene_id)
     transitions = curr_scene.get('transitions', []) if curr_scene else []
 
+    # WorldState 인스턴스 가져오기
+    world_state = WorldState()
+
     if state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
         trans = transitions[idx]
         effects = trans.get('effects', [])
         next_id = trans.get('target_scene_id')
 
-        # 이펙트 적용
+        # 🛠️ WorldState를 통한 효과 적용 (규칙 기반)
+        effect_list = []
         for eff in effects:
             try:
                 if isinstance(eff, dict):
                     key = eff.get("target", "").lower()
                     operation = eff.get("operation", "add")
                     raw_val = eff.get("value", 0)
+                    eff_type = eff.get("type", "variable")
 
+                    # 아이템 효과
+                    if operation in ["gain_item", "lose_item"]:
+                        item_name = str(raw_val)
+                        if operation == "gain_item":
+                            effect_list.append({"item_add": item_name})
+                            sys_msg.append(f"📦 획득: {item_name}")
+                        elif operation == "lose_item":
+                            effect_list.append({"item_remove": item_name})
+                            sys_msg.append(f"🗑️ 사용: {item_name}")
+                        continue
+
+                    # 수치 효과 (HP, Gold 등)
                     val = 0
                     if isinstance(raw_val, (int, float)):
                         val = int(raw_val)
-                    elif isinstance(raw_val, str) and raw_val.isdigit():
-                        val = int(raw_val)
-
-                    if operation in ["gain_item", "lose_item"]:
-                        item_name = str(eff.get("value", ""))
-                        inventory = state['player_vars'].get('inventory', [])
-                        if operation == "gain_item" and item_name not in inventory:
-                            inventory.append(item_name)
-                            sys_msg.append(f"📦 획득: {item_name}")
-                        elif operation == "lose_item" and item_name in inventory:
-                            inventory.remove(item_name)
-                            sys_msg.append(f"🗑️ 사용: {item_name}")
-                        state['player_vars']['inventory'] = inventory
-                        continue
+                    elif isinstance(raw_val, str):
+                        if raw_val.isdigit() or (raw_val.startswith('-') and raw_val[1:].isdigit()):
+                            val = int(raw_val)
 
                     if key:
+                        if operation == "add":
+                            effect_list.append({key: val})
+                            if val > 0:
+                                sys_msg.append(f"{key.upper()} +{val}")
+                            else:
+                                sys_msg.append(f"{key.upper()} {val}")
+                        elif operation == "subtract":
+                            effect_list.append({key: -abs(val)})
+                            sys_msg.append(f"{key.upper()} -{abs(val)}")
+                        elif operation == "set":
+                            # set은 현재값을 무시하고 절대값 설정
+                            current_val = world_state.get_stat(key) or 0
+                            delta = val - current_val
+                            effect_list.append({key: delta})
+                            sys_msg.append(f"{key.upper()} = {val}")
+
+                        # 레거시 player_vars도 동기화 (하위 호환성)
                         current_val = state['player_vars'].get(key, 0)
-                        if not isinstance(current_val, (int, float)): current_val = 0
+                        if not isinstance(current_val, (int, float)):
+                            current_val = 0
+
                         if operation == "add":
                             state['player_vars'][key] = current_val + val
-                            sys_msg.append(f"{key.upper()} +{val}")
                         elif operation == "subtract":
-                            state['player_vars'][key] = max(0, current_val - val)
-                            sys_msg.append(f"{key.upper()} -{val}")
+                            state['player_vars'][key] = max(0, current_val - abs(val))
                         elif operation == "set":
                             state['player_vars'][key] = val
-                            sys_msg.append(f"{key.upper()} = {val}")
-            except Exception:
-                pass
+
+            except Exception as e:
+                logger.error(f"Effect application error: {e}")
+
+        # WorldState 업데이트 (순수 규칙 기반)
+        if effect_list:
+            world_state.update_state(effect_list)
+            logger.info(f"🔧 [WORLD STATE] Effects applied: {effect_list}")
 
         # 씬 이동
         if next_id:
             state['current_scene_id'] = next_id
+            world_state.location = next_id
             logger.info(f"👣 [MOVE] {curr_scene_id} -> {next_id}")
+
+    # 턴 증가
+    world_state.increment_turn()
 
     # 엔딩 체크
     if state['current_scene_id'] in all_endings:
@@ -598,6 +629,10 @@ def rule_node(state: PlayerState):
         """
 
     state['system_message'] = " | ".join(sys_msg)
+
+    # WorldState 스냅샷 저장
+    state['world_state'] = world_state.to_dict()
+
     return state
 
 

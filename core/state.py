@@ -604,253 +604,107 @@ class WorldState:
                 "max_hp": 100,
                 "emotion": "neutral",
                 "relationship": 50,
-                "is_hostile": False,
-                "location": self.location,
                 "flags": {}
             }
 
         npc = self.npcs[npc_id]
 
-        # 이미 죽은 NPC는 HP 변경 불가
+        # 이미 죽은 NPC는 더 이상 HP 변경 불가
         if npc.get("status") == "dead":
-            logger.info(f"NPC '{npc_id}' is already dead. HP change ignored.")
+            logger.warning(f"NPC '{npc_id}' is already dead. Cannot change HP.")
             return {
                 "npc_id": npc_id,
                 "hp": 0,
-                "max_hp": npc.get("max_hp", 100),
                 "status": "dead",
-                "is_dead": True
+                "is_dead": True,
+                "message": f"{npc_id}는 이미 죽었습니다."
             }
 
-        # HP 변경 적용 (Python 산술 연산)
+        # HP 변경 (순수 정수 연산)
         old_hp = npc.get("hp", 100)
-        npc["hp"] = old_hp + amount
+        new_hp = old_hp + amount
         max_hp = npc.get("max_hp", 100)
 
         # HP 범위 제한 (0 ~ max_hp)
-        npc["hp"] = max(0, min(npc["hp"], max_hp))
+        new_hp = max(0, min(new_hp, max_hp))
+        npc["hp"] = new_hp
 
-        # 🛠️ 불사신 방지: HP가 0 이하면 강제로 status를 "dead"로 변경
-        if npc["hp"] <= 0:
+        # 🔴 사망 판정 (규칙 기반 - LLM 개입 불가)
+        is_dead = False
+        if new_hp <= 0:
             npc["status"] = "dead"
-            logger.info(f"⚰️ NPC '{npc_id}' has died. HP: {old_hp} -> 0")
-        elif npc["hp"] < max_hp * 0.3:
-            # HP가 30% 이하면 "wounded" 상태로 변경
-            if npc.get("status") != "wounded":
-                npc["status"] = "wounded"
-                logger.info(f"🩹 NPC '{npc_id}' is wounded. HP: {npc['hp']}/{max_hp}")
-
-        # 히스토리 기록
-        self.history.append({
-            "action": "update_npc_hp",
-            "npc_id": npc_id,
-            "hp_change": amount,
-            "hp_before": old_hp,
-            "hp_after": npc["hp"],
-            "status": npc["status"]
-        })
+            is_dead = True
+            logger.info(f"🪦 [DEATH] NPC '{npc_id}' has died. HP: {old_hp} -> 0")
+        elif npc.get("status") == "dead":
+            # 혹시 모를 불일치 방지: HP가 0인데 status가 alive인 경우 강제 수정
+            npc["status"] = "dead"
+            is_dead = True
 
         return {
             "npc_id": npc_id,
-            "hp": npc["hp"],
-            "max_hp": max_hp,
+            "hp": new_hp,
+            "old_hp": old_hp,
             "status": npc["status"],
-            "is_dead": npc["status"] == "dead"
+            "is_dead": is_dead,
+            "message": f"{npc_id}의 HP: {old_hp} -> {new_hp}" + (" (사망)" if is_dead else "")
         }
-
-    def is_npc_alive(self, npc_id: str) -> bool:
-        """
-        NPC 생존 여부 확인 (전투 로그 생성 전 필수 검증)
-
-        Args:
-            npc_id: NPC 식별자
-
-        Returns:
-            생존 여부 (True: 살아있음, False: 죽었거나 없음)
-        """
-        if npc_id not in self.npcs:
-            return False
-
-        return self.npcs[npc_id].get("status") == "alive"
-
-    def get_alive_npcs_in_location(self, location: Optional[str] = None) -> List[str]:
-        """
-        특정 위치에 살아있는 NPC 목록 반환
-
-        Args:
-            location: 위치 ID (None이면 현재 플레이어 위치)
-
-        Returns:
-            살아있는 NPC ID 리스트
-        """
-        if location is None:
-            location = self.location
-
-        alive_npcs = []
-        for npc_id, npc_data in self.npcs.items():
-            if npc_data.get("status") == "alive" and npc_data.get("location") == location:
-                alive_npcs.append(npc_id)
-
-        return alive_npcs
-
-    # ========================================
-    # 9. 인벤토리 검증 (LLM 환각 방지)
-    # ========================================
-
-    def validate_inventory_action(self, item_id: str, action: str = "use") -> Dict[str, Any]:
-        """
-        아이템 사용/제거 전 실제 인벤토리에 있는지 검증
-
-        Args:
-            item_id: 아이템 식별자
-            action: "use" | "remove" | "equip"
-
-        Returns:
-            {"valid": bool, "message": str, "item_id": str}
-        """
-        if item_id not in self.player["inventory"]:
-            logger.warning(f"❌ Inventory validation failed: '{item_id}' not in inventory")
-            return {
-                "valid": False,
-                "message": f"'{item_id}'을(를) 소지하고 있지 않습니다.",
-                "item_id": item_id
-            }
-
-        logger.info(f"✅ Inventory validation passed: '{item_id}' is available")
-        return {
-            "valid": True,
-            "message": f"'{item_id}'을(를) {action}합니다.",
-            "item_id": item_id
-        }
-
-    def use_item(self, item_id: str, consume: bool = True) -> bool:
-        """
-        아이템 사용 (검증 포함)
-
-        Args:
-            item_id: 아이템 식별자
-            consume: 사용 후 소모 여부
-
-        Returns:
-            사용 성공 여부
-        """
-        validation = self.validate_inventory_action(item_id, "use")
-
-        if not validation["valid"]:
-            return False
-
-        # 소모성 아이템이면 제거
-        if consume:
-            self._remove_item(item_id)
-            logger.info(f"🔥 Item consumed: '{item_id}'")
-
-        return True
-
-    # ========================================
-    # 10. 턴 관리
-    # ========================================
 
     def increment_turn(self):
-        """
-        게임 턴 카운트 증가 (매 행동마다 호출)
-        """
+        """턴 카운트 증가"""
         self.turn_count += 1
-        logger.debug(f"Turn count: {self.turn_count}")
 
-        # 턴마다 방사능 피해 적용 (예시)
-        if self.player.get("radiation", 0) >= 100:
-            radiation_damage = -5
-            self.update_state({"hp": radiation_damage})
-            logger.warning(f"☢️ Radiation damage: {radiation_damage} HP")
-
-    def get_turn_count(self) -> int:
-        """현재 턴 수 반환"""
-        return self.turn_count
-
-    # ========================================
-    # 11. NPC 초기화 헬퍼
-    # ========================================
-
-    def register_npc(
-        self,
-        npc_id: str,
-        hp: int = 100,
-        max_hp: int = 100,
-        is_hostile: bool = False,
-        location: Optional[str] = None,
-        **kwargs
-    ):
+    def validate_inventory_action(self, item_name: str) -> bool:
         """
-        새로운 NPC를 등록 (시나리오 빌더용)
-
-        Args:
-            npc_id: NPC 식별자
-            hp: 초기 체력
-            max_hp: 최대 체력
-            is_hostile: 적대 여부
-            location: 위치
-            **kwargs: 추가 속성 (emotion, relationship 등)
-        """
-        if npc_id in self.npcs:
-            logger.warning(f"NPC '{npc_id}' already exists. Overwriting.")
-
-        self.npcs[npc_id] = {
-            "status": "alive",
-            "hp": hp,
-            "max_hp": max_hp,
-            "is_hostile": is_hostile,
-            "location": location or self.location,
-            "emotion": kwargs.get("emotion", "neutral"),
-            "relationship": kwargs.get("relationship", 50 if not is_hostile else 0),
-            "flags": {}
-        }
-
-        logger.info(f"✨ NPC registered: '{npc_id}' (HP: {hp}/{max_hp}, Hostile: {is_hostile})")
-
-    # ========================================
-    # 12. 디버깅 및 상태 덤프
-    # ========================================
-
-    def dump_state(self) -> str:
-        """
-        전체 상태를 상세하게 텍스트로 출력 (디버깅용)
+        인벤토리 아이템 사용 가능 여부 검증
 
         Returns:
-            전체 상태를 포함한 텍스트
+            True: 사용 가능, False: 사용 불가
         """
-        lines = ["=" * 60]
-        lines.append("🎮 WORLD STATE DUMP")
-        lines.append("=" * 60)
-        lines.append(f"\n[World Info]")
-        lines.append(f"  Turn: {self.turn_count}")
-        lines.append(f"  Location: {self.location}")
-        lines.append(f"  Time: Day {self.time['day']}, {self.time['phase']}")
+        return item_name in self.player["inventory"]
 
-        lines.append(f"\n[Player Stats]")
-        for key, value in self.player.items():
-            if key not in ["custom_stats", "quests", "flags"]:
-                lines.append(f"  {key}: {value}")
+    def get_llm_context(self) -> str:
+        """
+        🔴 LLM 프롬프트에 주입할 절대적 진실 컨텍스트
 
-        if self.player.get("custom_stats"):
-            lines.append(f"\n[Custom Stats]")
-            for key, value in self.player["custom_stats"].items():
-                lines.append(f"  {key}: {value}")
+        LLM은 이 정보를 절대로 무시할 수 없으며,
+        서사 생성 시 반드시 이 데이터를 기반으로 작성해야 함.
+        """
+        lines = ["=== 🔴 WORLD STATE (절대적 진실) ===\n"]
 
-        lines.append(f"\n[NPCs] (Total: {len(self.npcs)})")
-        for npc_id, npc_data in self.npcs.items():
-            status_emoji = "💀" if npc_data["status"] == "dead" else "🩹" if npc_data["status"] == "wounded" else "✅"
-            lines.append(f"  {status_emoji} {npc_id}:")
-            lines.append(f"     Status: {npc_data.get('status', 'unknown')}")
-            lines.append(f"     HP: {npc_data.get('hp', '?')}/{npc_data.get('max_hp', '?')}")
-            lines.append(f"     Location: {npc_data.get('location', 'unknown')}")
-            lines.append(f"     Hostile: {npc_data.get('is_hostile', False)}")
-            lines.append(f"     Relationship: {npc_data.get('relationship', 50)}")
+        # 플레이어 상태
+        lines.append("[플레이어 상태]")
+        lines.append(f"- HP: {self.player['hp']}/{self.player['max_hp']}")
 
-        if self.global_flags:
-            lines.append(f"\n[Global Flags]")
-            for flag, value in self.global_flags.items():
-                lines.append(f"  {flag}: {value}")
+        if self.player.get('gold', 0) > 0:
+            lines.append(f"- 골드: {self.player['gold']}")
 
-        lines.append("=" * 60)
+        for key, value in self.player.get("custom_stats", {}).items():
+            lines.append(f"- {key}: {value}")
+
+        if self.player["inventory"]:
+            lines.append(f"- 소지품: {', '.join(self.player['inventory'])}")
+        else:
+            lines.append("- 소지품: 없음")
+
+        # NPC 생존 상태 (생사만 표시 - 환각 방지)
+        if self.npcs:
+            lines.append("\n[NPC/적 상태]")
+            for npc_name, npc_data in self.npcs.items():
+                status = npc_data.get("status", "alive")
+                hp = npc_data.get("hp", 100)
+
+                if status == "dead":
+                    lines.append(f"- {npc_name}: ☠️ 사망 (HP: 0) ← 절대 부활 불가")
+                elif hp <= 0:
+                    lines.append(f"- {npc_name}: ☠️ 사망 (HP: 0) ← 절대 부활 불가")
+                else:
+                    lines.append(f"- {npc_name}: 생존 (HP: {hp})")
+
+        lines.append("\n⚠️ 위 수치는 절대적 진실이며, 이를 무시하거나 변경하지 마세요.")
 
         return "\n".join(lines)
+
+
+# 싱글톤 인스턴스
+game_state = GameState()
+world_state = WorldState()

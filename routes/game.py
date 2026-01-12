@@ -1,12 +1,15 @@
 import logging
 import json
 import traceback
+from datetime import datetime
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import StreamingResponse, JSONResponse
+from sqlalchemy.orm import Session
 
-from core.state import game_state
+from core.state import game_state, WorldState
 from game_engine import scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message
 from routes.auth import get_current_user_optional, CurrentUser
+from models import GameSession, get_db
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +17,107 @@ game_router = APIRouter(prefix="/game", tags=["game"])
 
 # 최대 재시도 횟수
 MAX_RETRIES = 2
+
+
+def save_game_session(db: Session, state: dict, user_id: str = None, session_key: str = None):
+    """
+    🛠️ WorldState를 DB에 영속적으로 저장
+
+    Args:
+        db: DB 세션
+        state: PlayerState 딕셔너리
+        user_id: 유저 ID (비로그인은 None)
+        session_key: 세션 키 (없으면 신규 생성)
+
+    Returns:
+        session_key: 세션 키
+    """
+    try:
+        scenario = state.get('scenario', {})
+        scenario_id = scenario.get('id', 0)
+        current_scene_id = state.get('current_scene_id', '')
+        world_state_data = state.get('world_state', {})
+
+        # WorldState 인스턴스에서 직접 가져오기
+        if not world_state_data:
+            world_state_instance = WorldState()
+            world_state_data = world_state_instance.to_dict()
+
+        turn_count = world_state_data.get('turn_count', 0) if isinstance(world_state_data, dict) else 0
+
+        if session_key:
+            # 기존 세션 업데이트
+            game_session = db.query(GameSession).filter_by(session_key=session_key).first()
+            if game_session:
+                game_session.player_state = state
+                game_session.world_state = world_state_data
+                game_session.current_scene_id = current_scene_id
+                game_session.turn_count = turn_count
+                game_session.last_played_at = datetime.utcnow()
+                game_session.updated_at = datetime.utcnow()
+                db.commit()
+                logger.info(f"✅ [DB] Game session updated: {session_key}")
+                return session_key
+
+        # 신규 세션 생성
+        import uuid
+        new_session_key = str(uuid.uuid4())
+
+        game_session = GameSession(
+            user_id=user_id,
+            session_key=new_session_key,
+            scenario_id=scenario_id,
+            player_state=state,
+            world_state=world_state_data,
+            current_scene_id=current_scene_id,
+            turn_count=turn_count
+        )
+
+        db.add(game_session)
+        db.commit()
+        logger.info(f"✅ [DB] New game session created: {new_session_key}")
+
+        return new_session_key
+
+    except Exception as e:
+        logger.error(f"❌ [DB] Failed to save game session: {e}")
+        db.rollback()
+        return None
+
+
+def load_game_session(db: Session, session_key: str):
+    """
+    🛠️ DB에서 WorldState 복원
+
+    Args:
+        db: DB 세션
+        session_key: 세션 키
+
+    Returns:
+        PlayerState 딕셔너리 또는 None
+    """
+    try:
+        game_session = db.query(GameSession).filter_by(session_key=session_key).first()
+
+        if not game_session:
+            logger.warning(f"⚠️ [DB] Game session not found: {session_key}")
+            return None
+
+        # WorldState 복원
+        world_state_instance = WorldState()
+        world_state_instance.from_dict(game_session.world_state)
+
+        # PlayerState 복원
+        player_state = game_session.player_state
+        player_state['world_state'] = game_session.world_state
+
+        logger.info(f"✅ [DB] Game session loaded: {session_key} (Turn: {game_session.turn_count})")
+
+        return player_state
+
+    except Exception as e:
+        logger.error(f"❌ [DB] Failed to load game session: {e}")
+        return None
 
 
 @game_router.post('/act')
@@ -27,9 +131,19 @@ async def game_act_stream(
     request: Request,
     action: str = Form(default=''),
     model: str = Form(default='openai/tngtech/deepseek-r1t2-chimera:free'),
-    user: CurrentUser = Depends(get_current_user_optional)
+    session_key: str = Form(default=None),
+    user: CurrentUser = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
 ):
-    """스트리밍 방식 - SSE (LangGraph 기반)"""
+    """스트리밍 방식 - SSE (LangGraph 기반) + WorldState DB 영속성"""
+
+    # 🛠️ 세션 복원 시도 (DB에서 WorldState 로드)
+    if session_key:
+        restored_state = load_game_session(db, session_key)
+        if restored_state:
+            game_state.state = restored_state
+            logger.info(f"🔄 [SESSION] Restored from DB: {session_key}")
+
     if not game_state.state or not game_state.game_graph:
         def error_gen():
             yield f"data: {json.dumps({'type': 'error', 'content': '먼저 게임을 로드해주세요.'})}\n\n"
@@ -54,20 +168,34 @@ async def game_act_stream(
     )
 
     def generate():
+        nonlocal session_key
+
         try:
             processed_state = current_state
 
             if is_game_start:
-                # 게임 시작 시: 그래프 실행 없이 초기화만 수행
+                # 게임 시작 시: WorldState 초기화
+                world_state_instance = WorldState()
+                world_state_instance.reset()
+
+                # 시나리오 데이터로부터 초기 상태 설정
+                scenario = current_state.get('scenario', {})
+                world_state_instance.initialize_from_scenario(scenario)
+
                 start_scene_id = current_state.get('start_scene_id') or current_state.get('current_scene_id')
                 logger.info(f"🎮 [GAME START] Start Scene: {start_scene_id}")
                 current_state['current_scene_id'] = start_scene_id
                 current_state['system_message'] = 'Game Started'
+                current_state['world_state'] = world_state_instance.to_dict()
             else:
                 # 일반 턴: LangGraph 실행
                 logger.info(f"🎮 Action: {action_text}")
                 processed_state = game_state.game_graph.invoke(current_state)
                 game_state.state = processed_state
+
+            # 🛠️ WorldState DB 저장 (매 턴마다)
+            user_id = user.id if user else None
+            session_key = save_game_session(db, processed_state, user_id, session_key)
 
             # 결과 추출
             npc_say = processed_state.get('npc_output', '')
@@ -116,8 +244,8 @@ async def game_act_stream(
                         yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
 
                     yield f"data: {json.dumps({'type': 'section_end', 'content': '</div></div>'})}\n\n"
-                    hr_content = '<hr class="border-gray-800 my-6">'
-                    yield f"data: {json.dumps({'type': 'prefix', 'content': hr_content})}\n\n"
+                    hr_content = '<hr class="border-gray-800 my-6">';
+                    yield f"data: {json.dumps({'type': 'prefix', 'content': hr_content})}\n\n";
 
                 # 프롤로그 후 첫 씬으로 이동
                 prologue_connects_to = scenario.get('prologue_connects_to', [])
@@ -146,9 +274,14 @@ async def game_act_stream(
                 for result in stream_scene_with_retry(processed_state):
                     yield result
 
-            # F. 스탯 업데이트 및 완료
+            # F. 스탯 업데이트 및 세션 키 전송
             stats_data = processed_state.get('player_vars', {})
             yield f"data: {json.dumps({'type': 'stats', 'content': stats_data})}\n\n"
+
+            # 🛠️ 세션 키 전송 (클라이언트가 다음 요청에 사용)
+            if session_key:
+                yield f"data: {json.dumps({'type': 'session_key', 'content': session_key})}\n\n"
+
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         except Exception as e:
