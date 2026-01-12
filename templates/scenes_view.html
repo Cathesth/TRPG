@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TRPG - 시나리오 흐름도</title>
+    <title>TRPG - 시나리오 에디터</title>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -20,8 +20,6 @@
 
         .fade-in { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-        .brand-gradient { background: linear-gradient(135deg, #6E47E6 0%, #818cf8 100%); }
 
         /* Mermaid Styles */
         .edit-mode-active .mermaid svg .node { cursor: pointer !important; }
@@ -52,7 +50,7 @@
 
 <!-- 사이드바 (축약형) -->
 <div class="w-16 bg-dark-800 border-r border-white/5 flex flex-col items-center py-4 z-20">
-    <a href="/" class="w-10 h-10 brand-gradient rounded-lg flex items-center justify-center text-white mb-6 shadow-lg">
+    <a href="/" class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center text-white mb-6 shadow-lg">
         <i data-lucide="dice-5" class="w-5 h-5"></i>
     </a>
     <div class="space-y-4">
@@ -75,10 +73,18 @@
         <div class="flex items-center gap-2">
             <!-- 편집 도구 -->
             <div class="flex items-center gap-1 mr-2 bg-gray-800 rounded-lg p-1 border border-gray-700">
-                <button id="undoBtn" onclick="performUndo()" disabled class="p-2 text-gray-400 hover:text-white disabled:opacity-30"><i data-lucide="undo-2" class="w-4 h-4"></i></button>
-                <button id="redoBtn" onclick="performRedo()" disabled class="p-2 text-gray-400 hover:text-white disabled:opacity-30"><i data-lucide="redo-2" class="w-4 h-4"></i></button>
-                <button onclick="toggleHistorySidebar()" class="p-2 text-gray-400 hover:text-white"><i data-lucide="history" class="w-4 h-4"></i></button>
+                <button id="undoBtn" onclick="performUndo()" disabled class="p-2 text-gray-400 hover:text-white disabled:opacity-30" title="실행 취소"><i data-lucide="undo-2" class="w-4 h-4"></i></button>
+                <button id="redoBtn" onclick="performRedo()" disabled class="p-2 text-gray-400 hover:text-white disabled:opacity-30" title="다시 실행"><i data-lucide="redo-2" class="w-4 h-4"></i></button>
+                <button onclick="toggleHistorySidebar()" class="p-2 text-gray-400 hover:text-white" title="히스토리"><i data-lucide="history" class="w-4 h-4"></i></button>
             </div>
+
+            <!-- [추가] 시나리오 불러오기 버튼 -->
+            <button onclick="showScenarioListModal()" class="bg-gray-800 hover:bg-gray-700 text-purple-300 px-3 py-2 rounded-lg border border-purple-700/50 flex items-center gap-2 text-sm font-bold transition-all">
+                <i data-lucide="folder-open" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">불러오기</span>
+            </button>
+
+            <div class="w-px h-6 bg-gray-700 mx-1"></div>
 
             <button id="editModeToggle" onclick="toggleEditMode()" class="bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-2 rounded-lg border border-gray-600 flex items-center gap-2 text-sm font-bold">
                 <i data-lucide="mouse-pointer-click" class="w-4 h-4"></i> <span>편집 모드</span>
@@ -106,10 +112,10 @@
         </div>
 
         <!-- Zoom Controls -->
-        <div class="absolute bottom-6 left-6 flex flex-col gap-2">
-            <button onclick="zoomGraph(0.1)" class="p-2 bg-gray-800 text-white rounded border border-gray-600"><i data-lucide="plus"></i></button>
-            <button onclick="resetZoom()" class="p-2 bg-gray-800 text-white rounded border border-gray-600"><i data-lucide="maximize"></i></button>
-            <button onclick="zoomGraph(-0.1)" class="p-2 bg-gray-800 text-white rounded border border-gray-600"><i data-lucide="minus"></i></button>
+        <div class="absolute bottom-6 left-6 flex flex-col gap-2 z-10">
+            <button onclick="zoomGraph(0.1)" class="p-2 bg-gray-800 text-white rounded border border-gray-600 shadow-lg hover:bg-gray-700"><i data-lucide="plus"></i></button>
+            <button onclick="resetZoom()" class="p-2 bg-gray-800 text-white rounded border border-gray-600 shadow-lg hover:bg-gray-700"><i data-lucide="maximize"></i></button>
+            <button onclick="zoomGraph(-0.1)" class="p-2 bg-gray-800 text-white rounded border border-gray-600 shadow-lg hover:bg-gray-700"><i data-lucide="minus"></i></button>
         </div>
     </div>
 
@@ -121,6 +127,15 @@
         </div>
         <div id="editPanelContent" class="flex-1 overflow-y-auto p-4 space-y-4"></div>
     </div>
+
+    <!-- 좌측 History 사이드바 -->
+    <div id="historySidebar" class="history-sidebar absolute left-16 top-0 bottom-0 bg-dark-800 border-r border-white/5 flex flex-col z-20 shadow-2xl">
+        <div class="p-4 border-b border-white/5 flex justify-between items-center">
+            <h3 class="font-bold text-white flex items-center gap-2"><i data-lucide="history" class="text-blue-400"></i> 이력</h3>
+            <button onclick="toggleHistorySidebar()" class="text-gray-400 hover:text-white"><i data-lucide="x"></i></button>
+        </div>
+        <div id="historyListContainer" class="flex-1 overflow-y-auto p-2 space-y-2"></div>
+    </div>
 </div>
 
 <script type="module">
@@ -130,7 +145,7 @@
 
     // --- State ---
     const SCENARIO_ID = '{{ scenario_id }}';
-    let scenarioData = {}; // 초기 데이터 로드 필요
+    let scenarioData = {};
     let isEditModeActive = false;
     let hasChanges = false;
     let panZoom = { scale: 1, x: 0, y: 0, isDragging: false, startX: 0, startY: 0 };
@@ -149,6 +164,7 @@
     window.toggleEditMode = () => {
         isEditModeActive = !isEditModeActive;
         document.getElementById('editModeToggle').classList.toggle('bg-amber-600', isEditModeActive);
+        document.getElementById('editModeToggle').classList.toggle('text-white', isEditModeActive);
         document.getElementById('graph-container').classList.toggle('edit-mode-active', isEditModeActive);
         if(!isEditModeActive) closeEditSidebar();
     };
@@ -158,9 +174,11 @@
             node.onclick = (e) => {
                 if(!isEditModeActive) return;
                 e.stopPropagation();
-                // Mermaid ID에서 실제 ID 추출 로직 (flowchart-id-123 -> id)
                 const rawId = node.id.split('-').slice(1, -1).join('-');
                 openEditSidebar(rawId);
+
+                document.querySelectorAll('.node-selected').forEach(n => n.classList.remove('node-selected'));
+                node.classList.add('node-selected');
             };
         });
     }
@@ -168,45 +186,195 @@
     async function openEditSidebar(id) {
         document.getElementById('editSidebar').classList.add('open');
         const content = document.getElementById('editPanelContent');
+        const titleEl = document.getElementById('editPanelTitle');
 
-        // 폼 생성 로직 (API로 데이터 상세 조회 or 메모리 데이터 사용)
-        // 여기선 HTML 구성을 간략히 표현. 실제로는 JS 로직으로 폼 빌드 필요.
-        content.innerHTML = `
-            <div class="space-y-4">
-                <label class="text-xs text-gray-500">ID: ${id}</label>
-                <input id="editTitle" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white" placeholder="제목">
-                <textarea id="editDesc" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white h-32" placeholder="내용"></textarea>
-                <button onclick="saveNode('${id}')" class="w-full bg-amber-600 text-white py-2 rounded font-bold">적용</button>
-                <div class="grid grid-cols-2 gap-2">
-                    <button onclick="runAIAudit('${id}')" class="bg-violet-900/50 text-violet-300 py-2 rounded border border-violet-700">AI 검수</button>
-                    <button onclick="deleteNode('${id}')" class="bg-red-900/50 text-red-300 py-2 rounded border border-red-700">삭제</button>
+        // 데이터 찾기
+        let nodeData = null;
+        let type = 'scene';
+        if (id === 'PROLOGUE') {
+            nodeData = { title: '프롤로그', description: scenarioData.prologue || '' };
+            type = 'prologue';
+        } else {
+            nodeData = scenarioData.scenes?.find(s => s.scene_id === id) || scenarioData.endings?.find(e => e.ending_id === id);
+            if (scenarioData.endings?.find(e => e.ending_id === id)) type = 'ending';
+        }
+
+        if (!nodeData) {
+            content.innerHTML = '<p class="text-gray-500">데이터를 찾을 수 없습니다.</p>';
+            return;
+        }
+
+        titleEl.textContent = `${nodeData.title || id} 편집`;
+
+        let html = `
+            <div class="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1 uppercase">ID</label>
+                    <input class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-gray-500" value="${id}" disabled>
                 </div>
-            </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1 uppercase">Title</label>
+                    <input id="editTitle" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white focus:border-amber-500 focus:outline-none" value="${nodeData.title || ''}">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1 uppercase">Description</label>
+                    <textarea id="editDesc" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white h-48 focus:border-amber-500 focus:outline-none resize-none">${nodeData.description || nodeData.prologue || ''}</textarea>
+                </div>
+                <div class="pt-4 border-t border-white/10 flex gap-2">
+                    <button onclick="saveNodeData('${id}', '${type}')" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-2 rounded font-bold transition">적용</button>
         `;
-        // 기존 데이터 채워넣기 로직 필요
+
+        if (type !== 'prologue') {
+            html += `
+                    <button onclick="deleteNode('${id}', '${type}')" class="px-3 bg-red-900/30 text-red-400 border border-red-800 rounded hover:bg-red-900/50"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                </div>
+                <button onclick="runAIAudit('${id}')" class="w-full mt-2 bg-violet-900/30 text-violet-300 border border-violet-800 rounded py-2 hover:bg-violet-900/50 flex items-center justify-center gap-2">
+                    <i data-lucide="brain" class="w-4 h-4"></i> AI 개연성 검수
+                </button>
+            `;
+        } else {
+            html += `</div>`;
+        }
+
+        html += `</div>`;
+        content.innerHTML = html;
+        lucide.createIcons();
     }
 
     window.closeEditSidebar = () => document.getElementById('editSidebar').classList.remove('open');
 
+    // --- Data Operations ---
+    window.saveNodeData = async (id, type) => {
+        const title = document.getElementById('editTitle').value;
+        const desc = document.getElementById('editDesc').value;
+
+        if (type === 'prologue') {
+            scenarioData.prologue = desc;
+        } else if (type === 'scene') {
+            const s = scenarioData.scenes.find(x => x.scene_id === id);
+            if(s) { s.title = title; s.description = desc; }
+        } else if (type === 'ending') {
+            const e = scenarioData.endings.find(x => x.ending_id === id);
+            if(e) { e.title = title; e.description = desc; }
+        }
+
+        await window.saveDraft();
+        alert('적용되었습니다.');
+    };
+
+    window.deleteNode = async (id, type) => {
+        if(!confirm('정말 삭제하시겠습니까? 연결된 선택지도 함께 삭제됩니다.')) return;
+        const url = type === 'scene' ? 'delete-scene' : 'delete-ending';
+        const body = type === 'scene' ? { scene_id: id } : { ending_id: id };
+
+        const res = await fetch(`/api/draft/${SCENARIO_ID}/${url}`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        const json = await res.json();
+        if(json.success) {
+            alert('삭제되었습니다.');
+            location.reload();
+        } else {
+            alert(json.error);
+        }
+    };
+
     // --- API Calls ---
     window.saveDraft = async () => {
-        // save logic
-        await fetch(`/api/draft/${SCENARIO_ID}/save`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(scenarioData) });
-        alert('저장됨');
+        const btn = document.getElementById('saveDraftBtn');
+        btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 저장중';
+        try {
+            await fetch(`/api/draft/${SCENARIO_ID}/save`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(scenarioData) });
+            btn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i> 저장됨';
+            setTimeout(() => {
+                btn.innerHTML = '<i data-lucide="save" class="w-4 h-4"></i> <span>저장</span>';
+                btn.disabled = false;
+                lucide.createIcons();
+            }, 2000);
+        } catch(e) { alert('저장 실패'); }
     };
 
     window.confirmPublish = async () => {
-        if(confirm('반영하시겠습니까?')) {
-            await fetch(`/api/draft/${SCENARIO_ID}/publish`, { method: 'POST' });
-            location.reload();
+        if(confirm('실제 시나리오에 반영하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+            const res = await fetch(`/api/draft/${SCENARIO_ID}/publish`, { method: 'POST' });
+            const json = await res.json();
+            if(json.success) {
+                alert('반영 완료');
+                location.reload();
+            } else {
+                alert(json.error);
+            }
+        }
+    };
+
+    window.runAIAudit = async (id) => {
+        const res = await fetch(`/api/draft/${SCENARIO_ID}/ai-audit`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ scene_id: id, audit_type: 'full' })
+        });
+        const json = await res.json();
+        if(json.success) {
+            const issues = json.result.coherence.issues.concat(json.result.trigger.issues);
+            if(issues.length === 0) alert('AI 검수 결과: 문제 없음! 완벽합니다.');
+            else alert(`AI 검수 결과: ${issues.length}개의 개선점이 발견되었습니다.\n\n` + issues.map(i => `- ${i.message}`).join('\n'));
+        }
+    };
+
+    // --- Scenario Load Modal ---
+    window.showScenarioListModal = async () => {
+        // 모달 HTML 생성
+        const modalId = 'scenarioListModal';
+        if (document.getElementById(modalId)) document.getElementById(modalId).remove();
+
+        const modalHtml = `
+            <div id="${modalId}" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+                <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col mx-4">
+                    <div class="p-4 border-b border-gray-800 flex justify-between items-center">
+                        <h3 class="font-bold text-white flex items-center gap-2"><i data-lucide="folder-open"></i> 시나리오 불러오기</h3>
+                        <button onclick="document.getElementById('${modalId}').remove()" class="text-gray-400 hover:text-white"><i data-lucide="x"></i></button>
+                    </div>
+                    <div id="scenarioListContent" class="p-4 overflow-y-auto space-y-2 flex-1">
+                        <div class="text-center py-8 text-gray-500"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto mb-2"></i> 로딩 중...</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        lucide.createIcons();
+
+        // 데이터 로드
+        try {
+            const res = await fetch('/api/scenarios/data?filter=my');
+            const scenarios = await res.json();
+            const container = document.getElementById('scenarioListContent');
+
+            if (!scenarios || scenarios.length === 0) {
+                container.innerHTML = '<div class="text-center py-8 text-gray-500">저장된 시나리오가 없습니다.</div>';
+                return;
+            }
+
+            container.innerHTML = scenarios.map(s => `
+                <div onclick="window.location.href='/views/scenes/edit/${s.filename}'"
+                     class="p-4 bg-gray-800 hover:bg-gray-750 border border-gray-700 rounded-lg cursor-pointer transition flex justify-between items-center group">
+                    <div>
+                        <div class="font-bold text-white group-hover:text-purple-400 transition">${s.title}</div>
+                        <div class="text-xs text-gray-400 mt-1 line-clamp-1">${s.desc}</div>
+                    </div>
+                    <i data-lucide="arrow-right" class="text-gray-600 group-hover:text-purple-400 transition"></i>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        } catch (e) {
+            document.getElementById('scenarioListContent').innerHTML = '<div class="text-center py-8 text-red-400">목록을 불러오지 못했습니다.</div>';
         }
     };
 
     // --- PanZoom ---
     const container = document.getElementById('graph-container');
     const inner = document.getElementById('graph-inner');
-    container.onmousedown = e => { panZoom.isDragging=true; panZoom.startX=e.clientX-panZoom.x; panZoom.startY=e.clientY-panZoom.y; };
-    window.onmouseup = () => panZoom.isDragging=false;
+    container.onmousedown = e => { panZoom.isDragging=true; panZoom.startX=e.clientX-panZoom.x; panZoom.startY=e.clientY-panZoom.y; container.style.cursor='grabbing'; };
+    window.onmouseup = () => { panZoom.isDragging=false; container.style.cursor='grab'; };
     window.onmousemove = e => {
         if(!panZoom.isDragging) return;
         panZoom.x = e.clientX - panZoom.startX; panZoom.y = e.clientY - panZoom.startY;
@@ -217,6 +385,43 @@
         panZoom.scale = Math.min(Math.max(0.1, panZoom.scale), 5);
         inner.style.transform = `translate(${panZoom.x}px, ${panZoom.y}px) scale(${panZoom.scale})`;
     };
+    window.zoomGraph = (delta) => { panZoom.scale += delta; inner.style.transform = `translate(${panZoom.x}px, ${panZoom.y}px) scale(${panZoom.scale})`; };
+    window.resetZoom = () => { panZoom = {scale:1, x:0, y:0}; inner.style.transform = ''; };
+
+    // --- History UI ---
+    window.toggleHistorySidebar = async () => {
+        const sidebar = document.getElementById('historySidebar');
+        sidebar.classList.toggle('open');
+        if (sidebar.classList.contains('open')) {
+            const res = await fetch(`/api/draft/${SCENARIO_ID}/history`);
+            const json = await res.json();
+            const list = document.getElementById('historyListContainer');
+            if (json.success) {
+                list.innerHTML = json.history.map(h => `
+                    <div class="p-3 bg-gray-800/50 border border-gray-700/50 rounded hover:bg-gray-700 cursor-pointer ${h.is_current?'border-blue-500/50 bg-blue-900/20':''}"
+                         onclick="restoreHistory(${h.id})">
+                        <div class="text-xs text-gray-400">${new Date(h.created_at * 1000).toLocaleString()}</div>
+                        <div class="text-sm font-bold text-white mt-1">${h.action_description}</div>
+                    </div>
+                `).join('');
+            }
+        }
+    };
+
+    window.restoreHistory = async (hid) => {
+        if(!confirm('이 시점으로 복원하시겠습니까?')) return;
+        await fetch(`/api/draft/${SCENARIO_ID}/history/restore/${hid}`, { method: 'POST' });
+        location.reload();
+    };
+
+    window.performUndo = async () => {
+        await fetch(`/api/draft/${SCENARIO_ID}/history/undo`, { method: 'POST' });
+        location.reload();
+    };
+    window.performRedo = async () => {
+        await fetch(`/api/draft/${SCENARIO_ID}/history/redo`, { method: 'POST' });
+        location.reload();
+    };
 
     // Init
     renderGraph();
@@ -226,7 +431,18 @@
     fetch(`/api/draft/${SCENARIO_ID}`).then(r=>r.json()).then(d => {
         if(d.success) {
             scenarioData = d.scenario;
-            if(d.is_draft) document.getElementById('draftIndicator').classList.remove('hidden');
+            if(d.is_draft) {
+                document.getElementById('draftIndicator').classList.remove('hidden');
+                document.getElementById('saveDraftBtn').disabled = false;
+                document.getElementById('publishBtn').disabled = false;
+            }
+            // Check history status
+            fetch(`/api/draft/${SCENARIO_ID}/history/status`).then(r=>r.json()).then(s => {
+                if(s.success) {
+                    document.getElementById('undoBtn').disabled = !s.undo_redo_status.can_undo;
+                    document.getElementById('redoBtn').disabled = !s.undo_redo_status.can_redo;
+                }
+            });
         }
     });
 </script>
