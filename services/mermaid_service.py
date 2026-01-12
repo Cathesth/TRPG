@@ -2,12 +2,79 @@
 Mermaid 차트 생성 서비스
 """
 import logging
-from typing import Dict, Any, List, Union
+from typing import Dict, Any, List, Union, Tuple
 
 logger = logging.getLogger(__name__)
 
 class MermaidService:
     """시나리오를 Mermaid 다이어그램으로 변환"""
+
+    @staticmethod
+    def convert_nodes_to_scenes(nodes: List[Dict], edges: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
+        """
+        React Flow 노드/엣지 데이터를 시나리오 씬/엔딩 구조로 변환
+        Builder(노드 기반) -> Game Engine(씬 기반) 호환성 보장
+        """
+        scenes = []
+        endings = []
+
+        # 1. 노드 분류
+        node_map = {n['id']: n for n in nodes}
+
+        for node in nodes:
+            if node['type'] == 'scene':
+                # React Flow 노드 데이터를 씬 데이터로 변환
+                scene = {
+                    'scene_id': node['id'],
+                    'title': node['data'].get('title', node['data'].get('label', '')),
+                    'description': node['data'].get('description', node['data'].get('prologue', '')),
+                    'trigger': node['data'].get('trigger', ''),
+                    'transitions': []
+                }
+                # 추가 속성이 있다면 포함 (예: npcs, enemies)
+                if 'npcs' in node['data']:
+                    scene['npcs'] = node['data']['npcs']
+                if 'enemies' in node['data']:
+                    scene['enemies'] = node['data']['enemies']
+
+                scenes.append(scene)
+            elif node['type'] == 'ending':
+                ending = {
+                    'ending_id': node['id'],
+                    'title': node['data'].get('title', ''),
+                    'description': node['data'].get('description', '')
+                }
+                endings.append(ending)
+
+        # 2. 엣지로 Transitions 구성
+        for edge in edges:
+            source_id = edge.get('source')
+            target_id = edge.get('target')
+
+            source_node = node_map.get(source_id)
+            target_node = node_map.get(target_id)
+
+            if not source_node or not target_node:
+                continue
+
+            # Start 노드에서 시작하는 경우 (Prologue 연결)
+            # 보통 Start 노드는 별도 처리가 필요할 수 있으나, 여기서는 엣지 구조만 파악
+
+            if source_node['type'] == 'scene':
+                # 해당 씬 찾기
+                scene = next((s for s in scenes if s['scene_id'] == source_id), None)
+                if scene:
+                    target_trigger = ''
+                    # 타겟 노드의 트리거 정보를 가져옴 (조건)
+                    if target_node['type'] == 'scene':
+                        target_trigger = target_node['data'].get('trigger', '')
+
+                    scene['transitions'].append({
+                        'target_scene_id': target_id,
+                        'trigger': target_trigger or '이동'
+                    })
+
+        return scenes, endings
 
     @staticmethod
     def generate_chart(scenario: Union[Dict, Any], current_scene_id: str = None) -> Dict[str, Any]:
@@ -22,12 +89,7 @@ class MermaidService:
             {
                 'mermaid_code': str,
                 'filtered_scenes': List,
-                'incoming_conditions': Dict,
-                'ending_incoming_conditions': Dict,
-                'ending_names': Dict,
-                'scene_names': Dict,
-                'scene_display_ids': Dict,  # scene_id -> Scene-1, Scene-2, ...
-                'ending_display_ids': Dict  # ending_id -> Ending-1, Ending-2, ...
+                ...
             }
         """
         try:
@@ -43,6 +105,15 @@ class MermaidService:
 
             scenes = scenario_data.get('scenes', [])
             endings = scenario_data.get('endings', [])
+            nodes = scenario_data.get('nodes', [])
+            edges = scenario_data.get('edges', [])
+
+            # [핵심] scenes가 없지만 nodes가 있는 경우 자동 변환 (Viewer 호환성)
+            if (not scenes or len(scenes) == 0) and nodes:
+                scenes, endings = MermaidService.convert_nodes_to_scenes(nodes, edges)
+                # 변환된 데이터를 원본 딕셔너리에도 반영 (참조 변경)
+                scenario_data['scenes'] = scenes
+                scenario_data['endings'] = endings
 
             # start/PROLOGUE 노드 제외
             filtered_scenes = [
@@ -74,7 +145,7 @@ class MermaidService:
             ending_names = {e.get('ending_id'): e.get('title', e.get('ending_id')) for e in endings}
             scene_names = {s.get('scene_id'): s.get('title') or s.get('name') or s.get('scene_id') for s in filtered_scenes}
 
-            # 표시용 ID 생성 (Scene-1, Scene-2, ... / Ending-1, Ending-2, ...)
+            # 표시용 ID 생성
             scene_display_ids = {}
             for idx, scene in enumerate(filtered_scenes):
                 scene_display_ids[scene.get('scene_id')] = f"Scene-{idx + 1}"
@@ -87,7 +158,7 @@ class MermaidService:
             incoming_conditions = {}
             ending_incoming_conditions = {}
 
-            # 프롤로그에서 시작하는 씬들
+            # 프롤로그 연결
             for target_id in prologue_connects_to:
                 if target_id not in incoming_conditions:
                     incoming_conditions[target_id] = []
@@ -104,8 +175,7 @@ class MermaidService:
 
                 for trans in scene.get('transitions', []):
                     target_id = trans.get('target_scene_id')
-                    if not target_id:
-                        continue
+                    if not target_id: continue
 
                     condition_info = {
                         'from_scene': from_id,
@@ -113,7 +183,6 @@ class MermaidService:
                         'condition': trans.get('trigger') or trans.get('condition') or '자유 행동'
                     }
 
-                    # 엔딩으로의 연결인지 확인
                     if target_id in ending_names:
                         if target_id not in ending_incoming_conditions:
                             ending_incoming_conditions[target_id] = []
@@ -130,22 +199,16 @@ class MermaidService:
                 prologue_class = "active" if current_scene_id and current_scene_id.lower() == "prologue" else "prologueStyle"
                 mermaid_lines.append(f'    PROLOGUE["📖 Prologue"]:::{prologue_class}')
 
-            # 프롤로그 -> 연결된 씬들
             if prologue_text and prologue_connects_to:
                 for target_id in prologue_connects_to:
                     if any(s.get('scene_id') == target_id for s in filtered_scenes):
                         mermaid_lines.append(f'    PROLOGUE --> {target_id}')
 
-            # 씬 노드들
             for scene in filtered_scenes:
                 scene_id = scene['scene_id']
-                # title 또는 name 필드 사용, 없으면 scene_id 사용
                 scene_title = (scene.get('title') or scene.get('name') or scene_id).replace('"', "'")
 
-                # 하이라이트 처리
                 node_class = "active" if current_scene_id == scene_id else "sceneStyle"
-
-                # Scene title을 노드 레이블로 사용
                 mermaid_lines.append(f'    {scene_id}["{scene_title}"]:::{node_class}')
 
                 for trans in scene.get('transitions', []):
@@ -154,18 +217,13 @@ class MermaidService:
                     if next_id and next_id != 'start':
                         mermaid_lines.append(f'    {scene_id} -->|"{trigger}"| {next_id}')
 
-            # 엔딩 노드들
             for ending in endings:
                 ending_id = ending['ending_id']
                 ending_title = ending.get('title', '엔딩').replace('"', "'")
 
-                # 하이라이트 처리
                 node_class = "active" if current_scene_id == ending_id else "endingStyle"
-
-                # 기본 스타일만 적용 (JavaScript에서 하이라이트 처리)
                 mermaid_lines.append(f'    {ending_id}["🏁 {ending_title}"]:::{node_class}')
 
-            # 스타일 정의
             mermaid_lines.append("    classDef default fill:#1f2937,stroke:#374151,stroke-width:2px,color:#fff")
             mermaid_lines.append("    classDef active fill:#164e63,stroke:#22d3ee,stroke-width:3px,color:#fff")
             mermaid_lines.append("    classDef prologueStyle fill:#0f766e,stroke:#14b8a6,color:#fff")
@@ -186,3 +244,13 @@ class MermaidService:
         except Exception as e:
             logger.error(f"Mermaid generation error: {e}")
             return {"mermaid_code": "graph TD\nError[차트 생성 실패]"}
+
+    @staticmethod
+    def _escape(text: str) -> str:
+        """Mermaid 문법 파괴 방지를 위한 이스케이프"""
+        if not text: return ""
+        # 괄호, 따옴표 등 특수문자 제거 또는 치환
+        return str(text).replace('(', '（').replace(')', '）')\
+                        .replace('[', '【').replace(']', '】')\
+                        .replace('"', "'").replace('\n', ' ')\
+                        .replace('#', '')

@@ -534,8 +534,16 @@ async def get_draft(scenario_id: int, user: CurrentUser = Depends(get_current_us
 @api_router.post('/draft/{scenario_id}/save')
 async def save_draft(scenario_id: int, request: Request, user: CurrentUser = Depends(get_current_user)):
     data = await request.json()
+
+    # [Fix] nodes만 있고 scenes가 없으면 자동 생성하여 함께 저장
+    if 'nodes' in data and ('scenes' not in data or not data['scenes']):
+        scenes, endings = MermaidService.convert_nodes_to_scenes(data.get('nodes', []), data.get('edges', []))
+        data['scenes'] = scenes
+        data['endings'] = endings
+
     success, error = DraftService.save_draft(scenario_id, user.id, data)
     if not success: return JSONResponse({"success": False, "error": error}, status_code=400)
+
     # 자동 히스토리 추가
     HistoryService.add_snapshot(scenario_id, user.id, data, "Draft 저장")
     return {"success": True, "message": "Draft가 저장되었습니다."}

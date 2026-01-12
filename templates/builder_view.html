@@ -32,7 +32,6 @@
 
     <div id="root" class="w-full h-full"></div>
 
-    <!-- Jinja2 충돌 방지를 위해 raw 태그 사용 -->
     {% raw %}
     <script type="text/babel">
         const { useState, useRef, useEffect, useCallback } = React;
@@ -58,6 +57,86 @@
                     </div>
                 </div>
             );
+        };
+
+        // --- 컨버터 유틸리티 (Legacy Scenes -> React Flow Nodes) ---
+        const convertScenesToNodes = (scenData) => {
+            const nodes = [];
+            const edges = [];
+            let yOffset = 50;
+            const xBase = 400;
+
+            // 1. Start Node
+            nodes.push({
+                id: 'start', type: 'start', x: 50, y: 50,
+                data: {
+                    label: scenData.title || '시나리오 설정',
+                    prologue: scenData.prologue || '',
+                    gm_notes: scenData.gm_notes || '',
+                    background: scenData.background || ''
+                }
+            });
+
+            const sceneMap = {}; // id -> node
+
+            // 2. Scenes
+            (scenData.scenes || []).forEach((s, idx) => {
+                const node = {
+                    id: s.scene_id,
+                    type: 'scene',
+                    x: xBase,
+                    y: yOffset + (idx * 150),
+                    data: {
+                        title: s.title || s.name || s.scene_id,
+                        description: s.description || '',
+                        background: s.background || '',
+                        trigger: s.trigger || '',
+                        npcs: s.npcs || [],
+                        enemies: s.enemies || []
+                    }
+                };
+                nodes.push(node);
+                sceneMap[s.scene_id] = node;
+            });
+
+            // 3. Endings
+            const endingYStart = yOffset + ((scenData.scenes || []).length * 150);
+            (scenData.endings || []).forEach((e, idx) => {
+                const node = {
+                    id: e.ending_id,
+                    type: 'ending',
+                    x: xBase + 400,
+                    y: endingYStart + (idx * 150),
+                    data: {
+                        title: e.title || '엔딩',
+                        description: e.description || '',
+                        background: e.background || ''
+                    }
+                };
+                nodes.push(node);
+                sceneMap[e.ending_id] = node;
+            });
+
+            // 4. Connections
+            // Prologue -> First Scenes
+            (scenData.prologue_connects_to || []).forEach(targetId => {
+                edges.push({ id: `e-start-${targetId}`, source: 'start', target: targetId });
+            });
+
+            // Scene Transitions
+            (scenData.scenes || []).forEach(s => {
+                (s.transitions || []).forEach((t, i) => {
+                    if (t.target_scene_id) {
+                        edges.push({
+                            id: `e-${s.scene_id}-${t.target_scene_id}-${i}`,
+                            source: s.scene_id,
+                            target: t.target_scene_id
+                        });
+                    }
+                });
+            });
+
+            return { nodes, edges };
         };
 
         // --- 메인 컴포넌트 ---
@@ -151,22 +230,38 @@
                     let data = await res.json();
 
                     if (!data.success || !data.scenario) {
-                        // 실패시 원본 조회 (기존 API 활용 가정)
-                        res = await fetch(`/api/scenario/${sid}`);
+                        res = await fetch(`/api/scenario/${sid}/edit`);
                         data = await res.json();
+                        // API 응답 구조 맞추기
+                        if(data.data) data = { success: true, scenario: data.data.scenario };
                     } else {
                         setIsDraft(data.is_draft);
                     }
 
-                    if (data.scenario) { // 구조에 맞게 매핑
+                    if (data.scenario) {
                         const scen = data.scenario;
-                        setNodes(scen.nodes || []);
-                        setEdges(scen.edges || []);
-                        setGlobalNpcs(scen.npcs?.filter(n => !n.isEnemy) || []);
-                        setGlobalEnemies(scen.npcs?.filter(n => n.isEnemy) || []);
+                        let loadedNodes = scen.nodes;
+                        let loadedEdges = scen.edges;
+
+                        // [자동 변환] nodes가 없고 scenes만 있는 경우 (Legacy 데이터)
+                        if ((!loadedNodes || loadedNodes.length === 0) && scen.scenes) {
+                            console.log("Legacy data detected. Converting scenes to nodes...");
+                            const converted = convertScenesToNodes(scen);
+                            loadedNodes = converted.nodes;
+                            loadedEdges = converted.edges;
+                        }
+
+                        setNodes(loadedNodes || []);
+                        setEdges(loadedEdges || []);
+                        setGlobalNpcs(scen.npcs?.filter(n => !n.isEnemy && !n.is_enemy) || []);
+                        setGlobalEnemies(scen.npcs?.filter(n => n.isEnemy || n.is_enemy) || []);
+
                         showToast("시나리오 로드 완료", "success");
                     }
-                } catch (e) { showToast("로드 실패: " + e.message, "error"); }
+                } catch (e) {
+                    console.error(e);
+                    showToast("로드 실패: " + e.message, "error");
+                }
             };
 
             // --- 액션 핸들러 ---
@@ -536,7 +631,7 @@
                     <Modal isOpen={modals.scenarioList} title="내 시나리오" onClose={() => setModals(m=>({...m, scenarioList:false}))}>
                          <div className="space-y-2">
                             {userScenarios.map(s => (
-                                <div key={s.id} onClick={() => window.location.href=`/views/scenes/edit/${s.id}`}
+                                <div key={s.id} onClick={() => window.location.href=`/views/scenes/edit/${s.filename}` }
                                      className="p-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded cursor-pointer group transition-colors">
                                     <div className="font-bold text-white group-hover:text-blue-400">{s.title}</div>
                                     <div className="text-xs text-gray-400 mt-1 line-clamp-2">{s.prologue}</div>
