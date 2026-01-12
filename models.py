@@ -17,13 +17,15 @@ else:
     JSON_TYPE = JSON
 
 # Database URL 처리 (postgres:// -> postgresql://)
+# 로컬 개발 시 trpg.db 사용
 DATABASE_URL = os.getenv('DATABASE_URL',
                          f'sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), "trpg.db")}')
+
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # Engine 및 Session 생성
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -46,29 +48,15 @@ class User(Base):
 
     # 관계 설정
     scenarios = relationship('Scenario', back_populates='owner')
-
-    # Flask-Login 호환 속성
-    @property
-    def is_authenticated(self):
-        return True
-
-    @property
-    def is_active(self):
-        return True
-
-    @property
-    def is_anonymous(self):
-        return False
-
-    def get_id(self):
-        return self.id
+    # Flask-Login 관련 속성 삭제됨 (auth.py가 대신 처리함)
 
 
 class Scenario(Base):
     __tablename__ = 'scenarios'
 
-    id = Column(Integer, primary_key=True)
-    title = Column(String(100), nullable=False)
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(100), unique=True, index=True)  # UUID
+    title = Column(String(100), nullable=False, index=True)
     author_id = Column(String(50), ForeignKey('users.id'), nullable=True)
 
     # 시나리오 전체 데이터 (scenes, endings, variables 등 구조화된 JSON)
@@ -80,12 +68,13 @@ class Scenario(Base):
 
     # 관계 설정
     owner = relationship('User', back_populates='scenarios')
-    drafts = relationship('TempScenario', back_populates='original_scenario')
-    history_entries = relationship('ScenarioHistory', back_populates='scenario')
+    drafts = relationship('TempScenario', back_populates='original_scenario', cascade="all, delete-orphan")
+    history_entries = relationship('ScenarioHistory', back_populates='scenario', cascade="all, delete-orphan")
 
     def to_dict(self):
         return {
             'id': self.id,
+            'filename': self.filename,
             'title': self.title,
             'author': self.author_id or 'Anonymous',
             'data': self.data,
@@ -98,12 +87,12 @@ class Scenario(Base):
 class Preset(Base):
     __tablename__ = 'presets'
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
 
-    # [수정] 프론트엔드 호환용 식별자 (UUID)
+    # 프론트엔드 호환용 식별자 (UUID)
     filename = Column(String(100), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
 
-    name = Column(String(100), nullable=False)
+    name = Column(String(100), nullable=False, index=True)
     description = Column(Text, default='')
     author_id = Column(String(50), ForeignKey('users.id'), nullable=True)
 
@@ -120,7 +109,7 @@ class Preset(Base):
             'desc': self.description,
             'author': self.author_id or 'Anonymous',
             'data': self.data,
-            'created_time': self.created_at.timestamp() if self.created_at else None  # created_at -> created_time 변환
+            'created_time': self.created_at.timestamp() if self.created_at else None
         }
 
 
@@ -131,8 +120,8 @@ class TempScenario(Base):
     """
     __tablename__ = 'temp_scenarios'
 
-    id = Column(Integer, primary_key=True)
-    original_scenario_id = Column(Integer, ForeignKey('scenarios.id'), nullable=False)
+    id = Column(Integer, primary_key=True, index=True)
+    original_scenario_id = Column(Integer, ForeignKey('scenarios.id', ondelete='CASCADE'), nullable=False)
     editor_id = Column(String(50), ForeignKey('users.id'), nullable=False)
 
     # 편집 중인 시나리오 데이터
@@ -160,8 +149,8 @@ class CustomNPC(Base):
     """NPC/Enemy 저장을 위한 모델"""
     __tablename__ = 'custom_npcs'
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False)
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
     type = Column(String(50), default='npc')  # npc 또는 enemy 구분
     data = Column(JSON_TYPE, nullable=False)  # 상세 데이터 JSON
 
@@ -185,9 +174,9 @@ class ScenarioHistory(Base):
     - Undo/Redo 기능을 위한 스냅샷 저장
     - Railway PostgreSQL 환경에서 영속적으로 관리
     """
-    __tablename__ = 'scenario_history'
+    __tablename__ = 'scenario_histories'  # 복수형 권장
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
     scenario_id = Column(Integer, ForeignKey('scenarios.id', ondelete='CASCADE'), nullable=False)
     editor_id = Column(String(50), ForeignKey('users.id'), nullable=False)
 

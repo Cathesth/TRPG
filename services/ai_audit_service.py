@@ -2,24 +2,30 @@
 AI 서사 일관성 검사 서비스 (AI Audit Service)
 - 씬 수정 시 이전/다음 씬과의 서사적 개연성 검토
 - 선택지 트리거와 타겟 씬 내용의 일치성 검증
-- LLM을 통한 논리적 흐름 분석
+- LLM을 통한 논리적 흐름 분석 및 수정 제안
 """
 import json
 import logging
 import os
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field, asdict
 
-from llm_factory import LLMFactory, DEFAULT_MODEL
+# LLM Factory 연동
+try:
+    from llm_factory import LLMFactory, DEFAULT_MODEL
+except ImportError:
+    from llm_factory import LLMFactory
+    # fallback default model if not defined in factory
+    DEFAULT_MODEL = "openai/tngtech/deepseek-r1t2-chimera:free"
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class NarrativeIssue:
-    """서사 일관성 문제"""
+    """서사 일관성 문제 항목"""
     issue_type: str  # 'coherence' | 'trigger_mismatch' | 'logic_gap'
-    severity: str  # 'error' | 'warning' | 'info'
+    severity: str    # 'error' | 'warning' | 'info'
     scene_id: str
     message: str
     suggestion: str = ""
@@ -38,9 +44,11 @@ class AuditResult:
     child_scenes: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
+        """결과를 딕셔너리로 변환 (API 응답용)"""
         return {
             'success': self.success,
             'scene_id': self.scene_id,
+            # dataclass 객체를 dict로 변환
             'issues': [asdict(issue) for issue in self.issues],
             'summary': self.summary,
             'parent_scenes': self.parent_scenes,
@@ -54,7 +62,8 @@ class AuditResult:
 class AIAuditService:
     """AI 기반 서사 일관성 검사 서비스"""
 
-    # 서사 일관성 검사 프롬프트
+    # --- Prompts ---
+
     COHERENCE_CHECK_PROMPT = """당신은 TRPG 시나리오의 서사 전문가입니다.
 주어진 씬(Scene)과 그 연결된 씬들의 서사적 일관성을 분석하세요.
 
@@ -91,12 +100,10 @@ class AIAuditService:
     "summary": "전체 평가 요약 (1-2문장)"
 }}
 ```
-
 서사적 문제가 없으면 issues를 빈 배열로 반환하세요.
 반드시 유효한 JSON만 출력하세요.
 """
 
-    # 트리거 일치성 검사 프롬프트
     TRIGGER_CHECK_PROMPT = """당신은 TRPG 시나리오 검수 전문가입니다.
 선택지(Trigger)와 연결된 타겟 씬의 내용이 서사적으로 일치하는지 검증하세요.
 
@@ -128,51 +135,58 @@ class AIAuditService:
     "summary": "전체 평가 요약"
 }}
 ```
-
 문제가 없으면 issues를 빈 배열로 반환하세요.
 반드시 유효한 JSON만 출력하세요.
 """
-    # [추가] 검수 추천 프롬프트
+
     AUDIT_RECOMMENDATION_PROMPT = """당신은 TRPG 시나리오의 구조적 결함을 찾아내는 수석 에디터입니다.
-    주어진 시나리오의 '구조 데이터'를 분석하여, 서사적 오류나 개연성 문제가 의심되어 **정밀 검수(Audit)가 가장 시급한 씬 3~5개**를 추천하세요.
+주어진 시나리오의 '구조 데이터'를 분석하여, 서사적 오류나 개연성 문제가 의심되어 **정밀 검수(Audit)가 가장 시급한 씬 3~5개**를 추천하세요.
 
-    ## 분석 대상 시나리오 구조
-    {scenario_structure}
+## 분석 대상 시나리오 구조
+{scenario_structure}
 
-    ## 추천 기준 (우선순위)
-    1. **단절/고립**: 연결이 끊겼거나 진입/탈출이 불가능해 보이는 씬
-    2. **복잡성**: 분기점이 너무 많아(3개 이상) 로직 꼬임이 의심되는 씬
-    3. **내용 부실**: 묘사가 지나치게 짧거나('내용 없음' 등) 핵심 정보가 누락된 씬
-    4. **급격한 전개**: 초반부에서 갑자기 엔딩으로 직행하는 등 템포가 이상한 구간
+## 추천 기준 (우선순위)
+1. **단절/고립**: 연결이 끊겼거나 진입/탈출이 불가능해 보이는 씬
+2. **복잡성**: 분기점이 너무 많아(3개 이상) 로직 꼬임이 의심되는 씬
+3. **내용 부실**: 묘사가 지나치게 짧거나('내용 없음' 등) 핵심 정보가 누락된 씬
+4. **급격한 전개**: 초반부에서 갑자기 엔딩으로 직행하는 등 템포가 이상한 구간
 
-    ## 응답 형식 (JSON)
-    ```json
-    {{
-        "recommendations": [
-            {{
-                "scene_id": "추천할 씬 ID",
-                "reason": "왜 이 씬을 검수해야 하는지 구체적인 이유 (한글로)",
-                "risk_level": "High|Medium|Low"
-            }}
-        ]
-    }}
-    반드시 유효한 JSON만 출력하세요. """
+## 응답 형식 (JSON)
+```json
+{{
+    "recommendations": [
+        {{
+            "scene_id": "추천할 씬 ID",
+            "reason": "왜 이 씬을 검수해야 하는지 구체적인 이유 (한글로)",
+            "risk_level": "High|Medium|Low"
+        }}
+    ]
+}}
+```
+반드시 유효한 JSON만 출력하세요.
+"""
+
+    # --- Helper Methods ---
 
     @staticmethod
     def _parse_json_response(text: str) -> dict:
-        """LLM 응답에서 JSON 추출"""
+        """LLM 응답에서 JSON 추출 및 파싱"""
         if isinstance(text, dict):
             return text
         if not text:
             return {}
+
         try:
             text = text.strip()
+            # Markdown 코드 블록 제거
             if "```json" in text:
                 text = text.split("```json")[1].split("```")[0]
             elif "```" in text:
                 text = text.split("```")[1].split("```")[0]
+
             return json.loads(text.strip())
-        except:
+        except json.JSONDecodeError:
+            # 단순 파싱 실패 시, 중괄호 찾아서 재시도
             try:
                 start = text.find('{')
                 end = text.rfind('}') + 1
@@ -180,11 +194,11 @@ class AIAuditService:
                     return json.loads(text[start:end])
             except:
                 pass
-        return {}
+            logger.warning(f"Failed to parse JSON response: {text[:100]}...")
+            return {}
 
     @staticmethod
     def _get_scene_by_id(scenario_data: Dict[str, Any], scene_id: str) -> Optional[Dict[str, Any]]:
-        """씬 ID로 씬 데이터 조회"""
         for scene in scenario_data.get('scenes', []):
             if scene.get('scene_id') == scene_id:
                 return scene
@@ -192,7 +206,6 @@ class AIAuditService:
 
     @staticmethod
     def _get_ending_by_id(scenario_data: Dict[str, Any], ending_id: str) -> Optional[Dict[str, Any]]:
-        """엔딩 ID로 엔딩 데이터 조회"""
         for ending in scenario_data.get('endings', []):
             if ending.get('ending_id') == ending_id:
                 return ending
@@ -200,12 +213,9 @@ class AIAuditService:
 
     @staticmethod
     def _find_parent_scenes(scenario_data: Dict[str, Any], target_scene_id: str) -> List[Dict[str, Any]]:
-        """특정 씬을 타겟으로 하는 부모 씬들 찾기"""
         parents = []
-
-        # 프롤로그에서 연결되는지 확인
-        prologue_connects = scenario_data.get('prologue_connects_to', [])
-        if target_scene_id in prologue_connects:
+        # 프롤로그 연결 확인
+        if target_scene_id in scenario_data.get('prologue_connects_to', []):
             parents.append({
                 'scene_id': 'PROLOGUE',
                 'title': '프롤로그',
@@ -213,43 +223,38 @@ class AIAuditService:
                 'trigger': '시작'
             })
 
-        # 다른 씬에서 연결되는지 확인
+        # 씬 연결 확인
         for scene in scenario_data.get('scenes', []):
             for trans in scene.get('transitions', []):
                 if trans.get('target_scene_id') == target_scene_id:
                     parents.append({
                         'scene_id': scene.get('scene_id'),
-                        'title': scene.get('title') or scene.get('name') or scene.get('scene_id'),
+                        'title': scene.get('title') or scene.get('scene_id'),
                         'description': scene.get('description', ''),
                         'trigger': trans.get('trigger') or trans.get('condition') or '자유 행동'
                     })
-
         return parents
 
     @staticmethod
     def _find_child_scenes(scenario_data: Dict[str, Any], source_scene_id: str) -> List[Dict[str, Any]]:
-        """특정 씬에서 연결되는 자식 씬/엔딩들 찾기"""
         children = []
         scene = AIAuditService._get_scene_by_id(scenario_data, source_scene_id)
-
         if not scene:
             return children
 
         for trans in scene.get('transitions', []):
             target_id = trans.get('target_scene_id')
-            if not target_id:
-                continue
+            if not target_id: continue
 
-            # 씬인지 엔딩인지 확인
             target_scene = AIAuditService._get_scene_by_id(scenario_data, target_id)
             target_ending = AIAuditService._get_ending_by_id(scenario_data, target_id)
 
             if target_scene:
                 children.append({
                     'scene_id': target_id,
-                    'title': target_scene.get('title') or target_scene.get('name') or target_id,
+                    'title': target_scene.get('title') or target_id,
                     'description': target_scene.get('description', ''),
-                    'trigger': trans.get('trigger') or trans.get('condition') or '자유 행동',
+                    'trigger': trans.get('trigger') or '자유 행동',
                     'type': 'scene'
                 })
             elif target_ending:
@@ -257,11 +262,12 @@ class AIAuditService:
                     'scene_id': target_id,
                     'title': target_ending.get('title') or target_id,
                     'description': target_ending.get('description', ''),
-                    'trigger': trans.get('trigger') or trans.get('condition') or '자유 행동',
+                    'trigger': trans.get('trigger') or '자유 행동',
                     'type': 'ending'
                 })
-
         return children
+
+    # --- Core Audit Methods ---
 
     @staticmethod
     def audit_scene_coherence(
@@ -269,54 +275,30 @@ class AIAuditService:
         scene_id: str,
         model_name: str = None
     ) -> AuditResult:
-        """
-        특정 씬의 서사 일관성 검사
-
-        Args:
-            scenario_data: 전체 시나리오 데이터
-            scene_id: 검사할 씬 ID
-            model_name: 사용할 LLM 모델
-
-        Returns:
-            AuditResult: 검사 결과
-        """
+        """씬의 전후 연결성(개연성) 검사"""
         try:
-            # 씬 정보 조회
             scene = AIAuditService._get_scene_by_id(scenario_data, scene_id)
             if not scene:
-                return AuditResult(
-                    success=False,
-                    scene_id=scene_id,
-                    summary=f"씬 '{scene_id}'을(를) 찾을 수 없습니다."
-                )
+                return AuditResult(success=False, scene_id=scene_id, summary="씬을 찾을 수 없습니다.")
 
-            # 부모/자식 씬 찾기
             parent_scenes = AIAuditService._find_parent_scenes(scenario_data, scene_id)
             child_scenes = AIAuditService._find_child_scenes(scenario_data, scene_id)
 
-            # 부모 씬 정보 포맷
-            if parent_scenes:
-                parent_info = "\n".join([
-                    f"- [{p['scene_id']}] {p['title']}: {p['description'][:200]}... (트리거: \"{p['trigger']}\")"
-                    for p in parent_scenes
-                ])
-            else:
-                parent_info = "(없음 - 시작 씬일 수 있음)"
+            # 프롬프트 구성용 정보 생성
+            parent_info = "\n".join([
+                f"- [{p['scene_id']}] {p['title']}: {p['description'][:200]}... (트리거: \"{p['trigger']}\")"
+                for p in parent_scenes
+            ]) if parent_scenes else "(없음 - 시작점 가능성)"
 
-            # 자식 씬 정보 포맷
-            if child_scenes:
-                child_info = "\n".join([
-                    f"- [{c['scene_id']}] {c['title']}: {c['description'][:200]}... (트리거: \"{c['trigger']}\")"
-                    for c in child_scenes
-                ])
-            else:
-                child_info = "(없음 - 엔딩으로 연결되거나 막다른 씬)"
+            child_info = "\n".join([
+                f"- [{c['scene_id']}] {c['title']}: {c['description'][:200]}... (트리거: \"{c['trigger']}\")"
+                for c in child_scenes
+            ]) if child_scenes else "(없음 - 엔딩 또는 고립)"
 
-            # 프롬프트 생성
             prompt = AIAuditService.COHERENCE_CHECK_PROMPT.format(
                 scene_id=scene_id,
-                scene_title=scene.get('title') or scene.get('name') or scene_id,
-                scene_description=scene.get('description', '(설명 없음)'),
+                scene_title=scene.get('title') or scene_id,
+                scene_description=scene.get('description', ''),
                 parent_scenes_info=parent_info,
                 child_scenes_info=child_info
             )
@@ -324,35 +306,28 @@ class AIAuditService:
             # LLM 호출
             api_key = os.getenv("OPENROUTER_API_KEY")
             if not api_key:
-                return AuditResult(
-                    success=False,
-                    scene_id=scene_id,
-                    summary="API 키가 설정되지 않았습니다."
-                )
+                return AuditResult(success=False, scene_id=scene_id, summary="API Key Missing")
 
             llm = LLMFactory.get_llm(
                 model_name=model_name or DEFAULT_MODEL,
                 api_key=api_key,
                 temperature=0.3
             )
-
             response = llm.invoke(prompt)
-            result_text = response.content if hasattr(response, 'content') else str(response)
-            result_data = AIAuditService._parse_json_response(result_text)
+            result_data = AIAuditService._parse_json_response(
+                response.content if hasattr(response, 'content') else str(response)
+            )
 
-            # 결과 파싱
             issues = []
-            for issue_data in result_data.get('issues', []):
-                issue_type = issue_data.get('type', 'coherence')
-                if issue_type in ['coherence', 'logic_gap', 'tone_shift', 'character_inconsistency']:
-                    issues.append(NarrativeIssue(
-                        issue_type=issue_type,
-                        severity=issue_data.get('severity', 'warning'),
-                        scene_id=scene_id,
-                        message=issue_data.get('message', ''),
-                        suggestion=issue_data.get('suggestion', ''),
-                        related_scene_id=issue_data.get('related_scene_id', '')
-                    ))
+            for issue in result_data.get('issues', []):
+                issues.append(NarrativeIssue(
+                    issue_type=issue.get('type', 'coherence'),
+                    severity=issue.get('severity', 'warning'),
+                    scene_id=scene_id,
+                    message=issue.get('message', ''),
+                    suggestion=issue.get('suggestion', ''),
+                    related_scene_id=issue.get('related_scene_id', '')
+                ))
 
             return AuditResult(
                 success=True,
@@ -364,12 +339,8 @@ class AIAuditService:
             )
 
         except Exception as e:
-            logger.error(f"Coherence audit error: {e}", exc_info=True)
-            return AuditResult(
-                success=False,
-                scene_id=scene_id,
-                summary=f"검사 중 오류 발생: {str(e)}"
-            )
+            logger.error(f"Audit Coherence Error: {e}", exc_info=True)
+            return AuditResult(success=False, scene_id=scene_id, summary=str(e))
 
     @staticmethod
     def audit_trigger_consistency(
@@ -377,94 +348,59 @@ class AIAuditService:
         scene_id: str,
         model_name: str = None
     ) -> AuditResult:
-        """
-        씬의 선택지(트리거)와 타겟 씬 내용의 일치성 검사
-
-        Args:
-            scenario_data: 전체 시나리오 데이터
-            scene_id: 검사할 씬 ID
-            model_name: 사용할 LLM 모델
-
-        Returns:
-            AuditResult: 검사 결과
-        """
+        """선택지와 타겟 씬의 내용 일치성 검사"""
         try:
             scene = AIAuditService._get_scene_by_id(scenario_data, scene_id)
             if not scene:
-                return AuditResult(
-                    success=False,
-                    scene_id=scene_id,
-                    summary=f"씬 '{scene_id}'을(를) 찾을 수 없습니다."
-                )
+                return AuditResult(success=False, scene_id=scene_id, summary="씬을 찾을 수 없습니다.")
 
             transitions = scene.get('transitions', [])
             if not transitions:
-                return AuditResult(
-                    success=True,
-                    scene_id=scene_id,
-                    summary="이 씬에는 검사할 선택지가 없습니다."
-                )
+                return AuditResult(success=True, scene_id=scene_id, summary="검사할 선택지가 없습니다.")
 
-            # 전환 정보 수집
-            transitions_info_list = []
-            for trans in transitions:
-                target_id = trans.get('target_scene_id')
-                trigger = trans.get('trigger') or trans.get('condition') or '자유 행동'
+            trans_info_list = []
+            for t in transitions:
+                tid = t.get('target_scene_id')
+                trigger = t.get('trigger') or t.get('condition') or '이동'
 
-                target_scene = AIAuditService._get_scene_by_id(scenario_data, target_id)
-                target_ending = AIAuditService._get_ending_by_id(scenario_data, target_id)
+                t_scene = AIAuditService._get_scene_by_id(scenario_data, tid)
+                t_ending = AIAuditService._get_ending_by_id(scenario_data, tid)
 
-                if target_scene:
-                    target_info = f"[씬] {target_scene.get('title', target_id)}: {target_scene.get('description', '')[:300]}"
-                elif target_ending:
-                    target_info = f"[엔딩] {target_ending.get('title', target_id)}: {target_ending.get('description', '')[:300]}"
-                else:
-                    target_info = f"[알 수 없음] {target_id}"
+                desc = ""
+                title = tid
+                if t_scene:
+                    title = t_scene.get('title')
+                    desc = t_scene.get('description', '')[:300]
+                elif t_ending:
+                    title = t_ending.get('title')
+                    desc = t_ending.get('description', '')[:300]
 
-                transitions_info_list.append(
-                    f"선택지: \"{trigger}\"\n  → 타겟: {target_info}"
-                )
+                trans_info_list.append(f"선택지: \"{trigger}\" -> 타겟: [{title}] {desc}")
 
-            transitions_info = "\n\n".join(transitions_info_list)
-
-            # 프롬프트 생성
             prompt = AIAuditService.TRIGGER_CHECK_PROMPT.format(
                 from_scene_id=scene_id,
-                from_scene_title=scene.get('title') or scene.get('name') or scene_id,
-                from_scene_description=scene.get('description', '(설명 없음)'),
-                transitions_info=transitions_info
+                from_scene_title=scene.get('title') or scene_id,
+                from_scene_description=scene.get('description', ''),
+                transitions_info="\n".join(trans_info_list)
             )
 
-            # LLM 호출
             api_key = os.getenv("OPENROUTER_API_KEY")
-            if not api_key:
-                return AuditResult(
-                    success=False,
-                    scene_id=scene_id,
-                    summary="API 키가 설정되지 않았습니다."
-                )
-
-            llm = LLMFactory.get_llm(
-                model_name=model_name or DEFAULT_MODEL,
-                api_key=api_key,
-                temperature=0.3
+            llm = LLMFactory.get_llm(model_name=model_name or DEFAULT_MODEL, api_key=api_key, temperature=0.3)
+            response = llm.invoke(prompt)
+            result_data = AIAuditService._parse_json_response(
+                response.content if hasattr(response, 'content') else str(response)
             )
 
-            response = llm.invoke(prompt)
-            result_text = response.content if hasattr(response, 'content') else str(response)
-            result_data = AIAuditService._parse_json_response(result_text)
-
-            # 결과 파싱
             issues = []
-            for issue_data in result_data.get('issues', []):
+            for issue in result_data.get('issues', []):
                 issues.append(NarrativeIssue(
                     issue_type='trigger_mismatch',
-                    severity=issue_data.get('severity', 'warning'),
+                    severity=issue.get('severity', 'warning'),
                     scene_id=scene_id,
-                    message=issue_data.get('message', ''),
-                    suggestion=issue_data.get('suggestion', ''),
-                    related_scene_id=issue_data.get('target_scene_id', ''),
-                    trigger_text=issue_data.get('trigger', '')
+                    message=issue.get('message', ''),
+                    suggestion=issue.get('suggestion', ''),
+                    related_scene_id=issue.get('target_scene_id', ''),
+                    trigger_text=issue.get('trigger', '')
                 ))
 
             return AuditResult(
@@ -476,12 +412,8 @@ class AIAuditService:
             )
 
         except Exception as e:
-            logger.error(f"Trigger audit error: {e}", exc_info=True)
-            return AuditResult(
-                success=False,
-                scene_id=scene_id,
-                summary=f"검사 중 오류 발생: {str(e)}"
-            )
+            logger.error(f"Audit Trigger Error: {e}", exc_info=True)
+            return AuditResult(success=False, scene_id=scene_id, summary=str(e))
 
     @staticmethod
     def full_audit(
@@ -489,96 +421,65 @@ class AIAuditService:
         scene_id: str,
         model_name: str = None
     ) -> Dict[str, Any]:
-        """
-        전체 AI 감사 수행 (서사 일관성 + 트리거 일치성)
+        """통합 검사 수행"""
+        coherence = AIAuditService.audit_scene_coherence(scenario_data, scene_id, model_name)
+        trigger = AIAuditService.audit_trigger_consistency(scenario_data, scene_id, model_name)
 
-        Args:
-            scenario_data: 전체 시나리오 데이터
-            scene_id: 검사할 씬 ID
-            model_name: 사용할 LLM 모델
-
-        Returns:
-            통합 검사 결과
-        """
-        coherence_result = AIAuditService.audit_scene_coherence(scenario_data, scene_id, model_name)
-        trigger_result = AIAuditService.audit_trigger_consistency(scenario_data, scene_id, model_name)
-
-        # 결과 통합
-        all_issues = coherence_result.issues + trigger_result.issues
-        has_errors = any(i.severity == 'error' for i in all_issues)
-        has_warnings = any(i.severity == 'warning' for i in all_issues)
+        all_issues = coherence.issues + trigger.issues
 
         return {
-            'success': coherence_result.success and trigger_result.success,
+            'success': coherence.success and trigger.success,
             'scene_id': scene_id,
-            'coherence': coherence_result.to_dict(),
-            'trigger': trigger_result.to_dict(),
+            'coherence': coherence.to_dict(),
+            'trigger': trigger.to_dict(),
             'total_issues': len(all_issues),
-            'has_errors': has_errors,
-            'has_warnings': has_warnings,
-            'summary': f"서사 검사: {coherence_result.summary} | 트리거 검사: {trigger_result.summary}"
+            'has_errors': any(i.severity == 'error' for i in all_issues),
+            'has_warnings': any(i.severity == 'warning' for i in all_issues),
+            'summary': f"{coherence.summary} / {trigger.summary}"
         }
 
     @staticmethod
     def recommend_audit_targets(
-            scenario_data: Dict[str, Any],
-            model_name: str = None
+        scenario_data: Dict[str, Any],
+        model_name: str = None
     ) -> Dict[str, Any]:
-        """
-        [신규 기능] 전체 시나리오를 훑어보고 검수가 필요한 씬을 추천
-        """
+        """[신규] 전체 시나리오 구조 분석 및 검수 대상 추천"""
         try:
             scenes = scenario_data.get('scenes', [])
             endings = scenario_data.get('endings', [])
 
-            # 1. 시나리오 구조 경량화 (토큰 절약용 요약 데이터 생성)
-            structure_summary = []
-
+            # 구조 요약 (토큰 절약)
+            summary_lines = []
             for s in scenes:
-                trans_count = len(s.get('transitions', []))
+                trans_cnt = len(s.get('transitions', []))
                 desc_len = len(s.get('description', ''))
-                # 연결된 타겟 ID들만 수집
                 targets = [t.get('target_scene_id') for t in s.get('transitions', []) if t.get('target_scene_id')]
-
-                structure_summary.append(
-                    f"- ID: {s['scene_id']} | 제목: {s.get('title', 'Untitled')} | "
-                    f"내용길이: {desc_len}자 | 분기수: {trans_count}개 | "
-                    f"연결: {targets}"
+                summary_lines.append(
+                    f"- ID:{s['scene_id']} | T:{s.get('title','')} | Len:{desc_len} | Branch:{trans_cnt} | To:{targets}"
                 )
-
-            # 엔딩 정보도 간략히
             for e in endings:
-                structure_summary.append(f"- [ENDING] ID: {e['ending_id']} | 제목: {e['title']}")
+                summary_lines.append(f"- [END] ID:{e['ending_id']} | T:{e.get('title','')}")
 
-            summary_text = "\n".join(structure_summary)
-
-            # 2. 프롬프트 생성
             prompt = AIAuditService.AUDIT_RECOMMENDATION_PROMPT.format(
-                scenario_structure=summary_text
+                scenario_structure="\n".join(summary_lines)
             )
 
-            # 3. LLM 호출
             api_key = os.getenv("OPENROUTER_API_KEY")
             if not api_key:
                 return {"success": False, "error": "API Key Missing"}
 
-            # 구조 분석은 추론 능력이 좀 필요하므로 스마트한 모델 권장
-            llm = LLMFactory.get_llm(
-                model_name=model_name or DEFAULT_MODEL,
-                api_key=api_key,
-                temperature=0.1  # 분석은 냉정하게
-            )
-
+            llm = LLMFactory.get_llm(model_name=model_name or DEFAULT_MODEL, api_key=api_key, temperature=0.1)
             response = llm.invoke(prompt)
-            result_text = response.content if hasattr(response, 'content') else str(response)
-            result_data = AIAuditService._parse_json_response(result_text)
+            result_data = AIAuditService._parse_json_response(
+                response.content if hasattr(response, 'content') else str(response)
+            )
 
             return {
                 "success": True,
                 "recommendations": result_data.get('recommendations', []),
-                "analyzed_scene_count": len(scenes)
+                "analyzed_count": len(scenes)
             }
 
         except Exception as e:
-            logger.error(f"Audit recommendation error: {e}", exc_info=True)
+            logger.error(f"Audit Recommendation Error: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
