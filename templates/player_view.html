@@ -343,7 +343,8 @@
     const STATS_KEY = 'trpg_player_stats';
     const MODEL_PROVIDER_KEY = 'trpg_model_provider';
     const MODEL_VERSION_KEY = 'trpg_model_version';
-    const DEBUG_MODE_KEY = 'trpg_debug_mode';
+    const DEBUG_MODE_KEY = 'trpg_debug_mode';  // localStorage로 변경할 것
+    const DEBUG_CONTENT_KEY = 'trpg_debug_content';  // 디버그 컨텐츠 저장용
     const GAME_ENDED_KEY = 'trpg_game_ended';
     const NAVIGATION_FLAG_KEY = 'trpg_navigation_flag';
 
@@ -909,13 +910,13 @@
         const debugInfoArea = document.getElementById('debug-info-area');
         const debugIcon = document.getElementById('debug-icon');
 
-        // 현재 상태 확인 (sessionStorage 기준)
-        const isDebugActive = sessionStorage.getItem(DEBUG_MODE_KEY) === 'true';
+        // 현재 상태 확인 (localStorage로 변경 - 다른 창 나갔다가 와도 유지)
+        const isDebugActive = localStorage.getItem(DEBUG_MODE_KEY) === 'true';
 
         if (isDebugActive) {
             // 디버그 모드 끄기
             debugInfoArea.classList.add('hidden');
-            sessionStorage.setItem(DEBUG_MODE_KEY, 'false');
+            localStorage.setItem(DEBUG_MODE_KEY, 'false');
             if (debugIcon) {
                 debugIcon.classList.remove('text-indigo-400');
                 debugIcon.classList.add('text-gray-500');
@@ -923,13 +924,31 @@
         } else {
             // 디버그 모드 켜기
             debugInfoArea.classList.remove('hidden');
-            sessionStorage.setItem(DEBUG_MODE_KEY, 'true');
+            localStorage.setItem(DEBUG_MODE_KEY, 'true');
             if (debugIcon) {
                 debugIcon.classList.remove('text-gray-500');
                 debugIcon.classList.add('text-indigo-400');
             }
 
-            // 현재 저장된 스탯 데이터가 있으면 디버그 정보 업데이트
+            // [개선] 토글 시 즉시 데이터 불러오기
+            // 1. 저장된 컨텐츠가 있으면 먼저 복원
+            const savedDebugContent = sessionStorage.getItem(DEBUG_CONTENT_KEY);
+            if (savedDebugContent) {
+                try {
+                    const debugData = JSON.parse(savedDebugContent);
+                    if (debugData.npc) {
+                        document.getElementById('npc-status-area').innerHTML = debugData.npc;
+                    }
+                    if (debugData.worldState) {
+                        document.getElementById('world-state-area').innerHTML = debugData.worldState;
+                    }
+                    lucide.createIcons();
+                } catch (e) {
+                    console.error('Failed to restore debug content:', e);
+                }
+            }
+
+            // 2. 현재 스탯 데이터가 있으면 최신 정보로 업데이트
             const savedStats = sessionStorage.getItem(STATS_KEY);
             if (savedStats) {
                 try {
@@ -947,6 +966,22 @@
     function updateDebugInfo(statsData) {
         updateNPCStatus(statsData);
         updateWorldState(statsData);
+
+        // [추가] 디버그 컨텐츠 저장 (다른 창 나갔다가 와도 유지)
+        saveDebugContent();
+    }
+
+    // [추가] 디버그 컨텐츠 저장 함수
+    function saveDebugContent() {
+        const npcArea = document.getElementById('npc-status-area');
+        const worldStateArea = document.getElementById('world-state-area');
+
+        const debugContent = {
+            npc: npcArea ? npcArea.innerHTML : '',
+            worldState: worldStateArea ? worldStateArea.innerHTML : ''
+        };
+
+        sessionStorage.setItem(DEBUG_CONTENT_KEY, JSON.stringify(debugContent));
     }
 
     // NPC 상태 업데이트 함수
@@ -1192,8 +1227,8 @@
         // 채팅 로그 복원
         restoreChatLog();
 
-        // 디버그 모드 상태 복원
-        const savedDebugMode = sessionStorage.getItem(DEBUG_MODE_KEY);
+        // [수정] 디버그 모드 상태 복원 (localStorage로 변경)
+        const savedDebugMode = localStorage.getItem(DEBUG_MODE_KEY);
         const debugIcon = document.getElementById('debug-icon');
         if (savedDebugMode === 'true') {
             const debugInfoArea = document.getElementById('debug-info-area');
@@ -1203,6 +1238,23 @@
                     debugIcon.classList.remove('text-gray-500');
                     debugIcon.classList.add('text-indigo-400');
                 }
+
+                // [개선] 저장된 디버그 컨텐츠가 있으면 먼저 복원
+                const savedDebugContent = sessionStorage.getItem(DEBUG_CONTENT_KEY);
+                if (savedDebugContent) {
+                    try {
+                        const debugData = JSON.parse(savedDebugContent);
+                        if (debugData.npc) {
+                            document.getElementById('npc-status-area').innerHTML = debugData.npc;
+                        }
+                        if (debugData.worldState) {
+                            document.getElementById('world-state-area').innerHTML = debugData.worldState;
+                        }
+                    } catch (e) {
+                        console.error('Failed to restore debug content:', e);
+                    }
+                }
+
                 // 저장된 스탯이 있으면 디버그 정보 업데이트
                 const savedStats = sessionStorage.getItem(STATS_KEY);
                 if (savedStats) {
