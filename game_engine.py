@@ -910,7 +910,17 @@ def narrator_node(state: PlayerState):
 # --- Streaming Generators (SSE) ---
 
 def prologue_stream_generator(state: PlayerState):
-    scenario = state['scenario']
+    # [FIX] scenario_id로 시나리오 조회
+    scenario_id = state.get('scenario_id')
+    if not scenario_id:
+        yield "이야기가 시작됩니다..."
+        return
+
+    scenario = get_scenario_by_id(scenario_id)
+    if not scenario:
+        yield "이야기가 시작됩니다..."
+        return
+
     prologue_text = scenario.get('prologue', scenario.get('prologue_text', ''))
     if not prologue_text:
         yield "이야기가 시작됩니다..."
