@@ -55,8 +55,8 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
                 game_session.world_state = world_state_data  # 별도 컬럼에 저장
                 game_session.current_scene_id = current_scene_id
                 game_session.turn_count = turn_count
-                game_session.last_played_at = datetime.utcnow()
-                game_session.updated_at = datetime.utcnow()
+                game_session.last_played_at = datetime.now()
+                game_session.updated_at = datetime.now()
                 db.commit()
                 logger.info(f"✅ [DB] Game session updated: {session_key}")
                 return session_key

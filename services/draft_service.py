@@ -150,7 +150,7 @@ class DraftService:
 
             if draft:
                 draft.data = data
-                draft.updated_at = datetime.utcnow()
+                draft.updated_at = datetime.now()
             else:
                 draft = TempScenario(
                     original_scenario_id=scenario_id,
@@ -212,7 +212,7 @@ class DraftService:
                 origin.title = draft.data['title']
 
             origin.data = new_data
-            origin.updated_at = datetime.utcnow()
+            origin.updated_at = datetime.now()
 
             # 반영 후 Draft 삭제
             db.delete(draft)
@@ -314,7 +314,7 @@ class DraftService:
             return scenario_data, {}
 
         # 5. 데이터 업데이트 (Deep Copy 권장하지만 성능상 직접 수정 후 리턴)
-        # 여기서는 안전하게 새 리스트 생성
+        # 여기서는 안전하게 새 리스트 생���
         new_scenes = []
         for s in scenes:
             new_s = s.copy()

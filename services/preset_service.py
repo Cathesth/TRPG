@@ -84,7 +84,7 @@ class PresetService:
             if existing:
                 existing.description = description
                 existing.data = preset_data
-                existing.updated_at = datetime.utcnow()
+                existing.updated_at = datetime.now()
                 db.commit()
                 return str(existing.id), None
             else:

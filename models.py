@@ -61,7 +61,7 @@ class User(Base):
     id = Column(String(50), primary_key=True)  # username을 id로 사용
     password_hash = Column(String(255), nullable=False)
     email = Column(String(120), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     # 관계 설정
     scenarios = relationship('Scenario', back_populates='owner')
@@ -80,8 +80,8 @@ class Scenario(Base):
     data = Column(JSON_TYPE, nullable=False)
 
     is_public = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     # 관계 설정
     owner = relationship('User', back_populates='scenarios')
@@ -145,8 +145,8 @@ class TempScenario(Base):
     data = Column(JSON_TYPE, nullable=False)
 
     # 메타 정보
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     # 관계 설정
     original_scenario = relationship('Scenario', back_populates='drafts')
@@ -206,7 +206,7 @@ class ScenarioHistory(Base):
 
     # 이력 순서
     sequence = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     # 관계 설정
     scenario = relationship('Scenario', back_populates='history_entries')
@@ -288,7 +288,7 @@ def cleanup_old_sessions(days=7):
     try:
         from datetime import timedelta
         db = SessionLocal()
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now() - timedelta(days=days)
 
         deleted_count = db.query(GameSession).filter(
             GameSession.last_played_at < cutoff_date
