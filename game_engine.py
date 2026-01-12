@@ -586,16 +586,25 @@ def rule_node(state: PlayerState):
                             sys_msg.append(f"{key.upper()} = {val}")
 
                         # 레거시 player_vars도 동기화 (하위 호환성)
-                        current_val = state['player_vars'].get(key, 0)
+                        # 먼저 world_state에서 현재값 가져오기 시도
+                        current_val = world_state.get_stat(key)
+                        if current_val is None:
+                            current_val = state['player_vars'].get(key, 0)
+
                         if not isinstance(current_val, (int, float)):
                             current_val = 0
 
                         if operation == "add":
-                            state['player_vars'][key] = current_val + val
+                            new_val = current_val + val
                         elif operation == "subtract":
-                            state['player_vars'][key] = max(0, current_val - abs(val))
+                            new_val = max(0, current_val - abs(val))
                         elif operation == "set":
-                            state['player_vars'][key] = val
+                            new_val = val
+                        else:
+                            new_val = current_val
+
+                        # player_vars에 저장 (하위 호환성)
+                        state['player_vars'][key] = new_val
 
             except Exception as e:
                 logger.error(f"Effect application error: {e}")
@@ -1236,4 +1245,3 @@ def create_game_graph():
     workflow.add_edge("narrator", END)
 
     return workflow.compile()
-
