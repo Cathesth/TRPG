@@ -968,7 +968,28 @@
             npcs = npcData;
         }
 
-        if (!npcs || Object.keys(npcs).length === 0) {
+        // player_vars의 키들을 필터링 (NPC가 아닌 것들 제거)
+        const invalidKeys = ['hp', 'max_hp', 'mp', 'max_mp', 'gold', 'sanity', 'radiation', 'inventory', 'quests', 'flags', 'custom_stats'];
+        const filteredNpcs = {};
+
+        for (const [npcName, npcData] of Object.entries(npcs)) {
+            // 키가 invalidKeys에 없고, 값이 객체(NPC 데이터)인 경우만 추가
+            if (!invalidKeys.includes(npcName) &&
+                typeof npcData === 'object' &&
+                npcData !== null &&
+                !Array.isArray(npcData)) {
+
+                // NPC 데이터인지 확인 (status, emotion, relationship 등의 속성이 있어야 함)
+                if (npcData.hasOwnProperty('status') ||
+                    npcData.hasOwnProperty('emotion') ||
+                    npcData.hasOwnProperty('relationship') ||
+                    npcData.hasOwnProperty('name')) {
+                    filteredNpcs[npcName] = npcData;
+                }
+            }
+        }
+
+        if (!filteredNpcs || Object.keys(filteredNpcs).length === 0) {
             npcStatusArea.innerHTML = `
                 <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
                     NPC 데이터 없음
@@ -978,7 +999,7 @@
         }
 
         let html = '';
-        for (const [npcName, npcData] of Object.entries(npcs)) {
+        for (const [npcName, npcData] of Object.entries(filteredNpcs)) {
             const status = npcData.status || 'alive';
             const hp = npcData.hp !== undefined ? npcData.hp : '?';
             const maxHp = npcData.max_hp || 100;
@@ -1059,13 +1080,32 @@
         const time = worldState.time || {};
         const day = time.day || 1;
         const phase = time.phase || 'morning';
-        const location = worldState.location || '?';
         const turnCount = worldState.turn_count || 0;
         const globalFlags = worldState.global_flags || {};
+
+        // 위치 정보 처리: Scene ID와 제목을 함께 표시
+        let locationDisplay = '?';
+        const sceneId = worldState.current_scene_id || worldState.location;
+        const sceneTitle = worldState.current_scene_title;
+
+        if (sceneId && sceneTitle) {
+            // Scene ID와 제목 모두 있는 경우: "Scene-2 (폐허 입구)"
+            locationDisplay = `${sceneId} (${sceneTitle})`;
+        } else if (sceneTitle) {
+            // 제목만 있는 경우
+            locationDisplay = sceneTitle;
+        } else if (sceneId) {
+            // ID만 있는 경우
+            locationDisplay = sceneId;
+        }
 
         // 시간대에 따른 아이콘
         const phaseIcon = phase === 'morning' ? 'sunrise' :
                          phase === 'afternoon' ? 'sun' : 'moon';
+
+        // 시간대 한글 변환
+        const phaseText = phase === 'morning' ? '아침' :
+                         phase === 'afternoon' ? '오후' : '밤';
 
         let html = `
             <div class="bg-gray-800/50 rounded p-2 border border-gray-700 space-y-1.5">
@@ -1073,12 +1113,12 @@
                     <span class="text-gray-400">시간:</span>
                     <span class="text-white flex items-center gap-1">
                         <i data-lucide="${phaseIcon}" class="w-3 h-3 text-yellow-400"></i>
-                        Day ${day}, ${phase}
+                        ${day}일차, ${phaseText}
                     </span>
                 </div>
                 <div class="flex justify-between items-center">
                     <span class="text-gray-400">위치:</span>
-                    <span class="text-white">${location}</span>
+                    <span class="text-white text-xs">${locationDisplay}</span>
                 </div>
                 <div class="flex justify-between items-center">
                     <span class="text-gray-400">턴 수:</span>

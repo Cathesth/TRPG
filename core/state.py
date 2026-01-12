@@ -151,23 +151,50 @@ class WorldState:
         # 시작 위치 설정
         self.location = scenario_data.get("start_scene_id")
 
+        # 씬 정보로부터 NPC 위치 매핑 생성
+        scene_npc_map = {}  # {npc_name: scene_id}
+        for scene in scenario_data.get("scenes", []):
+            scene_id = scene.get("scene_id") or scene.get("name", "알 수 없음")
+            for npc_name in scene.get("npcs", []) + scene.get("enemies", []):
+                if npc_name not in scene_npc_map:
+                    scene_npc_map[npc_name] = scene_id
+
         # NPC 초기 상태 설정
         npcs_data = scenario_data.get("npcs", [])
         for npc in npcs_data:
             if isinstance(npc, dict) and "name" in npc:
                 name = npc["name"]
+                is_enemy = npc.get("isEnemy", False)
+
+                # HP 처리: 문자열이면 정수로 변환
+                npc_hp = npc.get("hp", 100)
+                if isinstance(npc_hp, str):
+                    try:
+                        npc_hp = int(npc_hp)
+                    except ValueError:
+                        npc_hp = 100
+
+                npc_max_hp = npc.get("max_hp", npc_hp)
+                if isinstance(npc_max_hp, str):
+                    try:
+                        npc_max_hp = int(npc_max_hp)
+                    except ValueError:
+                        npc_max_hp = npc_hp
+
                 self.npcs[name] = {
                     "status": "alive",
-                    "emotion": "neutral",
-                    "relationship": 50,  # 중립
+                    "hp": npc_hp,
+                    "max_hp": npc_max_hp,
+                    "emotion": "hostile" if is_enemy else "neutral",
+                    "relationship": 0 if is_enemy else 50,  # 적은 0, 중립은 50
+                    "location": scene_npc_map.get(name, "알 수 없음"),
+                    "is_hostile": is_enemy,
                     "flags": {}
                 }
-                # 적인 경우 초기 관계도를 낮게 설정
-                if npc.get("isEnemy"):
-                    self.npcs[name]["relationship"] = 0
-                    self.npcs[name]["emotion"] = "hostile"
 
         logger.info(f"WorldState initialized from scenario: {scenario_data.get('title', 'Unknown')}")
+        logger.info(f"Initialized {len(self.npcs)} NPCs: {list(self.npcs.keys())}")
+        logger.info(f"Player custom stats: {self.player['custom_stats']}")
 
     # ========================================
     # 2. 상태 업데이트 (핵심 로직)
@@ -550,6 +577,7 @@ class WorldState:
         return {
             "time": copy.deepcopy(self.time),
             "location": self.location,
+            "turn_count": self.turn_count,  # 턴 카운트 추가
             "global_flags": copy.deepcopy(self.global_flags),
             "npcs": copy.deepcopy(self.npcs),
             "player": copy.deepcopy(self.player),
@@ -563,12 +591,13 @@ class WorldState:
 
         self.time = data.get("time", {"day": 1, "phase": "morning"})
         self.location = data.get("location")
+        self.turn_count = data.get("turn_count", 0)  # 턴 카운트 복원
         self.global_flags = data.get("global_flags", {})
         self.npcs = data.get("npcs", {})
         self.player = data.get("player", {})
         self.history = data.get("history", [])
 
-        logger.info("WorldState restored from saved data")
+        logger.info(f"WorldState restored from saved data (Turn: {self.turn_count})")
 
     def _get_snapshot(self) -> Dict[str, Any]:
         """현재 상태 스냅샷 (히스토리용)"""
