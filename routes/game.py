@@ -300,26 +300,36 @@ async def game_act_stream(
                 # World State에 씬 정보 추가
                 world_state_with_scene = world_state_data.copy()
 
-                # location 필드 처리: scene_id로부터 title 찾기
-                location_scene_id = world_state_with_scene.get('location', '')
-                if not location_scene_id:
-                    location_scene_id = processed_state.get('current_scene_id', '')
+                # 현재 위치 scene_id 확인 (우선순위: location > current_scene_id)
+                location_scene_id = world_state_with_scene.get('location') or processed_state.get('current_scene_id', '')
 
-                location_scene_title = None
+                # 디버그 로그
+                logger.info(f"🗺️ [WORLD STATE] location field: {world_state_with_scene.get('location')}, processed scene_id: {processed_state.get('current_scene_id')}")
+
+                location_scene_title = ''
 
                 # 시나리오에서 해당 씬의 title 찾기
-                for scene in scenario.get('scenes', []):
-                    if scene.get('scene_id') == location_scene_id:
-                        location_scene_title = scene.get('title', '')
-                        break
+                if location_scene_id:
+                    for scene in scenario.get('scenes', []):
+                        if scene.get('scene_id') == location_scene_id:
+                            location_scene_title = scene.get('title', '')
+                            logger.info(f"🗺️ [WORLD STATE] Found title for {location_scene_id}: {location_scene_title}")
+                            break
 
-                # current_scene_id와 current_scene_title 설정 (프론트엔드용)
+                    # title을 못 찾은 경우 로그
+                    if not location_scene_title:
+                        logger.warning(f"⚠️ [WORLD STATE] No title found for scene_id: {location_scene_id}")
+
+                # current_scene_id와 current_scene_title 명시적으로 설정
                 world_state_with_scene['current_scene_id'] = location_scene_id
-                world_state_with_scene['current_scene_title'] = location_scene_title if location_scene_title else location_scene_id
+                world_state_with_scene['current_scene_title'] = location_scene_title
 
                 # [FIX] turn_count가 없는 경우 0으로 초기화
                 if 'turn_count' not in world_state_with_scene:
                     world_state_with_scene['turn_count'] = 0
+
+                # 디버그: 전송되는 데이터 로그
+                logger.info(f"📤 [WORLD STATE] Sending: scene_id={world_state_with_scene['current_scene_id']}, title={world_state_with_scene['current_scene_title']}")
 
                 yield f"data: {json.dumps({'type': 'world_state', 'content': world_state_with_scene})}\n\n"
 
