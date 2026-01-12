@@ -308,17 +308,18 @@ async def game_act_stream(
 
                 location_scene_title = ''
 
-                # 시나리오에서 해당 씬의 title 찾기
+                # 시나리오에서 해당 씬의 title 또는 name 찾기
                 if location_scene_id:
                     for scene in scenario.get('scenes', []):
                         if scene.get('scene_id') == location_scene_id:
-                            location_scene_title = scene.get('title', '')
-                            logger.info(f"🗺️ [WORLD STATE] Found title for {location_scene_id}: {location_scene_title}")
+                            # title 필드가 있으면 사용, 없으면 name 필드 사용
+                            location_scene_title = scene.get('title') or scene.get('name', '')
+                            logger.info(f"🗺️ [WORLD STATE] Found title/name for {location_scene_id}: {location_scene_title}")
                             break
 
                     # title을 못 찾은 경우 로그
                     if not location_scene_title:
-                        logger.warning(f"⚠️ [WORLD STATE] No title found for scene_id: {location_scene_id}")
+                        logger.warning(f"⚠️ [WORLD STATE] No title/name found for scene_id: {location_scene_id}")
 
                 # current_scene_id와 current_scene_title 명시적으로 설정
                 world_state_with_scene['current_scene_id'] = location_scene_id
