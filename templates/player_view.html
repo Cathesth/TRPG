@@ -337,14 +337,14 @@
     let responseStartTime = null;  // 응답 시작 시간
     let currentSessionKey = '';  // 현재 세션 키 저장
 
+    // 상수 정의
     const CHAT_LOG_KEY = 'trpg_chat_log';
-    const STATS_KEY = 'trpg_stats';
-    const GAME_ENDED_KEY = 'trpg_game_ended';
     const SCENARIO_LOADED_KEY = 'trpg_scenario_loaded';
-    const CURRENT_SCENARIO_KEY = 'trpg_current_scenario';  // 현재 시나리오 ID 저장
-    const NAVIGATION_FLAG_KEY = 'trpg_navigation_flag';  // 내부 네비게이션 플래그
-    const MODEL_PROVIDER_KEY = 'trpg_model_provider';  // 선택한 제공사 저장
-    const MODEL_VERSION_KEY = 'trpg_model_version';  // 선택한 모델 버전 저장
+    const CURRENT_SCENARIO_KEY = 'trpg_current_scenario';
+    const STATS_KEY = 'trpg_player_stats';
+    const MODEL_PROVIDER_KEY = 'trpg_model_provider';
+    const MODEL_VERSION_KEY = 'trpg_model_version';
+    const DEBUG_MODE_KEY = 'trpg_debug_mode';
 
     // 새로고침 감지 및 경고
     window.addEventListener('beforeunload', function(e) {
@@ -910,6 +910,8 @@
 
         if (debugToggle.checked) {
             debugInfoArea.classList.remove('hidden');
+            // 디버그 모드 상태 저장
+            sessionStorage.setItem(DEBUG_MODE_KEY, 'true');
             // 현재 저장된 스탯 데이터가 있으면 디버그 정보 업데이트
             const savedStats = sessionStorage.getItem(STATS_KEY);
             if (savedStats) {
@@ -921,6 +923,8 @@
             }
         } else {
             debugInfoArea.classList.add('hidden');
+            // 디버그 모드 상태 저장
+            sessionStorage.setItem(DEBUG_MODE_KEY, 'false');
         }
 
         lucide.createIcons();
@@ -1083,6 +1087,28 @@
 
     document.addEventListener('DOMContentLoaded', function() {
         restoreChatLog();
+
+        // 디버그 모드 상태 복원
+        const savedDebugMode = sessionStorage.getItem(DEBUG_MODE_KEY);
+        const debugToggle = document.getElementById('debug-toggle');
+        if (savedDebugMode === 'true' && debugToggle) {
+            debugToggle.checked = true;
+            const debugInfoArea = document.getElementById('debug-info-area');
+            if (debugInfoArea) {
+                debugInfoArea.classList.remove('hidden');
+                // 저장된 스탯이 있으면 디버그 정보 업데이트
+                const savedStats = sessionStorage.getItem(STATS_KEY);
+                if (savedStats) {
+                    try {
+                        updateDebugInfo(JSON.parse(savedStats));
+                    } catch (e) {
+                        console.error('Failed to parse stats:', e);
+                    }
+                }
+            }
+            lucide.createIcons();
+        }
+
         const form = document.getElementById('game-form');
         if (form) {
             form.addEventListener('submit', function(e) {
