@@ -15,6 +15,38 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# [최적화] 시나리오 데이터 캐시
+_scenario_cache: Dict[int, Dict[str, Any]] = {}
+
+
+def get_scenario_by_id(scenario_id: int) -> Dict[str, Any]:
+    """
+    시나리오 ID로 데이터 조회 (캐싱)
+    PlayerState에서 시나리오 전체 데이터를 제거하고 필요 시 이 함수로 조회
+    """
+    if scenario_id in _scenario_cache:
+        return _scenario_cache[scenario_id]
+
+    # DB에서 조회
+    from models import SessionLocal, Scenario
+
+    db = SessionLocal()
+    try:
+        scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if scenario:
+            scenario_data = scenario.data
+            _scenario_cache[scenario_id] = scenario_data
+            return scenario_data
+        else:
+            logger.error(f"❌ Scenario not found: {scenario_id}")
+            return {}
+    except Exception as e:
+        logger.error(f"❌ Failed to load scenario {scenario_id}: {e}")
+        return {}
+    finally:
+        db.close()
+
+
 # [최적화] 프롬프트 캐시 (YAML 파일에서 한 번만 로드)
 _prompt_cache: Dict[str, Any] = {}
 
@@ -55,7 +87,7 @@ def get_cached_llm(api_key: str, model_name: str, streaming: bool = False):
 
 
 class PlayerState(TypedDict):
-    scenario: Dict[str, Any]
+    scenario_id: int  # [경량화] 시나리오 전체 대신 ID만 저장
     current_scene_id: str
     previous_scene_id: str
     player_vars: Dict[str, Any]
@@ -295,9 +327,9 @@ def intent_parser_node(state: PlayerState):
         state['parsed_intent'] = 'transition'
         return state
 
-    scenario = state['scenario']
+    scenario_id = state['scenario_id']
     curr_scene_id = state['current_scene_id']
-    scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
+    scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id).get('scenes', [])}
 
     curr_scene = scenes.get(curr_scene_id)
     if not curr_scene:
@@ -305,7 +337,7 @@ def intent_parser_node(state: PlayerState):
         return state
 
     # 엔딩 체크
-    endings = {e['ending_id']: e for e in scenario.get('endings', [])}
+    endings = {e['ending_id']: e for e in get_scenario_by_id(scenario_id).get('endings', [])}
     if curr_scene_id in endings:
         state['parsed_intent'] = 'ending'
         return state
@@ -521,11 +553,11 @@ def _fast_track_intent_parser(state: PlayerState, user_input: str, curr_scene: D
 def rule_node(state: PlayerState):
     """규칙 엔진 (이동 및 상태 변경) - WorldState 통합"""
     idx = state['last_user_choice_idx']
-    scenario = state['scenario']
+    scenario_id = state['scenario_id']
     curr_scene_id = state['current_scene_id']
 
-    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
-    all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
+    all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
+    all_endings = {e['ending_id']: e for e in get_scenario_by_id(scenario_id).get('endings', [])}
 
     sys_msg = []
     curr_scene = all_scenes.get(curr_scene_id)
@@ -652,9 +684,9 @@ def npc_node(state: PlayerState):
         state['npc_output'] = ""
         return state
 
-    scenario = state['scenario']
+    scenario_id = state['scenario_id']
     curr_id = state['current_scene_id']
-    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
+    all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
     curr_scene = all_scenes.get(curr_id)
     npc_names = curr_scene.get('npcs', []) if curr_scene else []
 
@@ -665,7 +697,7 @@ def npc_node(state: PlayerState):
     target_npc_name = npc_names[0]
     npc_info = {"name": target_npc_name, "role": "Unknown", "personality": "보통"}
 
-    for npc in scenario.get('npcs', []):
+    for npc in get_scenario_by_id(scenario_id).get('npcs', []):
         if npc.get('name') == target_npc_name:
             npc_info['role'] = npc.get('role', 'Unknown')
             npc_info['personality'] = npc.get('personality', '보통')
@@ -753,14 +785,14 @@ NPC로서 1-2문장으로 응답하세요."""
 
 def check_npc_appearance(state: PlayerState) -> str:
     """NPC 및 적 등장 (LLM 기반 생성)"""
-    scenario = state['scenario']
+    scenario_id = state['scenario_id']
     curr_id = state['current_scene_id']
 
     # 씬 변경 없으면 등장 메시지 생략
     if state.get('previous_scene_id') == curr_id:
         return ""
 
-    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
+    all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
     curr_scene = all_scenes.get(curr_id)
     if not curr_scene: return ""
 
@@ -814,7 +846,7 @@ def check_npc_appearance(state: PlayerState) -> str:
         for npc_name in npc_names:
             # NPC 역할 찾기
             npc_role = "Unknown"
-            for npc in scenario.get('npcs', []):
+            for npc in get_scenario_by_id(scenario_id).get('npcs', []):
                 if npc.get('name') == npc_name:
                     npc_role = npc.get('role', 'Unknown')
                     break
@@ -942,14 +974,14 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     [MODE 1] 씬 유지 + 의도별 분기 (investigate/attack/defend/chat/near_miss)
     [MODE 2] 씬 변경 -> 장면 묘사
     """
-    scenario = state['scenario']
+    scenario_id = state['scenario_id']
     curr_id = state['current_scene_id']
     prev_id = state.get('previous_scene_id')
     user_input = state.get('last_user_input', '')
     parsed_intent = state.get('parsed_intent', 'chat')
 
-    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
-    all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
+    all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
+    all_endings = {e['ending_id']: e for e in get_scenario_by_id(scenario_id).get('endings', [])}
 
     if curr_id in all_endings:
         ending = all_endings[curr_id]
