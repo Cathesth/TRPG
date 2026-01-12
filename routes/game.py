@@ -280,19 +280,14 @@ async def game_act_stream(
             # F. 스탯 업데이트 및 세션 키 전송
             stats_data = processed_state.get('player_vars', {})
 
-            # 🛠️ WorldState를 stats에 포함
-            world_state_data = processed_state.get('world_state', {})
-            if world_state_data:
-                # stats에 world_state 추가 (클라이언트에서 접근 가능하도록)
-                stats_data['world_state'] = world_state_data
-
+            # world_state는 stats에 포함하지 않음 (디버그 전용)
             yield f"data: {json.dumps({'type': 'stats', 'content': stats_data})}\n\n"
 
-            # 🛠️ WorldState 별도 전송 (디버그 정보용)
-            if world_state_data:
-                yield f"data: {json.dumps({'type': 'world_state', 'content': world_state_data})}\n\n"
+            # world_state 별도 전송 제거 (일반 플레이어에게 노출되지 않음)
+            # 디버그가 필요한 경우 별도 엔드포인트를 통해 접근
 
             # NPC 정보 전송 (WorldState에서 추출)
+            world_state_data = processed_state.get('world_state', {})
             if world_state_data and 'npcs' in world_state_data:
                 npc_status_info = world_state_data['npcs']
                 yield f"data: {json.dumps({'type': 'npc_status', 'content': npc_status_info})}\n\n"
