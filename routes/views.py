@@ -94,7 +94,7 @@ async def view_scenes(request: Request, user=Depends(get_current_user_optional))
 @views_router.get("/views/debug_scenes", response_class=HTMLResponse)
 async def view_debug_scenes(request: Request, user=Depends(get_current_user_optional)):
     """디버그 모드 전체 씬 보기 (플레이어 모드에서 접근)"""
-    if not game_state.state:
+    if not game_state.state or 'scenario' not in game_state.state:
         return templates.TemplateResponse("debug_scenes_view.html", {
             "request": request,
             "title": "시나리오 없음",
