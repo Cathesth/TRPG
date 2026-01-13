@@ -199,12 +199,11 @@ async def list_scenarios(
         user: CurrentUser = Depends(get_current_user_optional)
 ):
     """
-    시나리오 목록을 HTML 카드 형태로 반환합니다.
-    - 파일 시스템(DB/scenarios/*.json)과 DB를 모두 조회하여 통합 반환합니다.
+    시나리오 목록 반환 (DB + JSON 파일 통합 조회)
     """
     file_infos = []
 
-    # 1. [파일 시스템 조회] DB/scenarios 폴더의 JSON 파일 읽기
+    # 1. [파일 시스템 조회] DB/scenarios 폴더의 JSON 파일 읽기 (비상용/백업용)
     # (필터가 'my'가 아니거나, 전체 보기일 때 수행)
     if filter in ['public', 'all']:
         try:
@@ -212,7 +211,7 @@ async def list_scenarios(
             if not os.path.exists(base_path):
                 os.makedirs(base_path, exist_ok=True)
 
-            # 폴더 내 모든 json 파일 검색
+            import glob
             json_files = glob.glob(os.path.join(base_path, "*.json"))
 
             for file_path in json_files:
@@ -220,10 +219,8 @@ async def list_scenarios(
                     with open(file_path, 'r', encoding='utf-8') as f:
                         data = json.load(f)
 
-                    # 파일명(확장자 제거)을 ID로 사용
                     filename = os.path.basename(file_path).replace('.json', '')
 
-                    # 데이터 객체 생성
                     info = {
                         'filename': filename,
                         'title': data.get('title', filename),
@@ -231,54 +228,54 @@ async def list_scenarios(
                         'author': data.get('author', 'System'),
                         'created_time': os.path.getctime(file_path),
                         'image': data.get('image', ''),
-                        'is_public': True,  # 파일로 존재하는 건 기본적으로 공개 처리
+                        'is_public': True,
                         'is_owner': (user.is_authenticated and data.get('author') == user.id),
                         'views': data.get('views', 0),
                         'clicks': data.get('clicks', 0),
                         'plays': data.get('plays', 0)
                     }
                     file_infos.append(info)
-                except Exception as e:
-                    logger.error(f"Failed to read scenario file {file_path}: {e}")
-        except Exception as e:
-            logger.error(f"Error scanning scenario directory: {e}")
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
-    # 2. [DB 조회] 기존 Service 이용 (중복 제거 로직은 필요 시 추가)
-    # user_id가 None이면 전체 조회, 있으면 해당 유저 조회
+    # 2. [DB 조회] 기존 Service 이용
+    # filter='public'이면 user_id=None으로 설정하여 전체 공개 시나리오 조회
     query_user_id = user.id if filter == 'my' and user.is_authenticated else None
+    query_filter = 'public' if filter == 'public' else filter  # public 필터 명시
 
-    # Service 호출 (기존 로직 유지)
-    db_infos = ScenarioService.list_scenarios('newest', query_user_id, filter, None)
+    # [핵심] DB 조회 결과 가져오기
+    db_infos = ScenarioService.list_scenarios('newest', query_user_id, query_filter, None)
 
-    # 파일 목록에 없는 DB 데이터만 추가 (filename 기준 중복 제거)
-    existing_filenames = {f['filename'] for f in file_infos}
-    for info in db_infos:
-        if info['filename'] not in existing_filenames:
-            file_infos.append(info)
+    if db_infos:
+        # 파일 목록에 없는 DB 데이터만 추가 (중복 제거)
+        existing_filenames = {f['filename'] for f in file_infos}
+        for info in db_infos:
+            if info['filename'] not in existing_filenames:
+                file_infos.append(info)
 
-    # 3. 데이터가 없을 경우 처리
+    # 3. 데이터가 없을 경우
     if not file_infos:
         msg = "등록된 시나리오가 없습니다." if filter != 'my' else "아직 생성한 시나리오가 없습니다."
         return HTMLResponse(
             f'<div class="col-span-full text-center text-gray-400 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
 
-    # 4. 정렬 로직 (Sort)
+    # 4. 정렬 로직
     if sort == 'popular':
         file_infos.sort(key=lambda x: x.get('views', 0) + x.get('clicks', 0), reverse=True)
     elif sort == 'steady':
         file_infos.sort(key=lambda x: x.get('plays', 0), reverse=True)
     elif sort == 'name_asc':
         file_infos.sort(key=lambda x: x.get('title', ''))
-    elif sort == 'oldest':
-        file_infos.sort(key=lambda x: x.get('created_time', 0))
-    else:  # newest (기본값)
+    else:  # newest
         file_infos.sort(key=lambda x: x.get('created_time', 0), reverse=True)
 
-    # 5. 개수 제한 (Limit)
+    # 5. 개수 제한
     if limit > 0:
         file_infos = file_infos[:limit]
 
-    # 6. HTML 생성 (index.html의 .scenario-card-base 디자인 적용)
+    # 6. HTML 생성 (index.html 스타일 적용)
     from datetime import datetime
     import time as time_module
     current_time = time_module.time()
@@ -290,23 +287,18 @@ async def list_scenarios(
         title = info['title']
         desc = info['desc']
         author = info['author']
-
         created_time = info.get('created_time', 0)
         img_src = info.get('image') or "https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=800"
 
-        # 날짜 포맷
         time_str = datetime.fromtimestamp(created_time).strftime('%Y-%m-%d') if created_time else "-"
 
-        # 권한 확인
         is_owner = info.get('is_owner', False)
         is_public = info.get('is_public', False)
 
-        # 뱃지
         is_new = (current_time - created_time) < NEW_THRESHOLD if created_time else False
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
         status_badge = f'<span class="ml-2 text-[10px] {"bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"} px-1 rounded font-bold">{"PUBLIC" if is_public else "PRIVATE"}</span>' if is_owner else ''
 
-        # 관리자 버튼 (주인일 때만 표시)
         admin_buttons = ""
         if is_owner:
             admin_buttons = f"""
@@ -320,7 +312,6 @@ async def list_scenarios(
             </div>
             """
 
-        # 카드 HTML 조립
         card_html = f"""
         <div class="scenario-card-base group">
             <div class="card-image-wrapper">
@@ -329,7 +320,6 @@ async def list_scenarios(
                     Fantasy
                 </div>
             </div>
-
             <div class="card-content">
                 <div>
                     <div class="flex justify-between items-start mb-1">
@@ -342,11 +332,9 @@ async def list_scenarios(
                     </div>
                     <p class="card-desc text-gray-400">{desc}</p>
                 </div>
-
                 <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-accent/10 hover:bg-rpg-accent text-rpg-accent hover:text-black font-bold rounded-lg transition-all flex items-center justify-center gap-2 border border-rpg-accent/50 mt-auto shadow-[0_0_10px_rgba(56,189,248,0.1)] hover:shadow-[0_0_15px_rgba(56,189,248,0.4)]">
                     <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
                 </button>
-
                 {admin_buttons}
             </div>
         </div>
