@@ -592,6 +592,16 @@
             useMaxWidth: false,
             htmlLabels: true,
             curve: 'basis'
+        },
+        themeVariables: {
+            darkMode: true,
+            background: '#111827',
+            primaryColor: '#312e81',
+            primaryTextColor: '#e0e7ff',
+            primaryBorderColor: '#4c1d95',
+            lineColor: '#6366f1',
+            secondaryColor: '#831843',
+            tertiaryColor: '#0f766e'
         }
     });
 
@@ -616,34 +626,56 @@
         }
 
         console.log('[Mermaid] Element found:', element);
-        console.log('[Mermaid] Content length:', element.textContent.length);
+        console.log('[Mermaid] Content length:', element.textContent.trim().length);
+
+        // 콘텐츠가 비어있는지 확인
+        if (!element.textContent.trim()) {
+            console.error('[Mermaid] No mermaid code to render!');
+            element.innerHTML = `<div class='text-red-500 p-4'>그래프 데이터가 없습니다. 시나리오를 먼저 로드하세요.</div>`;
+            element.classList.remove('opacity-0');
+            return;
+        }
 
         if (element) {
             try {
                 console.log('[Mermaid] Running mermaid.run()...');
+                // Mermaid 렌더링 실행
                 await mermaid.run({ nodes: [element] });
                 console.log('[Mermaid] Render successful!');
-                element.classList.remove('opacity-0');
+
+                // opacity 애니메이션으로 부드럽게 표시
+                setTimeout(() => {
+                    element.classList.remove('opacity-0');
+                }, 100);
 
                 const svg = element.querySelector('svg');
                 if (svg) {
                     svg.style.maxWidth = 'none';
                     svg.style.height = 'auto';
+                    svg.style.display = 'block';
                     console.log('[Mermaid] SVG styles applied');
                 }
 
                 // 현재 씬 하이라이트 처리
-                highlightCurrentScene();
+                setTimeout(() => {
+                    highlightCurrentScene();
+                }, 200);
 
                 // 편집 모드가 활성화되어 있으면 클릭 핸들러 설정
+                {% if edit_mode %}
                 if (typeof setupNodeClickHandlers === 'function') {
                     setTimeout(() => {
                         setupNodeClickHandlers();
-                    }, 100);
+                    }, 300);
                 }
+                {% endif %}
             } catch (err) {
                 console.error("[Mermaid] Render Failed:", err);
-                element.innerHTML = `<div class='text-red-500 p-4'>그래프 렌더링 실패<br><small>${err.message || err}</small></div>`;
+                element.innerHTML = `<div class='text-red-500 p-4 bg-red-900/20 rounded-lg border border-red-500/30'>
+                    <h3 class='font-bold mb-2'>그래프 렌더링 실패</h3>
+                    <p class='text-sm'>${err.message || err}</p>
+                    <p class='text-xs text-gray-400 mt-2'>콘솔을 확인하세요.</p>
+                </div>`;
                 element.classList.remove('opacity-0');
             }
         }
