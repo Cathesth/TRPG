@@ -7,6 +7,7 @@ from services.mermaid_service import MermaidService
 from services.scenario_service import ScenarioService
 from config import get_full_version
 from routes.auth import get_current_user_optional, get_current_user
+from models import SessionLocal, Scenario
 
 views_router = APIRouter(tags=["views"])
 templates = Jinja2Templates(directory="templates")
@@ -65,28 +66,32 @@ async def view_scenes(request: Request, user=Depends(get_current_user_optional))
             "user": user
         })
 
-    # DB에서 시나리오 로드
+    # DB에서 시나리오만 로드 (player_vars에 영향 없음)
     scenario_id = game_state.state['scenario_id']
-    user_id = user.id if user.is_authenticated else None
-    result, error = ScenarioService.load_scenario(str(scenario_id), user_id)
+    db = SessionLocal()
+    try:
+        scenario_record = db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not scenario_record:
+            return templates.TemplateResponse("scenes_view.html", {
+                "request": request,
+                "title": "시나리오 로드 실패",
+                "scenario": {"endings": [], "prologue_text": ""},
+                "scenes": [],
+                "current_scene_id": None,
+                "mermaid_code": "graph TD\n    A[시나리오를 다시 로드하세요]",
+                "scene_display_ids": {},
+                "ending_display_ids": {},
+                "edit_mode": False,
+                "scenario_id": None,
+                "version": get_full_version(),
+                "user": user
+            })
 
-    if error or not result:
-        return templates.TemplateResponse("scenes_view.html", {
-            "request": request,
-            "title": "시나리오 로드 실패",
-            "scenario": {"endings": [], "prologue_text": ""},
-            "scenes": [],
-            "current_scene_id": None,
-            "mermaid_code": "graph TD\n    A[시나리오를 다시 로드하세요]",
-            "scene_display_ids": {},
-            "ending_display_ids": {},
-            "edit_mode": False,
-            "scenario_id": None,
-            "version": get_full_version(),
-            "user": user
-        })
+        full_data = scenario_record.data
+        scenario = full_data.get('scenario', full_data)
+    finally:
+        db.close()
 
-    scenario = result['scenario']
     title = scenario.get('title', 'Untitled')
     current_scene_id = game_state.state.get('current_scene_id', None)
 
@@ -130,26 +135,30 @@ async def view_debug_scenes(request: Request, user=Depends(get_current_user_opti
             "user": user
         })
 
-    # DB에서 시나리오 로드
+    # DB에서 시나리오만 로드 (player_vars에 영향 없음)
     scenario_id = game_state.state['scenario_id']
-    user_id = user.id if user.is_authenticated else None
-    result, error = ScenarioService.load_scenario(str(scenario_id), user_id)
+    db = SessionLocal()
+    try:
+        scenario_record = db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not scenario_record:
+            return templates.TemplateResponse("debug_scenes_view.html", {
+                "request": request,
+                "title": "시나리오 로드 실패",
+                "scenario": {"endings": [], "prologue_text": ""},
+                "scenes": [],
+                "current_scene_id": None,
+                "mermaid_code": "graph TD\n    A[시나리오를 다시 로드하세요]",
+                "scene_display_ids": {},
+                "ending_display_ids": {},
+                "version": get_full_version(),
+                "user": user
+            })
 
-    if error or not result:
-        return templates.TemplateResponse("debug_scenes_view.html", {
-            "request": request,
-            "title": "시나리오 로드 실패",
-            "scenario": {"endings": [], "prologue_text": ""},
-            "scenes": [],
-            "current_scene_id": None,
-            "mermaid_code": "graph TD\n    A[시나리오를 다시 로드하세요]",
-            "scene_display_ids": {},
-            "ending_display_ids": {},
-            "version": get_full_version(),
-            "user": user
-        })
+        full_data = scenario_record.data
+        scenario = full_data.get('scenario', full_data)
+    finally:
+        db.close()
 
-    scenario = result['scenario']
     title = scenario.get('title', 'Untitled')
     current_scene_id = game_state.state.get('current_scene_id', None)
 
