@@ -37,6 +37,7 @@
 
     <div id="root" class="w-full h-full"></div>
 
+    {% raw %}
     <script type="text/babel">
         const { useState, useRef, useEffect, useCallback } = React;
 
@@ -668,6 +669,7 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ScenarioBuilder />);
     </script>
+    {% endraw %}
 
 </body>
 </html>
