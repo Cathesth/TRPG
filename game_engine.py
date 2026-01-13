@@ -364,15 +364,18 @@ def intent_parser_node(state: PlayerState):
     # =============================================================================
 
     try:
-        # transitions 목록을 문자열로 포맷팅
+        # transitions 목록을 문자열로 포맷팅 - 강조된 섹션으로 변경
         transitions_list = ""
         if transitions:
+            transitions_list += "📋 **[AVAILABLE ACTIONS - 이것들이 다음 장면으로 이동 가능한 정답입니다]**\n"
+            transitions_list += "다음 키워드들 중 하나와 유사한 입력이 들어오면 transition으로 분류하세요:\n\n"
             for idx, trans in enumerate(transitions):
                 trigger = trans.get('trigger', '').strip()
                 target = trans.get('target_scene_id', '')
-                transitions_list += f"{idx}. {trigger} (→ {target})\n"
+                transitions_list += f"  {idx}. 트리거: \"{trigger}\" → {target}\n"
+            transitions_list += "\n⚠️ 유저 입력이 위 트리거와 70% 이상 의미적으로 유사하면 transition으로 분류하세요."
         else:
-            transitions_list = "없음"
+            transitions_list = "없음 (이동 불가)"
 
         # YAML에서 intent_classifier 프롬프트 로드
         prompts = load_player_prompts()
@@ -384,7 +387,7 @@ def intent_parser_node(state: PlayerState):
             return _fast_track_intent_parser(state, user_input, curr_scene, scenario, endings)
 
         # 프롬프트 생성
-        scenario = state.get('scenario', {})
+        scenario = get_scenario_by_id(scenario_id)
         player_status = format_player_status(scenario)
 
         intent_prompt = intent_classifier_template.format(
@@ -1221,6 +1224,19 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         scenario_data = state.get('scenario', {})
         player_status = format_player_status(scenario_data)
 
+        # [추가] transitions 리스트 생성 - 장면 묘사에 포함할 선택지들
+        transitions = curr_scene.get('transitions', [])
+        available_transitions = ""
+        if transitions:
+            # 부정적 엔딩으로 가는 transition 제외
+            filtered_transitions = filter_negative_transitions(transitions, scenario)
+            if filtered_transitions:
+                available_transitions = "\n".join([f"- {t.get('trigger', '')}" for t in filtered_transitions])
+            else:
+                available_transitions = "현재 특별한 선택지가 없습니다."
+        else:
+            available_transitions = "현재 특별한 선택지가 없습니다."
+
         # 씬 변경 시 유저 입력 컨텍스트 포함
         if user_input:
             context_prefix = f"""**최우선 지침: 유저의 마지막 입력("{user_input}")이 이 장면으로의 전환을 일으켰습니다. 그 결과를 먼저 서술하세요.**
@@ -1230,14 +1246,16 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 player_status=player_status,
                 scene_title=scene_title,
                 scene_desc=scene_desc,
-                npc_list=npc_list
+                npc_list=npc_list,
+                available_transitions=available_transitions
             )
         else:
             prompt = scene_prompt_template.format(
                 player_status=player_status,
                 scene_title=scene_title,
                 scene_desc=scene_desc,
-                npc_list=npc_list
+                npc_list=npc_list,
+                available_transitions=available_transitions
             )
     else:
         # 폴백 프롬프트
