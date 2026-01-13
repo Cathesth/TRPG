@@ -18,14 +18,20 @@
         ::-webkit-scrollbar { width: 6px; background: #111; }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 
-        .connection-line { stroke: #6b7280; stroke-width: 3; fill: none; transition: stroke 0.2s; }
+        .connection-line { stroke: #6b7280; stroke-width: 3; fill: none; transition: stroke 0.2s; pointer-events: none; }
         .connection-line:hover { stroke: #f59e0b; stroke-width: 4; cursor: pointer; filter: drop-shadow(0 0 4px #f59e0b); }
-        .connecting-line { stroke: #6366f1; stroke-width: 3; stroke-dasharray: 8,4; fill: none; animation: dash 0.5s linear infinite; }
+        .connecting-line { stroke: #6366f1; stroke-width: 3; stroke-dasharray: 8,4; fill: none; animation: dash 0.5s linear infinite; pointer-events: none; }
         @keyframes dash { to { stroke-dashoffset: -12; } }
 
         .node-shadow { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); }
+        .node-ui { pointer-events: auto; }
         .animate-fade-in { animation: fadeIn 0.2s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+        /* 캔버스 레이어 분리 */
+        .canvas-layer { position: absolute; inset: 0; }
+        .canvas-layer.interactive { pointer-events: auto; }
+        .canvas-layer.non-interactive { pointer-events: none; }
     </style>
 </head>
 <body class="bg-black text-white h-screen w-screen">
@@ -362,26 +368,37 @@
             // --- 캔버스 핸들러 ---
             const handleMouseDown = (e) => {
                 if (e.target.closest('.node-ui')) return;
-                if (e.button === 0 || e.button === 1) setIsPanning(true);
+                if (e.target.closest('button')) return;
+                if (e.button === 0 || e.button === 1) {
+                    e.preventDefault();
+                    setIsPanning(true);
+                }
             };
             const handleMouseMove = (e) => {
-                const rect = canvasRef.current.getBoundingClientRect();
+                const rect = canvasRef.current?.getBoundingClientRect();
+                if (!rect) return;
+
                 const x = (e.clientX - rect.left - pan.x) / pan.zoom;
                 const y = (e.clientY - rect.top - pan.y) / pan.zoom;
                 setMousePos({ x, y });
 
-                if (isPanning) {
+                if (isPanning && !dragNode) {
                     setPan(p => ({ ...p, x: p.x + e.movementX, y: p.y + e.movementY }));
                 } else if (dragNode) {
+                    e.preventDefault();
                     setNodes(prev => prev.map(n => n.id === dragNode ? { ...n, x, y } : n));
                 }
             };
-            const handleMouseUp = () => {
+            const handleMouseUp = (e) => {
                 if (dragNode) pushHistory(); // 드래그 종료 시 히스토리 저장
-                setIsPanning(false); setDragNode(null); setConnectSource(null);
+                setIsPanning(false);
+                setDragNode(null);
+                setConnectSource(null);
             };
             const handleNodeDragStart = (e, id) => {
                 e.stopPropagation();
+                e.preventDefault();
+
                 if (connectSource && connectSource !== id) {
                     if (!edges.some(eg => eg.source === connectSource && eg.target === id)) {
                         pushHistory();
@@ -389,7 +406,8 @@
                     }
                     setConnectSource(null);
                 } else {
-                    setDragNode(id); setSelectedNodeId(id);
+                    setDragNode(id);
+                    setSelectedNodeId(id);
                 }
             };
 
