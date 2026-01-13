@@ -86,7 +86,7 @@ class WorldState:
         self.time = {"day": 1, "phase": "morning"}  # morning|afternoon|night
         self.location = None  # current_scene_id
         self.global_flags: Dict[str, bool] = {}  # 전역 이벤트 플래그
-        self.turn_count = 0  # 전체 게임 진행 턴 수
+        self.turn_count = 1  # 전체 게임 진행 턴 수
 
         # B. NPC States (가변 영역) - HP와 위치 추가
         self.npcs: Dict[str, Dict[str, Any]] = {}
