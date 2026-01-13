@@ -296,14 +296,19 @@ class ScenarioService:
             db.close()
 
     @staticmethod
-    def get_scenario_for_edit(scenario_id: str, user_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    def get_scenario_for_edit(scenario_id, user_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """편집용 시나리오 로드"""
         if not scenario_id or not user_id:
             return None, "권한이 없습니다."
 
         db = SessionLocal()
         try:
-            db_id = int(scenario_id)
+            # scenario_id가 문자열이면 정수로 변환
+            if isinstance(scenario_id, str):
+                db_id = int(scenario_id)
+            else:
+                db_id = scenario_id
+
             scenario = db.query(Scenario).filter(Scenario.id == db_id).first()
 
             if not scenario:
