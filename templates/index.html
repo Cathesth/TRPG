@@ -160,7 +160,7 @@
             </h2>
             <div class="flex flex-wrap gap-3">
                 <button onclick="filterGenre('all')" class="px-4 py-2 rounded-full bg-rpg-accent text-black font-bold text-sm hover:opacity-80 transition-all shadow-[0_0_10px_rgba(56,189,248,0.3)]">전체</button>
-                <button onclick="filterGenre('fantasy')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">SF/판타지</button>
+                <button onclick="f/api/scenarios?sort=newest&filterilterGenre('fantasy')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">SF/판타지</button>
                 <button onclick="filterGenre('thriller')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">스릴러</button>
                 <button onclick="filterGenre('mystery')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">추리</button>
                 <button onclick="filterGenre('romance')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">로맨스</button>
@@ -179,9 +179,8 @@
                 </div>
                 <div id="realtime-grid"
                      class="horizontal-scroll-container flex overflow-x-auto gap-4 pb-8 no-scrollbar cursor-grab active:cursor-grabbing"
-                     hx-get="/api/scenarios?sort=newest&limit=10&filter=public"
+                     hx-get="/api/scenarios?sort=newest&limit=10&filter=all"
                      hx-trigger="load">
-                     <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                      <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                      <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                 </div>
@@ -195,7 +194,7 @@
                 </div>
                 <div id="popular-grid"
                      class="horizontal-scroll-container flex overflow-x-auto gap-4 pb-8 no-scrollbar cursor-grab active:cursor-grabbing"
-                     hx-get="/api/scenarios?sort=popular&limit=10&filter=public"
+                     hx-get="/api/scenarios?sort=popular&limit=10&filter=all"
                      hx-trigger="load">
                      <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                      <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
@@ -210,7 +209,7 @@
                 </div>
                 <div id="steady-grid"
                      class="horizontal-scroll-container flex overflow-x-auto gap-4 pb-8 no-scrollbar cursor-grab active:cursor-grabbing"
-                     hx-get="/api/scenarios?sort=steady&limit=10&filter=public"
+                     hx-get="/api/scenarios?sort=steady&limit=10&filter=all"
                      hx-trigger="load">
                      <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                      <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
