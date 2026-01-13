@@ -122,32 +122,39 @@ def normalize_text(text: str) -> str:
     return text.lower().replace(" ", "")
 
 
-def format_player_status(scenario: Dict[str, Any]) -> str:
+def format_player_status(scenario: Dict[str, Any], player_vars: Dict[str, Any] = None) -> str:
     """
-    시나리오의 variables 필드를 기반으로 플레이어 초기 상태를 포맷팅
-    variables 필드가 없으면 initial_state 참조 (하위 호환성)
+    플레이어 현재 상태를 포맷팅 (인벤토리 포함)
+    player_vars가 제공되면 실제 플레이어 상태를 사용, 없으면 초기 상태 사용
     """
-    initial_state = {}
+    if player_vars:
+        # 실제 플레이어 상태 사용
+        current_state = player_vars
+    else:
+        # 초기 상태 구성
+        initial_state = {}
 
-    # 1. variables 필드에서 초기 상태 구성
-    if 'variables' in scenario and isinstance(scenario['variables'], list):
-        for var in scenario['variables']:
-            if isinstance(var, dict) and 'name' in var and 'initial_value' in var:
-                var_name = var['name'].lower()
-                initial_state[var_name] = var['initial_value']
+        # 1. variables 필드에서 초기 상태 구성
+        if 'variables' in scenario and isinstance(scenario['variables'], list):
+            for var in scenario['variables']:
+                if isinstance(var, dict) and 'name' in var and 'initial_value' in var:
+                    var_name = var['name'].lower()
+                    initial_state[var_name] = var['initial_value']
 
-    # 2. initial_state 필드도 확인 (하위 호환성)
-    if 'initial_state' in scenario:
-        initial_state.update(scenario['initial_state'])
+        # 2. initial_state 필드도 확인 (하위 호환성)
+        if 'initial_state' in scenario:
+            initial_state.update(scenario['initial_state'])
+
+        current_state = initial_state
 
     # 상태가 비어있으면 빈 문자열 반환
-    if not initial_state:
+    if not current_state:
         return "초기 상태 없음"
 
     status_lines = []
-    inventory = initial_state.get('inventory', [])
+    inventory = current_state.get('inventory', [])
 
-    for key, value in initial_state.items():
+    for key, value in current_state.items():
         if key == 'inventory':
             continue
         if isinstance(value, (int, float)):
@@ -155,12 +162,12 @@ def format_player_status(scenario: Dict[str, Any]) -> str:
         elif isinstance(value, str):
             status_lines.append(f"- {key}: {value}")
 
-    # 인벤토리는 마지막에 추가
-    if inventory:
-        items_str = ', '.join(inventory)
-        status_lines.append(f"- 소지품: {items_str}")
+    # 인벤토리는 마지막에 추가 (강조)
+    if inventory and isinstance(inventory, list):
+        items_str = ', '.join([str(item) for item in inventory])
+        status_lines.append(f"- 🎒 소지품 (인벤토리): [{items_str}]")
     else:
-        status_lines.append(f"- 소지품: 없음")
+        status_lines.append(f"- 🎒 소지품 (인벤토리): [비어 있음]")
 
     return '\n  '.join(status_lines)
 
@@ -388,7 +395,7 @@ def intent_parser_node(state: PlayerState):
 
         # 프롬프트 생성
         scenario = get_scenario_by_id(scenario_id)
-        player_status = format_player_status(scenario)
+        player_status = format_player_status(scenario, state.get('player_vars', {}))
 
         intent_prompt = intent_classifier_template.format(
             player_status=player_status,
@@ -693,6 +700,40 @@ def npc_node(state: PlayerState):
     curr_scene = all_scenes.get(curr_id)
     npc_names = curr_scene.get('npcs', []) if curr_scene else []
 
+    user_input = state['last_user_input']
+
+    # [추가] 인벤토리 검증: 아이템 사용 시도 감지
+    item_keywords = ['사용', '쓴다', '쏜다', '던진다', '먹는다', '마신다', '착용', '장착', '입는다',
+                     'use', 'shoot', 'throw', 'eat', 'drink', 'wear', '뿌린다', '흔든다', '꺼낸다']
+    is_item_action = any(kw in user_input.lower() for kw in item_keywords)
+
+    if is_item_action:
+        # 인벤토리 확인
+        inventory = state.get('player_vars', {}).get('inventory', [])
+
+        # 유저 입력에서 아이템명 추출 시도 (간단한 휴리스틱)
+        # 인벤토리에 있는 아이템과 유저 입력을 대조
+        has_item = False
+        if isinstance(inventory, list):
+            for item in inventory:
+                if item and str(item).lower() in user_input.lower():
+                    has_item = True
+                    break
+
+        # 인벤토리에 없는 아이템을 사용하려는 경우
+        if not has_item and inventory != None:
+            rejection_messages = [
+                "가방을 뒤져보았지만 그런 물건은 보이지 않습니다.",
+                "주머니를 더듬어 보았지만 찾을 수 없습니다.",
+                "소지품을 확인해보니 그것은 가지고 있지 않습니다.",
+                "당신은 그 물건을 가지고 있지 않습니다.",
+                "손을 뻗었지만 허공만 움켜쥐게 됩니다. 그것은 당신에게 없는 것입니다."
+            ]
+            state['npc_output'] = random.choice(rejection_messages)
+            logger.info(f"🚫 [INVENTORY CHECK] Item not found in inventory. User input: {user_input}")
+            return state
+
+    # 기존 NPC 대화 로직
     if not npc_names:
         state['npc_output'] = ""
         return state
@@ -709,15 +750,14 @@ def npc_node(state: PlayerState):
 
     history = state.get('history', [])
     history_context = "\n".join(history[-3:]) if history else "대화 시작"
-    user_input = state['last_user_input']
 
     # YAML에서 프롬프트 로드
     prompts = load_player_prompts()
     prompt_template = prompts.get('npc_dialogue', '')
 
     if prompt_template:
-        scenario = state.get('scenario', {})
-        player_status = format_player_status(scenario)
+        scenario = get_scenario_by_id(scenario_id)
+        player_status = format_player_status(scenario, state.get('player_vars', {}))
 
         prompt = prompt_template.format(
             player_status=player_status,
@@ -1181,8 +1221,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
                 hint_mode_template = prompts.get('hint_mode', '')
                 if hint_mode_template:
-                    scenario_data = state.get('scenario', {})
-                    player_status = format_player_status(scenario_data)
+                    player_status = format_player_status(scenario, state.get('player_vars', {}))
 
                     hint_prompt = hint_mode_template.format(
                         user_input=user_input,
@@ -1221,8 +1260,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     scene_prompt_template = prompts.get('scene_description', '')
 
     if scene_prompt_template:
-        scenario_data = state.get('scenario', {})
-        player_status = format_player_status(scenario_data)
+        player_status = format_player_status(scenario, state.get('player_vars', {}))
 
         # [추가] transitions 리스트 생성 - 장면 묘사에 포함할 선택지들
         transitions = curr_scene.get('transitions', [])
