@@ -50,11 +50,11 @@
         .modal { transition: opacity 0.25s ease; }
         body.modal-active { overflow: hidden; }
 
-        /* [중요] API에서 반환되는 카드 스타일 (다크 모드 가시성 확보) */
+        /* 카드 디자인 (API 반환용) */
         .scenario-card-base {
-            background-color: #0f172a !important; /* bg-rpg-800 */
-            border: 1px solid #1e293b !important; /* border-rpg-700 */
-            border-radius: 0.75rem !important; /* rounded-xl */
+            background-color: #0f172a !important;
+            border: 1px solid #1e293b !important;
+            border-radius: 0.75rem !important;
             overflow: hidden !important;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
             transition: all 0.3s ease !important;
@@ -66,55 +66,17 @@
             flex-shrink: 0 !important;
         }
         .scenario-card-base:hover {
-            border-color: #38bdf8 !important; /* border-rpg-accent */
+            border-color: #38bdf8 !important;
             box-shadow: 0 0 20px rgba(56, 189, 248, 0.2) !important;
             transform: translateY(-4px) !important;
         }
-        .card-image-wrapper {
-            position: relative !important;
-            height: 160px !important;
-            overflow: hidden !important;
-            background-color: #000 !important;
-        }
-        .card-image {
-            width: 100% !important;
-            height: 100% !important;
-            object-fit: cover !important;
-            transition: transform 0.5s ease !important;
-            opacity: 0.8 !important;
-        }
-        .scenario-card-base:hover .card-image {
-            transform: scale(1.1) !important;
-            opacity: 1 !important;
-        }
-        .card-content {
-            padding: 1.25rem !important;
-            display: flex !important;
-            flex-direction: column !important;
-            gap: 0.75rem !important;
-            flex: 1 !important;
-            background-color: #0f172a !important; /* 배경색 명시 */
-            color: #e2e8f0 !important; /* 기본 글자색 명시 */
-        }
-        .card-title {
-            font-size: 1.125rem !important;
-            font-weight: 700 !important;
-            font-family: 'Cinzel', serif !important;
-            color: #ffffff !important; /* 제목 흰색 강제 */
-            white-space: nowrap !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
-            margin-bottom: 0.25rem !important;
-        }
-        .card-desc {
-            font-size: 0.875rem !important;
-            color: #9ca3af !important; /* 설명 회색 강제 */
-            display: -webkit-box !important;
-            -webkit-line-clamp: 2 !important;
-            -webkit-box-orient: vertical !important;
-            overflow: hidden !important;
-            min-height: 2.5rem !important;
-        }
+        .card-image-wrapper { position: relative !important; height: 160px !important; overflow: hidden !important; background-color: #000 !important; }
+        .card-image { width: 100% !important; height: 100% !important; object-fit: cover !important; transition: transform 0.5s ease !important; opacity: 0.8 !important; }
+        .scenario-card-base:hover .card-image { transform: scale(1.1) !important; opacity: 1 !important; }
+        .card-content { padding: 1.25rem !important; display: flex !important; flex-direction: column !important; gap: 0.75rem !important; flex: 1 !important; background-color: #0f172a !important; color: #e2e8f0 !important; }
+        .card-title { font-size: 1.125rem !important; font-weight: 700 !important; font-family: 'Cinzel', serif !important; color: #ffffff !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; margin-bottom: 0.25rem !important; }
+        .card-desc { font-size: 0.875rem !important; color: #9ca3af !important; display: -webkit-box !important; -webkit-line-clamp: 2 !important; -webkit-box-orient: vertical !important; overflow: hidden !important; min-height: 2.5rem !important; }
+    </style>
 </head>
 <body class="min-h-screen flex flex-col selection:bg-rpg-accent selection:text-black">
 
