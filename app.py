@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
+from api import api_router, mypage_router
 
 from config import LOG_FORMAT, LOG_DATE_FORMAT
 from models import create_tables

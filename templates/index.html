@@ -179,7 +179,7 @@
                 </div>
                 <div id="realtime-grid"
                      class="horizontal-scroll-container flex overflow-x-auto gap-4 pb-8 no-scrollbar cursor-grab active:cursor-grabbing"
-                     hx-get="/api/scenarios?sort=newest&limit=10&filter=all"
+                     hx-get="/api/scenarios?filter=public&limit=4"
                      hx-trigger="load">
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
@@ -194,7 +194,7 @@
                 </div>
                 <div id="popular-grid"
                      class="horizontal-scroll-container flex overflow-x-auto gap-4 pb-8 no-scrollbar cursor-grab active:cursor-grabbing"
-                     hx-get="/api/scenarios?sort=popular&limit=10&filter=all"
+                     hx-get="/api/scenarios?filter=public&limit=4"
                      hx-trigger="load">
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
@@ -209,7 +209,7 @@
                 </div>
                 <div id="steady-grid"
                      class="horizontal-scroll-container flex overflow-x-auto gap-4 pb-8 no-scrollbar cursor-grab active:cursor-grabbing"
-                     hx-get="/api/scenarios?sort=steady&limit=10&filter=all"
+                     hx-get="/api/scenarios?filter=public&limit=4"
                      hx-trigger="load">
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
