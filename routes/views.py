@@ -4,6 +4,7 @@ from fastapi.templating import Jinja2Templates
 
 from core.state import game_state
 from services.mermaid_service import MermaidService
+from services.scenario_service import ScenarioService
 from config import get_full_version
 from routes.auth import get_current_user_optional, get_current_user
 
@@ -48,7 +49,7 @@ async def view_player(request: Request, user=Depends(get_current_user_optional))
 @views_router.get("/views/scenes", response_class=HTMLResponse)
 async def view_scenes(request: Request, user=Depends(get_current_user_optional)):
     """씬 맵 뷰"""
-    if not game_state.state:
+    if not game_state.state or 'scenario_id' not in game_state.state:
         return templates.TemplateResponse("scenes_view.html", {
             "request": request,
             "title": "시나리오 없음",
@@ -64,7 +65,28 @@ async def view_scenes(request: Request, user=Depends(get_current_user_optional))
             "user": user
         })
 
-    scenario = game_state.state['scenario']
+    # DB에서 시나리오 로드
+    scenario_id = game_state.state['scenario_id']
+    user_id = user.id if user.is_authenticated else None
+    result, error = ScenarioService.load_scenario(str(scenario_id), user_id)
+
+    if error or not result:
+        return templates.TemplateResponse("scenes_view.html", {
+            "request": request,
+            "title": "시나리오 로드 실패",
+            "scenario": {"endings": [], "prologue_text": ""},
+            "scenes": [],
+            "current_scene_id": None,
+            "mermaid_code": "graph TD\n    A[시나리오를 다시 로드하세요]",
+            "scene_display_ids": {},
+            "ending_display_ids": {},
+            "edit_mode": False,
+            "scenario_id": None,
+            "version": get_full_version(),
+            "user": user
+        })
+
+    scenario = result['scenario']
     title = scenario.get('title', 'Untitled')
     current_scene_id = game_state.state.get('current_scene_id', None)
 
@@ -94,7 +116,7 @@ async def view_scenes(request: Request, user=Depends(get_current_user_optional))
 @views_router.get("/views/debug_scenes", response_class=HTMLResponse)
 async def view_debug_scenes(request: Request, user=Depends(get_current_user_optional)):
     """디버그 모드 전체 씬 보기 (플레이어 모드에서 접근)"""
-    if not game_state.state:
+    if not game_state.state or 'scenario_id' not in game_state.state:
         return templates.TemplateResponse("debug_scenes_view.html", {
             "request": request,
             "title": "시나리오 없음",
@@ -108,7 +130,26 @@ async def view_debug_scenes(request: Request, user=Depends(get_current_user_opti
             "user": user
         })
 
-    scenario = game_state.state['scenario']
+    # DB에서 시나리오 로드
+    scenario_id = game_state.state['scenario_id']
+    user_id = user.id if user.is_authenticated else None
+    result, error = ScenarioService.load_scenario(str(scenario_id), user_id)
+
+    if error or not result:
+        return templates.TemplateResponse("debug_scenes_view.html", {
+            "request": request,
+            "title": "시나리오 로드 실패",
+            "scenario": {"endings": [], "prologue_text": ""},
+            "scenes": [],
+            "current_scene_id": None,
+            "mermaid_code": "graph TD\n    A[시나리오를 다시 로드하세요]",
+            "scene_display_ids": {},
+            "ending_display_ids": {},
+            "version": get_full_version(),
+            "user": user
+        })
+
+    scenario = result['scenario']
     title = scenario.get('title', 'Untitled')
     current_scene_id = game_state.state.get('current_scene_id', None)
 

@@ -801,4 +801,3 @@ async def restore_history(scenario_id: int, history_id: int, user: CurrentUser =
     undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, user.id)
     return {"success": True, "scenario": restored_data, "mermaid_code": mermaid_code,
             "undo_redo_status": undo_redo_status}
-
