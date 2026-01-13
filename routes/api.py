@@ -188,80 +188,141 @@ async def reset_build_progress():
 # ==========================================
 # [API 라우트] 시나리오 관리 (CRUD)
 # ==========================================
+# [교체] routes/api.py -> list_scenarios 함수
 @api_router.get('/scenarios', response_class=HTMLResponse)
 async def list_scenarios(
         request: Request,
-        sort: str = 'newest',
-        filter: str = Query('public'),
-        limit: Optional[int] = None,
+        sort: str = Query('newest'),  # 정렬: newest, popular, steady
+        filter: str = Query('public'),  # 필터: public(전체), my(내꺼)
+        limit: int = Query(10),  # 개수 제한
         user: CurrentUser = Depends(get_current_user_optional)
 ):
-    user_id = user.id if user.is_authenticated else None
+    """
+    시나리오 목록을 HTML 카드 형태로 반환합니다.
+    - public: 모든 유저의 시나리오 조회
+    - my: 로그인한 유저의 시나리오 조회
+    """
+    filter_mode = filter
 
-    if filter == 'my' and not user_id:
-        return '<div class="col-span-full text-center text-gray-500 py-10">로그인이 필요합니다.</div>'
+    # 1. 마이페이지 접근 시 로그인 체크
+    if filter_mode == 'my':
+        if not user.is_authenticated:
+            return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
+        query_user_id = user.id
+    else:
+        # [핵심 수정] public(메인화면)일 경우 user_id를 None으로 설정하여 '모든 유저'의 데이터를 가져옴
+        query_user_id = None
 
-    file_infos = ScenarioService.list_scenarios(sort, user_id, filter, limit)
+    # 2. 데이터 조회 (Service 호출)
+    # limit=None으로 설정하여 전체 데이터를 가져온 후, 파이썬 레벨에서 정렬/필터링 수행
+    file_infos = ScenarioService.list_scenarios('newest', query_user_id, filter_mode, None)
 
     if not file_infos:
-        msg = "아직 생성한 시나리오가 없습니다." if filter == 'my' else "표시할 시나리오가 없습니다."
-        return f'<div class="col-span-full text-center text-gray-500 py-10">{msg}</div>'
+        msg = "등록된 시나리오가 없습니다." if filter_mode == 'public' else "아직 생성한 시나리오가 없습니다."
+        return HTMLResponse(f'<div class="col-span-full text-center text-gray-500 py-10 w-full">{msg}</div>')
+
+    # 3. 정렬 로직 (Sort)
+    if sort == 'popular':
+        # 인기순: 조회수(views) + 클릭수(clicks) 합산 내림차순
+        file_infos.sort(key=lambda x: x.get('views', 0) + x.get('clicks', 0), reverse=True)
+    elif sort == 'steady':
+        # 스테디셀러: 플레이 횟수(plays) 내림차순
+        file_infos.sort(key=lambda x: x.get('plays', 0), reverse=True)
+    else:
+        # 최신순: 생성 시간(created_time) 내림차순 (기본값)
+        file_infos.sort(key=lambda x: x.get('created_time', 0), reverse=True)
+
+    # 4. 개수 제한 (Slicing)
+    if limit > 0:
+        file_infos = file_infos[:limit]
+
+    # 5. HTML 생성 (index.html의 .scenario-card-base 클래스 적용)
+    from datetime import datetime
+    import time as time_module
+    current_time = time_module.time()
+    NEW_THRESHOLD = 30 * 60  # 30분 이내 작성글 NEW 표시
 
     html = ""
     for info in file_infos:
         fid = info['filename']
         title = info['title']
         desc = info['desc']
-        is_owner = info['is_owner']
+        if not desc: desc = "설명이 없습니다."
+
+        author = info['author']
+        # 현재 로그인한 유저가 이 시나리오의 주인인지 확인
+        is_owner = (user.is_authenticated and author == user.id)
         is_public = info['is_public']
+        created_time = info.get('created_time', 0)
+
+        # 이미지 (기본값 설정)
+        img_src = info.get('image') or "https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=800"
+
+        # 시간 표시
+        time_str = ""
+        if created_time:
+            created_dt = datetime.fromtimestamp(created_time)
+            time_str = created_dt.strftime('%Y-%m-%d')
+
+        # 뱃지
+        is_new = (current_time - created_time) < NEW_THRESHOLD if created_time else False
+        new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
         status_text = "PUBLIC" if is_public else "PRIVATE"
         status_class = "bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"
         status_badge = f'<span class="ml-2 text-[10px] {status_class} px-1 rounded font-bold">{status_text}</span>' if is_owner else ''
 
-        show_admin_buttons = (filter == 'my') or is_owner
-
-        if show_admin_buttons:
-            buttons = f"""
-                    <div class="flex gap-2 mt-auto pt-2">
-                        <button onclick="playScenario('{fid}', this)" class="flex-1 py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700" title="플레이">
-                            <i data-lucide="play" class="w-4 h-4"></i> PLAY
-                        </button>
-                        <button onclick="editScenario('{fid}')" class="p-3 bg-rpg-800 border border-rpg-700 rounded-lg hover:border-rpg-accent text-gray-400 hover:text-white transition-colors" title="수정">
-                            <i data-lucide="edit" class="w-4 h-4"></i>
-                        </button>
-                        <button onclick="deleteScenario('{fid}', this)" class="p-3 bg-rpg-800 border border-rpg-700 rounded-lg hover:border-danger hover:text-danger text-gray-400 transition-colors" title="삭제">
-                            <i data-lucide="trash" class="w-4 h-4"></i>
-                        </button>
-                    </div>
-                    """
-        else:
-            buttons = f"""
-            <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 mt-auto">
-                <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
-            </button>
+        # [관리자 버튼] (수정, 삭제) - 본인 소유일 때만 표시
+        admin_buttons = ""
+        if is_owner:
+            admin_buttons = f"""
+            <div class="flex gap-2 mt-3 pt-3 border-t border-rpg-700/50">
+                <button onclick="editScenario('{fid}')" class="flex-1 py-2 rounded-lg bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-400 hover:text-white transition-colors flex items-center justify-center gap-1" title="수정">
+                    <i data-lucide="edit" class="w-3 h-3"></i> <span class="text-xs">EDIT</span>
+                </button>
+                <button onclick="deleteScenario('{fid}', this)" class="flex-1 py-2 rounded-lg bg-rpg-800 border border-rpg-700 hover:border-danger hover:text-danger text-gray-400 transition-colors flex items-center justify-center gap-1" title="삭제">
+                    <i data-lucide="trash" class="w-3 h-3"></i> <span class="text-xs">DEL</span>
+                </button>
+            </div>
             """
 
-        html += f"""
-        <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] transition-all flex flex-col h-full">
-            <div class="relative h-48 overflow-hidden bg-black">
-                <img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=800" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
+        # [카드 HTML 조립]
+        # 중요: index.html에 정의한 .scenario-card-base 클래스를 사용하여 스타일을 적용합니다.
+        # 텍스트 색상을 text-white, text-gray-400 등으로 명시하여 다크 모드에서도 보이게 합니다.
+        card_html = f"""
+        <div class="scenario-card-base">
+            <div class="card-image-wrapper">
+                <img src="{img_src}" class="card-image" alt="Cover">
                 <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-rpg-accent border border-rpg-accent/30">
                     Fantasy
                 </div>
             </div>
-            <div class="p-5 flex-1 flex flex-col gap-3">
+
+            <div class="card-content">
                 <div>
-                    <h3 class="text-lg font-bold text-white mb-1 font-title tracking-wide truncate flex items-center gap-2">
-                        {title} {status_badge}
-                    </h3>
-                    <p class="text-sm text-gray-400 line-clamp-2 min-h-[2.5rem]">{desc}</p>
+                    <div class="flex justify-between items-start mb-1">
+                        <h3 class="card-title text-white">{title} {new_badge}</h3>
+                        {status_badge}
+                    </div>
+                    <div class="flex justify-between items-center text-xs text-gray-500 mb-2">
+                        <span>{author}</span>
+                        <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
+                    </div>
+                    <p class="card-desc text-gray-400">{desc}</p>
                 </div>
-                {buttons}
+
+                <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-accent/10 hover:bg-rpg-accent text-rpg-accent hover:text-black font-bold rounded-lg transition-all flex items-center justify-center gap-2 border border-rpg-accent/50 mt-auto shadow-[0_0_10px_rgba(56,189,248,0.1)] hover:shadow-[0_0_15px_rgba(56,189,248,0.4)]">
+                    <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
+                </button>
+
+                {admin_buttons}
             </div>
         </div>
         """
-    return html + '<script>lucide.createIcons();</script>'
+        html += card_html
+
+    html += '<script>lucide.createIcons();</script>'
+    return HTMLResponse(content=html)
 
 
 
