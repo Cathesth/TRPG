@@ -304,13 +304,12 @@ async def game_act_stream(
                 # World State에 씬 정보 추가
                 world_state_with_scene = world_state_data.copy()
 
-                # 현재 위치 scene_id 확인 (우선순위: location > current_scene_id)
-                location_scene_id = world_state_with_scene.get('location') or processed_state.get('current_scene_id',
-                                                                                                  '')
+                # [FIX] 현재 위치는 player_state의 current_scene_id를 우선적으로 사용 (더 정확함)
+                location_scene_id = processed_state.get('current_scene_id') or world_state_with_scene.get('location', '')
 
                 # 디버그 로그
                 logger.info(
-                    f"🗺️ [WORLD STATE] location field: {world_state_with_scene.get('location')}, processed scene_id: {processed_state.get('current_scene_id')}")
+                    f"🗺️ [WORLD STATE] current_scene_id: {processed_state.get('current_scene_id')}, world_state location: {world_state_with_scene.get('location')}, using: {location_scene_id}")
 
                 location_scene_title = ''
 
@@ -331,6 +330,9 @@ async def game_act_stream(
                 # current_scene_id와 current_scene_title 명시적으로 설정
                 world_state_with_scene['current_scene_id'] = location_scene_id
                 world_state_with_scene['current_scene_title'] = location_scene_title
+
+                # location 필드도 current_scene_id로 동기화
+                world_state_with_scene['location'] = location_scene_id
 
                 # [FIX] turn_count가 없는 경우 0으로 초기화
                 if 'turn_count' not in world_state_with_scene:
