@@ -764,10 +764,14 @@
                                 case 'world_state':
                                     // WorldState 정보 업데이트
                                     updateWorldState(data.content);
+                                    // [FIX] 즉시 저장
+                                    saveDebugContent();
                                     break;
                                 case 'npc_status':
                                     // NPC 상태 정보 업데이트
                                     updateNPCStatus(data.content);
+                                    // [FIX] 즉시 저장
+                                    saveDebugContent();
                                     break;
                                 case 'session_key':
                                     // 세션 키 저장
