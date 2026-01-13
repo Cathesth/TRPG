@@ -205,10 +205,13 @@ async def list_scenarios(
     - filter='public': 공개된 시나리오만 반환
     - filter='my': 내 시나리오만 반환
     """
-
-    # 1. 필터링 로직 재정의
     target_user_id = None
-    service_filter_mode = filter
+
+    # ✅ [추가] 메인화면 정책 결정
+    if user.is_authenticated:
+        service_filter_mode = 'all'  # 로그인 시 전체 노출
+    else:
+        service_filter_mode = 'public'  # 비로그인 시 공개만
 
     if filter == 'my':
         if not user.is_authenticated:
@@ -216,21 +219,22 @@ async def list_scenarios(
                 '<div class="col-span-full text-center text-gray-500 py-10">'
                 '로그인이 필요합니다.</div>'
             )
-        target_user_id = user.id
-        service_filter = 'my'
 
-    elif filter in ['all', 'public']:
-        target_user_id = None
-        service_filter = 'public'
+        target_user_id = user.id
+        service_filter_mode = 'my'
+
 
     else:
         target_user_id = None
-        service_filter = 'public'
+        service_filter_mode = 'public'
 
-    # 2. 데이터 조회
-    # limit=None으로 전체 조회 후 파이썬에서 정렬/자르기
-    file_infos = ScenarioService.list_scenarios('newest', target_user_id, service_filter_mode, None)
-
+    # 3. 최종 조회
+    file_infos = ScenarioService.list_scenarios(
+        sort,
+        target_user_id,
+        service_filter_mode,
+        None
+    )
     # 데이터가 없을 경우
     if not file_infos:
         msg = "표시할 시나리오가 없습니다."
