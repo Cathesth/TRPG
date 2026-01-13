@@ -190,159 +190,6 @@ async def reset_build_progress():
 # [API 라우트] 시나리오 관리 (CRUD)
 # ==========================================
 # [교체] routes/api.py -> list_scenarios 함수
-@api_router.get('/scenarios', response_class=HTMLResponse)
-async def list_scenarios(
-        request: Request,
-        sort: str = Query('newest'),
-        filter: str = Query('public'),
-        limit: int = Query(10),
-        user: CurrentUser = Depends(get_current_user_optional)
-):
-    """
-    시나리오 목록 반환 (DB + JSON 파일 통합 조회)
-    """
-    file_infos = []
-
-    # 1. [파일 시스템 조회] DB/scenarios 폴더의 JSON 파일 읽기 (비상용/백업용)
-    # (필터가 'my'가 아니거나, 전체 보기일 때 수행)
-    if filter in ['public', 'all']:
-        try:
-            base_path = os.path.join("DB", "scenarios")
-            if not os.path.exists(base_path):
-                os.makedirs(base_path, exist_ok=True)
-
-            import glob
-            json_files = glob.glob(os.path.join(base_path, "*.json"))
-
-            for file_path in json_files:
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-
-                    filename = os.path.basename(file_path).replace('.json', '')
-
-                    info = {
-                        'filename': filename,
-                        'title': data.get('title', filename),
-                        'desc': data.get('desc', '') or data.get('description', '설명 없음'),
-                        'author': data.get('author', 'System'),
-                        'created_time': os.path.getctime(file_path),
-                        'image': data.get('image', ''),
-                        'is_public': True,
-                        'is_owner': (user.is_authenticated and data.get('author') == user.id),
-                        'views': data.get('views', 0),
-                        'clicks': data.get('clicks', 0),
-                        'plays': data.get('plays', 0)
-                    }
-                    file_infos.append(info)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-    # 2. [DB 조회] 기존 Service 이용
-    # filter='public'이면 user_id=None으로 설정하여 전체 공개 시나리오 조회
-    query_user_id = user.id if filter == 'my' and user.is_authenticated else None
-    query_filter = 'public' if filter == 'public' else filter  # public 필터 명시
-
-    # [핵심] DB 조회 결과 가져오기
-    db_infos = ScenarioService.list_scenarios('newest', query_user_id, query_filter, None)
-
-    if db_infos:
-        # 파일 목록에 없는 DB 데이터만 추가 (중복 제거)
-        existing_filenames = {f['filename'] for f in file_infos}
-        for info in db_infos:
-            if info['filename'] not in existing_filenames:
-                file_infos.append(info)
-
-    # 3. 데이터가 없을 경우
-    if not file_infos:
-        msg = "등록된 시나리오가 없습니다." if filter != 'my' else "아직 생성한 시나리오가 없습니다."
-        return HTMLResponse(
-            f'<div class="col-span-full text-center text-gray-400 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
-
-    # 4. 정렬 로직
-    if sort == 'popular':
-        file_infos.sort(key=lambda x: x.get('views', 0) + x.get('clicks', 0), reverse=True)
-    elif sort == 'steady':
-        file_infos.sort(key=lambda x: x.get('plays', 0), reverse=True)
-    elif sort == 'name_asc':
-        file_infos.sort(key=lambda x: x.get('title', ''))
-    else:  # newest
-        file_infos.sort(key=lambda x: x.get('created_time', 0), reverse=True)
-
-    # 5. 개수 제한
-    if limit > 0:
-        file_infos = file_infos[:limit]
-
-    # 6. HTML 생성 (index.html 스타일 적용)
-    from datetime import datetime
-    import time as time_module
-    current_time = time_module.time()
-    NEW_THRESHOLD = 30 * 60
-
-    html = ""
-    for info in file_infos:
-        fid = info['filename']
-        title = info['title']
-        desc = info['desc']
-        author = info['author']
-        created_time = info.get('created_time', 0)
-        img_src = info.get('image') or "https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=800"
-
-        time_str = datetime.fromtimestamp(created_time).strftime('%Y-%m-%d') if created_time else "-"
-
-        is_owner = info.get('is_owner', False)
-        is_public = info.get('is_public', False)
-
-        is_new = (current_time - created_time) < NEW_THRESHOLD if created_time else False
-        new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
-        status_badge = f'<span class="ml-2 text-[10px] {"bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"} px-1 rounded font-bold">{"PUBLIC" if is_public else "PRIVATE"}</span>' if is_owner else ''
-
-        admin_buttons = ""
-        if is_owner:
-            admin_buttons = f"""
-            <div class="flex gap-2 mt-3 pt-3 border-t border-rpg-700/50">
-                <button onclick="editScenario('{fid}')" class="flex-1 py-2 rounded-lg bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-400 hover:text-white transition-colors flex items-center justify-center gap-1">
-                    <i data-lucide="edit" class="w-3 h-3"></i> <span class="text-xs">EDIT</span>
-                </button>
-                <button onclick="deleteScenario('{fid}', this)" class="flex-1 py-2 rounded-lg bg-rpg-800 border border-rpg-700 hover:border-danger hover:text-danger text-gray-400 transition-colors flex items-center justify-center gap-1">
-                    <i data-lucide="trash" class="w-3 h-3"></i> <span class="text-xs">DEL</span>
-                </button>
-            </div>
-            """
-
-        card_html = f"""
-        <div class="scenario-card-base group">
-            <div class="card-image-wrapper">
-                <img src="{img_src}" class="card-image" alt="Cover">
-                <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-rpg-accent border border-rpg-accent/30">
-                    Fantasy
-                </div>
-            </div>
-            <div class="card-content">
-                <div>
-                    <div class="flex justify-between items-start mb-1">
-                        <h3 class="card-title text-white group-hover:text-rpg-accent transition-colors">{title} {new_badge}</h3>
-                        {status_badge}
-                    </div>
-                    <div class="flex justify-between items-center text-xs text-gray-400 mb-2">
-                        <span>{author}</span>
-                        <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
-                    </div>
-                    <p class="card-desc text-gray-400">{desc}</p>
-                </div>
-                <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-accent/10 hover:bg-rpg-accent text-rpg-accent hover:text-black font-bold rounded-lg transition-all flex items-center justify-center gap-2 border border-rpg-accent/50 mt-auto shadow-[0_0_10px_rgba(56,189,248,0.1)] hover:shadow-[0_0_15px_rgba(56,189,248,0.4)]">
-                    <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
-                </button>
-                {admin_buttons}
-            </div>
-        </div>
-        """
-        html += card_html
-
-    html += '<script>lucide.createIcons();</script>'
-    return HTMLResponse(content=html)
 
 @api_router.get('/scenarios', response_class=HTMLResponse)
 async def list_scenarios(
@@ -365,15 +212,20 @@ async def list_scenarios(
 
     if filter == 'my':
         if not user.is_authenticated:
-            return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
+            return HTMLResponse(
+                '<div class="col-span-full text-center text-gray-500 py-10">'
+                '로그인이 필요합니다.</div>'
+            )
         target_user_id = user.id
-    elif filter == 'all':
-        # [핵심] 'all'이면 user_id=None(전체유저) + filter_mode='all'(서비스에서 필터링 건너뛰기 유도)
+        service_filter = 'my'
+
+    elif filter in ['all', 'public']:
         target_user_id = None
-        service_filter_mode = 'all'
+        service_filter = 'public'
+
     else:
-        # public 등 그 외
         target_user_id = None
+        service_filter = 'public'
 
     # 2. 데이터 조회
     # limit=None으로 전체 조회 후 파이썬에서 정렬/자르기
