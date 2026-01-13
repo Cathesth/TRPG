@@ -934,60 +934,63 @@
                 debugIcon.classList.add('text-indigo-400');
             }
 
-            // [FIX] 토글 시 즉시 데이터 불러오기 - 순서 변경
-            // 1. 현재 스탯 데이터가 있으면 최신 정보로 업데이트 (우선순위 높음)
+            // [FIX] 토글 시 저장된 데이터 즉시 복원
+            console.log('🔍 [Debug Toggle] Loading saved data...');
+
+            // 1. 현재 스탯 데이터 복원 (최우선)
             const savedStats = sessionStorage.getItem(STATS_KEY);
             if (savedStats) {
                 try {
                     const statsData = JSON.parse(savedStats);
+                    console.log('✅ [Debug Toggle] Stats data found:', statsData);
                     updateDebugInfo(statsData);
-                    console.log('✅ [Debug Toggle] Stats restored from session:', statsData);
                 } catch (e) {
-                    console.error('Failed to parse stats:', e);
+                    console.error('❌ Failed to parse stats:', e);
                 }
+            } else {
+                console.log('⚠️ No saved stats found');
             }
 
-            // 2. 저장된 디버그 컨텐츠가 있으면 복원 (스탯이 없을 경우 대비)
+            // 2. 저장된 디버그 HTML 컨텐츠 복원 (백업용)
             const savedDebugContent = sessionStorage.getItem(DEBUG_CONTENT_KEY);
             if (savedDebugContent) {
                 try {
                     const debugData = JSON.parse(savedDebugContent);
-                    // 스탯이 없었던 경우에만 저장된 HTML 사용
-                    if (!savedStats) {
-                        if (debugData.npc) {
-                            document.getElementById('npc-status-area').innerHTML = debugData.npc;
-                        }
-                        if (debugData.worldState) {
-                            document.getElementById('world-state-area').innerHTML = debugData.worldState;
-                        }
-                        console.log('✅ [Debug Toggle] HTML content restored from session');
+                    console.log('✅ [Debug Toggle] Debug content found');
+
+                    if (debugData.npc && debugData.npc.length > 0) {
+                        document.getElementById('npc-status-area').innerHTML = debugData.npc;
+                        console.log('✅ NPC Status restored from backup');
+                    }
+                    if (debugData.worldState && debugData.worldState.length > 0) {
+                        document.getElementById('world-state-area').innerHTML = debugData.worldState;
+                        console.log('✅ World State restored from backup');
                     }
                 } catch (e) {
-                    console.error('Failed to restore debug content:', e);
+                    console.error('❌ Failed to restore debug content:', e);
                 }
+            } else {
+                console.log('⚠️ No saved debug content found');
             }
 
-            // 3. 데이터가 아예 없으면 빈 상태 메시지 표시
-            if (!savedStats && !savedDebugContent) {
-                const npcArea = document.getElementById('npc-status-area');
-                const worldStateArea = document.getElementById('world-state-area');
+            // 3. 데이터가 없으면 빈 상태 메시지 표시
+            const npcArea = document.getElementById('npc-status-area');
+            const worldStateArea = document.getElementById('world-state-area');
 
-                if (npcArea && !npcArea.innerHTML.trim()) {
-                    npcArea.innerHTML = `
-                        <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
-                            NPC 데이터 없음
-                        </div>
-                    `;
-                }
+            if (npcArea && (!npcArea.innerHTML || npcArea.innerHTML.trim() === '')) {
+                npcArea.innerHTML = `
+                    <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                        NPC 데이터 없음
+                    </div>
+                `;
+            }
 
-                if (worldStateArea && !worldStateArea.innerHTML.trim()) {
-                    worldStateArea.innerHTML = `
-                        <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
-                            World State 데이터 없음
-                        </div>
-                    `;
-                }
-                console.log('⚠️ [Debug Toggle] No saved data found');
+            if (worldStateArea && (!worldStateArea.innerHTML || worldStateArea.innerHTML.trim() === '')) {
+                worldStateArea.innerHTML = `
+                    <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                        World State 데이터 없음
+                    </div>
+                `;
             }
         }
 
