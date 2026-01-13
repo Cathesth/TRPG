@@ -346,6 +346,24 @@ async def get_scenario_for_edit(scenario_id: str, user: CurrentUser = Depends(ge
     return {"success": True, "data": result}
 
 
+# [NEW] 전체 씬 보기용 API (player_view.html 모달에서 사용)
+@api_router.get('/scenario/{filename}')
+async def get_scenario_data(filename: str, user: CurrentUser = Depends(get_current_user_optional)):
+    """
+    시나리오 데이터를 JSON으로 반환 (전체 씬 보기용)
+    """
+    user_id = user.id if user.is_authenticated else None
+    result, error = ScenarioService.load_scenario(filename, user_id)
+
+    if error:
+        return JSONResponse({"success": False, "error": error}, status_code=404)
+
+    return JSONResponse({
+        "success": True,
+        "scenario": result['scenario']
+    })
+
+
 @api_router.post('/scenario/{scenario_id}/update')
 async def update_scenario(scenario_id: str, request: Request, user: CurrentUser = Depends(get_current_user)):
     data = await request.json()
