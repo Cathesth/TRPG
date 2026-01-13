@@ -934,112 +934,793 @@
                 debugIcon.classList.add('text-indigo-400');
             }
 
-            // [FIX] DB에서 최신 게임 세션 데이터 불러오기
-            console.log('🔍 [Debug Toggle ON] Fetching latest data from DB...');
+            // [FIX] 토글 시 저장된 데이터 즉시 복원
+            console.log('🔍 [Debug Toggle ON] Loading saved data...');
 
-            if (currentSessionKey) {
-                // 세션 키가 있으면 DB에서 최신 데이터 fetch
-                fetch(`/game/session/${currentSessionKey}`)
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.success) {
-                            console.log('✅ [Debug Toggle] Data fetched from DB:', data);
-
-                            // 1. player_state 업데이트 (스탯)
-                            if (data.player_state && data.player_state.player_vars) {
-                                sessionStorage.setItem(STATS_KEY, JSON.stringify(data.player_state.player_vars));
-                                updateStats(data.player_state.player_vars);
-                            }
-
-                            // 2. world_state 업데이트
-                            if (data.world_state) {
-                                updateWorldState(data.world_state);
-                            }
-
-                            // 3. npc_status 업데이트
-                            if (data.npc_status) {
-                                updateNPCStatus(data.npc_status);
-                            }
-
-                            // 4. 디버그 컨텐츠 저장
-                            saveDebugContent();
-
-                            lucide.createIcons();
-                            console.log('✅ [Debug Toggle] All data updated from DB');
-                        } else {
-                            console.warn('⚠️ [Debug Toggle] DB fetch failed:', data.error);
-                            // DB 실패 시 sessionStorage 폴백
-                            fallbackToSessionStorage();
-                        }
-                    })
-                    .catch(err => {
-                        console.error('❌ [Debug Toggle] DB fetch error:', err);
-                        // 에러 시 sessionStorage 폴백
-                        fallbackToSessionStorage();
-                    });
-            } else {
-                console.log('⚠️ [Debug Toggle] No session key, using sessionStorage');
-                // 세션 키가 없으면 sessionStorage 사용
-                fallbackToSessionStorage();
+            // 1. 현재 스탯 데이터 복원 (최우선 - 가장 최신 데이터)
+            const savedStats = sessionStorage.getItem(STATS_KEY);
+            if (savedStats) {
+                try {
+                    const statsData = JSON.parse(savedStats);
+                    console.log('✅ [Debug Toggle] Stats data found:', statsData);
+                    // 스탯 데이터로 즉시 업데이트
+                    updateDebugInfo(statsData);
+                } catch (e) {
+                    console.error('❌ Failed to parse stats:', e);
+                }
             }
+
+            // 2. 스탯이 없으면 저장된 디버그 HTML 컨텐츠 복원 (백업용)
+            if (!savedStats) {
+                const savedDebugContent = sessionStorage.getItem(DEBUG_CONTENT_KEY);
+                if (savedDebugContent) {
+                    try {
+                        const debugData = JSON.parse(savedDebugContent);
+                        console.log('✅ [Debug Toggle] Restoring from backup HTML');
+
+                        if (debugData.npc) {
+                            document.getElementById('npc-status-area').innerHTML = debugData.npc;
+                        }
+                        if (debugData.worldState) {
+                            document.getElementById('world-state-area').innerHTML = debugData.worldState;
+                        }
+                    } catch (e) {
+                        console.error('❌ Failed to restore debug content:', e);
+                    }
+                }
+            }
+
+            // 3. 아무 데이터도 없는 경우에만 빈 상태 메시지 표시
+            setTimeout(() => {
+                const npcArea = document.getElementById('npc-status-area');
+                const worldStateArea = document.getElementById('world-state-area');
+
+                // HTML 내용이 실제로 비어있거나 기본 메시지만 있는지 체크
+                const isNpcEmpty = !npcArea || !npcArea.innerHTML.trim() ||
+                                   npcArea.innerHTML.includes('NPC 데이터 없음');
+                const isWorldEmpty = !worldStateArea || !worldStateArea.innerHTML.trim() ||
+                                     worldStateArea.innerHTML.includes('World State 데이터 없음');
+
+                // 데이터가 실제로 없을 때만 빈 메시지 표시
+                if (!savedStats && !sessionStorage.getItem(DEBUG_CONTENT_KEY)) {
+                    if (isNpcEmpty && npcArea) {
+                        npcArea.innerHTML = `
+                            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                                NPC 데이터 없음
+                            </div>
+                        `;
+                    }
+
+                    if (isWorldEmpty && worldStateArea) {
+                        worldStateArea.innerHTML = `
+                            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                                World State 데이터 없음
+                            </div>
+                        `;
+                    }
+                    console.log('⚠️ [Debug Toggle] No data available - showing empty state');
+                }
+            }, 10);
         }
 
         lucide.createIcons();
     }
 
-    // [NEW] sessionStorage 폴백 함수
-    function fallbackToSessionStorage() {
-        const savedStats = sessionStorage.getItem(STATS_KEY);
-        if (savedStats) {
-            try {
-                const statsData = JSON.parse(savedStats);
-                console.log('✅ [Fallback] Stats restored from sessionStorage');
-                updateDebugInfo(statsData);
-            } catch (e) {
-                console.error('❌ [Fallback] Failed to parse stats:', e);
+    // 디버그 정보 업데이트 함수
+    function updateDebugInfo(statsData) {
+        updateNPCStatus(statsData);
+        updateWorldState(statsData);
+
+        // [FIX] 디버그 컨텐츠 즉시 저장
+        saveDebugContent();
+    }
+
+    // [FIX] 디버그 컨텐츠 저장 함수 - 호출 후 즉시 검증
+    function saveDebugContent() {
+        const npcArea = document.getElementById('npc-status-area');
+        const worldStateArea = document.getElementById('world-state-area');
+
+        const debugContent = {
+            npc: npcArea ? npcArea.innerHTML : '',
+            worldState: worldStateArea ? worldStateArea.innerHTML : ''
+        };
+
+        sessionStorage.setItem(DEBUG_CONTENT_KEY, JSON.stringify(debugContent));
+        console.log('💾 [Debug Content Saved]:', {
+            npcLength: debugContent.npc.length,
+            worldStateLength: debugContent.worldState.length
+        });
+    }
+
+    // NPC 상태 업데이트 함수
+    function updateNPCStatus(npcData) {
+        const npcStatusArea = document.getElementById('npc-status-area');
+        if (!npcStatusArea) return;
+
+        // npcData가 직접 NPC 딕셔너리인 경우와 statsData에서 추출한 경우 모두 처리
+        let npcs = {};
+
+        if (npcData.world_state && npcData.world_state.npcs) {
+            // statsData에서 추출한 경우
+            npcs = npcData.world_state.npcs;
+        } else if (npcData.npcs) {
+            // world_state에서 추출한 경우
+            npcs = npcData.npcs;
+        } else {
+            // 직접 NPC 딕셔너리인 경우
+            npcs = npcData;
+        }
+
+        // player_vars의 키들을 필터링 (NPC가 아닌 것들 제거)
+        const invalidKeys = ['hp', 'max_hp', 'mp', 'max_mp', 'gold', 'sanity', 'radiation', 'inventory', 'quests', 'flags', 'custom_stats'];
+        const filteredNpcs = {};
+
+        for (const [npcName, npcData] of Object.entries(npcs)) {
+            // 키가 invalidKeys에 없고, 값이 객체(NPC 데이터)인 경우만 추가
+            if (!invalidKeys.includes(npcName) &&
+                typeof npcData === 'object' &&
+                npcData !== null &&
+                !Array.isArray(npcData)) {
+
+                // NPC 데이터인지 확인 (status, emotion, relationship 등의 속성이 있어야 함)
+                if (npcData.hasOwnProperty('status') ||
+                    npcData.hasOwnProperty('emotion') ||
+                    npcData.hasOwnProperty('relationship') ||
+                    npcData.hasOwnProperty('name')) {
+                    filteredNpcs[npcName] = npcData;
+                }
             }
         }
 
-        // 저장된 디버그 HTML 컨텐츠 복원
-        const savedDebugContent = sessionStorage.getItem(DEBUG_CONTENT_KEY);
-        if (savedDebugContent) {
-            try {
-                const debugData = JSON.parse(savedDebugContent);
-                if (debugData.npc) {
-                    document.getElementById('npc-status-area').innerHTML = debugData.npc;
-                }
-                if (debugData.worldState) {
-                    document.getElementById('world-state-area').innerHTML = debugData.worldState;
-                }
-                console.log('✅ [Fallback] Debug content restored from sessionStorage');
-            } catch (e) {
-                console.error('❌ [Fallback] Failed to restore debug content:', e);
-            }
+        if (!filteredNpcs || Object.keys(filteredNpcs).length === 0) {
+            npcStatusArea.innerHTML = `
+                <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                    NPC 데이터 없음
+                </div>
+            `;
+            return;
         }
 
-        // 데이터가 없으면 빈 상태 메시지
+        let html = '';
+        for (const [npcName, npcData] of Object.entries(filteredNpcs)) {
+            const status = npcData.status || 'alive';
+            const hp = npcData.hp !== undefined ? npcData.hp : '?';
+            const maxHp = npcData.max_hp || 100;
+            const relationship = npcData.relationship !== undefined ? npcData.relationship : 50;
+            const emotion = npcData.emotion || 'neutral';
+            const location = npcData.location || '?';
+            const isHostile = npcData.is_hostile || false;
+
+            // 상태에 따른 색상
+            const statusColor = status === 'alive' ? 'text-green-400' :
+                              status === 'dead' ? 'text-red-400' : 'text-yellow-400';
+
+            // 관계도에 따른 색상
+            const relationColor = relationship >= 70 ? 'text-green-400' :
+                                relationship >= 40 ? 'text-blue-400' :
+                                relationship >= 20 ? 'text-yellow-400' : 'text-red-400';
+
+            html += `
+                <div class="bg-gray-800/50 rounded p-2 border border-gray-700 text-xs">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="font-bold text-white flex items-center gap-1">
+                            <i data-lucide="${isHostile ? 'skull' : 'user'}" class="w-3 h-3 ${isHostile ? 'text-red-500' : 'text-blue-400'}"></i>
+                            ${npcName}
+                        </span>
+                        <span class="${statusColor} text-[10px] font-bold">${status.toUpperCase()}</span>
+                    </div>
+                    <div class="space-y-0.5 text-[10px] text-gray-400">
+                        <div class="flex justify-between">
+                            <span>HP:</span>
+                            <span class="text-white">${hp}/${maxHp}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>관계도:</span>
+                            <span class="${relationColor}">${relationship}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>감정:</span>
+                            <span class="text-white">${emotion}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>위치:</span>
+                            <span class="text-white">${location}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        npcStatusArea.innerHTML = html;
+        lucide.createIcons();
+    }
+
+    // World State 업데이트 함수
+    function updateWorldState(worldStateData) {
+        const worldStateArea = document.getElementById('world-state-area');
+        if (!worldStateArea) return;
+
+        // worldStateData가 직접 world_state인 경우와 statsData에서 추출한 경우 모두 처리
+        let worldState = {};
+
+        if (worldStateData.world_state) {
+            // statsData에서 추출한 경우
+            worldState = worldStateData.world_state;
+        } else {
+            // 직접 world_state인 경우
+            worldState = worldStateData;
+        }
+
+        if (!worldState || Object.keys(worldState).length === 0) {
+            worldStateArea.innerHTML = `
+                <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                    World State 데이터 없음
+                </div>
+            `;
+            return;
+        }
+
+        const time = worldState.time || {};
+        const day = time.day || 1;
+        const phase = time.phase || 'morning';
+        const turnCount = worldState.turn_count || 0;
+        const globalFlags = worldState.global_flags || {};
+
+        // 위치 정보 처리: Scene ID와 제목을 함께 표시
+        let locationDisplay = '?';
+        const sceneId = worldState.current_scene_id || worldState.location;
+        const sceneTitle = worldState.current_scene_title;
+
+        if (sceneId && sceneTitle) {
+            // Scene ID와 제목 모두 있는 경우: "Scene-2 (폐허 입구)"
+            locationDisplay = `${sceneId} (${sceneTitle})`;
+        } else if (sceneTitle) {
+            // 제목만 있는 경우
+            locationDisplay = sceneTitle;
+        } else if (sceneId) {
+            // ID만 있는 경우
+            locationDisplay = sceneId;
+        }
+
+        // 시간대에 따른 아이콘
+        const phaseIcon = phase === 'morning' ? 'sunrise' :
+                         phase === 'afternoon' ? 'sun' : 'moon';
+
+        // 시간대 한글 변환
+        const phaseText = phase === 'morning' ? '아침' :
+                         phase === 'afternoon' ? '오후' : '밤';
+
+        let html = `
+            <div class="bg-gray-800/50 rounded p-2 border border-gray-700 space-y-1.5">
+                <div class="flex justify-between items-center">
+                    <span class="text-gray-400">시간:</span>
+                    <span class="text-white flex items-center gap-1">
+                        <i data-lucide="${phaseIcon}" class="w-3 h-3 text-yellow-400"></i>
+                        ${day}일차, ${phaseText}
+                    </span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-gray-400">위치:</span>
+                    <span class="text-white text-xs">${locationDisplay}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-gray-400">턴 수:</span>
+                    <span class="text-white">${turnCount}</span>
+                </div>
+        `;
+
+        // 전역 플래그가 있으면 표시
+        if (Object.keys(globalFlags).length > 0) {
+            html += `
+                <div class="border-t border-gray-700 pt-1.5 mt-1.5">
+                    <div class="text-gray-500 text-[10px] mb-1">전역 플래그:</div>
+                    <div class="space-y-0.5">
+            `;
+            for (const [flag, value] of Object.entries(globalFlags)) {
+                const icon = value ? 'check-circle' : 'x-circle';
+                const color = value ? 'text-green-400' : 'text-gray-500';
+                html += `
+                    <div class="flex items-center gap-1 text-[10px]">
+                        <i data-lucide="${icon}" class="w-2.5 h-2.5 ${color}"></i>
+                        <span class="text-gray-400">${flag}:</span>
+                        <span class="${color}">${value}</span>
+                    </div>
+                `;
+            }
+            html += `
+                    </div>
+                </div>
+            `;
+        }
+
+        html += `</div>`;
+
+        worldStateArea.innerHTML = html;
+        lucide.createIcons();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // 아이콘 초기화
+        lucide.createIcons();
+
+        // 모델 버전 초기화 (가장 먼저 실행)
+        const providerSelect = document.getElementById('provider-select');
+        const modelVersionSelect = document.getElementById('model-version-select');
+
+        if (providerSelect && modelVersionSelect) {
+            // 이전에 저장된 제공사 복원
+            const savedProvider = sessionStorage.getItem(MODEL_PROVIDER_KEY);
+            if (savedProvider) {
+                providerSelect.value = savedProvider;
+            }
+
+            // 모델 버전 옵션 초기화
+            updateModelVersions();
+
+            // 제공사 변경 시 처리
+            providerSelect.addEventListener('change', function() {
+                updateModelVersions();
+                console.log('🤖 제공사 변경됨:', this.value);
+            });
+
+            // 모델 버전 변경 시 저장
+            modelVersionSelect.addEventListener('change', function() {
+                sessionStorage.setItem(MODEL_VERSION_KEY, this.value);
+                console.log('🤖 모델 저장됨:', this.value);
+            });
+        } else {
+            console.error('❌ 모델 선택 요소를 찾을 수 없습니다:', { providerSelect, modelVersionSelect });
+        }
+
+        // 채팅 로그 복원
+        restoreChatLog();
+
+        // [수정] 디버그 모드 상태 복원 (localStorage로 변경)
+        const savedDebugMode = localStorage.getItem(DEBUG_MODE_KEY);
+        const debugIcon = document.getElementById('debug-icon');
+        if (savedDebugMode === 'true') {
+            const debugInfoArea = document.getElementById('debug-info-area');
+            if (debugInfoArea) {
+                debugInfoArea.classList.remove('hidden');
+                if (debugIcon) {
+                    debugIcon.classList.remove('text-gray-500');
+                    debugIcon.classList.add('text-indigo-400');
+                }
+
+                // [개선] 저장된 디버그 컨텐츠가 있으면 먼저 복원
+                const savedDebugContent = sessionStorage.getItem(DEBUG_CONTENT_KEY);
+                if (savedDebugContent) {
+                    try {
+                        const debugData = JSON.parse(savedDebugContent);
+                        if (debugData.npc) {
+                            document.getElementById('npc-status-area').innerHTML = debugData.npc;
+                        }
+                        if (debugData.worldState) {
+                            document.getElementById('world-state-area').innerHTML = debugData.worldState;
+                        }
+                    } catch (e) {
+                        console.error('Failed to restore debug content:', e);
+                    }
+                }
+
+                // 저장된 스탯이 있으면 디버그 정보 업데이트
+                const savedStats = sessionStorage.getItem(STATS_KEY);
+                if (savedStats) {
+                    try {
+                        updateDebugInfo(JSON.parse(savedStats));
+                    } catch (e) {
+                        console.error('Failed to parse stats:', e);
+                    }
+                }
+            }
+            lucide.createIcons();
+        }
+
+        const form = document.getElementById('game-form');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                if (isGameEnded) return;
+                const input = form.querySelector('input[name="action"]');
+                if (input.value.trim()) submitWithStreaming(input.value.trim());
+            });
+        }
+
+        // 아이콘 재생성 (모든 초기화 후)
         setTimeout(() => {
-            const npcArea = document.getElementById('npc-status-area');
-            const worldStateArea = document.getElementById('world-state-area');
+            lucide.createIcons();
+        }, 100);
+    });
 
-            if (npcArea && !npcArea.innerHTML.trim()) {
-                npcArea.innerHTML = `
-                    <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
-                        NPC 데이터 없음
-                    </div>
-                `;
-            }
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'init-result') {
+            closeLoadModal();
+            clearChatLog();
+            isGameEnded = false;
+            enableGameUI();
+            const chatLog = document.getElementById('chat-log');
+            Array.from(chatLog.children).forEach(child => {
+                if (child.id !== 'init-result' && child.id !== 'ai-loading') child.remove();
+            });
+        }
+    });
 
-            if (worldStateArea && !worldStateArea.innerHTML.trim()) {
-                worldStateArea.innerHTML = `
-                    <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
-                        World State 데이터 없음
-                    </div>
-                `;
+    lucide.createIcons();
+
+    // 사이드바 로직
+    (function() {
+        const sidebar = document.querySelector('.sidebar');
+        const SIDEBAR_STATE_KEY = 'sidebar_expanded';
+        let isRestoredState = false;
+
+        if (sessionStorage.getItem(SIDEBAR_STATE_KEY) === 'true') {
+            sidebar.style.transition = 'none';
+            sidebar.classList.add('expanded');
+            isRestoredState = true;
+            sessionStorage.removeItem(SIDEBAR_STATE_KEY);
+            requestAnimationFrame(() => requestAnimationFrame(() => sidebar.style.transition = ''));
+        }
+
+        if (isRestoredState) {
+            setTimeout(() => {
+                const checkMousePosition = (e) => {
+                    const rect = sidebar.getBoundingClientRect();
+                    const isInsideSidebar = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+                    if (!isInsideSidebar) sidebar.classList.remove('expanded');
+                    document.removeEventListener('mousemove', checkMousePosition);
+                };
+                document.addEventListener('mousemove', checkMousePosition, { once: true });
+            }, 100);
+        }
+
+        sidebar.querySelectorAll('a[href], button').forEach(link => {
+            link.addEventListener('click', function(e) {
+                if (this.tagName === 'A' && this.href) {
+                    sessionStorage.setItem(SIDEBAR_STATE_KEY, 'true');
+                    sidebar.classList.add('expanded');
+                }
+            });
+        });
+        sidebar.addEventListener('mouseleave', () => sidebar.classList.remove('expanded'));
+    })();
+
+    function openLoadModal() {
+        const modal = document.getElementById('load-modal');
+        if (modal) {
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+            const sortSelect = document.getElementById('scenario-sort');
+            const sortValue = sortSelect ? sortSelect.value : 'newest';
+            htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, {target: '#scenario-list-container', swap: 'innerHTML'});
+        }
+    }
+
+    function closeLoadModal() {
+        const modal = document.getElementById('load-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+        }
+    }
+
+    function reloadScenarioList() {
+        const sortSelect = document.getElementById('scenario-sort');
+        const sortValue = sortSelect ? sortSelect.value : 'newest';
+        htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, {target: '#scenario-list-container', swap: 'innerHTML'});
+    }
+
+    // 시나리오 플레이 함수
+    async function playScenario(filename, btn) {
+        // 이미 게임이 진행 중이라면 경고
+        const savedLog = sessionStorage.getItem(CHAT_LOG_KEY);
+        if (savedLog && savedLog.length > 0) {
+            if (!confirm('현재 진행 중인 시나리오가 있습니다.\n새 시나리오를 불러오면 진행 내역이 초기화됩니다.\n계속하시겠습니까?')) {
+                return;
             }
-        }, 10);
+        }
+
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 로딩...';
+        btn.disabled = true;
+        lucide.createIcons();
+
+        try {
+            const formData = new FormData();
+            formData.append('filename', filename);
+
+            const res = await fetch('/api/load_scenario', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (res.ok) {
+                // 이전 게임 상태 완전히 초기화
+                clearAllGameState();
+
+                // 새 시나리오 로드 상태 설정
+                sessionStorage.setItem(SCENARIO_LOADED_KEY, 'true');
+                sessionStorage.setItem(CURRENT_SCENARIO_KEY, filename);
+
+                // 내부 네비게이션으로 설정 (beforeunload 경고 방지)
+                isInternalNavigation = true;
+
+                closeLoadModal();
+
+                // UI 초기화 후 새로고침 대신 직접 초기화
+                resetGameUI();
+                showToast('시나리오가 로드되었습니다!', 'success');
+            } else {
+                const text = await res.text();
+                showToast('로드 실패: ' + text, 'error');
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        } catch (e) {
+            console.error(e);
+            showToast('오류가 발생했습니다.', 'error');
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    // 게임 UI 초기화 함수 (새로고침 없이)
+    function resetGameUI() {
+        const chatLog = document.getElementById('chat-log');
+        const initResult = document.getElementById('init-result');
+        const aiLoading = document.getElementById('ai-loading');
+        const statsArea = document.getElementById('player-stats-area');
+
+        // 채팅 로그 초기화
+        chatLog.innerHTML = '';
+        chatLog.appendChild(initResult);
+
+        // 로드 완료 메시지 표시
+        initResult.innerHTML = `
+        <div class="bg-green-900/30 border border-green-800 text-green-400 p-4 rounded-lg flex items-center gap-3 fade-in mt-4">
+            <i data-lucide="check-circle" class="w-6 h-6"></i>
+            <div>
+                <div class="font-bold">로드 완료!</div>
+                <div class="text-sm opacity-80">아래 버튼을 클릭하거나 채팅창에 "시작"을 입력하세요.</div>
+            </div>
+        </div>
+        <button onclick="submitGameAction('시작')"
+                class="mt-3 w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shadow-lg">
+            <i data-lucide="play" class="w-5 h-5"></i>
+            게임 시작하기
+        </button>
+        `;
+
+        chatLog.appendChild(aiLoading);
+
+        // 스탯 영역 초기화
+        if (statsArea) {
+            statsArea.innerHTML = `
+            <div class="text-gray-500 text-sm text-center py-4 bg-gray-800/50 rounded-lg border border-gray-700 border-dashed">
+                <i data-lucide="ghost" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
+                데이터 없음<br>
+                <span class="text-xs">게임을 시작하면 표시됩니다.</span>
+            </div>
+            `;
+        }
+
+        // 상태 초기화
+        isGameEnded = false;
+        hasGameStarted = false;
+
+        // UI 활성화
+        enableGameUI();
 
         lucide.createIcons();
+    }
+
+    // 시나리오 삭제 함수
+    async function deleteScenario(filename, title, btnElement) {
+        if (!confirm(`"${title}" 시나리오를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/delete_scenario', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: filename })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                const card = btnElement.closest('.bg-gray-800, .bg-rpg-800');
+                if (card) {
+                    card.style.transition = 'opacity 0.3s, transform 0.3s';
+                    card.style.opacity = '0';
+                    card.style.transform = 'scale(0.9)';
+                    setTimeout(() => {
+                        card.remove();
+                        const container = document.getElementById('scenario-list-container');
+                        if (container && container.children.length === 0) {
+                            container.innerHTML = '<div class="col-span-1 md:col-span-2 text-center text-gray-500 py-8">저장된 시나리오가 없습니다.</div>';
+                        }
+                    }, 300);
+                }
+                showToast('시나리오가 삭제되었습니다.', 'success');
+            } else {
+                showToast('삭제 실패: ' + (result.error || '알 수 없는 오류'), 'error');
+            }
+        } catch (error) {
+            console.error('Delete error:', error);
+            showToast('삭제 중 오류가 발생했습니다.', 'error');
+        }
+    }
+
+    // 시나리오 공개/비공개 토글 함수
+    async function publishScenario(filename, btnElement) {
+        const card = btnElement.closest('.bg-gray-800');
+        const statusBadge = card.querySelector('span[class*="bg-green-900"], span[class*="bg-gray-700"]');
+        const currentStatus = statusBadge.textContent.trim();
+        const isCurrentlyPublic = currentStatus === 'PUBLIC';
+
+        try {
+            const response = await fetch('/api/publish_scenario', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: filename })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // UI 즉시 업데이트
+                if (isCurrentlyPublic) {
+                    // PUBLIC -> PRIVATE
+                    statusBadge.className = 'ml-2 text-[10px] bg-gray-700 text-gray-300 px-1 rounded';
+                    statusBadge.textContent = 'PRIVATE';
+                } else {
+                    // PRIVATE -> PUBLIC
+                    statusBadge.className = 'ml-2 text-[10px] bg-green-900 text-green-300 px-1 rounded';
+                    statusBadge.textContent = 'PUBLIC';
+                }
+
+                // 성공 메시지 표시
+                showToast(result.message || '상태가 변경되었습니다.', 'success');
+            } else {
+                showToast('변경 실패: ' + (result.error || '알 수 없는 오류'), 'error');
+            }
+        } catch (error) {
+            console.error('Publish error:', error);
+            showToast('처리 중 오류가 발생했습니다.', 'error');
+        }
+    }
+
+    // 토스트 메시지 표시 함수
+    function showToast(message, type = 'info') {
+        const bgColor = type === 'success' ? 'bg-green-900/90 border-green-500/30 text-green-100' :
+                       type === 'error' ? 'bg-red-900/90 border-red-500/30 text-red-100' :
+                       'bg-blue-900/90 border-blue-500/30 text-blue-100';
+
+        const icon = type === 'success' ? 'check-circle' :
+                    type === 'error' ? 'alert-circle' : 'info';
+
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-4 right-4 z-[100] ${bgColor} border px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3`;
+        toast.innerHTML = `
+            <i data-lucide="${icon}" class="w-5 h-5"></i>
+            <span class="font-medium">${message}</span>
+        `;
+
+        document.body.appendChild(toast);
+        lucide.createIcons();
+
+        setTimeout(() => {
+            toast.style.transition = 'opacity 0.3s, transform 0.3s';
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(10px)';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    // 시나리오 편집 함수 (비주얼 에디터로 이동)
+    function editScenario(filename) {
+        // 모달 닫기
+        closeLoadModal();
+        // 비주얼 에디터로 이동
+        isInternalNavigation = true;
+        window.location.href = `/views/scenes/edit/${filename}`;
+    }
+
+    // 모델 버전 업데이트 함수
+    function updateModelVersions() {
+        const providerSelect = document.getElementById('provider-select');
+        const modelVersionSelect = document.getElementById('model-version-select');
+
+        const provider = providerSelect.value;
+
+        // 기본 옵션 지우기
+        modelVersionSelect.innerHTML = '';
+
+        // 제공사에 따른 모델 버전 추가
+        let options = [];
+        switch (provider) {
+            case 'google':
+                options = [
+                    { value: 'openai/google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash (1M)' },
+                    { value: 'openai/google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite (1M)' },
+                    { value: 'openai/google/gemini-2.5-flash', label: 'Gemini 2.5 Flash (1M)' },
+                    { value: 'openai/google/gemini-3-flash-preview', label: 'Gemini 3 Flash Preview (1M)' },
+                    { value: 'openai/google/gemini-3-pro-preview', label: 'Gemini 3 Pro Preview (1M)' }
+                ];
+                break;
+            case 'anthropic':
+                options = [
+                    { value: 'openai/anthropic/claude-3.5-haiku', label: 'Claude 3.5 Haiku (200K)' },
+                    { value: 'openai/anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet (200K)' },
+                    { value: 'openai/anthropic/claude-sonnet-4', label: 'Claude Sonnet 4 (200K)' },
+                    { value: 'openai/anthropic/claude-haiku-4.5', label: 'Claude Haiku 4.5 (200K)' },
+                    { value: 'openai/anthropic/claude-sonnet-4.5', label: 'Claude Sonnet 4.5 (200K)' },
+                    { value: 'openai/anthropic/claude-opus-4.5', label: 'Claude Opus 4.5 (200K)' }
+                ];
+                break;
+            case 'openai':
+                options = [
+                    { value: 'openai/openai/gpt-4o-mini', label: 'GPT-4o Mini (128K)' },
+                    { value: 'openai/openai/gpt-4o', label: 'GPT-4o (128K)' },
+                    { value: 'openai/openai/gpt-5-mini', label: 'GPT-5 Mini (1M)' },
+                    { value: 'openai/openai/gpt-5.2', label: 'GPT-5.2 (1M)' }
+                ];
+                break;
+            case 'deepseek':
+                options = [
+                    { value: 'openai/tngtech/deepseek-r1t2-chimera:free', label: 'R1 Chimera (Free) ⭐' },
+                    { value: 'openai/deepseek/deepseek-chat-v3-0324', label: 'DeepSeek Chat V3 (128K)' },
+                    { value: 'openai/deepseek/deepseek-v3.2', label: 'DeepSeek V3.2 (128K)' }
+                ];
+                break;
+            case 'meta':
+                options = [
+                    { value: 'openai/meta-llama/llama-3.1-8b-instruct', label: 'Llama 3.1 8B (128K)' },
+                    { value: 'openai/meta-llama/llama-3.1-405b-instruct:free', label: 'Llama 3.1 405B (Free) ⭐' },
+                    { value: 'openai/meta-llama/llama-3.1-405b-instruct', label: 'Llama 3.1 405B (128K)' },
+                    { value: 'openai/meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 70B (Free) ⭐' },
+                    { value: 'openai/meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B (128K)' }
+                ];
+                break;
+            case 'xai':
+                options = [
+                    { value: 'openai/x-ai/grok-code-fast-1', label: 'Grok Code Fast 1 (128K)' },
+                    { value: 'openai/x-ai/grok-4-fast', label: 'Grok 4 Fast 128K' },
+                    { value: 'openai/x-ai/grok-vision-1', label: 'Grok Vision 1 (128K)' }
+                ];
+                break;
+            case 'mistral':
+                options = [
+                    { value: 'openai/mistralai/mistral-7b-instruct', label: 'Mistral 7B Instruct (32K)' },
+                    { value: 'openai/mistralai/mixtral-8x7b-instruct', label: 'Mixtral 8x7B Instruct (32K)' }
+                ];
+                break;
+            case 'xiaomi':
+                options = [
+                    { value: 'openai/xiaomi/minicpm-v-2.6-instruct', label: 'MiniCPM V 2.6 Instruct (32K)' }
+                ];
+                break;
+            default:
+                options = [{ value: 'openai/tngtech/deepseek-r1t2-chimera:free', label: 'R1 Chimera (Free) ⭐' }];
+        }
+
+        // 옵션 추가
+        options.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt.value;
+            option.textContent = opt.label;
+            modelVersionSelect.appendChild(option);
+        });
+
+        // 이전에 저장된 모델 버전 복원 (같은 제공사인 경우)
+        const savedModelVersion = sessionStorage.getItem(MODEL_VERSION_KEY);
+        if (savedModelVersion && Array.from(modelVersionSelect.options).some(opt => opt.value === savedModelVersion)) {
+            modelVersionSelect.value = savedModelVersion;
+        }
+
+        // 제공사 선택 저장 (옵션 추가 후에 저장)
+        sessionStorage.setItem(MODEL_PROVIDER_KEY, provider);
     }
 </script>
 
