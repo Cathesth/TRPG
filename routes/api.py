@@ -3,6 +3,7 @@ import json
 import logging
 import time
 import threading
+import glob  # <--- 이 줄을 추가해주세요!
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, APIRouter, Request, Depends, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
@@ -188,6 +189,11 @@ async def reset_build_progress():
 # ==========================================
 # [API 라우트] 시나리오 관리 (CRUD)
 # ==========================================
+# [교체] routes/api.py -> list_scenarios 함수
+
+# ==========================================
+# [API 라우트] 시나리오 관리 (CRUD)
+# ==========================================
 @api_router.get('/scenarios', response_class=HTMLResponse)
 async def list_scenarios(
         request: Request,
@@ -262,7 +268,6 @@ async def list_scenarios(
         </div>
         """
     return html + '<script>lucide.createIcons();</script>'
-
 
 
 @api_router.get('/scenarios/data')
