@@ -655,9 +655,6 @@ def rule_node(state: PlayerState):
             world_state.location = next_id
             logger.info(f"👣 [MOVE] {curr_scene_id} -> {next_id}")
 
-    # 턴 증가
-    world_state.increment_turn()
-
     # 엔딩 체크
     if state['current_scene_id'] in all_endings:
         ending = all_endings[state['current_scene_id']]
@@ -923,6 +920,33 @@ def check_npc_appearance(state: PlayerState) -> str:
 
 
 def narrator_node(state: PlayerState):
+    """
+    내레이션 노드 - 모든 액션의 마지막에 실행됨
+    턴 증가 로직을 여기서 처리 (게임 시작이 아닐 때만)
+    """
+    # WorldState 인스턴스 가져오기 및 복원
+    scenario_id = state.get('scenario_id')
+    world_state = WorldState()
+
+    # 기존 world_state가 있으면 복원
+    if 'world_state' in state and state['world_state']:
+        world_state.from_dict(state['world_state'])
+    else:
+        # 처음 생성하는 경우 시나리오로 초기화
+        scenario = get_scenario_by_id(scenario_id)
+        world_state.initialize_from_scenario(scenario)
+
+    # 턴 증가 (게임 시작이 아닐 때만)
+    is_game_start = state.get('is_game_start', False)
+    if not is_game_start:
+        world_state.increment_turn()
+        logger.info(f"⏱️ [TURN] Turn count increased to {world_state.turn_count}")
+    else:
+        logger.info(f"⏱️ [TURN] Game start - turn count not increased (current: {world_state.turn_count})")
+
+    # WorldState 스냅샷 저장
+    state['world_state'] = world_state.to_dict()
+
     return state
 
 

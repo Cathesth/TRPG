@@ -201,12 +201,14 @@ async def game_act_stream(
                 logger.info(f"🎮 [GAME START] Start Scene: {start_scene_id}")
                 current_state['current_scene_id'] = start_scene_id
                 current_state['system_message'] = 'Game Started'
+                current_state['is_game_start'] = True  # 게임 시작 플래그 추가
 
                 # [FIX] 게임 시작 시에도 location을 start_scene_id로 설정
                 world_state_instance.location = start_scene_id
             else:
                 # 일반 턴: LangGraph 실행
                 logger.info(f"🎮 Action: {action_text}")
+                current_state['is_game_start'] = False  # 일반 액션 플래그 추가
                 processed_state = game_state.game_graph.invoke(current_state)
                 game_state.state = processed_state
 
