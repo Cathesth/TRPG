@@ -756,14 +756,10 @@
                                 case 'world_state':
                                     // WorldState 정보 업데이트
                                     updateWorldState(data.content);
-                                    // [FIX] 즉시 저장
-                                    saveDebugContent();
                                     break;
                                 case 'npc_status':
                                     // NPC 상태 정보 업데이트
                                     updateNPCStatus(data.content);
-                                    // [FIX] 즉시 저장
-                                    saveDebugContent();
                                     break;
                                 case 'session_key':
                                     // 세션 키 저장 (localStorage에 영구 저장)
@@ -1015,9 +1011,6 @@
     function updateDebugInfo(statsData) {
         updateNPCStatus(statsData);
         updateWorldState(statsData);
-
-        // [FIX] 디버그 컨텐츠 즉시 저장
-        saveDebugContent();
     }
 
 
@@ -1276,31 +1269,8 @@
                     debugIcon.classList.add('text-indigo-400');
                 }
 
-                // [개선] 저장된 디버그 컨텐츠가 있으면 먼저 복원
-                const savedDebugContent = sessionStorage.getItem(DEBUG_CONTENT_KEY);
-                if (savedDebugContent) {
-                    try {
-                        const debugData = JSON.parse(savedDebugContent);
-                        if (debugData.npc) {
-                            document.getElementById('npc-status-area').innerHTML = debugData.npc;
-                        }
-                        if (debugData.worldState) {
-                            document.getElementById('world-state-area').innerHTML = debugData.worldState;
-                        }
-                    } catch (e) {
-                        console.error('Failed to restore debug content:', e);
-                    }
-                }
-
-                // 저장된 스탯이 있으면 디버그 정보 업데이트
-                const savedStats = sessionStorage.getItem(STATS_KEY);
-                if (savedStats) {
-                    try {
-                        updateDebugInfo(JSON.parse(savedStats));
-                    } catch (e) {
-                        console.error('Failed to parse stats:', e);
-                    }
-                }
+                // [FIX] DB에서 데이터 불러오기
+                fetchGameDataFromDB();
             }
             lucide.createIcons();
         }
