@@ -9,7 +9,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family:Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
@@ -581,266 +581,277 @@
 </div>
 
 <!-- Mermaid JS Load -->
-<script type="module">
-    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+<script>
+    // DOMContentLoaded 이벤트로 초기화 지연
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('[Mermaid] DOM loaded, initializing...');
 
-    mermaid.initialize({
-        startOnLoad: false,
-        theme: 'dark',
-        securityLevel: 'loose',
-        flowchart: {
-            useMaxWidth: false,
-            htmlLabels: true,
-            curve: 'basis'
-        },
-        themeVariables: {
-            darkMode: true,
-            background: '#111827',
-            primaryColor: '#312e81',
-            primaryTextColor: '#e0e7ff',
-            primaryBorderColor: '#4c1d95',
-            lineColor: '#6366f1',
-            secondaryColor: '#831843',
-            tertiaryColor: '#0f766e'
-        }
-    });
-
-    // Mermaid 인스턴스를 전역으로 저장 (리렌더링용)
-    window.mermaidInstance = mermaid;
-
-    window.panZoomState = {
-        scale: 1,
-        panning: false,
-        pointX: 0,
-        pointY: 0,
-        startX: 0,
-        startY: 0
-    };
-
-    async function renderGraph() {
-        console.log('[Mermaid] Starting graph render...');
-        const element = document.querySelector('#mermaid-graph');
-        if (!element) {
-            console.error('[Mermaid] Graph element not found!');
+        if (typeof mermaid === 'undefined') {
+            console.error('[Mermaid] Mermaid library not loaded!');
             return;
         }
 
-        console.log('[Mermaid] Element found:', element);
-        console.log('[Mermaid] Content length:', element.textContent.trim().length);
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'dark',
+            securityLevel: 'loose',
+            flowchart: {
+                useMaxWidth: false,
+                htmlLabels: true,
+                curve: 'basis'
+            },
+            themeVariables: {
+                darkMode: true,
+                background: '#111827',
+                primaryColor: '#312e81',
+                primaryTextColor: '#e0e7ff',
+                primaryBorderColor: '#4c1d95',
+                lineColor: '#6366f1',
+                secondaryColor: '#831843',
+                tertiaryColor: '#0f766e'
+            }
+        });
 
-        // 콘텐츠가 비어있는지 확인
-        if (!element.textContent.trim()) {
-            console.error('[Mermaid] No mermaid code to render!');
-            element.innerHTML = `<div class='text-red-500 p-4'>그래프 데이터가 없습니다. 시나리오를 먼저 로드하세요.</div>`;
-            element.classList.remove('opacity-0');
-            return;
-        }
+        console.log('[Mermaid] Initialized successfully');
 
-        if (element) {
-            try {
-                console.log('[Mermaid] Running mermaid.run()...');
-                // Mermaid 렌더링 실행
-                await mermaid.run({ nodes: [element] });
-                console.log('[Mermaid] Render successful!');
+        // Mermaid 인스턴스를 전역으로 저장 (리렌더링용)
+        window.mermaidInstance = mermaid;
 
-                // opacity 애니메이션으로 부드럽게 표시
-                setTimeout(() => {
+        window.panZoomState = {
+            scale: 1,
+            panning: false,
+            pointX: 0,
+            pointY: 0,
+            startX: 0,
+            startY: 0
+        };
+
+        async function renderGraph() {
+            console.log('[Mermaid] Starting graph render...');
+            const element = document.querySelector('#mermaid-graph');
+            if (!element) {
+                console.error('[Mermaid] Graph element not found!');
+                return;
+            }
+
+            console.log('[Mermaid] Element found:', element);
+            console.log('[Mermaid] Content length:', element.textContent.trim().length);
+
+            // 콘텐츠가 비어있는지 확인
+            if (!element.textContent.trim()) {
+                console.error('[Mermaid] No mermaid code to render!');
+                element.innerHTML = `<div class='text-red-500 p-4'>그래프 데이터가 없습니다. 시나리오를 먼저 로드하세요.</div>`;
+                element.classList.remove('opacity-0');
+                return;
+            }
+
+            if (element) {
+                try {
+                    console.log('[Mermaid] Running mermaid.run()...');
+                    // Mermaid 렌더링 실행
+                    await mermaid.run({ nodes: [element] });
+                    console.log('[Mermaid] Render successful!');
+
+                    // opacity 애니메이션으로 부드럽게 표시
+                    setTimeout(() => {
+                        element.classList.remove('opacity-0');
+                    }, 100);
+
+                    const svg = element.querySelector('svg');
+                    if (svg) {
+                        svg.style.maxWidth = 'none';
+                        svg.style.height = 'auto';
+                        svg.style.display = 'block';
+                        console.log('[Mermaid] SVG styles applied');
+                    }
+
+                    // 현재 씬 하이라이트 처리
+                    setTimeout(() => {
+                        highlightCurrentScene();
+                    }, 200);
+
+                    // 편집 모드가 활성화되어 있으면 클릭 핸들러 설정
+                    {% if edit_mode %}
+                    if (typeof setupNodeClickHandlers === 'function') {
+                        setTimeout(() => {
+                            setupNodeClickHandlers();
+                        }, 300);
+                    }
+                    {% endif %}
+                } catch (err) {
+                    console.error("[Mermaid] Render Failed:", err);
+                    element.innerHTML = `<div class='text-red-500 p-4 bg-red-900/20 rounded-lg border border-red-500/30'>
+                        <h3 class='font-bold mb-2'>그래프 렌더링 실패</h3>
+                        <p class='text-sm'>${err.message || err}</p>
+                        <p class='text-xs text-gray-400 mt-2'>콘솔을 확인하세요.</p>
+                    </div>`;
                     element.classList.remove('opacity-0');
-                }, 100);
+                }
+            }
+        }
 
-                const svg = element.querySelector('svg');
+        // 현재 씬을 Mermaid 그래프에서 하이라이트
+        function highlightCurrentScene() {
+            const currentSceneId = '{{ current_scene_id }}';
+            if (!currentSceneId) return;
+
+            console.log('[Highlight] Current Scene ID:', currentSceneId);
+
+            // Mermaid 그래프에서 현재 씬 노드 찾기
+            const svg = document.querySelector('#mermaid-graph svg');
+            if (!svg) return;
+
+            // 모든 노드 그룹 확인
+            const allNodes = svg.querySelectorAll('.node');
+            console.log('[Highlight] Total nodes found:', allNodes.length);
+
+            allNodes.forEach(node => {
+                // 노드의 ID 확인 (Mermaid는 flowchart-{원본ID}-{숫자} 형식으로 생성)
+                const nodeId = node.getAttribute('id') || '';
+
+                // nodeId에서 실제 scene_id 추출
+                let extractedId = '';
+                const lastDashIndex = nodeId.lastIndexOf('-');
+                if (lastDashIndex > 0) {
+                    const afterLastDash = nodeId.substring(lastDashIndex + 1);
+                    if (/^\d+$/.test(afterLastDash)) {
+                        extractedId = nodeId.substring(0, lastDashIndex).replace(/^flowchart-/, '');
+                    }
+                }
+
+                if (!extractedId) {
+                    const match = nodeId.match(/flowchart-(.+)-\d+$/);
+                    extractedId = match ? match[1] : '';
+                }
+
+                console.log('[Highlight] Node ID:', nodeId, '→ Extracted:', extractedId);
+
+                // 프롤로그 체크
+                const isPrologueNode = extractedId.toUpperCase() === 'PROLOGUE';
+                const isCurrentPrologue = currentSceneId.toLowerCase() === 'prologue' && isPrologueNode;
+
+                // 정확한 매칭 (부분 문자열이 아닌 완전 일치)
+                const isCurrentScene = extractedId === currentSceneId;
+
+                if (isCurrentPrologue || isCurrentScene) {
+                    console.log('[Highlight] ✅ MATCHED! Node:', nodeId, 'Scene:', currentSceneId);
+
+                    // rect나 polygon 요소 찾기
+                    const rect = node.querySelector('rect') || node.querySelector('polygon');
+                    if (rect) {
+                        // 현재 씬 하이라이트 스타일 직접 적용 (SVG 속성으로)
+                        rect.setAttribute('stroke', '#22d3ee');
+                        rect.setAttribute('stroke-width', '3');
+                        rect.setAttribute('fill', '#164e63');
+
+                        // opacity 애니메이션 추가 (깜빡임 효과)
+                        const animate = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+                        animate.setAttribute('attributeName', 'opacity');
+                        animate.setAttribute('values', '1;0.6;1');
+                        animate.setAttribute('dur', '2s');
+                        animate.setAttribute('repeatCount', 'indefinite');
+                        rect.appendChild(animate);
+                    }
+                }
+            });
+        }
+
+        window.updateTransform = function() {
+            const inner = document.getElementById('graph-inner');
+            if(inner) {
+                inner.style.transform = `translate(${window.panZoomState.pointX}px, ${window.panZoomState.pointY}px) scale(${window.panZoomState.scale})`;
+            }
+        }
+
+        window.zoomGraph = function(delta) {
+            window.panZoomState.scale += delta;
+            if (window.panZoomState.scale < 0.1) window.panZoomState.scale = 0.1;
+            if (window.panZoomState.scale > 5) window.panZoomState.scale = 5;
+            window.updateTransform();
+        }
+
+        window.resetZoom = function() {
+            window.panZoomState = { scale: 1, panning: false, pointX: 0, pointY: 0, startX: 0, startY: 0 };
+            window.updateTransform();
+        }
+
+        const container = document.getElementById('graph-container');
+
+        container.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            window.panZoomState.startX = e.clientX - window.panZoomState.pointX;
+            window.panZoomState.startY = e.clientY - window.panZoomState.pointY;
+            window.panZoomState.panning = true;
+            container.style.cursor = 'grabbing';
+        });
+
+        document.addEventListener('mouseup', function(e) {
+            window.panZoomState.panning = false;
+            container.style.cursor = 'grab';
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!window.panZoomState.panning) return;
+            e.preventDefault();
+            window.panZoomState.pointX = e.clientX - window.panZoomState.startX;
+            window.panZoomState.pointY = e.clientY - window.panZoomState.startY;
+            window.updateTransform();
+        });
+
+        container.addEventListener('wheel', function(e) {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.1 : 0.1;
+            window.zoomGraph(delta);
+        }, { passive: false });
+
+        // ========== 실시간 차트 리렌더링 함수 ==========
+        window.rerenderMermaidChart = async function(newMermaidCode) {
+            const graphInner = document.getElementById('graph-inner');
+            if (!graphInner) return;
+
+            // 기존 pan/zoom 상태 저장
+            const savedState = { ...window.panZoomState };
+
+            // 새 Mermaid 코드로 요소 교체
+            const newElement = document.createElement('pre');
+            newElement.className = 'mermaid opacity-0 transition-opacity duration-500';
+            newElement.id = 'mermaid-graph';
+            newElement.textContent = newMermaidCode;
+
+            // 기존 요소 교체
+            graphInner.innerHTML = '';
+            graphInner.appendChild(newElement);
+
+            try {
+                await window.mermaidInstance.run({ nodes: [newElement] });
+                newElement.classList.remove('opacity-0');
+
+                const svg = newElement.querySelector('svg');
                 if (svg) {
                     svg.style.maxWidth = 'none';
                     svg.style.height = 'auto';
-                    svg.style.display = 'block';
-                    console.log('[Mermaid] SVG styles applied');
                 }
 
-                // 현재 씬 하이라이트 처리
-                setTimeout(() => {
-                    highlightCurrentScene();
-                }, 200);
+                // pan/zoom 상태 복원
+                window.panZoomState = savedState;
+                window.updateTransform();
 
-                // 편집 모드가 활성화되어 있으면 클릭 핸들러 설정
-                {% if edit_mode %}
-                if (typeof setupNodeClickHandlers === 'function') {
-                    setTimeout(() => {
-                        setupNodeClickHandlers();
-                    }, 300);
+                // 편집 모드면 클릭 핸들러 재설정
+                if (typeof isEditModeActive !== 'undefined' && isEditModeActive) {
+                    setupNodeClickHandlers();
                 }
-                {% endif %}
+
+                console.log('[Mermaid] Chart re-rendered successfully');
             } catch (err) {
-                console.error("[Mermaid] Render Failed:", err);
-                element.innerHTML = `<div class='text-red-500 p-4 bg-red-900/20 rounded-lg border border-red-500/30'>
-                    <h3 class='font-bold mb-2'>그래프 렌더링 실패</h3>
-                    <p class='text-sm'>${err.message || err}</p>
-                    <p class='text-xs text-gray-400 mt-2'>콘솔을 확인하세요.</p>
-                </div>`;
-                element.classList.remove('opacity-0');
+                console.error('[Mermaid] Re-render failed:', err);
+                newElement.innerHTML = `<div class='text-red-500 p-4'>차트 리렌더링 실패<br><small>${err}</small></div>`;
+                newElement.classList.remove('opacity-0');
             }
-        }
-    }
+        };
 
-    // 현재 씬을 Mermaid 그래프에서 하이라이트
-    function highlightCurrentScene() {
-        const currentSceneId = '{{ current_scene_id }}';
-        if (!currentSceneId) return;
-
-        console.log('[Highlight] Current Scene ID:', currentSceneId);
-
-        // Mermaid 그래프에서 현재 씬 노드 찾기
-        const svg = document.querySelector('#mermaid-graph svg');
-        if (!svg) return;
-
-        // 모든 노드 그룹 확인
-        const allNodes = svg.querySelectorAll('.node');
-        console.log('[Highlight] Total nodes found:', allNodes.length);
-
-        allNodes.forEach(node => {
-            // 노드의 ID 확인 (Mermaid는 flowchart-{원본ID}-{숫자} 형식으로 생성)
-            const nodeId = node.getAttribute('id') || '';
-
-            // nodeId에서 실제 scene_id 추출
-            let extractedId = '';
-            const lastDashIndex = nodeId.lastIndexOf('-');
-            if (lastDashIndex > 0) {
-                const afterLastDash = nodeId.substring(lastDashIndex + 1);
-                if (/^\d+$/.test(afterLastDash)) {
-                    extractedId = nodeId.substring(0, lastDashIndex).replace(/^flowchart-/, '');
-                }
-            }
-
-            if (!extractedId) {
-                const match = nodeId.match(/flowchart-(.+)-\d+$/);
-                extractedId = match ? match[1] : '';
-            }
-
-            console.log('[Highlight] Node ID:', nodeId, '→ Extracted:', extractedId);
-
-            // 프롤로그 체크
-            const isPrologueNode = extractedId.toUpperCase() === 'PROLOGUE';
-            const isCurrentPrologue = currentSceneId.toLowerCase() === 'prologue' && isPrologueNode;
-
-            // 정확한 매칭 (부분 문자열이 아닌 완전 일치)
-            const isCurrentScene = extractedId === currentSceneId;
-
-            if (isCurrentPrologue || isCurrentScene) {
-                console.log('[Highlight] ✅ MATCHED! Node:', nodeId, 'Scene:', currentSceneId);
-
-                // rect나 polygon 요소 찾기
-                const rect = node.querySelector('rect') || node.querySelector('polygon');
-                if (rect) {
-                    // 현재 씬 하이라이트 스타일 직접 적용 (SVG 속성으로)
-                    rect.setAttribute('stroke', '#22d3ee');
-                    rect.setAttribute('stroke-width', '3');
-                    rect.setAttribute('fill', '#164e63');
-
-                    // opacity 애니메이션 추가 (깜빡임 효과)
-                    const animate = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
-                    animate.setAttribute('attributeName', 'opacity');
-                    animate.setAttribute('values', '1;0.6;1');
-                    animate.setAttribute('dur', '2s');
-                    animate.setAttribute('repeatCount', 'indefinite');
-                    rect.appendChild(animate);
-                }
-            }
-        });
-    }
-
-    window.updateTransform = function() {
-        const inner = document.getElementById('graph-inner');
-        if(inner) {
-            inner.style.transform = `translate(${window.panZoomState.pointX}px, ${window.panZoomState.pointY}px) scale(${window.panZoomState.scale})`;
-        }
-    }
-
-    window.zoomGraph = function(delta) {
-        window.panZoomState.scale += delta;
-        if (window.panZoomState.scale < 0.1) window.panZoomState.scale = 0.1;
-        if (window.panZoomState.scale > 5) window.panZoomState.scale = 5;
-        window.updateTransform();
-    }
-
-    window.resetZoom = function() {
-        window.panZoomState = { scale: 1, panning: false, pointX: 0, pointY: 0, startX: 0, startY: 0 };
-        window.updateTransform();
-    }
-
-    const container = document.getElementById('graph-container');
-
-    container.addEventListener('mousedown', function(e) {
-        e.preventDefault();
-        window.panZoomState.startX = e.clientX - window.panZoomState.pointX;
-        window.panZoomState.startY = e.clientY - window.panZoomState.pointY;
-        window.panZoomState.panning = true;
-        container.style.cursor = 'grabbing';
+        // 렌더링 시작
+        renderGraph();
     });
-
-    document.addEventListener('mouseup', function(e) {
-        window.panZoomState.panning = false;
-        container.style.cursor = 'grab';
-    });
-
-    document.addEventListener('mousemove', function(e) {
-        if (!window.panZoomState.panning) return;
-        e.preventDefault();
-        window.panZoomState.pointX = e.clientX - window.panZoomState.startX;
-        window.panZoomState.pointY = e.clientY - window.panZoomState.startY;
-        window.updateTransform();
-    });
-
-    container.addEventListener('wheel', function(e) {
-        e.preventDefault();
-        const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        window.zoomGraph(delta);
-    }, { passive: false });
-
-    // ========== 실시간 차트 리렌더링 함수 ==========
-    window.rerenderMermaidChart = async function(newMermaidCode) {
-        const graphInner = document.getElementById('graph-inner');
-        if (!graphInner) return;
-
-        // 기존 pan/zoom 상태 저장
-        const savedState = { ...window.panZoomState };
-
-        // 새 Mermaid 코드로 요소 교체
-        const newElement = document.createElement('pre');
-        newElement.className = 'mermaid opacity-0 transition-opacity duration-500';
-        newElement.id = 'mermaid-graph';
-        newElement.textContent = newMermaidCode;
-
-        // 기존 요소 교체
-        graphInner.innerHTML = '';
-        graphInner.appendChild(newElement);
-
-        try {
-            await window.mermaidInstance.run({ nodes: [newElement] });
-            newElement.classList.remove('opacity-0');
-
-            const svg = newElement.querySelector('svg');
-            if (svg) {
-                svg.style.maxWidth = 'none';
-                svg.style.height = 'auto';
-            }
-
-            // pan/zoom 상태 복원
-            window.panZoomState = savedState;
-            window.updateTransform();
-
-            // 편집 모드면 클릭 핸들러 재설정
-            if (typeof isEditModeActive !== 'undefined' && isEditModeActive) {
-                setupNodeClickHandlers();
-            }
-
-            console.log('[Mermaid] Chart re-rendered successfully');
-        } catch (err) {
-            console.error('[Mermaid] Re-render failed:', err);
-            newElement.innerHTML = `<div class='text-red-500 p-4'>차트 리렌더링 실패<br><small>${err}</small></div>`;
-            newElement.classList.remove('opacity-0');
-        }
-    };
-
-    renderGraph();
 </script>
 
 <!-- Lucide 아이콘 초기화 -->
