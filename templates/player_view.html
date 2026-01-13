@@ -1203,6 +1203,7 @@
         const day = time.day || 1;
         const phase = time.phase || 'morning';
         const turnCount = worldState.turn_count || 0;
+        const stuckCount = worldState.stuck_count || 0;
         const globalFlags = worldState.global_flags || {};
 
         // 위치 정보 처리: Scene ID와 제목을 함께 표시
@@ -1229,6 +1230,26 @@
         const phaseText = phase === 'morning' ? '아침' :
                          phase === 'afternoon' ? '오후' : '밤';
 
+        // stuck_count에 따른 레벨 텍스트 및 색상
+        let stuckLevelText = '초기 시도';
+        let stuckBarColor = 'bg-green-500';
+        let stuckTextColor = 'text-green-400';
+        let stuckBarWidth = Math.min((stuckCount / 6) * 100, 100); // 최대 6단계로 가정
+
+        if (stuckCount >= 4) {
+            stuckLevelText = '장기 정체 (강한 힌트)';
+            stuckBarColor = 'bg-red-500';
+            stuckTextColor = 'text-red-400';
+        } else if (stuckCount >= 2) {
+            stuckLevelText = '반복 실패 (중간 힌트)';
+            stuckBarColor = 'bg-yellow-500';
+            stuckTextColor = 'text-yellow-400';
+        } else if (stuckCount >= 1) {
+            stuckLevelText = '초기 시도 (약한 힌트)';
+            stuckBarColor = 'bg-green-500';
+            stuckTextColor = 'text-green-400';
+        }
+
         let html = `
             <div class="bg-gray-800/50 rounded p-2 border border-gray-700 space-y-1.5">
                 <div class="flex justify-between items-center">
@@ -1245,6 +1266,18 @@
                 <div class="flex justify-between items-center">
                     <span class="text-gray-400">턴 수:</span>
                     <span class="text-white">${turnCount}</span>
+                </div>
+                <div class="border-t border-gray-700 pt-1.5 mt-1.5">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-gray-400 text-xs">정체 카운트:</span>
+                        <span class="${stuckTextColor} font-bold">${stuckCount}</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden mb-1">
+                        <div class="${stuckBarColor} h-full transition-all duration-300" style="width: ${stuckBarWidth}%"></div>
+                    </div>
+                    <div class="text-[10px] text-gray-500">
+                        힌트 강도: <span class="${stuckTextColor}">${stuckLevelText}</span>
+                    </div>
                 </div>
         `;
 

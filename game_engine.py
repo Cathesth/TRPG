@@ -114,6 +114,7 @@ class PlayerState(TypedDict):
     chat_log_html: str
     near_miss_trigger: str  # [필수] Near Miss 저장용
     model: str  # [추가] 사용 중인 LLM 모델
+    stuck_count: int  # [추가] 정체 상태 카운터 (장면 전환 실패 횟수)
     _internal_flags: Dict[str, Any]  # [추가] 내부 플래그 (UI에 노출 안 됨)
 
 
@@ -576,6 +577,7 @@ def rule_node(state: PlayerState):
     idx = state['last_user_choice_idx']
     scenario_id = state['scenario_id']
     curr_scene_id = state['current_scene_id']
+    prev_scene_id = state.get('previous_scene_id')
 
     all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
     all_endings = {e['ending_id']: e for e in get_scenario_by_id(scenario_id).get('endings', [])}
@@ -594,6 +596,10 @@ def rule_node(state: PlayerState):
         # 처음 생성하는 경우 시나리오로 초기화
         scenario = get_scenario_by_id(scenario_id)
         world_state.initialize_from_scenario(scenario)
+
+    # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
+    if 'stuck_count' not in state:
+        state['stuck_count'] = 0
 
     if state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
         trans = transitions[idx]
@@ -663,7 +669,15 @@ def rule_node(state: PlayerState):
         if next_id:
             state['current_scene_id'] = next_id
             world_state.location = next_id
-            logger.info(f"👣 [MOVE] {curr_scene_id} -> {next_id}")
+
+            # [추가] 장면 전환 성공 시 stuck_count 초기화
+            state['stuck_count'] = 0
+            logger.info(f"👣 [MOVE] {curr_scene_id} -> {next_id} | stuck_count reset to 0")
+    else:
+        # [추가] 장면 전환 실패 (씬 유지) 시 stuck_count 증가
+        if prev_scene_id == curr_scene_id and state.get('last_user_input', '').strip():
+            state['stuck_count'] = state.get('stuck_count', 0) + 1
+            logger.info(f"🔄 [STUCK] Player stuck in scene '{curr_scene_id}' | stuck_count: {state['stuck_count']}")
 
     # 엔딩 체크
     if state['current_scene_id'] in all_endings:
@@ -1223,16 +1237,23 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 if hint_mode_template:
                     player_status = format_player_status(scenario, state.get('player_vars', {}))
 
+                    # [추가] stuck_count를 stuck_level로 전달
+                    stuck_level = state.get('stuck_count', 0)
+
                     hint_prompt = hint_mode_template.format(
                         user_input=user_input,
                         player_status=player_status,
                         scene_title=scene_title,
-                        transitions_hints=transitions_hints
+                        transitions_hints=transitions_hints,
+                        stuck_level=stuck_level
                     )
                     try:
                         api_key = os.getenv("OPENROUTER_API_KEY")
                         model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
                         llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
+
+                        logger.info(f"💡 [HINT MODE] stuck_level: {stuck_level}")
+
                         for chunk in llm.stream(hint_prompt):
                             if chunk.content: yield chunk.content
                         return
