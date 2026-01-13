@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+import os
 
 from core.state import game_state
 from services.mermaid_service import MermaidService
@@ -11,6 +12,9 @@ from routes.auth import get_current_user_optional, get_current_user
 
 views_router = APIRouter(tags=["views"])
 templates = Jinja2Templates(directory="templates")
+
+# 편집 모드 전용 템플릿 (백업 디렉토리 사용)
+backup_templates = Jinja2Templates(directory="backup/TRPG-2026.0109.0-dev")
 
 
 @views_router.get("/", response_class=HTMLResponse)
@@ -119,8 +123,8 @@ async def view_scenes_edit(request: Request, scenario_id: int, user=Depends(get_
     title = scenario_data.get('title', 'Untitled')
     chart_data = MermaidService.generate_chart(scenario_data, None)
 
-    # 4. 백업된 scenes_view.html 렌더링
-    return templates.TemplateResponse("scenes_view.html", {
+    # 4. 백업 디렉토리의 scenes_view.html 사용 (편집 모드 전체 기능)
+    return backup_templates.TemplateResponse("scenes_view.html", {
         "request": request,
         "title": title,
         "scenario": scenario_data,
