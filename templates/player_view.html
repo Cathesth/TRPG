@@ -445,6 +445,25 @@
                 `;
             }
 
+            // 디버그 영역 초기화 (NPC Status, World State)
+            const npcStatusArea = document.getElementById('npc-status-area');
+            if (npcStatusArea) {
+                npcStatusArea.innerHTML = `
+                    <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                        NPC 데이터 없음
+                    </div>
+                `;
+            }
+
+            const worldStateArea = document.getElementById('world-state-area');
+            if (worldStateArea) {
+                worldStateArea.innerHTML = `
+                    <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                        World State 데이터 없음
+                    </div>
+                `;
+            }
+
             // UI 비활성화
             disableGameUI();
         }
