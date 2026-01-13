@@ -993,8 +993,9 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     user_input = state.get('last_user_input', '')
     parsed_intent = state.get('parsed_intent', 'chat')
 
-    all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
-    all_endings = {e['ending_id']: e for e in get_scenario_by_id(scenario_id).get('endings', [])}
+    scenario = get_scenario_by_id(scenario_id)
+    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
+    all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
 
     if curr_id in all_endings:
         ending = all_endings[curr_id]
