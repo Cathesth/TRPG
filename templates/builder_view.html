@@ -38,30 +38,8 @@
 
         // --- 아이콘 컴포넌트 ---
         const Icon = ({ name, size = 18, className = "" }) => {
-            const iconRef = useRef(null);
-
-            useEffect(() => {
-                if (iconRef.current && window.lucide) {
-                    // 기존 내용 제거
-                    iconRef.current.innerHTML = '';
-
-                    // Lucide 아이콘 생성
-                    const icon = document.createElement('i');
-                    icon.setAttribute('data-lucide', name);
-                    iconRef.current.appendChild(icon);
-
-                    // Lucide 초기화
-                    window.lucide.createIcons();
-                }
-            }, [name]);
-
-            return (
-                <span
-                    ref={iconRef}
-                    className={className}
-                    style={{ width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                />
-            );
+            useEffect(() => { lucide.createIcons(); }, [name]);
+            return <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i>;
         };
 
         // --- 공용 모달 ---
@@ -683,4 +661,3 @@
 
 </body>
 </html>
-
