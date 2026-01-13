@@ -18,7 +18,7 @@
                 extend: {
                     colors: {
                         rpg: {
-                            900: '#020617', // Main Background
+                            900: '#020617', // Main Background (Deep Dark)
                             800: '#0f172a', // Card Background
                             700: '#1e293b', // Border
                             accent: '#38bdf8', // Cyan
@@ -44,13 +44,15 @@
         }
     </script>
     <style>
+        /* 배경색 강제 적용 */
         body { background-color: #020617 !important; color: #e2e8f0 !important; font-family: 'Inter', sans-serif; }
+
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .modal { transition: opacity 0.25s ease; }
         body.modal-active { overflow: hidden; }
 
-        /* 카드 디자인 (API 반환용) */
+        /* API 카드 디자인 */
         .scenario-card-base {
             background-color: #0f172a !important;
             border: 1px solid #1e293b !important;
@@ -179,9 +181,9 @@
                      class="horizontal-scroll-container flex overflow-x-auto gap-4 pb-8 no-scrollbar cursor-grab active:cursor-grabbing"
                      hx-get="/api/scenarios?sort=newest&limit=10&filter=public"
                      hx-trigger="load">
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
+                     <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
+                     <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
+                     <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
 
@@ -195,8 +197,8 @@
                      class="horizontal-scroll-container flex overflow-x-auto gap-4 pb-8 no-scrollbar cursor-grab active:cursor-grabbing"
                      hx-get="/api/scenarios?sort=popular&limit=10&filter=public"
                      hx-trigger="load">
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
+                     <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
+                     <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
 
@@ -210,8 +212,8 @@
                      class="horizontal-scroll-container flex overflow-x-auto gap-4 pb-8 no-scrollbar cursor-grab active:cursor-grabbing"
                      hx-get="/api/scenarios?sort=steady&limit=10&filter=public"
                      hx-trigger="load">
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
+                     <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
+                     <div class="bg-gray-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
 
