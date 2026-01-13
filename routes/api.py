@@ -193,44 +193,69 @@ async def reset_build_progress():
 async def list_scenarios(
         request: Request,
         sort: str = Query('newest'),
-        filter: str = Query('public'),  # 기본값 public
+        filter: str = Query('public'),
         limit: int = Query(10),
         user: CurrentUser = Depends(get_current_user_optional)
 ):
     """
-    시나리오 목록 반환 API
-    - filter='all': (수정됨) 공개/비공개 상관없이 모든 시나리오 반환 (메인화면용)
-    - filter='public': 공개된 시나리오만 반환
-    - filter='my': 내 시나리오만 반환
+    시나리오 목록을 HTML 카드 형태로 반환합니다.
+    - filter='all'이면 DB/scenarios 폴더의 모든 파일을 직접 읽어서 반환합니다. (비공개 포함)
     """
 
-    # 1. 필터링 로직 재정의
-    target_user_id = None
-    service_filter_mode = filter
+    file_infos = []
 
-    if filter == 'my':
+    # 1. 데이터 조회 (필터링 로직 수정)
+    if filter == 'all' or filter == 'public':
+        # [핵심] 'all' 또는 'public'이면 폴더 내 모든 파일 직접 조회
+        # 기존 Service 로직이 필터링을 너무 엄격하게 하거나 데이터가 안 보일 수 있으므로 직접 읽기 수행
+        base_path = os.path.join("DB", "scenarios")
+        if not os.path.exists(base_path):
+            os.makedirs(base_path, exist_ok=True)
+
+        json_files = glob.glob(os.path.join(base_path, "*.json"))
+
+        for file_path in json_files:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                    # 파일명 추출 (확장자 제거)
+                    filename = os.path.basename(file_path).replace('.json', '')
+
+                    # 데이터 정리
+                    info = {
+                        'filename': filename,
+                        'title': data.get('title', '제목 없음'),
+                        'desc': data.get('desc', '') or data.get('description', ''),
+                        'author': data.get('author', 'Unknown'),
+                        'created_time': data.get('created_time', os.path.getctime(file_path)),
+                        'image': data.get('image', ''),
+                        'is_public': data.get('is_public', False),
+                        'views': data.get('views', 0),
+                        'clicks': data.get('clicks', 0),
+                        'plays': data.get('plays', 0),
+                        'is_owner': (user.is_authenticated and data.get('author') == user.id)
+                    }
+                    file_infos.append(info)
+            except Exception as e:
+                logger.error(f"Error reading scenario file {file_path}: {e}")
+                continue
+
+    elif filter == 'my':
+        # 내 시나리오는 기존 서비스 로직 이용 (또는 위와 비슷하게 필터링)
         if not user.is_authenticated:
             return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
-        target_user_id = user.id
-    elif filter == 'all':
-        # [핵심] 'all'이면 user_id=None(전체유저) + filter_mode='all'(서비스에서 필터링 건너뛰기 유도)
-        target_user_id = None
-        service_filter_mode = 'all'
-    else:
-        # public 등 그 외
-        target_user_id = None
 
-    # 2. 데이터 조회
-    # limit=None으로 전체 조회 후 파이썬에서 정렬/자르기
-    file_infos = ScenarioService.list_scenarios('newest', target_user_id, service_filter_mode, None)
+        # Service 이용 (기존 로직 유지)
+        file_infos = ScenarioService.list_scenarios('newest', user.id, 'my', None)
 
     # 데이터가 없을 경우
     if not file_infos:
-        msg = "표시할 시나리오가 없습니다."
+        msg = "등록된 시나리오가 없습니다." if filter != 'my' else "아직 생성한 시나리오가 없습니다."
         return HTMLResponse(
-            f'<div class="col-span-full text-center text-gray-500 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
+            f'<div class="col-span-full text-center text-gray-400 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
 
-    # 3. 정렬 (Python Sort)
+    # 2. 정렬 로직 (Sort)
     if sort == 'popular':
         file_infos.sort(key=lambda x: x.get('views', 0) + x.get('clicks', 0), reverse=True)
     elif sort == 'steady':
@@ -239,36 +264,34 @@ async def list_scenarios(
         file_infos.sort(key=lambda x: x.get('title', ''))
     elif sort == 'oldest':
         file_infos.sort(key=lambda x: x.get('created_time', 0))
-    else:  # newest
+    else:  # newest (기본)
         file_infos.sort(key=lambda x: x.get('created_time', 0), reverse=True)
 
-    # 4. 개수 제한
+    # 3. 개수 제한 (Limit)
     if limit > 0:
         file_infos = file_infos[:limit]
 
-    # 5. HTML 생성
+    # 4. HTML 생성
     from datetime import datetime
-    import time as time_module
-    current_time = time_module.time()
+    current_time = time.time()
     NEW_THRESHOLD = 30 * 60
 
     html = ""
     for info in file_infos:
         fid = info['filename']
         title = info['title']
-        desc = info['desc'] or "설명 없음"
-        author = info['author']
-        created_time = info.get('created_time', 0)
+        desc = info['desc']
+        if not desc: desc = "설명이 없습니다."
 
-        # 내 시나리오 여부 확인
-        is_owner = (user.is_authenticated and author == user.id)
+        author = info['author']
+        is_owner = info['is_owner']
         is_public = info.get('is_public', False)
+        created_time = info.get('created_time', 0)
 
         img_src = info.get('image') or "https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=800"
 
         time_str = datetime.fromtimestamp(created_time).strftime('%Y-%m-%d') if created_time else "-"
 
-        # 뱃지
         is_new = (current_time - created_time) < NEW_THRESHOLD if created_time else False
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
@@ -276,20 +299,20 @@ async def list_scenarios(
         status_class = "bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"
         status_badge = f'<span class="ml-2 text-[10px] {status_class} px-1 rounded font-bold">{status_text}</span>' if is_owner else ''
 
-        # 관리 버튼
         admin_buttons = ""
         if is_owner:
             admin_buttons = f"""
             <div class="flex gap-2 mt-3 pt-3 border-t border-rpg-700/50">
-                <button onclick="editScenario('{fid}')" class="flex-1 py-2 rounded-lg bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-400 hover:text-white transition-colors flex items-center justify-center gap-1">
+                <button onclick="editScenario('{fid}')" class="flex-1 py-2 rounded-lg bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-400 hover:text-white transition-colors flex items-center justify-center gap-1" title="수정">
                     <i data-lucide="edit" class="w-3 h-3"></i> <span class="text-xs">EDIT</span>
                 </button>
-                <button onclick="deleteScenario('{fid}', this)" class="flex-1 py-2 rounded-lg bg-rpg-800 border border-rpg-700 hover:border-danger hover:text-danger text-gray-400 transition-colors flex items-center justify-center gap-1">
+                <button onclick="deleteScenario('{fid}', this)" class="flex-1 py-2 rounded-lg bg-rpg-800 border border-rpg-700 hover:border-danger hover:text-danger text-gray-400 transition-colors flex items-center justify-center gap-1" title="삭제">
                     <i data-lucide="trash" class="w-3 h-3"></i> <span class="text-xs">DEL</span>
                 </button>
             </div>
             """
 
+        # index.html의 .scenario-card-base 클래스 적용 (텍스트 색상 text-white/gray-400 명시)
         card_html = f"""
         <div class="scenario-card-base group">
             <div class="card-image-wrapper">
@@ -298,6 +321,7 @@ async def list_scenarios(
                     Fantasy
                 </div>
             </div>
+
             <div class="card-content">
                 <div>
                     <div class="flex justify-between items-start mb-1">
@@ -310,14 +334,19 @@ async def list_scenarios(
                     </div>
                     <p class="card-desc text-gray-400">{desc}</p>
                 </div>
+
                 <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-accent/10 hover:bg-rpg-accent text-rpg-accent hover:text-black font-bold rounded-lg transition-all flex items-center justify-center gap-2 border border-rpg-accent/50 mt-auto shadow-[0_0_10px_rgba(56,189,248,0.1)] hover:shadow-[0_0_15px_rgba(56,189,248,0.4)]">
                     <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
                 </button>
+
                 {admin_buttons}
             </div>
         </div>
         """
         html += card_html
+
+    html += '<script>lucide.createIcons();</script>'
+    return HTMLResponse(content=html)
 
     html += '<script>lucide.createIcons();</script>'
     return HTMLResponse(content=html)# [교체] routes/api.py -> list_scenarios 함수
