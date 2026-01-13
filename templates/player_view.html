@@ -293,6 +293,15 @@
 
             <!-- 디버그 정보 영역 (체크박스 활성화 시 표시) -->
             <div id="debug-info-area" class="hidden mt-4 space-y-4">
+                <!-- 전체 씬 보기 버튼 -->
+                <div class="border-t border-gray-800 pt-4">
+                    <button onclick="openDebugScenesView()"
+                            class="w-full bg-gradient-to-r from-pink-900/80 to-purple-900/80 hover:from-pink-800 hover:to-purple-800 text-white py-3 rounded-lg border border-pink-700/50 flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-lg hover:shadow-pink-500/20">
+                        <i data-lucide="git-merge" class="w-4 h-4"></i>
+                        <span>전체 씬 보기</span>
+                    </button>
+                </div>
+
                 <!-- NPC 상태 -->
                 <div class="border-t border-gray-800 pt-4">
                     <h4 class="text-gray-400 font-bold text-sm mb-3 flex items-center gap-2">
@@ -489,6 +498,16 @@
         if (isScenarioLoaded) {
             isInternalNavigation = true;
             window.location.href = '/views/scenes';
+        }
+    }
+
+    // 디버그 모드에서 전체 씬 보기 함수
+    function openDebugScenesView() {
+        if (isScenarioLoaded) {
+            isInternalNavigation = true;
+            window.location.href = '/views/debug_scenes';
+        } else {
+            showToast('시나리오를 먼저 불러와주세요.', 'error');
         }
     }
 

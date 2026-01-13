@@ -91,6 +91,48 @@ async def view_scenes(request: Request, user=Depends(get_current_user_optional))
     })
 
 
+@views_router.get("/views/debug_scenes", response_class=HTMLResponse)
+async def view_debug_scenes(request: Request, user=Depends(get_current_user_optional)):
+    """디버그 모드 전체 씬 보기 (플레이어 모드에서 접근)"""
+    if not game_state.state:
+        return templates.TemplateResponse("debug_scenes_view.html", {
+            "request": request,
+            "title": "시나리오 없음",
+            "scenario": {"endings": [], "prologue_text": ""},
+            "scenes": [],
+            "current_scene_id": None,
+            "mermaid_code": "graph TD\n    A[시나리오를 먼저 로드하세요]",
+            "scene_display_ids": {},
+            "ending_display_ids": {},
+            "version": get_full_version(),
+            "user": user
+        })
+
+    scenario = game_state.state['scenario']
+    title = scenario.get('title', 'Untitled')
+    current_scene_id = game_state.state.get('current_scene_id', None)
+
+    # Mermaid 서비스로 차트 생성
+    chart_data = MermaidService.generate_chart(scenario, current_scene_id)
+
+    return templates.TemplateResponse("debug_scenes_view.html", {
+        "request": request,
+        "title": title,
+        "scenario": scenario,
+        "scenes": chart_data['filtered_scenes'],
+        "incoming_conditions": chart_data['incoming_conditions'],
+        "ending_incoming_conditions": chart_data['ending_incoming_conditions'],
+        "ending_names": chart_data['ending_names'],
+        "scene_names": chart_data['scene_names'],
+        "scene_display_ids": chart_data['scene_display_ids'],
+        "ending_display_ids": chart_data['ending_display_ids'],
+        "current_scene_id": current_scene_id,
+        "mermaid_code": chart_data['mermaid_code'],
+        "version": get_full_version(),
+        "user": user
+    })
+
+
 @views_router.get("/views/scenes/edit/{scenario_id}", response_class=HTMLResponse)
 async def view_scenes_edit(request: Request, scenario_id: str, user=Depends(get_current_user)):
     """
@@ -115,6 +157,8 @@ async def view_scenes_edit(request: Request, scenario_id: str, user=Depends(get_
         "user": user,
         "scenario_id": scenario_id
     })
+
+
 @views_router.get("/builder/npc-generator", response_class=HTMLResponse)
 async def view_npc_generator(request: Request):
     """NPC 생성기 iframe 뷰"""
