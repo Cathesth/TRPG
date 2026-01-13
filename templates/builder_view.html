@@ -18,34 +18,39 @@
         ::-webkit-scrollbar { width: 6px; background: #111; }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 
-        .connection-line { stroke: #6b7280; stroke-width: 3; fill: none; transition: stroke 0.2s; pointer-events: none; }
+        /* custom-scrollbar 추가 */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; background: #1a1a1a; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #555; }
+
+        .connection-line { stroke: #6b7280; stroke-width: 3; fill: none; transition: stroke 0.2s; }
         .connection-line:hover { stroke: #f59e0b; stroke-width: 4; cursor: pointer; filter: drop-shadow(0 0 4px #f59e0b); }
-        .connecting-line { stroke: #6366f1; stroke-width: 3; stroke-dasharray: 8,4; fill: none; animation: dash 0.5s linear infinite; pointer-events: none; }
+        .connecting-line { stroke: #6366f1; stroke-width: 3; stroke-dasharray: 8,4; fill: none; animation: dash 0.5s linear infinite; }
         @keyframes dash { to { stroke-dashoffset: -12; } }
 
         .node-shadow { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); }
-        .node-ui { pointer-events: auto; }
         .animate-fade-in { animation: fadeIn 0.2s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-
-        /* 캔버스 레이어 분리 */
-        .canvas-layer { position: absolute; inset: 0; }
-        .canvas-layer.interactive { pointer-events: auto; }
-        .canvas-layer.non-interactive { pointer-events: none; }
     </style>
 </head>
 <body class="bg-black text-white h-screen w-screen">
 
     <div id="root" class="w-full h-full"></div>
 
-    {% raw %}
     <script type="text/babel">
         const { useState, useRef, useEffect, useCallback } = React;
 
         // --- 아이콘 컴포넌트 ---
         const Icon = ({ name, size = 18, className = "" }) => {
-            useEffect(() => { lucide.createIcons(); }, [name]);
-            return <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i>;
+            const iconRef = useRef(null);
+
+            useEffect(() => {
+                if (iconRef.current && window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [name]);
+
+            return <i ref={iconRef} data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i>;
         };
 
         // --- 공용 모달 ---
@@ -368,37 +373,26 @@
             // --- 캔버스 핸들러 ---
             const handleMouseDown = (e) => {
                 if (e.target.closest('.node-ui')) return;
-                if (e.target.closest('button')) return;
-                if (e.button === 0 || e.button === 1) {
-                    e.preventDefault();
-                    setIsPanning(true);
-                }
+                if (e.button === 0 || e.button === 1) setIsPanning(true);
             };
             const handleMouseMove = (e) => {
-                const rect = canvasRef.current?.getBoundingClientRect();
-                if (!rect) return;
-
+                const rect = canvasRef.current.getBoundingClientRect();
                 const x = (e.clientX - rect.left - pan.x) / pan.zoom;
                 const y = (e.clientY - rect.top - pan.y) / pan.zoom;
                 setMousePos({ x, y });
 
-                if (isPanning && !dragNode) {
+                if (isPanning) {
                     setPan(p => ({ ...p, x: p.x + e.movementX, y: p.y + e.movementY }));
                 } else if (dragNode) {
-                    e.preventDefault();
                     setNodes(prev => prev.map(n => n.id === dragNode ? { ...n, x, y } : n));
                 }
             };
-            const handleMouseUp = (e) => {
+            const handleMouseUp = () => {
                 if (dragNode) pushHistory(); // 드래그 종료 시 히스토리 저장
-                setIsPanning(false);
-                setDragNode(null);
-                setConnectSource(null);
+                setIsPanning(false); setDragNode(null); setConnectSource(null);
             };
             const handleNodeDragStart = (e, id) => {
                 e.stopPropagation();
-                e.preventDefault();
-
                 if (connectSource && connectSource !== id) {
                     if (!edges.some(eg => eg.source === connectSource && eg.target === id)) {
                         pushHistory();
@@ -406,8 +400,7 @@
                     }
                     setConnectSource(null);
                 } else {
-                    setDragNode(id);
-                    setSelectedNodeId(id);
+                    setDragNode(id); setSelectedNodeId(id);
                 }
             };
 
@@ -505,25 +498,13 @@
                     </div>
 
                     {/* 캔버스 영역 */}
-                    <div ref={canvasRef} className="flex-1 relative bg-[#0a0a0a] bg-dots-pattern overflow-hidden"
+                    <div ref={canvasRef} className="flex-1 relative bg-[#0a0a0a] bg-dots-pattern cursor-crosshair overflow-hidden"
                          onMouseDown={handleMouseDown}
-                         onMouseMove={handleMouseMove}
-                         onWheel={(e) => {
-                             e.preventDefault();
-                             setPan(p => ({ ...p, zoom: Math.min(Math.max(0.2, p.zoom - e.deltaY * 0.001), 3) }));
-                         }}
-                         style={{ cursor: isPanning ? 'grabbing' : dragNode ? 'move' : 'default' }}>
+                         onWheel={(e) => setPan(p => ({ ...p, zoom: Math.min(Math.max(0.2, p.zoom - e.deltaY * 0.001), 3) }))}>
 
-                        <div style={{
-                            transform: `translate(${pan.x}px, ${pan.y}px) scale(${pan.zoom})`,
-                            transformOrigin: '0 0',
-                            width: '100%',
-                            height: '100%',
-                            position: 'relative'
-                        }}>
-                            {/* Edges - SVG 레이어 */}
-                            <svg className="absolute inset-0 w-full h-full overflow-visible"
-                                 style={{ pointerEvents: 'none', zIndex: 1 }}>
+                        <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${pan.zoom})`, transformOrigin: '0 0', width: '100%', height: '100%' }}>
+                            {/* Edges */}
+                            <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                                 {edges.map(e => {
                                     const s = nodes.find(n => n.id === e.source), t = nodes.find(n => n.id === e.target);
                                     if(!s || !t) return null;
@@ -531,17 +512,15 @@
                                 })}
                                 {connectSource && (() => {
                                     const s = nodes.find(n => n.id === connectSource);
-                                    if (!s) return null;
                                     return <line x1={s.x+100} y1={s.y+40} x2={mousePos.x} y2={mousePos.y} className="connecting-line" />;
                                 })()}
                             </svg>
 
-                            {/* Nodes - 노드 레이어 */}
-                            <div style={{ position: 'relative', zIndex: 2 }}>
+                            {/* Nodes */}
                             {nodes.map(node => (
-                                <div key={node.id} style={{ left: node.x, top: node.y, position: 'absolute' }}
+                                <div key={node.id} style={{ left: node.x, top: node.y }}
                                      onMouseDown={(e) => handleNodeDragStart(e, node.id)}
-                                     className={`node-ui w-[200px] bg-gray-900 border-2 rounded-lg node-shadow group transition-colors
+                                     className={`node-ui absolute w-[200px] bg-gray-900 border-2 rounded-lg node-shadow group transition-colors
                                         ${selectedNodeId === node.id ? 'border-white z-20 ring-2 ring-blue-500' :
                                           node.type==='start'?'border-blue-600':node.type==='ending'?'border-red-600':'border-indigo-600'}`}>
 
@@ -561,8 +540,23 @@
                                     </div>
                                 </div>
                             ))}
-                            </div>
                         </div>
+
+                        {/* 줌 컨트롤 */}
+                        <div className="absolute top-4 right-4 bg-gray-900 border border-gray-700 rounded-lg p-2 flex flex-col gap-2 shadow-lg z-30">
+                             <button onClick={() => setPan(p=>({...p, zoom: p.zoom+0.1}))} className="hover:text-blue-400"><Icon name="plus"/></button>
+                             <button onClick={() => setPan({x:0, y:0, zoom:1})} className="text-xs font-mono">{Math.round(pan.zoom*100)}%</button>
+                             <button onClick={() => setPan(p=>({...p, zoom: p.zoom-0.1}))} className="hover:text-blue-400"><Icon name="minus"/></button>
+                        </div>
+
+                        {/* 편집 모드 뱃지 */}
+                        {isEditMode && (
+                            <div className="absolute top-4 left-4 bg-black/60 backdrop-blur border border-gray-700 rounded-full px-4 py-1.5 flex items-center gap-2 z-30">
+                                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                <span className="font-bold text-gray-200">{scenarioId}</span>
+                                {isDraft && <span className="text-xs bg-blue-600/30 text-blue-300 px-2 rounded border border-blue-500/30">Draft</span>}
+                            </div>
+                        )}
                     </div>
 
                     {/* 우측 속성 패널 */}
@@ -674,7 +668,6 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ScenarioBuilder />);
     </script>
-    {% endraw %}
 
 </body>
 </html>
