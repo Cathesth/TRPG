@@ -340,11 +340,10 @@
     const CHAT_LOG_KEY = 'trpg_chat_log';
     const SCENARIO_LOADED_KEY = 'trpg_scenario_loaded';
     const CURRENT_SCENARIO_KEY = 'trpg_current_scenario';
-    const STATS_KEY = 'trpg_player_stats';
+    const SESSION_KEY_STORAGE = 'trpg_session_key';  // [NEW] 세션 키를 localStorage에 저장
     const MODEL_PROVIDER_KEY = 'trpg_model_provider';
     const MODEL_VERSION_KEY = 'trpg_model_version';
-    const DEBUG_MODE_KEY = 'trpg_debug_mode';  // localStorage로 변경할 것
-    const DEBUG_CONTENT_KEY = 'trpg_debug_content';  // 디버그 컨텐츠 저장용
+    const DEBUG_MODE_KEY = 'trpg_debug_mode';
     const GAME_ENDED_KEY = 'trpg_game_ended';
     const NAVIGATION_FLAG_KEY = 'trpg_navigation_flag';
 
@@ -439,7 +438,6 @@
     // 모든 게임 상태 초기화 함수
     function clearAllGameState() {
         sessionStorage.removeItem(CHAT_LOG_KEY);
-        sessionStorage.removeItem(STATS_KEY);
         sessionStorage.removeItem(GAME_ENDED_KEY);
         sessionStorage.removeItem(SCENARIO_LOADED_KEY);
         sessionStorage.removeItem(CURRENT_SCENARIO_KEY);
@@ -498,7 +496,6 @@
 
     function restoreChatLog() {
         const savedLog = sessionStorage.getItem(CHAT_LOG_KEY);
-        const savedStats = sessionStorage.getItem(STATS_KEY);
         const savedGameEnded = sessionStorage.getItem(GAME_ENDED_KEY);
         const savedScenarioLoaded = sessionStorage.getItem(SCENARIO_LOADED_KEY);
 
@@ -538,10 +535,6 @@
             lucide.createIcons();
         }
 
-        if (savedStats) {
-            try { updateStats(JSON.parse(savedStats)); } catch (e) {}
-        }
-
         if (savedGameEnded === 'true') {
             isGameEnded = true;
             disableInput();
@@ -565,7 +558,6 @@
 
     function clearChatLog() {
         sessionStorage.removeItem(CHAT_LOG_KEY);
-        sessionStorage.removeItem(STATS_KEY);
         sessionStorage.removeItem(GAME_ENDED_KEY);
     }
 
@@ -774,8 +766,10 @@
                                     saveDebugContent();
                                     break;
                                 case 'session_key':
-                                    // 세션 키 저장
+                                    // 세션 키 저장 (localStorage에 영구 저장)
                                     currentSessionKey = data.content;
+                                    localStorage.setItem(SESSION_KEY_STORAGE, data.content);
+                                    console.log('🔑 Session key saved:', data.content);
                                     break;
                                 case 'done':
                                     contentDiv.innerHTML = contentDiv.innerHTML.replace('<span class="streaming-cursor">▌</span>', '');
@@ -900,11 +894,12 @@
 
         statsArea.innerHTML = html;
         lucide.createIcons();
-        sessionStorage.setItem(STATS_KEY, JSON.stringify(statsData));
+
+        // [REMOVED] sessionStorage 저장 제거 - DB에만 의존
 
         // 디버그 모드가 활성화되어 있으면 디버그 정보도 업데이트
-        const debugToggle = document.getElementById('debug-toggle');
-        if (debugToggle && debugToggle.checked) {
+        const isDebugActive = localStorage.getItem(DEBUG_MODE_KEY) === 'true';
+        if (isDebugActive) {
             updateDebugInfo(statsData);
         }
     }
@@ -914,7 +909,7 @@
         const debugInfoArea = document.getElementById('debug-info-area');
         const debugIcon = document.getElementById('debug-icon');
 
-        // 현재 상태 확인 (localStorage로 변경 - 다른 창 나갔다가 와도 유지)
+        // 현재 상태 확인
         const isDebugActive = localStorage.getItem(DEBUG_MODE_KEY) === 'true';
 
         if (isDebugActive) {
@@ -934,61 +929,83 @@
                 debugIcon.classList.add('text-indigo-400');
             }
 
-            // [FIX] 토글 시 즉시 데이터 불러오기 - 순서 변경
-            // 1. 현재 스탯 데이터가 있으면 최신 정보로 업데이트 (우선순위 높음)
-            const savedStats = sessionStorage.getItem(STATS_KEY);
-            if (savedStats) {
-                try {
-                    const statsData = JSON.parse(savedStats);
-                    updateDebugInfo(statsData);
-                    console.log('✅ [Debug Toggle] Stats restored from session:', statsData);
-                } catch (e) {
-                    console.error('Failed to parse stats:', e);
-                }
+            // [FIX] 무조건 DB에서 최신 데이터 불러오기
+            console.log('🔍 [Debug Toggle ON] Fetching from Railway DB...');
+            fetchGameDataFromDB();
+        }
+
+        lucide.createIcons();
+    }
+
+    // [NEW] Railway DB에서 게임 데이터 불러오기
+    async function fetchGameDataFromDB() {
+        const sessionKey = currentSessionKey || localStorage.getItem(SESSION_KEY_STORAGE);
+
+        if (!sessionKey) {
+            console.warn('⚠️ No session key available');
+            showEmptyDebugState();
+            return;
+        }
+
+        try {
+            console.log(`📡 Fetching session data: ${sessionKey}`);
+            const response = await fetch(`/game/session/${sessionKey}`);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
-            // 2. 저장된 디버그 컨텐츠가 있으면 복원 (스탯이 없을 경우 대비)
-            const savedDebugContent = sessionStorage.getItem(DEBUG_CONTENT_KEY);
-            if (savedDebugContent) {
-                try {
-                    const debugData = JSON.parse(savedDebugContent);
-                    // 스탯이 없었던 경우에만 저장된 HTML 사용
-                    if (!savedStats) {
-                        if (debugData.npc) {
-                            document.getElementById('npc-status-area').innerHTML = debugData.npc;
-                        }
-                        if (debugData.worldState) {
-                            document.getElementById('world-state-area').innerHTML = debugData.worldState;
-                        }
-                        console.log('✅ [Debug Toggle] HTML content restored from session');
-                    }
-                } catch (e) {
-                    console.error('Failed to restore debug content:', e);
+            const data = await response.json();
+
+            if (data.success) {
+                console.log('✅ Data fetched from Railway DB:', data);
+
+                // 1. Player Stats 업데이트
+                if (data.player_state && data.player_state.player_vars) {
+                    updateStats(data.player_state.player_vars);
                 }
+
+                // 2. World State 업데이트
+                if (data.world_state) {
+                    updateWorldState(data.world_state);
+                }
+
+                // 3. NPC Status 업데이트
+                if (data.npc_status) {
+                    updateNPCStatus(data.npc_status);
+                }
+
+                lucide.createIcons();
+                console.log('✅ All data updated from Railway DB');
+            } else {
+                console.error('❌ Failed to fetch from DB:', data.error);
+                showEmptyDebugState();
             }
+        } catch (err) {
+            console.error('❌ DB fetch error:', err);
+            showEmptyDebugState();
+        }
+    }
 
-            // 3. 데이터가 아예 없으면 빈 상태 메시지 표시
-            if (!savedStats && !savedDebugContent) {
-                const npcArea = document.getElementById('npc-status-area');
-                const worldStateArea = document.getElementById('world-state-area');
+    // [NEW] 빈 디버그 상태 표시
+    function showEmptyDebugState() {
+        const npcArea = document.getElementById('npc-status-area');
+        const worldStateArea = document.getElementById('world-state-area');
 
-                if (npcArea && !npcArea.innerHTML.trim()) {
-                    npcArea.innerHTML = `
-                        <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
-                            NPC 데이터 없음
-                        </div>
-                    `;
-                }
+        if (npcArea) {
+            npcArea.innerHTML = `
+                <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                    NPC 데이터 없음
+                </div>
+            `;
+        }
 
-                if (worldStateArea && !worldStateArea.innerHTML.trim()) {
-                    worldStateArea.innerHTML = `
-                        <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
-                            World State 데이터 없음
-                        </div>
-                    `;
-                }
-                console.log('⚠️ [Debug Toggle] No saved data found');
-            }
+        if (worldStateArea) {
+            worldStateArea.innerHTML = `
+                <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                    World State 데이터 없음
+                </div>
+            `;
         }
 
         lucide.createIcons();
@@ -1003,22 +1020,6 @@
         saveDebugContent();
     }
 
-    // [FIX] 디버그 컨텐츠 저장 함수 - 호출 후 즉시 검증
-    function saveDebugContent() {
-        const npcArea = document.getElementById('npc-status-area');
-        const worldStateArea = document.getElementById('world-state-area');
-
-        const debugContent = {
-            npc: npcArea ? npcArea.innerHTML : '',
-            worldState: worldStateArea ? worldStateArea.innerHTML : ''
-        };
-
-        sessionStorage.setItem(DEBUG_CONTENT_KEY, JSON.stringify(debugContent));
-        console.log('💾 [Debug Content Saved]:', {
-            npcLength: debugContent.npc.length,
-            worldStateLength: debugContent.worldState.length
-        });
-    }
 
     // NPC 상태 업데이트 함수
     function updateNPCStatus(npcData) {
@@ -1674,7 +1675,7 @@
             case 'xai':
                 options = [
                     { value: 'openai/x-ai/grok-code-fast-1', label: 'Grok Code Fast 1 (128K)' },
-                    { value: 'openai/x-ai/grok-4-fast', label: 'Grok 4 Fast (128K)' },
+                    { value: 'openai/x-ai/grok-4-fast', label: 'Grok 4 Fast 128K' },
                     { value: 'openai/x-ai/grok-vision-1', label: 'Grok Vision 1 (128K)' }
                 ];
                 break;

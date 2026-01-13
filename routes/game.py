@@ -7,7 +7,8 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from core.state import game_state, WorldState
-from game_engine import scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message, get_scenario_by_id
+from game_engine import scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message, \
+    get_scenario_by_id
 from routes.auth import get_current_user_optional, CurrentUser
 from models import GameSession, get_db
 
@@ -131,12 +132,12 @@ async def game_act():
 
 @game_router.post('/act_stream')
 async def game_act_stream(
-    request: Request,
-    action: str = Form(default=''),
-    model: str = Form(default='openai/tngtech/deepseek-r1t2-chimera:free'),
-    session_key: str = Form(default=None),
-    user: CurrentUser = Depends(get_current_user_optional),
-    db: Session = Depends(get_db)
+        request: Request,
+        action: str = Form(default=''),
+        model: str = Form(default='openai/tngtech/deepseek-r1t2-chimera:free'),
+        session_key: str = Form(default=None),
+        user: CurrentUser = Depends(get_current_user_optional),
+        db: Session = Depends(get_db)
 ):
     """스트리밍 방식 - SSE (LangGraph 기반) + WorldState DB 영속성"""
 
@@ -150,6 +151,7 @@ async def game_act_stream(
     if not game_state.state or not game_state.game_graph:
         def error_gen():
             yield f"data: {json.dumps({'type': 'error', 'content': '먼저 게임을 로드해주세요.'})}\n\n"
+
         return StreamingResponse(error_gen(), media_type='text/event-stream')
 
     action_text = action.strip()
@@ -166,8 +168,8 @@ async def game_act_stream(
 
     # 2. 게임 시작 여부 판단
     is_game_start = (
-        action_text.lower() in ['시작', 'start', '게임시작'] and
-        current_state.get('system_message') in ['Loaded', 'Init']
+            action_text.lower() in ['시작', 'start', '게임시작'] and
+            current_state.get('system_message') in ['Loaded', 'Init']
     )
 
     def generate():
@@ -220,7 +222,7 @@ async def game_act_stream(
             sys_msg = processed_state.get('system_message', '')
             intent = processed_state.get('parsed_intent')
             is_ending = (intent == 'ending')
-            
+
             # --- [스트리밍 응답 전송] ---
 
             # A. 시스템 메시지
@@ -301,10 +303,12 @@ async def game_act_stream(
                 world_state_with_scene = world_state_data.copy()
 
                 # 현재 위치 scene_id 확인 (우선순위: location > current_scene_id)
-                location_scene_id = world_state_with_scene.get('location') or processed_state.get('current_scene_id', '')
+                location_scene_id = world_state_with_scene.get('location') or processed_state.get('current_scene_id',
+                                                                                                  '')
 
                 # 디버그 로그
-                logger.info(f"🗺️ [WORLD STATE] location field: {world_state_with_scene.get('location')}, processed scene_id: {processed_state.get('current_scene_id')}")
+                logger.info(
+                    f"🗺️ [WORLD STATE] location field: {world_state_with_scene.get('location')}, processed scene_id: {processed_state.get('current_scene_id')}")
 
                 location_scene_title = ''
 
@@ -314,7 +318,8 @@ async def game_act_stream(
                         if scene.get('scene_id') == location_scene_id:
                             # title 필드가 있으면 사용, 없으면 name 필드 사용
                             location_scene_title = scene.get('title') or scene.get('name', '')
-                            logger.info(f"🗺️ [WORLD STATE] Found title/name for {location_scene_id}: {location_scene_title}")
+                            logger.info(
+                                f"🗺️ [WORLD STATE] Found title/name for {location_scene_id}: {location_scene_title}")
                             break
 
                     # title을 못 찾은 경우 로그
@@ -330,7 +335,8 @@ async def game_act_stream(
                     world_state_with_scene['turn_count'] = 0
 
                 # 디버그: 전송되는 데이터 로그
-                logger.info(f"📤 [WORLD STATE] Sending: scene_id={world_state_with_scene['current_scene_id']}, title={world_state_with_scene['current_scene_title']}")
+                logger.info(
+                    f"📤 [WORLD STATE] Sending: scene_id={world_state_with_scene['current_scene_id']}, title={world_state_with_scene['current_scene_title']}")
 
                 yield f"data: {json.dumps({'type': 'world_state', 'content': world_state_with_scene})}\n\n"
 
@@ -449,3 +455,122 @@ def stream_scene_with_retry(state):
         else:
             # 성공적으로 완료
             break
+
+
+@game_router.get('/session/{session_key}')
+async def get_game_session_data(
+        session_key: str,
+        db: Session = Depends(get_db)
+):
+    """
+    🛠️ Railway DB에서 게임 세션 데이터 불러오기
+    - Player Status, NPC Status, World State 포함
+    """
+    try:
+        game_session = db.query(GameSession).filter_by(session_key=session_key).first()
+
+        if not game_session:
+            return JSONResponse({
+                "success": False,
+                "error": "세션을 찾을 수 없습니다."
+            }, status_code=404)
+
+        # 시나리오 정보 조회 (NPC 전체 정보 필요)
+        scenario = get_scenario_by_id(game_session.scenario_id)
+
+        # 시나리오의 모든 NPC 정보를 딕셔너리로 구성
+        all_scenario_npcs = {}
+        if scenario:
+            for npc in scenario.get('npcs', []):
+                if isinstance(npc, dict) and 'name' in npc:
+                    npc_name = npc['name']
+                    all_scenario_npcs[npc_name] = {
+                        'name': npc_name,
+                        'role': npc.get('role', 'Unknown'),
+                        'personality': npc.get('personality', '보통'),
+                        'hp': npc.get('hp', 100),
+                        'max_hp': npc.get('max_hp', 100),
+                        'status': 'alive',
+                        'relationship': 50,
+                        'emotion': 'neutral',
+                        'location': '알 수 없음',
+                        'is_hostile': npc.get('isEnemy', False)
+                    }
+
+        # WorldState의 NPC 정보로 업데이트
+        if game_session.world_state and 'npcs' in game_session.world_state:
+            world_npcs = game_session.world_state['npcs']
+            for npc_name, npc_state in world_npcs.items():
+                if npc_name in all_scenario_npcs:
+                    # 기존 시나리오 정보에 WorldState 정보 덮어쓰기
+                    all_scenario_npcs[npc_name].update({
+                        'hp': npc_state.get('hp', all_scenario_npcs[npc_name]['hp']),
+                        'max_hp': npc_state.get('max_hp', all_scenario_npcs[npc_name]['max_hp']),
+                        'status': npc_state.get('status', 'alive'),
+                        'relationship': npc_state.get('relationship', 50),
+                        'emotion': npc_state.get('emotion', 'neutral'),
+                        'location': npc_state.get('location', all_scenario_npcs[npc_name]['location']),
+                        'is_hostile': npc_state.get('is_hostile', all_scenario_npcs[npc_name]['is_hostile'])
+                    })
+                else:
+                    # WorldState에만 있는 NPC (동적 생성된 NPC)
+                    all_scenario_npcs[npc_name] = {
+                        'name': npc_name,
+                        'role': 'Unknown',
+                        'personality': '보통',
+                        'hp': npc_state.get('hp', 100),
+                        'max_hp': npc_state.get('max_hp', 100),
+                        'status': npc_state.get('status', 'alive'),
+                        'relationship': npc_state.get('relationship', 50),
+                        'emotion': npc_state.get('emotion', 'neutral'),
+                        'location': npc_state.get('location', '알 수 없음'),
+                        'is_hostile': npc_state.get('is_hostile', False)
+                    }
+
+        # 현재 씬의 NPC 위치 정보 업데이트
+        if scenario:
+            all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
+            for scene_id, scene in all_scenes.items():
+                scene_title = scene.get('title', scene_id)
+                for npc_name in scene.get('npcs', []) + scene.get('enemies', []):
+                    if npc_name in all_scenario_npcs and all_scenario_npcs[npc_name]['location'] == '알 수 없음':
+                        all_scenario_npcs[npc_name]['location'] = scene_title
+
+        # World State에 씬 정보 추가
+        world_state_with_scene = game_session.world_state.copy() if game_session.world_state else {}
+
+        # 현재 위치 scene_id 확인
+        location_scene_id = world_state_with_scene.get('location') or game_session.current_scene_id
+        location_scene_title = ''
+
+        # 시나리오에서 해당 씬의 title 또는 name 찾기
+        if location_scene_id and scenario:
+            for scene in scenario.get('scenes', []):
+                if scene.get('scene_id') == location_scene_id:
+                    location_scene_title = scene.get('title') or scene.get('name', '')
+                    break
+
+        # current_scene_id와 current_scene_title 명시적으로 설정
+        world_state_with_scene['current_scene_id'] = location_scene_id
+        world_state_with_scene['current_scene_title'] = location_scene_title
+
+        # turn_count가 없는 경우 0으로 초기화
+        if 'turn_count' not in world_state_with_scene:
+            world_state_with_scene['turn_count'] = 0
+
+        return JSONResponse({
+            "success": True,
+            "player_state": game_session.player_state,
+            "world_state": world_state_with_scene,
+            "npc_status": all_scenario_npcs,
+            "current_scene_id": game_session.current_scene_id,
+            "turn_count": game_session.turn_count,
+            "last_played_at": game_session.last_played_at.isoformat() if game_session.last_played_at else None
+        })
+
+    except Exception as e:
+        logger.error(f"❌ [DB] Failed to fetch game session: {e}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
