@@ -1,0 +1,2330 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRPG - 시나리오 흐름도</title>
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Pretendard', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* 뤼튼 스타일 그라데이션 */
+        .brand-gradient {
+            background: linear-gradient(135deg, #6E47E6 0%, #818cf8 100%);
+        }
+
+        /* 접이식 사이드바 스타일 */
+        .sidebar {
+            width: 72px;
+            transition: width 0.3s ease;
+        }
+        .sidebar:hover,
+        .sidebar.expanded {
+            width: 260px;
+        }
+        .sidebar .nav-text {
+            opacity: 0;
+            white-space: nowrap;
+            transition: opacity 0.2s ease;
+        }
+        .sidebar:hover .nav-text,
+        .sidebar.expanded .nav-text {
+            opacity: 1;
+        }
+        .sidebar .logo-text {
+            opacity: 0;
+            white-space: nowrap;
+            transition: opacity 0.2s ease;
+        }
+        .sidebar:hover .logo-text,
+        .sidebar.expanded .logo-text {
+            opacity: 1;
+        }
+        .sidebar .section-title {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .sidebar:hover .section-title,
+        .sidebar.expanded .section-title {
+            opacity: 1;
+        }
+        .sidebar .user-info {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .sidebar:hover .user-info,
+        .sidebar.expanded .user-info {
+            opacity: 1;
+        }
+        .sidebar .user-chevron {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .sidebar:hover .user-chevron,
+        .sidebar.expanded .user-chevron {
+            opacity: 1;
+        }
+
+        /* 현재 씬 하이라이트 스타일 */
+        .current-scene-node {
+            /* transform 애니메이션 제거 - SVG에서 opacity만 사용 */
+        }
+
+        /* 버전 정보 스타일 */
+        .version-badge {
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            font-size: 10px;
+            color: #6b7280;
+            font-family: 'Courier New', monospace;
+            z-index: 1000;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        /* Noto Sans 폰트 스타일 */
+        .noto-sans-font {
+            font-family: 'Noto Sans KR', 'Pretendard', sans-serif;
+        }
+
+        /* 편집 모드 스타일 */
+        .edit-mode-active .mermaid svg .node {
+            cursor: pointer !important;
+        }
+        .edit-mode-active .mermaid svg .node:hover rect,
+        .edit-mode-active .mermaid svg .node:hover polygon {
+            stroke: #f59e0b !important;
+            stroke-width: 3px !important;
+            filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.5));
+        }
+        .node-selected rect,
+        .node-selected polygon {
+            stroke: #22d3ee !important;
+            stroke-width: 4px !important;
+            filter: drop-shadow(0 0 12px rgba(34, 211, 238, 0.7)) !important;
+        }
+
+        /* 오른쪽 편집 사이드바 */
+        .edit-sidebar {
+            width: 0;
+            min-width: 0;
+            opacity: 0;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        .edit-sidebar.open {
+            width: 400px;
+            min-width: 400px;
+            opacity: 1;
+        }
+
+        /* History 사이드바 (왼쪽) */
+        .history-sidebar {
+            width: 0;
+            min-width: 0;
+            opacity: 0;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        .history-sidebar.open {
+            width: 320px;
+            min-width: 320px;
+            opacity: 1;
+        }
+        .history-item {
+            transition: all 0.15s ease;
+        }
+        .history-item.current {
+            background: linear-gradient(135deg, rgba(34, 211, 238, 0.2) 0%, rgba(34, 211, 238, 0.05) 100%);
+            border-color: rgba(34, 211, 238, 0.5);
+        }
+        .history-item:hover:not(.current) {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        /* 편집 모드 토글 버튼 */
+        .edit-mode-toggle {
+            transition: all 0.2s ease;
+        }
+        .edit-mode-toggle.active {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+        }
+
+        /* 저장 알림 */
+        .save-indicator {
+            animation: saveFlash 0.5s ease;
+        }
+        @keyframes saveFlash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            900: '#111111',
+                            800: '#1c1c1c',
+                            700: '#2c2c2c',
+                            600: '#3f3f46',
+                        },
+                        brand: {
+                            purple: '#6E47E6',
+                            light: '#9F7AEA'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-dark-900 text-gray-200 h-screen flex overflow-hidden">
+
+<!-- 사이드바 (접이식) -->
+<div class="sidebar bg-dark-800 border-r border-white/5 flex flex-col hidden md:flex shrink-0 z-20 overflow-hidden">
+    <div class="p-4 h-16 flex items-center">
+        <div class="flex items-center gap-2 cursor-pointer" onclick="location.href='/'">
+            <div class="w-10 h-10 brand-gradient rounded-lg flex items-center justify-center text-white shadow-lg shadow-brand-purple/20 shrink-0">
+                <i data-lucide="dice-5" class="w-5 h-5 fill-current"></i>
+            </div>
+            <span class="logo-text text-xl font-bold text-white tracking-tight">TRPG Studio</span>
+        </div>
+    </div>
+
+    <nav class="flex-1 px-3 space-y-1 mt-2">
+        <div class="section-title text-[10px] font-semibold text-gray-500 px-3 py-2 uppercase tracking-wider">Workspace</div>
+
+        <a href="/" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
+            <i data-lucide="layout-grid" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
+            <span class="nav-text">대시보드</span>
+        </a>
+
+        <a href="/views/builder"
+           class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
+            <i data-lucide="pen-tool" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
+            <span class="nav-text">시나리오 빌더</span>
+        </a>
+
+        <a href="/views/player"
+           class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
+            <i data-lucide="gamepad-2" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
+            <span class="nav-text">플레이어 모드</span>
+        </a>
+
+        <a href="/views/scenes"
+           class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/5 text-white group cursor-pointer text-sm font-medium">
+            <i data-lucide="git-merge" class="w-5 h-5 text-brand-light shrink-0"></i>
+            <span class="nav-text">전체 씬 보기</span>
+        </a>
+
+        <div class="section-title text-[10px] font-semibold text-gray-500 px-3 py-2 uppercase tracking-wider mt-6">Library</div>
+
+        <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
+            <i data-lucide="book-open" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
+            <span class="nav-text">공개 시나리오</span>
+        </button>
+        <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
+            <i data-lucide="users" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
+            <span class="nav-text">커뮤니티</span>
+        </button>
+    </nav>
+
+    <!-- 유저 프로필 -->
+    <div class="p-3 border-t border-white/5">
+        <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
+            <img src="https://api.dicebear.com/7.x/notionists/svg?seed=Felix" alt="User" class="w-8 h-8 rounded-full bg-gray-700 shrink-0">
+            <div class="user-info flex-1 min-w-0">
+                <p class="text-sm font-medium text-white truncate">Game Master</p>
+                <p class="text-[11px] text-gray-500 truncate">Free Plan</p>
+            </div>
+            <i data-lucide="chevron-right" class="user-chevron w-4 h-4 text-gray-500"></i>
+        </div>
+    </div>
+</div>
+
+<!-- 메인 뷰 -->
+<div class="flex-1 flex h-full relative z-10 bg-dark-900 overflow-hidden">
+    <!-- 메인 콘텐츠 영역 -->
+    <div class="flex-1 flex flex-col h-full overflow-hidden">
+
+    <!-- 상단 헤더 -->
+    <header class="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-dark-900/80 backdrop-blur-md sticky top-0 z-20">
+        <div class="flex items-center gap-4">
+            <div class="text-pink-400 font-bold flex items-center gap-2">
+                <i data-lucide="git-merge" class="w-5 h-5"></i>
+                시나리오 흐름도
+                {% if edit_mode %}
+                <span class="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/30">편집 모드</span>
+                <span id="draftIndicator" class="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30 hidden">Draft</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            {% if edit_mode %}
+            <!-- Undo/Redo 버튼 -->
+            <div class="flex items-center gap-1 mr-2">
+                <button id="undoBtn" onclick="performUndo()" disabled
+                        class="p-2 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded-lg border border-gray-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="실행 취소 (Ctrl+Z)">
+                    <i data-lucide="undo-2" class="w-4 h-4"></i>
+                </button>
+                <button id="redoBtn" onclick="performRedo()" disabled
+                        class="p-2 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded-lg border border-gray-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="다시 실행 (Ctrl+Y)">
+                    <i data-lucide="redo-2" class="w-4 h-4"></i>
+                </button>
+                <button id="historyToggleBtn" onclick="toggleHistorySidebar()"
+                        class="p-2 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded-lg border border-gray-700 transition-all"
+                        title="변경 이력">
+                    <i data-lucide="history" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <!-- 편집 모드 토글 버튼 -->
+            <button id="editModeToggle" onclick="toggleEditMode()"
+                    class="edit-mode-toggle bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-lg border border-gray-600 flex items-center gap-2 text-sm font-bold transition-all">
+                <i data-lucide="mouse-pointer-click" class="w-4 h-4"></i>
+                <span>편집 모드 활성화</span>
+            </button>
+
+            <!-- [신규] AI 검수 추천 버튼 -->
+            <button id="aiRecommendBtn" onclick="showAuditRecommendModal()"
+                    class="bg-teal-900/80 hover:bg-teal-800 text-teal-200 px-3 py-2 rounded-lg border border-teal-700/50 flex items-center gap-2 text-sm font-bold transition-all">
+                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">AI 검수 추천</span>
+            </button>
+
+            <!-- 씬 추가 버튼 -->
+            <button id="addSceneBtn" onclick="showAddSceneModal()"
+                    class="bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-3 py-2 rounded-lg border border-indigo-700/50 flex items-center gap-2 text-sm font-bold transition-all">
+                <i data-lucide="plus-square" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">씬 추가</span>
+            </button>
+            <!-- 엔딩 추가 버튼 -->
+            <button id="addEndingBtn" onclick="showAddEndingModal()"
+                    class="bg-pink-900/80 hover:bg-pink-800 text-pink-200 px-3 py-2 rounded-lg border border-pink-700/50 flex items-center gap-2 text-sm font-bold transition-all">
+                <i data-lucide="flag" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">엔딩 추가</span>
+            </button>
+            <!-- ID 재정렬 버튼 -->
+            <button id="reorderBtn" onclick="reorderSceneIds()"
+                    class="bg-purple-900/80 hover:bg-purple-800 text-purple-200 px-3 py-2 rounded-lg border border-purple-700/50 flex items-center gap-2 text-sm font-bold transition-all">
+                <i data-lucide="arrow-down-up" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">ID 재정렬</span>
+            </button>
+            <!-- Draft 저장 버튼 -->
+            <button id="saveDraftBtn" onclick="saveDraft()"
+                    class="bg-blue-900/80 hover:bg-blue-800 text-blue-200 px-4 py-2 rounded-lg border border-blue-700/50 flex items-center gap-2 text-sm font-bold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <i data-lucide="save" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">Draft 저장</span>
+            </button>
+            <!-- 최종 반영 버튼 -->
+            <button id="publishBtn" onclick="confirmPublish()"
+                    class="bg-green-900/80 hover:bg-green-800 text-green-200 px-4 py-2 rounded-lg border border-green-700/50 flex items-center gap-2 text-sm font-bold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <i data-lucide="upload" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">최종 반영</span>
+            </button>
+            <!-- 변경 취소 버튼 -->
+            <button id="discardBtn" onclick="confirmDiscard()"
+                    class="bg-red-900/80 hover:bg-red-800 text-red-200 px-3 py-2 rounded-lg border border-red-700/50 flex items-center gap-2 text-sm font-bold transition-all hidden">
+                <i data-lucide="x" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">취소</span>
+            </button>
+            <!-- 대시보드로 돌아가기 -->
+            <a href="/" class="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-lg border border-gray-600 flex items-center gap-2 text-sm font-bold transition-all">
+                <i data-lucide="home" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">대시보드</span>
+            </a>
+            {% else %}
+            <a href="/views/player" class="bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-4 py-2 rounded-lg border border-indigo-700/50 flex items-center gap-2 text-sm font-bold transition-all hover:scale-105">
+                <i data-lucide="gamepad-2" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">플레이어 모드</span>
+            </a>
+            {% endif %}
+            <button class="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-full transition-colors relative">
+                <i data-lucide="bell" class="w-5 h-5"></i>
+                <span class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-dark-900"></span>
+            </button>
+        </div>
+    </header>
+
+    <div class="flex-1 overflow-y-auto p-8 fade-in relative flex flex-col">
+        <div class="max-w-7xl mx-auto w-full flex flex-col h-full">
+
+            <!-- 헤더 -->
+            <div class="flex items-end justify-between border-b border-gray-800 pb-4 mb-6 shrink-0">
+                <div>
+                    <h2 class="text-3xl font-bold text-white flex items-center gap-3">
+                        <i data-lucide="git-merge" class="text-pink-500"></i>
+                        시나리오 흐름도 (Tree View)
+                    </h2>
+                    <p class="text-gray-400 mt-1">"{{ title }}"의 장면 연결 구조를 시각적으로 확인합니다.</p>
+                    {% if current_scene_id %}
+                    <p class="text-sm text-cyan-400 mt-2 flex items-center gap-2">
+                        <i data-lucide="map-pin" class="w-4 h-4"></i>
+                        현재 위치: <span class="font-bold">{{ current_scene_id }}</span>
+                    </p>
+                    {% endif %}
+                </div>
+                <div class="text-sm text-gray-500">
+                    총 {{ scenes|length }}개의 씬 + {{ scenario.endings|length }}개의 엔딩
+                </div>
+            </div>
+
+            <!-- Mermaid 그래프 영역 -->
+            <div class="relative bg-gray-900 rounded-xl border border-gray-800 shadow-inner overflow-hidden flex flex-col h-[600px] shrink-0">
+
+                <!-- 줌 컨트롤 -->
+                <div class="absolute bottom-4 right-4 z-20 flex gap-2">
+                    <button onclick="zoomGraph(0.1)" class="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-600 shadow-lg" title="Zoom In">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="resetZoom()" class="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-600 shadow-lg" title="Reset View">
+                        <i data-lucide="maximize" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="zoomGraph(-0.1)" class="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-600 shadow-lg" title="Zoom Out">
+                        <i data-lucide="minus" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- 범례 -->
+                <div class="absolute top-4 right-4 z-20 bg-gray-900/90 p-2 rounded text-xs text-gray-400 border border-gray-700 pointer-events-none">
+                    <span class="inline-block w-3 h-3 bg-[#0f766e] mr-1 rounded-sm align-middle"></span>Prologue
+                    <span class="inline-block w-3 h-3 bg-[#312e81] ml-2 mr-1 rounded-sm align-middle"></span>Start
+                    <span class="inline-block w-3 h-3 bg-[#831843] ml-2 mr-1 rounded-sm align-middle"></span>End
+                </div>
+
+                <!-- 그래프 컨테이너 -->
+                <div id="graph-container" class="flex-1 w-full h-full cursor-grab active:cursor-grabbing overflow-hidden flex items-center justify-center bg-[#111827]">
+                    <div id="graph-inner" class="transition-transform duration-75 origin-center">
+                        <pre class="mermaid opacity-0 transition-opacity duration-500" id="mermaid-graph">
+                            {{ mermaid_code | safe }}
+                        </pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 상세 리스트 (접이식) -->
+            <div class="mt-8 space-y-4 pb-8">
+
+                <details class="group bg-gray-900 rounded-lg border {% if current_scene_id == 'prologue' %}border-cyan-400 shadow-lg shadow-cyan-500/20{% else %}border-gray-800{% endif %} {% if current_scene_id == 'prologue' %}relative{% endif %}">
+                    {% if current_scene_id == 'prologue' %}
+                    <div class="absolute -top-2 -right-2 bg-cyan-400 text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg z-10">
+                        <i data-lucide="map-pin" class="w-3 h-3"></i>
+                        현재 위치
+                    </div>
+                    {% endif %}
+                    <summary class="p-4 cursor-pointer font-bold text-gray-300 hover:text-white flex justify-between items-center select-none bg-gray-800/30">
+                        <span class="flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4 text-yellow-500"></i> 프롤로그 (Prologue)</span>
+                        <i data-lucide="chevron-down" class="transition-transform group-open:rotate-180"></i>
+                    </summary>
+                    <div class="p-6 border-t border-gray-800 text-gray-300 leading-relaxed bg-gray-900/50 noto-sans-font">
+                        {{ scenario.prologue or scenario.prologue_text or "프롤로그 없음" }}
+                    </div>
+                </details>
+
+                <details class="group bg-gray-900 rounded-lg border border-gray-800">
+                    <summary class="p-4 cursor-pointer font-bold text-gray-300 hover:text-white flex justify-between items-center select-none bg-gray-800/30">
+                        <span class="flex items-center gap-2"><i data-lucide="clapperboard" class="w-4 h-4 text-blue-500"></i> 씬 목록 (Scenes)</span>
+                        <i data-lucide="chevron-down" class="transition-transform group-open:rotate-180"></i>
+                    </summary>
+                    <div class="p-4 border-t border-gray-800 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {% for scene in scenes %}
+                        <div class="bg-indigo-900/10 p-4 rounded border {% if current_scene_id == scene.scene_id %}border-cyan-400 shadow-lg shadow-cyan-500/20{% else %}border-indigo-900/30 hover:border-indigo-500/30{% endif %} transition-colors {% if current_scene_id == scene.scene_id %}relative{% endif %}">
+                            {% if current_scene_id == scene.scene_id %}
+                            <div class="absolute -top-2 -right-2 bg-cyan-400 text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg">
+                                <i data-lucide="map-pin" class="w-3 h-3"></i>
+                                현재 위치
+                            </div>
+                            {% endif %}
+                            <div class="font-bold {% if current_scene_id == scene.scene_id %}text-cyan-300{% else %}text-indigo-300{% endif %} text-sm mb-1 flex justify-between">
+                                <span>{{ scene.title or scene.name or scene.scene_id }}</span>
+                                <span class="text-xs text-indigo-900 bg-indigo-900/20 px-1.5 py-0.5 rounded">{{ scene_display_ids.get(scene.scene_id, scene.scene_id) }}</span>
+                            </div>
+                            <div class="text-xs text-gray-400 line-clamp-3 mb-2 noto-sans-font">{{ scene.description }}</div>
+
+                            {% if incoming_conditions and incoming_conditions[scene.scene_id] %}
+                            <div class="text-[10px] border-t border-gray-700/50 pt-2 mt-2">
+                                <span class="text-gray-500">이 씬에 도달하는 조건:</span>
+                                <ul class="mt-1 space-y-1">
+                                {% for cond in incoming_conditions[scene.scene_id] %}
+                                    <li class="flex items-start gap-1">
+                                        <span class="text-green-400">←</span>
+                                        <span class="text-indigo-300">{{ cond.from_title }}</span>
+                                        <span class="text-gray-500">에서</span>
+                                        <span class="text-green-300">"{{ cond.condition }}"</span>
+                                    </li>
+                                {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+
+                            {% if scene.transitions and scene.transitions|length > 0 %}
+                            <div class="text-[10px] border-t border-gray-700/50 pt-2 mt-2">
+                                <span class="text-gray-500">다음 씬으로 이동 조건:</span>
+                                <ul class="mt-1 space-y-1">
+                                {% for trans in scene.transitions %}
+                                    <li class="flex items-start gap-1 flex-wrap">
+                                        <span class="text-indigo-400">→</span>
+                                        {% if ending_names and trans.target_scene_id in ending_names %}
+                                        <span class="text-pink-400 font-medium">🏁 {{ ending_names[trans.target_scene_id] }}</span>
+                                        {% elif scene_names and trans.target_scene_id in scene_names %}
+                                        <span class="text-indigo-300">{{ scene_names[trans.target_scene_id] }}</span>
+                                        {% else %}
+                                        <span class="text-gray-300">{{ trans.target_scene_id }}</span>
+                                        {% endif %}
+                                        <span class="text-gray-500">:</span>
+                                        <span class="text-green-300">{{ trans.trigger or trans.condition or "자유 행동" }}</span>
+                                    </li>
+                                {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </details>
+
+                <details class="group bg-gray-900 rounded-lg border border-gray-800">
+                    <summary class="p-4 cursor-pointer font-bold text-gray-300 hover:text-white flex justify-between items-center select-none bg-gray-800/30">
+                        <span class="flex items-center gap-2"><i data-lucide="flag" class="w-4 h-4 text-red-500"></i> 엔딩 목록 (Endings)</span>
+                        <i data-lucide="chevron-down" class="transition-transform group-open:rotate-180"></i>
+                    </summary>
+                    <div class="p-4 border-t border-gray-800 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {% for ending in scenario.endings %}
+                        <div class="bg-red-900/10 p-4 rounded border {% if current_scene_id == ending.ending_id %}border-cyan-400 shadow-lg shadow-cyan-500/20{% else %}border-red-900/30 hover:border-red-500/30{% endif %} transition-colors {% if current_scene_id == ending.ending_id %}relative{% endif %}">
+                            {% if current_scene_id == ending.ending_id %}
+                            <div class="absolute -top-2 -right-2 bg-cyan-400 text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg">
+                                <i data-lucide="map-pin" class="w-3 h-3"></i>
+                                현재 위치
+                            </div>
+                            {% endif %}
+                            <div class="font-bold text-red-300 text-sm mb-1 flex justify-between">
+                                <span>{{ ending.title }}</span>
+                                <span class="text-xs text-red-900 bg-red-900/20 px-1.5 py-0.5 rounded">{{ ending_display_ids.get(ending.ending_id, ending.ending_id) }}</span>
+                            </div>
+                            <div class="text-xs text-gray-400 line-clamp-3 mb-2 noto-sans-font">{{ ending.description }}</div>
+
+                            {% if ending_incoming_conditions and ending_incoming_conditions[ending.ending_id] %}
+                            <div class="text-[10px] border-t border-red-900/20 pt-2 mt-2">
+                                <span class="text-gray-500">이 엔딩에 도달하는 조건:</span>
+                                <ul class="mt-1 space-y-1">
+                                {% for cond in ending_incoming_conditions[ending.ending_id] %}
+                                    <li class="flex items-start gap-1">
+                                        <span class="text-pink-400">←</span>
+                                        <span class="text-indigo-300">{{ cond.from_title }}</span>
+                                        <span class="text-gray-500">에서</span>
+                                        <span class="text-green-300">"{{ cond.condition }}"</span>
+                                    </li>
+                                {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </details>
+
+            </div>
+
+        </div>
+    </div>
+    </div>
+
+    {% if edit_mode %}
+    <!-- 오른쪽 편집 사이드바 -->
+    <div id="editSidebar" class="edit-sidebar bg-dark-800 border-l border-white/5 flex flex-col h-full overflow-hidden">
+        <div class="p-4 border-b border-white/5 flex items-center justify-between">
+            <h3 class="font-bold text-white flex items-center gap-2">
+                <i data-lucide="settings-2" class="w-5 h-5 text-amber-400"></i>
+                <span id="editPanelTitle">노드 편집</span>
+            </h3>
+            <button onclick="closeEditSidebar()" class="p-1 text-gray-400 hover:text-white hover:bg-white/5 rounded transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div id="editPanelContent" class="flex-1 overflow-y-auto p-4">
+            <div class="text-gray-500 text-sm text-center py-8">
+                <i data-lucide="mouse-pointer-click" class="w-8 h-8 mx-auto mb-2 text-gray-600"></i>
+                <p>편집 모드를 활성화하고</p>
+                <p>노드를 클릭하세요</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Mermaid JS Load -->
+<script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+
+    mermaid.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        securityLevel: 'loose',
+        flowchart: {
+            useMaxWidth: false,
+            htmlLabels: true,
+            curve: 'basis'
+        }
+    });
+
+    // Mermaid 인스턴스를 전역으로 저장 (리렌더링용)
+    window.mermaidInstance = mermaid;
+
+    window.panZoomState = {
+        scale: 1,
+        panning: false,
+        pointX: 0,
+        pointY: 0,
+        startX: 0,
+        startY: 0
+    };
+
+    async function renderGraph() {
+        console.log('[Mermaid] Starting graph render...');
+        const element = document.querySelector('#mermaid-graph');
+        if (!element) {
+            console.error('[Mermaid] Graph element not found!');
+            return;
+        }
+
+        console.log('[Mermaid] Element found:', element);
+        console.log('[Mermaid] Content length:', element.textContent.length);
+
+        if (element) {
+            try {
+                console.log('[Mermaid] Running mermaid.run()...');
+                await mermaid.run({ nodes: [element] });
+                console.log('[Mermaid] Render successful!');
+                element.classList.remove('opacity-0');
+
+                const svg = element.querySelector('svg');
+                if (svg) {
+                    svg.style.maxWidth = 'none';
+                    svg.style.height = 'auto';
+                    console.log('[Mermaid] SVG styles applied');
+                }
+
+                // 현재 씬 하이라이트 처리
+                highlightCurrentScene();
+
+                // 편집 모드가 활성화되어 있으면 클릭 핸들러 설정
+                if (typeof setupNodeClickHandlers === 'function') {
+                    setTimeout(() => {
+                        setupNodeClickHandlers();
+                    }, 100);
+                }
+            } catch (err) {
+                console.error("[Mermaid] Render Failed:", err);
+                element.innerHTML = `<div class='text-red-500 p-4'>그래프 렌더링 실패<br><small>${err.message || err}</small></div>`;
+                element.classList.remove('opacity-0');
+            }
+        }
+    }
+
+    // 현재 씬을 Mermaid 그래프에서 하이라이트
+    function highlightCurrentScene() {
+        const currentSceneId = '{{ current_scene_id }}';
+        if (!currentSceneId) return;
+
+        console.log('[Highlight] Current Scene ID:', currentSceneId);
+
+        // Mermaid 그래프에서 현재 씬 노드 찾기
+        const svg = document.querySelector('#mermaid-graph svg');
+        if (!svg) return;
+
+        // 모든 노드 그룹 확인
+        const allNodes = svg.querySelectorAll('.node');
+        console.log('[Highlight] Total nodes found:', allNodes.length);
+
+        allNodes.forEach(node => {
+            // 노드의 ID 확인 (Mermaid는 flowchart-{원본ID}-{숫자} 형식으로 생성)
+            const nodeId = node.getAttribute('id') || '';
+
+            // nodeId에서 실제 scene_id 추출
+            let extractedId = '';
+            const lastDashIndex = nodeId.lastIndexOf('-');
+            if (lastDashIndex > 0) {
+                const afterLastDash = nodeId.substring(lastDashIndex + 1);
+                if (/^\d+$/.test(afterLastDash)) {
+                    extractedId = nodeId.substring(0, lastDashIndex).replace(/^flowchart-/, '');
+                }
+            }
+
+            if (!extractedId) {
+                const match = nodeId.match(/flowchart-(.+)-\d+$/);
+                extractedId = match ? match[1] : '';
+            }
+
+            console.log('[Highlight] Node ID:', nodeId, '→ Extracted:', extractedId);
+
+            // 프롤로그 체크
+            const isPrologueNode = extractedId.toUpperCase() === 'PROLOGUE';
+            const isCurrentPrologue = currentSceneId.toLowerCase() === 'prologue' && isPrologueNode;
+
+            // 정확한 매칭 (부분 문자열이 아닌 완전 일치)
+            const isCurrentScene = extractedId === currentSceneId;
+
+            if (isCurrentPrologue || isCurrentScene) {
+                console.log('[Highlight] ✅ MATCHED! Node:', nodeId, 'Scene:', currentSceneId);
+
+                // rect나 polygon 요소 찾기
+                const rect = node.querySelector('rect') || node.querySelector('polygon');
+                if (rect) {
+                    // 현재 씬 하이라이트 스타일 직접 적용 (SVG 속성으로)
+                    rect.setAttribute('stroke', '#22d3ee');
+                    rect.setAttribute('stroke-width', '3');
+                    rect.setAttribute('fill', '#164e63');
+
+                    // opacity 애니메이션 추가 (깜빡임 효과)
+                    const animate = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+                    animate.setAttribute('attributeName', 'opacity');
+                    animate.setAttribute('values', '1;0.6;1');
+                    animate.setAttribute('dur', '2s');
+                    animate.setAttribute('repeatCount', 'indefinite');
+                    rect.appendChild(animate);
+                }
+            }
+        });
+    }
+
+    window.updateTransform = function() {
+        const inner = document.getElementById('graph-inner');
+        if(inner) {
+            inner.style.transform = `translate(${window.panZoomState.pointX}px, ${window.panZoomState.pointY}px) scale(${window.panZoomState.scale})`;
+        }
+    }
+
+    window.zoomGraph = function(delta) {
+        window.panZoomState.scale += delta;
+        if (window.panZoomState.scale < 0.1) window.panZoomState.scale = 0.1;
+        if (window.panZoomState.scale > 5) window.panZoomState.scale = 5;
+        window.updateTransform();
+    }
+
+    window.resetZoom = function() {
+        window.panZoomState = { scale: 1, panning: false, pointX: 0, pointY: 0, startX: 0, startY: 0 };
+        window.updateTransform();
+    }
+
+    const container = document.getElementById('graph-container');
+
+    container.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        window.panZoomState.startX = e.clientX - window.panZoomState.pointX;
+        window.panZoomState.startY = e.clientY - window.panZoomState.pointY;
+        window.panZoomState.panning = true;
+        container.style.cursor = 'grabbing';
+    });
+
+    document.addEventListener('mouseup', function(e) {
+        window.panZoomState.panning = false;
+        container.style.cursor = 'grab';
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (!window.panZoomState.panning) return;
+        e.preventDefault();
+        window.panZoomState.pointX = e.clientX - window.panZoomState.startX;
+        window.panZoomState.pointY = e.clientY - window.panZoomState.startY;
+        window.updateTransform();
+    });
+
+    container.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        window.zoomGraph(delta);
+    }, { passive: false });
+
+    // ========== 실시간 차트 리렌더링 함수 ==========
+    window.rerenderMermaidChart = async function(newMermaidCode) {
+        const graphInner = document.getElementById('graph-inner');
+        if (!graphInner) return;
+
+        // 기존 pan/zoom 상태 저장
+        const savedState = { ...window.panZoomState };
+
+        // 새 Mermaid 코드로 요소 교체
+        const newElement = document.createElement('pre');
+        newElement.className = 'mermaid opacity-0 transition-opacity duration-500';
+        newElement.id = 'mermaid-graph';
+        newElement.textContent = newMermaidCode;
+
+        // 기존 요소 교체
+        graphInner.innerHTML = '';
+        graphInner.appendChild(newElement);
+
+        try {
+            await window.mermaidInstance.run({ nodes: [newElement] });
+            newElement.classList.remove('opacity-0');
+
+            const svg = newElement.querySelector('svg');
+            if (svg) {
+                svg.style.maxWidth = 'none';
+                svg.style.height = 'auto';
+            }
+
+            // pan/zoom 상태 복원
+            window.panZoomState = savedState;
+            window.updateTransform();
+
+            // 편집 모드면 클릭 핸들러 재설정
+            if (typeof isEditModeActive !== 'undefined' && isEditModeActive) {
+                setupNodeClickHandlers();
+            }
+
+            console.log('[Mermaid] Chart re-rendered successfully');
+        } catch (err) {
+            console.error('[Mermaid] Re-render failed:', err);
+            newElement.innerHTML = `<div class='text-red-500 p-4'>차트 리렌더링 실패<br><small>${err}</small></div>`;
+            newElement.classList.remove('opacity-0');
+        }
+    };
+
+    renderGraph();
+</script>
+
+<!-- Lucide 아이콘 초기화 -->
+<script>
+    lucide.createIcons();
+
+    // ========== 페이지 이탈 경고 시스템 ==========
+    let isInternalNavigation = false;  // 내부 네비게이션 플래그
+
+    // 페이지 이탈 경고 (편집 모드에서 변경사항이 있을 때)
+    window.addEventListener('beforeunload', function(e) {
+        // 내부 네비게이션이면 경고 안 함
+        if (isInternalNavigation) {
+            return;
+        }
+
+        // 편집 모드에서 저장하지 않은 변경사항이 있으면 경고
+        {% if edit_mode %}
+        if (typeof hasChanges !== 'undefined' && hasChanges) {
+            e.preventDefault();
+            e.returnValue = '저장하지 않은 변경사항이 있습니다. 페이지를 벗어나시겠습니까?';
+            return e.returnValue;
+        }
+        {% endif %}
+    });
+
+    // 사이드바 링크 클릭 시 내부 네비게이션 설정
+    document.querySelectorAll('.sidebar a[href]').forEach(link => {
+        link.addEventListener('click', function() {
+            isInternalNavigation = true;
+        });
+    });
+
+    // ========== 편집 모드 상태 관리 ==========
+    {% if edit_mode %}
+    const SCENARIO_ID = '{{ scenario_id }}';
+    let scenarioData = {{ scenario | tojson | safe if scenario else '{"scenes":[],"endings":[]}' }};
+    // 시나리오 데이터 기본값 보장
+    if (!scenarioData.scenes) scenarioData.scenes = [];
+    if (!scenarioData.endings) scenarioData.endings = [];
+
+    let isEditModeActive = false;
+    let hasChanges = false;
+    let selectedNodeId = null;
+
+    // 편집 모드 토글
+    window.toggleEditMode = function() {
+        isEditModeActive = !isEditModeActive;
+        const toggleBtn = document.getElementById('editModeToggle');
+        const graphContainer = document.getElementById('graph-container');
+
+        if (isEditModeActive) {
+            toggleBtn.classList.add('active');
+            toggleBtn.querySelector('span').textContent = '편집 모드 비활성화';
+            graphContainer.classList.add('edit-mode-active');
+            setupNodeClickHandlers();
+        } else {
+            toggleBtn.classList.remove('active');
+            toggleBtn.querySelector('span').textContent = '편집 모드 활성화';
+            graphContainer.classList.remove('edit-mode-active');
+            closeEditSidebar();
+        }
+        lucide.createIcons();
+    };
+
+    // 노드 클릭 핸들러 설정
+    function setupNodeClickHandlers() {
+        const svg = document.querySelector('#mermaid-graph svg');
+        if (!svg) return;
+
+        const allNodes = svg.querySelectorAll('.node');
+        allNodes.forEach(node => {
+            node.style.cursor = 'pointer';
+            node.onclick = function(e) {
+                if (!isEditModeActive) return;
+                e.stopPropagation();
+
+                const nodeId = node.getAttribute('id') || '';
+                let extractedId = extractNodeId(nodeId);
+
+                console.log('[Edit] Node clicked:', extractedId);
+                selectNode(node, extractedId);
+            };
+        });
+    }
+
+    // 노드 ID 추출
+    function extractNodeId(nodeId) {
+        let extractedId = '';
+        const lastDashIndex = nodeId.lastIndexOf('-');
+        if (lastDashIndex > 0) {
+            const afterLastDash = nodeId.substring(lastDashIndex + 1);
+            if (/^\d+$/.test(afterLastDash)) {
+                extractedId = nodeId.substring(0, lastDashIndex).replace(/^flowchart-/, '');
+            }
+        }
+        if (!extractedId) {
+            const match = nodeId.match(/flowchart-(.+)-\d+$/);
+            extractedId = match ? match[1] : '';
+        }
+        return extractedId;
+    }
+
+    // 노드 선택
+    function selectNode(nodeElement, nodeId) {
+        // 이전 선택 해제
+        document.querySelectorAll('.node-selected').forEach(n => n.classList.remove('node-selected'));
+
+        // 새 노드 선택
+        nodeElement.classList.add('node-selected');
+        selectedNodeId = nodeId;
+
+        // 사이드바 열기 및 폼 표시
+        openEditSidebar(nodeId);
+    }
+
+    // 편집 사이드바 열기
+    function openEditSidebar(nodeId) {
+        const sidebar = document.getElementById('editSidebar');
+        const title = document.getElementById('editPanelTitle');
+        const content = document.getElementById('editPanelContent');
+
+        sidebar.classList.add('open');
+
+        // 노드 타입 확인 및 폼 생성
+        if (nodeId.toUpperCase() === 'PROLOGUE') {
+            title.textContent = '프롤로그 편집';
+            content.innerHTML = createPrologueForm();
+        } else {
+            // 씬인지 엔딩인지 확인
+            const scene = scenarioData.scenes?.find(s => s.scene_id === nodeId);
+            const ending = scenarioData.endings?.find(e => e.ending_id === nodeId);
+
+            if (scene) {
+                title.textContent = '씬 편집';
+                content.innerHTML = createSceneForm(scene);
+            } else if (ending) {
+                title.textContent = '엔딩 편집';
+                content.innerHTML = createEndingForm(ending);
+            } else {
+                content.innerHTML = '<div class="text-red-400 text-sm">노드를 찾을 수 없습니다.</div>';
+            }
+        }
+
+        lucide.createIcons();
+    }
+
+    // 편집 사이드바 닫기
+    window.closeEditSidebar = function() {
+        const sidebar = document.getElementById('editSidebar');
+        sidebar.classList.remove('open');
+        document.querySelectorAll('.node-selected').forEach(n => n.classList.remove('node-selected'));
+        selectedNodeId = null;
+    };
+
+    // 프롤로그 편집 폼
+    function createPrologueForm() {
+        const prologue = scenarioData.prologue || scenarioData.prologue_text || '';
+        return `
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">프롤로그 내용</label>
+                    <textarea id="editPrologue" rows="10"
+                              class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none"
+                              placeholder="프롤로그 내용을 입력하세요...">${escapeHtml(prologue)}</textarea>
+                </div>
+                <button onclick="applyPrologueEdit()"
+                        class="w-full bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
+                    <i data-lucide="check" class="w-4 h-4"></i>
+                    적용
+                </button>
+            </div>
+        `;
+    }
+
+    // 씬 편집 폼
+    function createSceneForm(scene) {
+        return `
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">씬 ID</label>
+                    <input type="text" value="${escapeHtml(scene.scene_id)}" disabled
+                           class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-gray-400 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">제목</label>
+                    <input type="text" id="editSceneTitle" value="${escapeHtml(scene.title || scene.name || '')}"
+                           class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-gray-200 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">설명</label>
+                    <textarea id="editSceneDescription" rows="6"
+                              class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none">${escapeHtml(scene.description || '')}</textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">전환 조건 (Transitions)</label>
+                    <div id="transitionsContainer" class="space-y-2">
+                        ${(scene.transitions || []).map((t, i) => `
+                            <div class="bg-gray-800 p-2 rounded border border-gray-700 text-xs">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-gray-400">→</span>
+                                    <input type="text" value="${escapeHtml(t.target_scene_id || '')}"
+                                           class="flex-1 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-gray-200"
+                                           data-trans-idx="${i}" data-trans-field="target">
+                                </div>
+                                <input type="text" value="${escapeHtml(t.trigger || t.condition || '')}"
+                                       class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-green-300"
+                                       data-trans-idx="${i}" data-trans-field="trigger"
+                                       placeholder="트리거 조건">
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- AI 서사 일관성 검사 버튼 -->
+                <div class="border-t border-gray-700 pt-4">
+                    <button onclick="runAIAudit('${scene.scene_id}')"
+                            id="aiAuditBtn_${scene.scene_id}"
+                            class="w-full bg-violet-600/20 hover:bg-violet-600 text-violet-300 hover:text-white py-2.5 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors border border-violet-600/30 mb-2">
+                        <i data-lucide="brain" class="w-4 h-4"></i>
+                        AI 서사 일관성 검사
+                    </button>
+                    <div id="aiAuditResult_${scene.scene_id}" class="hidden"></div>
+                </div>
+
+                <div class="flex gap-2">
+                    <button onclick="applySceneEdit('${scene.scene_id}')"
+                            class="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
+                        <i data-lucide="check" class="w-4 h-4"></i>
+                        적용
+                    </button>
+                    <button onclick="confirmDeleteScene('${scene.scene_id}', '${escapeHtml(scene.title || scene.name || scene.scene_id)}')"
+                            class="px-4 py-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-colors border border-red-600/30">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    // 엔딩 편집 폼
+    function createEndingForm(ending) {
+        return `
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">엔딩 ID</label>
+                    <input type="text" value="${escapeHtml(ending.ending_id)}" disabled
+                           class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-gray-400 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">제목</label>
+                    <input type="text" id="editEndingTitle" value="${escapeHtml(ending.title || '')}"
+                           class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-gray-200 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">설명</label>
+                    <textarea id="editEndingDescription" rows="6"
+                              class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none">${escapeHtml(ending.description || '')}</textarea>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="applyEndingEdit('${ending.ending_id}')"
+                            class="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
+                        <i data-lucide="check" class="w-4 h-4"></i>
+                        적용
+                    </button>
+                    <button onclick="confirmDeleteEnding('${ending.ending_id}', '${escapeHtml(ending.title || ending.ending_id)}')"
+                            class="px-4 py-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-colors border border-red-600/30">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    // [신규] AI 검수 추천 모달 표시
+    window.showAuditRecommendModal = function() {
+        // 기존 모달 있으면 제거
+        closeModal('auditRecommendModal');
+
+        const modalHtml = `
+            <div id="auditRecommendModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center fade-in">
+                <div class="bg-dark-800 rounded-xl border border-teal-500/30 shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col">
+                    <div class="p-4 border-b border-white/5 flex items-center justify-between shrink-0">
+                        <h3 class="font-bold text-white flex items-center gap-2 text-lg">
+                            <i data-lucide="sparkles" class="w-5 h-5 text-teal-400"></i>
+                            AI 검수 추천 리포트
+                        </h3>
+                        <button onclick="closeModal('auditRecommendModal')" class="p-1 text-gray-400 hover:text-white rounded">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <div id="auditRecommendContent" class="p-6 overflow-y-auto flex-1">
+                        <div class="flex flex-col items-center justify-center py-10 text-gray-400 gap-4">
+                            <div class="relative w-16 h-16">
+                                <div class="absolute inset-0 border-4 border-gray-700 rounded-full"></div>
+                                <div class="absolute inset-0 border-4 border-teal-500 rounded-full border-t-transparent animate-spin"></div>
+                                <i data-lucide="brain" class="absolute inset-0 m-auto w-6 h-6 text-teal-500 animate-pulse"></i>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-lg font-bold text-white mb-1">시나리오 구조 분석 중...</p>
+                                <p class="text-sm">전체 씬의 연결 상태와 밸런스를 확인하고 있습니다.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t border-white/5 flex justify-end gap-3 shrink-0 bg-dark-900/30 rounded-b-xl">
+                        <button onclick="closeModal('auditRecommendModal')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg">닫기</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        lucide.createIcons();
+
+        // API 호출 시작
+        runAuditRecommendation();
+    };
+
+    // [신규] AI 검수 추천 실행 함수
+    async function runAuditRecommendation() {
+        try {
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/audit-recommend`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                renderRecommendationResults(result.recommendations);
+            } else {
+                throw new Error(result.error || "분석 실패");
+            }
+        } catch (e) {
+            console.error(e);
+            const content = document.getElementById('auditRecommendContent');
+            if(content) {
+                content.innerHTML = `
+                    <div class="bg-red-900/20 border border-red-500/30 rounded-lg p-6 text-center">
+                        <i data-lucide="alert-circle" class="w-10 h-10 text-red-500 mx-auto mb-3"></i>
+                        <h3 class="text-lg font-bold text-red-400 mb-2">분석 중 오류 발생</h3>
+                        <p class="text-gray-400">${e.message}</p>
+                    </div>
+                `;
+                lucide.createIcons();
+            }
+        }
+    }
+
+    // [신규] 추천 결과 렌더링
+    function renderRecommendationResults(recommendations) {
+        const content = document.getElementById('auditRecommendContent');
+        if (!content) return;
+
+        if (!recommendations || recommendations.length === 0) {
+            content.innerHTML = `
+                <div class="text-center py-10">
+                    <i data-lucide="check-circle" class="w-12 h-12 text-green-500 mx-auto mb-4"></i>
+                    <h3 class="text-xl font-bold text-white mb-2">완벽합니다!</h3>
+                    <p class="text-gray-400">구조적으로 큰 문제가 발견되지 않았습니다.</p>
+                </div>
+            `;
+            lucide.createIcons();
+            return;
+        }
+
+        const html = `
+            <div class="mb-4 p-3 bg-teal-900/20 border border-teal-500/20 rounded-lg flex gap-3 items-start">
+                <i data-lucide="info" class="w-5 h-5 text-teal-400 mt-0.5 shrink-0"></i>
+                <div>
+                    <p class="text-sm text-teal-200 font-bold mb-1">AI 분석 완료</p>
+                    <p class="text-xs text-gray-400">다음 ${recommendations.length}개의 씬에서 잠재적인 문제가 발견되었습니다. 클릭하여 바로 편집할 수 있습니다.</p>
+                </div>
+            </div>
+            <div class="space-y-3">
+                ${recommendations.map(rec => {
+                    const riskColor = rec.risk_level === 'High' ? 'text-red-400 bg-red-900/20 border-red-700/50' :
+                                      rec.risk_level === 'Medium' ? 'text-amber-400 bg-amber-900/20 border-amber-700/50' :
+                                      'text-blue-400 bg-blue-900/20 border-blue-700/50';
+                    const icon = rec.risk_level === 'High' ? 'alert-octagon' : 'alert-triangle';
+
+                    return `
+                    <div class="group p-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all cursor-pointer relative overflow-hidden"
+                         onclick="jumpToSceneFromAudit('${rec.scene_id}')">
+                        <div class="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i data-lucide="arrow-right-circle" class="w-5 h-5 text-gray-400"></i>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <div class="px-2 py-1 rounded text-[10px] font-bold border uppercase shrink-0 flex items-center gap-1 ${riskColor}">
+                                <i data-lucide="${icon}" class="w-3 h-3"></i> ${rec.risk_level} Risk
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-white text-base mb-1 flex items-center gap-2">
+                                    ${rec.scene_id}
+                                    <span class="text-xs font-normal text-gray-500">
+                                        ${getSceneTitle(rec.scene_id)}
+                                    </span>
+                                </h4>
+                                <p class="text-gray-300 text-sm leading-relaxed">${rec.reason}</p>
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+
+        content.innerHTML = html;
+        lucide.createIcons();
+    }
+
+    // [신규] 씬 제목 가져오기 헬퍼
+    function getSceneTitle(sceneId) {
+        const s = scenarioData.scenes.find(sc => sc.scene_id === sceneId);
+        return s ? (s.title || s.name || '제목 없음') : '알 수 없음';
+    }
+
+    // [신규] 추천 항목 클릭 시 해당 씬으로 점프
+    window.jumpToSceneFromAudit = function(sceneId) {
+        // 모달 닫기
+        closeModal('auditRecommendModal');
+
+        // 편집 모드 활성화 (안 되어 있다면)
+        if (!isEditModeActive) {
+            toggleEditMode();
+        }
+
+        // 해당 씬의 노드 찾아서 선택 처리
+        // (Mermaid 그래프가 렌더링된 상태여야 함)
+        const svg = document.querySelector('#mermaid-graph svg');
+        if (svg) {
+            // ID 매칭되는 노드 찾기 시도
+            const allNodes = svg.querySelectorAll('.node');
+            let targetNode = null;
+
+            allNodes.forEach(node => {
+                const nodeId = node.getAttribute('id') || '';
+                if (extractNodeId(nodeId) === sceneId) {
+                    targetNode = node;
+                }
+            });
+
+            if (targetNode) {
+                selectNode(targetNode, sceneId);
+                // 스크롤 이동
+                targetNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } else {
+                // 노드를 못 찾았어도 사이드바는 연다 (데이터 기반)
+                openEditSidebar(sceneId);
+            }
+        } else {
+             openEditSidebar(sceneId);
+        }
+    };
+
+
+    // AI 서사 일관성 검사 실행
+    window.runAIAudit = async function(sceneId) {
+        const btn = document.getElementById(`aiAuditBtn_${sceneId}`);
+        const resultDiv = document.getElementById(`aiAuditResult_${sceneId}`);
+
+        if (!btn || !resultDiv) return;
+
+        // 버튼 비활성화 및 로딩 아이콘 표시
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> AI 검사 중... (10~30초 소요)';
+        lucide.createIcons();
+
+        try {
+            // AI 서사 일관성 검사 API 호출
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/ai-audit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scene_id: sceneId, audit_type: 'full' })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                const result = data.result;
+                const coherence = result.coherence || {};
+                const trigger = result.trigger || {};
+
+                // 문제 목록 생성
+                let issuesHtml = '';
+                const allIssues = [...(coherence.issues || []), ...(trigger.issues || [])];
+
+                if (allIssues.length === 0) {
+                    issuesHtml = `
+                        <div class="flex items-center gap-2 text-green-400 mb-3">
+                            <i data-lucide="check-circle" class="w-5 h-5"></i>
+                            <span class="font-bold">문제 없음!</span>
+                        </div>
+                        <p class="text-gray-400 text-sm">${escapeHtml(result.summary || '서사 일관성 검사를 통과했습니다.')}</p>
+                    `;
+                } else {
+                    issuesHtml = `
+                        <div class="flex items-center gap-2 ${result.has_errors ? 'text-red-400' : 'text-amber-400'} mb-3">
+                            <i data-lucide="${result.has_errors ? 'alert-circle' : 'alert-triangle'}" class="w-5 h-5"></i>
+                            <span class="font-bold">${allIssues.length}개의 문제 발견</span>
+                        </div>
+                        <div class="space-y-2 max-h-60 overflow-y-auto">
+                            ${allIssues.map(issue => `
+                                <div class="p-2 rounded ${issue.severity === 'error' ? 'bg-red-900/30 border border-red-700/50' : 'bg-amber-900/30 border border-amber-700/50'}">
+                                    <div class="flex items-start gap-2">
+                                        <span class="${issue.severity === 'error' ? 'text-red-400' : 'text-amber-400'} text-xs font-bold uppercase">${issue.severity}</span>
+                                        <span class="text-gray-200 text-xs">${escapeHtml(issue.message)}</span>
+                                    </div>
+                                    ${issue.suggestion ? `<p class="text-green-400 text-xs mt-1">💡 ${escapeHtml(issue.suggestion)}</p>` : ''}
+                                    ${issue.trigger_text ? `<p class="text-gray-500 text-xs mt-1">트리거: "${escapeHtml(issue.trigger_text)}"</p>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+
+                // 결과 표시
+                resultDiv.innerHTML = `
+                    <div class="p-3 rounded-lg bg-gray-800/50 border border-gray-700 mt-2">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs text-gray-500">AI 서사 일관성 검사 결과</span>
+                            <button onclick="document.getElementById('aiAuditResult_${sceneId}').classList.add('hidden')" class="text-gray-500 hover:text-white">
+                                <i data-lucide="x" class="w-3 h-3"></i>
+                            </button>
+                        </div>
+                        ${issuesHtml}
+                    </div>
+                `;
+                resultDiv.classList.remove('hidden');
+                lucide.createIcons();
+
+                if (allIssues.length === 0) {
+                    showToast('서사 일관성 검사 통과! ✅', 'success');
+                } else {
+                    showToast(`${allIssues.length}개의 서사 문제 발견`, result.has_errors ? 'error' : 'info');
+                }
+            } else {
+                throw new Error(data.error || '검사 실패');
+            }
+        } catch (error) {
+            console.error('AI Audit Error:', error);
+            resultDiv.innerHTML = `
+                <div class="p-3 rounded-lg bg-red-900/30 border border-red-700/50 mt-2">
+                    <div class="flex items-center gap-2 text-red-400">
+                        <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                        <span class="text-sm">검사 실패: ${escapeHtml(error.message)}</span>
+                    </div>
+                </div>
+            `;
+            resultDiv.classList.remove('hidden');
+            lucide.createIcons();
+            showToast('AI 검사 실패: ' + error.message, 'error');
+        } finally {
+            // 버튼 원래 상태로 복원
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="brain" class="w-4 h-4"></i> AI 서사 일관성 검사';
+            lucide.createIcons();
+        }
+    };
+
+    // HTML 이스케이프
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.toString()
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    // 프롤로그 수정 적용
+    window.applyPrologueEdit = function() {
+        const value = document.getElementById('editPrologue').value;
+        scenarioData.prologue = value;
+        scenarioData.prologue_text = value;
+        markAsChanged();
+        showToast('프롤로그가 수정되었습니다.');
+    };
+
+    // 씬 수정 적용
+    window.applySceneEdit = function(sceneId) {
+        const scene = scenarioData.scenes?.find(s => s.scene_id === sceneId);
+        if (!scene) return;
+
+        scene.title = document.getElementById('editSceneTitle').value;
+        scene.description = document.getElementById('editSceneDescription').value;
+
+        // 전환 조건 업데이트
+        document.querySelectorAll('[data-trans-idx]').forEach(input => {
+            const idx = parseInt(input.dataset.transIdx);
+            const field = input.dataset.transField;
+            if (scene.transitions && scene.transitions[idx]) {
+                if (field === 'target') {
+                    scene.transitions[idx].target_scene_id = input.value;
+                } else if (field === 'trigger') {
+                    scene.transitions[idx].trigger = input.value;
+                }
+            }
+        });
+
+        markAsChanged();
+        showToast('씬이 수정되었습니다.');
+    };
+
+    // 엔딩 수정 적용
+    window.applyEndingEdit = function(endingId) {
+        const ending = scenarioData.endings?.find(e => e.ending_id === endingId);
+        if (!ending) return;
+
+        ending.title = document.getElementById('editEndingTitle').value;
+        ending.description = document.getElementById('editEndingDescription').value;
+
+        markAsChanged();
+        showToast('엔딩이 수정되었습니다.');
+    };
+
+    // 변경 표시
+    function markAsChanged() {
+        hasChanges = true;
+        const saveDraftBtn = document.getElementById('saveDraftBtn');
+        const publishBtn = document.getElementById('publishBtn');
+        const discardBtn = document.getElementById('discardBtn');
+        const draftIndicator = document.getElementById('draftIndicator');
+
+        if (saveDraftBtn) saveDraftBtn.disabled = false;
+        if (publishBtn) publishBtn.disabled = false;
+        if (discardBtn) discardBtn.classList.remove('hidden');
+        if (draftIndicator) draftIndicator.classList.remove('hidden');
+    }
+
+    // ========== Draft 시스템 함수들 ==========
+
+    // Draft 저장
+    window.saveDraft = async function() {
+        const saveDraftBtn = document.getElementById('saveDraftBtn');
+        const originalHtml = saveDraftBtn.innerHTML;
+        saveDraftBtn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span class="hidden sm:inline">저장 중...</span>';
+        saveDraftBtn.disabled = true;
+        lucide.createIcons();
+
+        try {
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/save`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(scenarioData)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                saveDraftBtn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i><span class="hidden sm:inline">저장됨</span>';
+                showToast('Draft가 저장되었습니다!', 'success');
+
+                setTimeout(() => {
+                    saveDraftBtn.innerHTML = originalHtml;
+                    saveDraftBtn.disabled = !hasChanges;
+                    lucide.createIcons();
+                }, 2000);
+            } else {
+                throw new Error(result.error || 'Draft 저장 실패');
+            }
+        } catch (error) {
+            console.error('Draft save error:', error);
+            saveDraftBtn.innerHTML = originalHtml;
+            saveDraftBtn.disabled = false;
+            showToast('저장 실패: ' + error.message, 'error');
+        }
+        lucide.createIcons();
+    };
+
+    // 최종 반영 확인
+    window.confirmPublish = function() {
+        showConfirmModal(
+            '최종 반영',
+            'Draft의 변경사항을 실제 시나리오에 반영합니다.<br><strong class="text-amber-400">이 작업은 되돌릴 수 없습니다.</strong>',
+            '최종 반영',
+            'bg-green-600 hover:bg-green-500',
+            async () => {
+                await publishDraft();
+            }
+        );
+    };
+
+    // Draft 최종 반영
+    async function publishDraft() {
+        // 먼저 Draft 저장
+        const saveResponse = await fetch(`/api/draft/${SCENARIO_ID}/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(scenarioData)
+        });
+
+        if (!saveResponse.ok) {
+            showToast('Draft 저장 실패', 'error');
+            return;
+        }
+
+        // 최종 반영
+        const response = await fetch(`/api/draft/${SCENARIO_ID}/publish`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            hasChanges = false;
+            showToast('시나리오에 최종 반영되었습니다!', 'success');
+
+            // UI 업데이트
+            document.getElementById('draftIndicator')?.classList.add('hidden');
+            document.getElementById('discardBtn')?.classList.add('hidden');
+            document.getElementById('saveDraftBtn').disabled = true;
+            document.getElementById('publishBtn').disabled = true;
+
+            // 페이지 새로고침
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('최종 반영 실패: ' + result.error, 'error');
+        }
+    }
+
+    // 변경 취소 확인
+    window.confirmDiscard = function() {
+        showConfirmModal(
+            '변경사항 취소',
+            '모든 변경사항을 취소하고 원본 시나리오로 되돌립니다.<br><strong class="text-red-400">저장하지 않은 변경사항은 모두 사라집니다.</strong>',
+            '변경 취소',
+            'bg-red-600 hover:bg-red-500',
+            async () => {
+                await discardDraft();
+            }
+        );
+    };
+
+    // Draft 폐기
+    async function discardDraft() {
+        const response = await fetch(`/api/draft/${SCENARIO_ID}/discard`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            hasChanges = false;
+            showToast('변경사항이 취소되었습니다.', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast('취소 실패: ' + result.error, 'error');
+        }
+    }
+
+    // ID 재정렬
+    window.reorderSceneIds = async function() {
+        showConfirmModal(
+            'ID 순차 재정렬',
+            '씬 ID를 Mermaid 흐름도 순서(위→아래, 좌→우)에 따라 scene_1, scene_2, ... 형식으로 재정렬합니다.<br><strong class="text-amber-400">모든 참조가 자동으로 업데이트됩니다.</strong>',
+            '재정렬 실행',
+            'bg-purple-600 hover:bg-purple-500',
+            async () => {
+                const response = await fetch(`/api/draft/${SCENARIO_ID}/reorder`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    if (result.changes === 0) {
+                        showToast('이미 정렬되어 있습니다.', 'info');
+                    } else {
+                        scenarioData = result.scenario;
+                        markAsChanged();
+                        showToast(result.message, 'success');
+                        setTimeout(() => location.reload(), 1500);
+                    }
+                } else {
+                    showToast('재정렬 실패: ' + result.error, 'error');
+                }
+            }
+        );
+    };
+
+    // ========== 씬/엔딩 추가 모달 ==========
+
+    // [New Function] Mermaid 차트 데이터 새로고침
+    window.refreshMermaidChart = async function() {
+        try {
+            // Draft 조회 API 호출하여 최신 Mermaid 코드 확보
+            const response = await fetch(`/api/draft/${SCENARIO_ID}`);
+            const result = await response.json();
+
+            if (result.success && result.mermaid_code) {
+                await window.rerenderMermaidChart(result.mermaid_code);
+                console.log('[Mermaid] Chart refreshed via API');
+            }
+        } catch (e) {
+            console.error('Failed to refresh mermaid chart:', e);
+            showToast('차트 갱신 실패', 'error');
+        }
+    };
+
+    window.showAddSceneModal = function() {
+        const modalHtml = `
+            <div id="addSceneModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center fade-in">
+                <div class="bg-dark-800 rounded-xl border border-white/10 shadow-2xl w-full max-w-lg mx-4">
+                    <div class="p-4 border-b border-white/5 flex items-center justify-between">
+                        <h3 class="font-bold text-white flex items-center gap-2">
+                            <i data-lucide="plus-square" class="w-5 h-5 text-indigo-400"></i>
+                            새 씬 추가
+                        </h3>
+                        <button onclick="closeModal('addSceneModal')" class="p-1 text-gray-400 hover:text-white rounded">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">씬 제목</label>
+                            <input type="text" id="newSceneTitle" placeholder="새 씬의 제목을 입력하세요"
+                                   class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">설명 (선택)</label>
+                            <textarea id="newSceneDescription" rows="4" placeholder="씬의 설명을 입력하세요"
+                                      class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"></textarea>
+                        </div>
+                    </div>
+                    <div class="p-4 border-t border-white/5 flex justify-end gap-3">
+                        <button onclick="closeModal('addSceneModal')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg">취소</button>
+                        <button onclick="addNewScene()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center gap-2">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            추가
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        lucide.createIcons();
+        document.getElementById('newSceneTitle').focus();
+    };
+
+    window.addNewScene = async function() {
+        const title = document.getElementById('newSceneTitle').value.trim();
+        const description = document.getElementById('newSceneDescription').value.trim();
+
+        if (!title) {
+            showToast('씬 제목을 입력하세요.', 'error');
+            return;
+        }
+
+        const newScene = {
+            title: title,
+            description: description || '',
+            transitions: []
+        };
+
+        const response = await fetch(`/api/draft/${SCENARIO_ID}/add-scene`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scene: newScene })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            scenarioData = result.scenario;
+            markAsChanged();
+            closeModal('addSceneModal');
+            showToast(`새 씬 '${result.scene.scene_id}'이(가) 추가되었습니다.`, 'success');
+            // 실시간 차트 리렌더링
+            await refreshMermaidChart();
+        } else {
+            showToast('씬 추가 실패: ' + result.error, 'error');
+        }
+    };
+
+    window.showAddEndingModal = function() {
+        const modalHtml = `
+            <div id="addEndingModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center fade-in">
+                <div class="bg-dark-800 rounded-xl border border-white/10 shadow-2xl w-full max-w-lg mx-4">
+                    <div class="p-4 border-b border-white/5 flex items-center justify-between">
+                        <h3 class="font-bold text-white flex items-center gap-2">
+                            <i data-lucide="flag" class="w-5 h-5 text-pink-400"></i>
+                            새 엔딩 추가
+                        </h3>
+                        <button onclick="closeModal('addEndingModal')" class="p-1 text-gray-400 hover:text-white rounded">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">엔딩 제목</label>
+                            <input type="text" id="newEndingTitle" placeholder="엔딩 제목을 입력하세요"
+                                   class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-pink-500 focus:border-transparent">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">설명</label>
+                            <textarea id="newEndingDescription" rows="4" placeholder="엔딩의 설명을 입력하세요"
+                                      class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"></textarea>
+                        </div>
+                    </div>
+                    <div class="p-4 border-t border-white/5 flex justify-end gap-3">
+                        <button onclick="closeModal('addEndingModal')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg">취소</button>
+                        <button onclick="addNewEnding()" class="px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg font-bold flex items-center gap-2">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            추가
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        lucide.createIcons();
+        document.getElementById('newEndingTitle').focus();
+    };
+
+    window.addNewEnding = async function() {
+        const title = document.getElementById('newEndingTitle').value.trim();
+        const description = document.getElementById('newEndingDescription').value.trim();
+
+        if (!title) {
+            showToast('엔딩 제목을 입력하세요.', 'error');
+            return;
+        }
+
+        const newEnding = {
+            title: title,
+            description: description || ''
+        };
+
+        const response = await fetch(`/api/draft/${SCENARIO_ID}/add-ending`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ending: newEnding })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            scenarioData = result.scenario;
+            markAsChanged();
+            closeModal('addEndingModal');
+            showToast(`새 엔딩 '${result.ending.ending_id}'이(가) 추가되었습니다.`, 'success');
+            // 실시간 차트 리렌더링
+            await refreshMermaidChart();
+        } else {
+            showToast('엔딩 추가 실패: ' + result.error, 'error');
+        }
+    };
+
+    // 삭제 안전장치
+    window.confirmDeleteScene = async function(sceneId, sceneTitle) {
+        // 먼저 참조 확인
+        const response = await fetch(`/api/draft/${SCENARIO_ID}/check-references`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scene_id: sceneId })
+        });
+
+        const result = await response.json();
+
+        if (result.has_references) {
+            showDeleteWithReferencesModal(sceneId, sceneTitle, result.references);
+        } else {
+            showConfirmModal(
+                '씬 삭제',
+                `"${escapeHtml(sceneTitle)}" 씬을 삭제하시겠습니까?`,
+                '삭제',
+                'bg-red-600 hover:bg-red-500',
+                () => deleteScene(sceneId, 'remove_transitions')
+            );
+        }
+    };
+
+    function showDeleteWithReferencesModal(sceneId, sceneTitle, references) {
+        const refList = references.map(r =>
+            `<li class="flex items-start gap-2 text-sm">
+                <span class="text-amber-400">←</span>
+                <span class="text-gray-300">${escapeHtml(r.from_title)}</span>
+                <span class="text-gray-500">에서</span>
+                <span class="text-green-300">"${escapeHtml(r.trigger || '연결')}"</span>
+            </li>`
+        ).join('');
+
+        const modalHtml = `
+            <div id="deleteRefModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center fade-in">
+                <div class="bg-dark-800 rounded-xl border border-red-500/30 shadow-2xl w-full max-w-lg mx-4">
+                    <div class="p-4 border-b border-red-500/20 flex items-center gap-3">
+                        <div class="p-2 bg-red-500/20 rounded-full">
+                            <i data-lucide="alert-triangle" class="w-6 h-6 text-red-400"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-white">참조 중인 씬 삭제</h3>
+                            <p class="text-sm text-gray-400">"${escapeHtml(sceneTitle)}"</p>
+                        </div>
+                    </div>
+                    <div class="p-6">
+                        <p class="text-amber-400 text-sm mb-4">⚠️ 이 씬은 다른 곳에서 참조되고 있습니다:</p>
+                        <ul class="bg-gray-900/50 rounded-lg p-3 space-y-2 mb-4 max-h-40 overflow-y-auto">
+                            ${refList}
+                        </ul>
+                        <p class="text-gray-300 text-sm">삭제 시 연결된 선택지 처리 방식을 선택하세요:</p>
+                    </div>
+                    <div class="p-4 border-t border-white/5 flex flex-col gap-2">
+                        <button onclick="deleteScene('${sceneId}', 'remove_transitions'); closeModal('deleteRefModal')"
+                                class="w-full px-4 py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold flex items-center justify-center gap-2">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            씬 삭제 + 연결된 전환도 삭제
+                        </button>
+                        <button onclick="closeModal('deleteRefModal')"
+                                class="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg">
+                            취소
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        lucide.createIcons();
+    }
+
+    async function deleteScene(sceneId, handleMode) {
+        const response = await fetch(`/api/draft/${SCENARIO_ID}/delete-scene`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scene_id: sceneId, handle_mode: handleMode })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            scenarioData = result.scenario;
+            markAsChanged();
+            closeEditSidebar();
+
+            if (result.warnings && result.warnings.length > 0) {
+                showToast(result.warnings[0], 'info');
+            } else {
+                showToast(result.message, 'success');
+            }
+
+            // 실시간 차트 리렌더링
+            await refreshMermaidChart();
+        } else {
+            showToast('삭제 실패: ' + result.error, 'error');
+        }
+    }
+
+    // 엔딩 삭제 확인
+    window.confirmDeleteEnding = function(endingId, endingTitle) {
+        showConfirmModal(
+            '엔딩 삭제',
+            `"${escapeHtml(endingTitle)}" 엔딩을 삭제하시겠습니까?<br><span class="text-amber-400 text-sm">이 엔딩으로 연결된 전환도 함께 삭제됩니다.</span>`,
+            '삭제',
+            'bg-red-600 hover:bg-red-500',
+            async () => {
+                const response = await fetch(`/api/draft/${SCENARIO_ID}/delete-ending`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ending_id: endingId })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    scenarioData = result.scenario;
+                    markAsChanged();
+                    closeEditSidebar();
+
+                    if (result.warnings && result.warnings.length > 0) {
+                        showToast(result.warnings[0], 'info');
+                    } else {
+                        showToast(result.message, 'success');
+                    }
+
+                    // 실시간 차트 리렌더링
+                    await refreshMermaidChart();
+                } else {
+                    showToast('삭제 실패: ' + result.error, 'error');
+                }
+            }
+        );
+    };
+
+    // ========== 공통 모달 함수 ==========
+
+    // 토스트 메시지
+    function showToast(message, type = 'info') {
+        const bgColor = type === 'success' ? 'bg-green-900/90 border-green-500/30 text-green-100' :
+                       type === 'error' ? 'bg-red-900/90 border-red-500/30 text-red-100' :
+                       'bg-amber-900/90 border-amber-500/30 text-amber-100';
+        const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'info';
+
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] ${bgColor} border px-6 py-3 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3`;
+        toast.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5"></i><span class="font-medium">${message}</span>`;
+
+        document.body.appendChild(toast);
+        lucide.createIcons();
+
+        setTimeout(() => {
+            toast.style.transition = 'opacity 0.3s';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 2500);
+    }
+
+    function showConfirmModal(title, message, confirmText, confirmClass, onConfirm) {
+        const modalHtml = `
+            <div id="confirmModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center fade-in">
+                <div class="bg-dark-800 rounded-xl border border-white/10 shadow-2xl w-full max-w-md mx-4">
+                    <div class="p-4 border-b border-white/5">
+                        <h3 class="font-bold text-white text-lg">${title}</h3>
+                    </div>
+                    <div class="p-6">
+                        <p class="text-gray-300">${message}</p>
+                    </div>
+                    <div class="p-4 border-t border-white/5 flex justify-end gap-3">
+                        <button onclick="closeModal('confirmModal')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg">취소</button>
+                        <button id="confirmBtn" class="px-4 py-2 ${confirmClass} text-white rounded-lg font-bold">${confirmText}</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        document.getElementById('confirmBtn').onclick = async () => {
+            closeModal('confirmModal');
+            await onConfirm();
+        };
+        lucide.createIcons();
+    }
+
+    window.closeModal = function(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.opacity = '0';
+            setTimeout(() => modal.remove(), 200);
+        }
+    };
+
+    // 시나리오 저장 (기존 함수 업데이트)
+    window.saveScenario = async function() {
+        await saveDraft();
+    };
+
+    // ========== History (Undo/Redo) 시스템 ==========
+    let isHistorySidebarOpen = false;
+
+    // 페이지 로드 시 이력 초기화
+    async function initializeHistory() {
+        try {
+            await fetch(`/api/draft/${SCENARIO_ID}/history/init`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            await updateUndoRedoStatus();
+        } catch (error) {
+            console.error('History init error:', error);
+        }
+    }
+
+    // Undo/Redo 상태 업데이트
+    async function updateUndoRedoStatus() {
+        try {
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/history/status`);
+            const result = await response.json();
+
+            if (result.success) {
+                const undoBtn = document.getElementById('undoBtn');
+                const redoBtn = document.getElementById('redoBtn');
+
+                if (undoBtn) undoBtn.disabled = !result.can_undo;
+                if (redoBtn) redoBtn.disabled = !result.can_redo;
+            }
+        } catch (error) {
+            console.error('Undo/Redo status error:', error);
+        }
+    }
+
+    // 변경 이력 추가 (기존 markAsChanged 함수 확장)
+    async function addHistoryEntry(actionType, actionDescription) {
+        try {
+            await fetch(`/api/draft/${SCENARIO_ID}/history/add`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action_type: actionType,
+                    action_description: actionDescription,
+                    snapshot: scenarioData
+                })
+            });
+            await updateUndoRedoStatus();
+
+            // History 사이드바가 열려있으면 새로고침
+            if (isHistorySidebarOpen) {
+                await loadHistoryList();
+            }
+        } catch (error) {
+            console.error('Add history error:', error);
+        }
+    }
+
+    // Undo 수행
+    window.performUndo = async function() {
+        const undoBtn = document.getElementById('undoBtn');
+        if (undoBtn) undoBtn.disabled = true;
+
+        try {
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/history/undo`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                scenarioData = result.scenario;
+                showToast('이전 상태로 복원되었습니다.', 'success');
+
+                // Mermaid 차트 리렌더링
+                if (result.mermaid_code) {
+                    await window.rerenderMermaidChart(result.mermaid_code);
+                }
+
+                // 상태 업데이트
+                await updateUndoRedoStatus();
+                if (isHistorySidebarOpen) await loadHistoryList();
+            } else {
+                showToast(result.error || 'Undo 실패', 'error');
+            }
+        } catch (error) {
+            console.error('Undo error:', error);
+            showToast('Undo 실패: ' + error.message, 'error');
+        } finally {
+            await updateUndoRedoStatus();
+        }
+    };
+
+    // Redo 수행
+    window.performRedo = async function() {
+        const redoBtn = document.getElementById('redoBtn');
+        if (redoBtn) redoBtn.disabled = true;
+
+        try {
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/history/redo`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                scenarioData = result.scenario;
+                showToast('다음 상태로 복원되었습니다.', 'success');
+
+                // Mermaid 차트 리렌더링
+                if (result.mermaid_code) {
+                    await window.rerenderMermaidChart(result.mermaid_code);
+                }
+
+                // 상태 업데이트
+                await updateUndoRedoStatus();
+                if (isHistorySidebarOpen) await loadHistoryList();
+            } else {
+                showToast(result.error || 'Redo 실패', 'error');
+            }
+        } catch (error) {
+            console.error('Redo error:', error);
+            showToast('Redo 실패: ' + error.message, 'error');
+        } finally {
+            await updateUndoRedoStatus();
+        }
+    };
+
+    // History 사이드바 토글
+    window.toggleHistorySidebar = async function() {
+        isHistorySidebarOpen = !isHistorySidebarOpen;
+
+        if (isHistorySidebarOpen) {
+            showHistorySidebar();
+            await loadHistoryList();
+        } else {
+            hideHistorySidebar();
+        }
+    };
+
+    // History 사이드바 표시
+    function showHistorySidebar() {
+        // 기존 사이드바가 있으면 제거
+        const existing = document.getElementById('historySidebar');
+        if (existing) existing.remove();
+
+        const sidebarHtml = `
+            <div id="historySidebar" class="fixed left-[72px] md:left-[72px] top-0 h-full history-sidebar open bg-dark-800 border-r border-white/10 flex flex-col z-30 shadow-2xl">
+                <div class="p-4 border-b border-white/5 flex items-center justify-between">
+                    <h3 class="font-bold text-white flex items-center gap-2">
+                        <i data-lucide="history" class="w-5 h-5 text-cyan-400"></i>
+                        변경 이력
+                    </h3>
+                    <button onclick="toggleHistorySidebar()" class="p-1 text-gray-400 hover:text-white hover:bg-white/5 rounded transition-colors">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+
+                <div class="p-3 border-b border-white/5 flex gap-2">
+                    <button onclick="performUndo()" id="historyUndoBtn" disabled
+                            class="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                        <i data-lucide="undo-2" class="w-4 h-4"></i>
+                        Undo
+                    </button>
+                    <button onclick="performRedo()" id="historyRedoBtn" disabled
+                            class="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                        <i data-lucide="redo-2" class="w-4 h-4"></i>
+                        Redo
+                    </button>
+                </div>
+
+                <div id="historyListContainer" class="flex-1 overflow-y-auto p-3 space-y-2">
+                    <div class="text-gray-500 text-sm text-center py-8">
+                        <i data-lucide="loader-2" class="w-6 h-6 mx-auto mb-2 animate-spin"></i>
+                        이력 로딩 중...
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', sidebarHtml);
+        lucide.createIcons();
+    }
+
+    // History 사이드바 숨기기
+    function hideHistorySidebar() {
+        const sidebar = document.getElementById('historySidebar');
+        if (sidebar) {
+            sidebar.classList.remove('open');
+            setTimeout(() => sidebar.remove(), 300);
+        }
+    }
+
+    // History 목록 로드
+    async function loadHistoryList() {
+        const container = document.getElementById('historyListContainer');
+        if (!container) return;
+
+        try {
+            const response = await fetch(`/api/draft/${SCENARIO_ID}/history`);
+            const result = await response.json();
+
+            if (result.success) {
+                const history = result.history || [];
+                const currentSequence = result.current_sequence;
+
+                // Undo/Redo 버튼 상태 업데이트
+                const historyUndoBtn = document.getElementById('historyUndoBtn');
+                const historyRedoBtn = document.getElementById('historyRedoBtn');
+                if (historyUndoBtn) historyUndoBtn.disabled = !result.undo_redo_status?.can_undo;
+                if (historyRedoBtn) historyRedoBtn.disabled = !result.undo_redo_status?.can_redo;
+
+                if (history.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-gray-500 text-sm text-center py-8">
+                            <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 text-gray-600"></i>
+                            <p>변경 이력이 없습니다.</p>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                const historyHtml = history.map(entry => {
+                    const isCurrent = entry.is_current;
+                    const actionIcon = getActionIcon(entry.action_type);
+                    const timeStr = entry.created_at ? formatTime(entry.created_at) : '';
+
+                    return `
+                        <div class="history-item p-3 rounded-lg border ${isCurrent ? 'current border-cyan-500/50' : 'border-gray-700/50 cursor-pointer'}"
+                             ${isCurrent ? '' : `onclick="restoreToHistoryPoint(${entry.id})"`}>
+                            <div class="flex items-start gap-3">
+                                <div class="p-1.5 rounded ${isCurrent ? 'bg-cyan-500/20 text-cyan-400' : 'bg-gray-700 text-gray-400'}">
+                                    <i data-lucide="${actionIcon}" class="w-4 h-4"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-medium text-sm ${isCurrent ? 'text-cyan-300' : 'text-gray-200'} truncate">
+                                            ${escapeHtml(entry.action_description)}
+                                        </span>
+                                        ${isCurrent ? '<span class="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded-full">현재</span>' : ''}
+                                    </div>
+                                    <div class="text-xs text-gray-500 mt-0.5">${timeStr}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                container.innerHTML = historyHtml;
+                lucide.createIcons();
+            } else {
+                container.innerHTML = `
+                    <div class="text-red-400 text-sm text-center py-8">
+                        이력 로드 실패: ${escapeHtml(result.error || '알 수 없는 오류')}
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Load history error:', error);
+            container.innerHTML = `
+                <div class="text-red-400 text-sm text-center py-8">
+                    이력 로드 실패: ${escapeHtml(error.message)}
+                </div>
+            `;
+        }
+    }
+
+    // 특정 이력 시점으로 복원
+    window.restoreToHistoryPoint = async function(historyId) {
+        showConfirmModal(
+            '이력 복원',
+            '해당 시점으로 시나리오를 복원하시겠습니까?<br><span class="text-amber-400 text-sm">현재 위치 이후의 변경사항은 Redo로 복원할 수 있습니다.</span>',
+            '복원',
+            'bg-cyan-600 hover:bg-cyan-500',
+            async () => {
+                try {
+                    const response = await fetch(`/api/draft/${SCENARIO_ID}/history/restore/${historyId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        scenarioData = result.scenario;
+                        showToast('해당 시점으로 복원되었습니다.', 'success');
+
+                        // Mermaid 차트 리렌더링
+                        if (result.mermaid_code) {
+                            await window.rerenderMermaidChart(result.mermaid_code);
+                        }
+
+                        // 상태 업데이트
+                        await updateUndoRedoStatus();
+                        await loadHistoryList();
+                    } else {
+                        showToast(result.error || '복원 실패', 'error');
+                    }
+                } catch (error) {
+                    console.error('Restore error:', error);
+                    showToast('복원 실패: ' + error.message, 'error');
+                }
+            }
+        );
+    };
+
+    // 액션 타입별 아이콘
+    function getActionIcon(actionType) {
+        const icons = {
+            'initial': 'play',
+            'scene_edit': 'edit-3',
+            'scene_add': 'plus-square',
+            'scene_delete': 'trash-2',
+            'ending_edit': 'flag',
+            'ending_add': 'flag',
+            'ending_delete': 'trash-2',
+            'prologue_edit': 'book-open',
+            'reorder': 'arrow-down-up',
+            'edit': 'edit-3'
+        };
+        return icons[actionType] || 'circle';
+    }
+
+    // 시간 포맷
+    function formatTime(timestamp) {
+        const date = new Date(timestamp * 1000);
+        const now = new Date();
+        const diff = Math.floor((now - date) / 1000);
+
+        if (diff < 60) return '방금 전';
+        if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
+
+        return date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    // 키보드 단축키 (Ctrl+Z, Ctrl+Y)
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+            e.preventDefault();
+            performUndo();
+        }
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+            e.preventDefault();
+            performRedo();
+        }
+    });
+
+    // 기존 markAsChanged 함수 확장 (이력 추가 포함)
+    const originalMarkAsChanged = markAsChanged;
+    markAsChanged = function(actionType = 'edit', actionDescription = '변경') {
+        originalMarkAsChanged();
+        addHistoryEntry(actionType, actionDescription);
+    };
+
+    // 페이지 로드 시 이력 초기화
+    initializeHistory();
+
+    {% endif %}
+</script>
+
+<!-- 버전 정보 배지 -->
+<div class="version-badge">
+    v{{ version }}
+</div>
+
+</body>
+</html>
+
