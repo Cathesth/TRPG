@@ -464,6 +464,10 @@
                 `;
             }
 
+            // 세션 키 초기화
+            currentSessionKey = '';
+            localStorage.removeItem(SESSION_KEY_STORAGE);
+
             // UI 비활성화
             disableGameUI();
         }
