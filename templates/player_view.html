@@ -935,63 +935,72 @@
             }
 
             // [FIX] 토글 시 저장된 데이터 즉시 복원
-            console.log('🔍 [Debug Toggle] Loading saved data...');
+            console.log('🔍 [Debug Toggle ON] Loading saved data...');
 
-            // 1. 현재 스탯 데이터 복원 (최우선)
+            // 1. 현재 스탯 데이터 복원 (최우선 - 가장 최신 데이터)
             const savedStats = sessionStorage.getItem(STATS_KEY);
             if (savedStats) {
                 try {
                     const statsData = JSON.parse(savedStats);
                     console.log('✅ [Debug Toggle] Stats data found:', statsData);
+                    // 스탯 데이터로 즉시 업데이트
                     updateDebugInfo(statsData);
                 } catch (e) {
                     console.error('❌ Failed to parse stats:', e);
                 }
-            } else {
-                console.log('⚠️ No saved stats found');
             }
 
-            // 2. 저장된 디버그 HTML 컨텐츠 복원 (백업용)
-            const savedDebugContent = sessionStorage.getItem(DEBUG_CONTENT_KEY);
-            if (savedDebugContent) {
-                try {
-                    const debugData = JSON.parse(savedDebugContent);
-                    console.log('✅ [Debug Toggle] Debug content found');
+            // 2. 스탯이 없으면 저장된 디버그 HTML 컨텐츠 복원 (백업용)
+            if (!savedStats) {
+                const savedDebugContent = sessionStorage.getItem(DEBUG_CONTENT_KEY);
+                if (savedDebugContent) {
+                    try {
+                        const debugData = JSON.parse(savedDebugContent);
+                        console.log('✅ [Debug Toggle] Restoring from backup HTML');
 
-                    if (debugData.npc && debugData.npc.length > 0) {
-                        document.getElementById('npc-status-area').innerHTML = debugData.npc;
-                        console.log('✅ NPC Status restored from backup');
+                        if (debugData.npc) {
+                            document.getElementById('npc-status-area').innerHTML = debugData.npc;
+                        }
+                        if (debugData.worldState) {
+                            document.getElementById('world-state-area').innerHTML = debugData.worldState;
+                        }
+                    } catch (e) {
+                        console.error('❌ Failed to restore debug content:', e);
                     }
-                    if (debugData.worldState && debugData.worldState.length > 0) {
-                        document.getElementById('world-state-area').innerHTML = debugData.worldState;
-                        console.log('✅ World State restored from backup');
-                    }
-                } catch (e) {
-                    console.error('❌ Failed to restore debug content:', e);
                 }
-            } else {
-                console.log('⚠️ No saved debug content found');
             }
 
-            // 3. 데이터가 없으면 빈 상태 메시지 표시
-            const npcArea = document.getElementById('npc-status-area');
-            const worldStateArea = document.getElementById('world-state-area');
+            // 3. 아무 데이터도 없는 경우에만 빈 상태 메시지 표시
+            setTimeout(() => {
+                const npcArea = document.getElementById('npc-status-area');
+                const worldStateArea = document.getElementById('world-state-area');
 
-            if (npcArea && (!npcArea.innerHTML || npcArea.innerHTML.trim() === '')) {
-                npcArea.innerHTML = `
-                    <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
-                        NPC 데이터 없음
-                    </div>
-                `;
-            }
+                // HTML 내용이 실제로 비어있거나 기본 메시지만 있는지 체크
+                const isNpcEmpty = !npcArea || !npcArea.innerHTML.trim() ||
+                                   npcArea.innerHTML.includes('NPC 데이터 없음');
+                const isWorldEmpty = !worldStateArea || !worldStateArea.innerHTML.trim() ||
+                                     worldStateArea.innerHTML.includes('World State 데이터 없음');
 
-            if (worldStateArea && (!worldStateArea.innerHTML || worldStateArea.innerHTML.trim() === '')) {
-                worldStateArea.innerHTML = `
-                    <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
-                        World State 데이터 없음
-                    </div>
-                `;
-            }
+                // 데이터가 실제로 없을 때만 빈 메시지 표시
+                if (!savedStats && !sessionStorage.getItem(DEBUG_CONTENT_KEY)) {
+                    if (isNpcEmpty && npcArea) {
+                        npcArea.innerHTML = `
+                            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                                NPC 데이터 없음
+                            </div>
+                        `;
+                    }
+
+                    if (isWorldEmpty && worldStateArea) {
+                        worldStateArea.innerHTML = `
+                            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                                World State 데이터 없음
+                            </div>
+                        `;
+                    }
+                    console.log('⚠️ [Debug Toggle] No data available - showing empty state');
+                }
+            }, 10);
         }
 
         lucide.createIcons();
@@ -1677,7 +1686,7 @@
             case 'xai':
                 options = [
                     { value: 'openai/x-ai/grok-code-fast-1', label: 'Grok Code Fast 1 (128K)' },
-                    { value: 'openai/x-ai/grok-4-fast', label: 'Grok 4 Fast (128K)' },
+                    { value: 'openai/x-ai/grok-4-fast', label: 'Grok 4 Fast 128K' },
                     { value: 'openai/x-ai/grok-vision-1', label: 'Grok Vision 1 (128K)' }
                 ];
                 break;
