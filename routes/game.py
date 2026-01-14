@@ -136,10 +136,29 @@ async def game_act_stream(
         action: str = Form(default=''),
         model: str = Form(default='openai/tngtech/deepseek-r1t2-chimera:free'),
         session_key: str = Form(default=None),
+        session_id: str = Form(default=None),  # [추가] 세션 ID 받기
         user: CurrentUser = Depends(get_current_user_optional),
         db: Session = Depends(get_db)
 ):
     """스트리밍 방식 - SSE (LangGraph 기반) + WorldState DB 영속성"""
+
+    # [추가] 🔄 세션 ID 복구 로직 - 기존 세션을 복원하고 WorldState를 절대 reset하지 않음
+    if session_id:
+        from services.history_service import HistoryService
+        existing_session = HistoryService.get_session(session_id)
+        if existing_session:
+            # 기존 세션 데이터를 game_state에 복원
+            game_state.state = existing_session
+
+            # WorldState 인스턴스를 복원된 데이터로 업데이트
+            from core.state import WorldState
+            world_state_instance = WorldState()
+            if 'world_state' in existing_session:
+                world_state_instance.from_dict(existing_session['world_state'])
+
+            logger.info(f"🔄 [SESSION RESTORE] Session ID: {session_id}, Scene: {existing_session.get('current_scene_id')}, Stuck: {existing_session.get('stuck_count', 0)}")
+        else:
+            logger.warning(f"⚠️ [SESSION] Session ID {session_id} not found, starting fresh")
 
     # 🛠️ 세션 복원 시도 (DB에서 WorldState 로드)
     if session_key:
@@ -193,9 +212,13 @@ async def game_act_stream(
             world_state_instance = WorldState()
 
             if is_game_start:
-                # 게임 시작 시: WorldState 초기화
-                world_state_instance.reset()
-                world_state_instance.initialize_from_scenario(scenario)
+                # 게임 시작 시: WorldState 초기화 (첫 게임 시작일 때만)
+                if not session_id:  # [수정] 세션 ID가 없을 때만 reset
+                    world_state_instance.reset()
+                    world_state_instance.initialize_from_scenario(scenario)
+                    logger.info(f"🎮 [GAME START] New game session created")
+                else:
+                    logger.info(f"🎮 [GAME START] Resuming existing session: {session_id}")
 
                 start_scene_id = current_state.get('start_scene_id') or current_state.get('current_scene_id')
                 logger.info(f"🎮 [GAME START] Start Scene: {start_scene_id}")
@@ -215,6 +238,15 @@ async def game_act_stream(
             # [경량화] WorldState를 player_state에 임시 추가 (저장용)
             processed_state['world_state'] = world_state_instance.to_dict()
 
+            # [추가] 🛠️ 턴 종료 시 DB 세션에 current_scene_id와 stuck_count 업데이트
+            if session_key:
+                game_session = db.query(GameSession).filter_by(session_key=session_key).first()
+                if game_session:
+                    game_session.world_state['location'] = processed_state.get('current_scene_id', '')
+                    game_session.world_state['stuck_count'] = processed_state.get('stuck_count', 0)
+                    db.commit()
+                    logger.info(f"💾 [DB UPDATE] Scene: {processed_state.get('current_scene_id')}, Stuck: {processed_state.get('stuck_count', 0)}")
+
             # 🛠️ WorldState DB 저장 (매 턴마다) - save_game_session에서 world_state를 분리 저장
             user_id = user.id if user else None
             session_key = save_game_session(db, processed_state, user_id, session_key)
@@ -226,6 +258,10 @@ async def game_act_stream(
             is_ending = (intent == 'ending')
 
             # --- [스트리밍 응답 전송] ---
+
+            # [추가] 세션 ID 전송 (프론트엔드에서 저장)
+            if session_key:
+                yield f"data: {json.dumps({'type': 'session_id', 'content': session_key})}\n\n"
 
             # A. 시스템 메시지
             if sys_msg and "Game Started" not in sys_msg:

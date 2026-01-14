@@ -749,25 +749,18 @@ def npc_node(state: PlayerState):
     # [추가] 인벤토리 검증: 아이템 사용 시도 감지
     item_keywords = ['사용', '쓴다', '쏜다', '던진다', '먹는다', '마신다', '착용', '장착', '입는다',
                      'use', 'shoot', 'throw', 'eat', 'drink', 'wear', '뿌린다', '흔든다', '꺼낸다']
-    is_item_action = any(kw in user_input.lower() for kw in item_keywords)
 
-    if is_item_action:
-        # 인벤토리 확인
-        inventory = state.get('player_vars', {}).get('inventory', [])
-
-        # 유저 입력에서 아이템명 추출 시도 (간단한 휴리스틱)
-        # 인벤토리에 있는 아이템과 유저 입력을 대조
+    if any(keyword in user_input.lower() for keyword in item_keywords):
+        player_inventory = state.get('player_vars', {}).get('inventory', [])
         has_item = False
-        if isinstance(inventory, list):
-            for item in inventory:
-                if item and str(item).lower() in user_input.lower():
-                    has_item = True
-                    break
 
-        # 인벤토리에 없는 아이템을 사용하려는 경우
-        if not has_item and inventory != None:
+        for item in player_inventory:
+            if item.lower() in user_input.lower():
+                has_item = True
+                break
+
+        if not has_item:
             rejection_messages = [
-                "가방을 뒤져보았지만 그런 물건은 보이지 않습니다.",
                 "주머니를 더듬어 보았지만 찾을 수 없습니다.",
                 "소지품을 확인해보니 그것은 가지고 있지 않습니다.",
                 "당신은 그 물건을 가지고 있지 않습니다.",
@@ -795,6 +788,16 @@ def npc_node(state: PlayerState):
     history = state.get('history', [])
     history_context = "\n".join(history[-3:]) if history else "대화 시작"
 
+    # [추가] 현재 장면의 transitions_hints와 stuck_level 추출
+    transitions_list = []
+    if curr_scene:
+        for t in curr_scene.get('transitions', []):
+            trigger = t.get('trigger', '알 수 없음')
+            transitions_list.append(trigger)
+
+    transitions_hints = ", ".join(transitions_list) if transitions_list else "힌트 없음"
+    stuck_level = state.get('stuck_count', 0)
+
     # YAML에서 프롬프트 로드
     prompts = load_player_prompts()
     prompt_template = prompts.get('npc_dialogue', '')
@@ -803,13 +806,16 @@ def npc_node(state: PlayerState):
         scenario = get_scenario_by_id(scenario_id)
         player_status = format_player_status(scenario, state.get('player_vars', {}))
 
+        # [수정] transitions_hints와 stuck_level을 프롬프트에 전달
         prompt = prompt_template.format(
             player_status=player_status,
             npc_name=npc_info['name'],
             npc_role=npc_info['role'],
             npc_personality=npc_info['personality'],
             history_context=history_context,
-            user_input=user_input
+            user_input=user_input,
+            transitions_hints=transitions_hints,
+            stuck_level=stuck_level
         )
     else:
         # 폴백 프롬프트 (YAML 로드 실패 시)
