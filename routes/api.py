@@ -187,8 +187,9 @@ async def reset_build_progress():
 
 
 # [교체] routes/api.py -> list_scenarios 함수
+# 중요: 반드시 'async'를 뺀 'def'로 정의해야 DB 조회 시 서버가 멈추지 않습니다.
 @api_router.get('/scenarios', response_class=HTMLResponse)
-async def list_scenarios(
+def list_scenarios(
         request: Request,
         sort: str = Query('newest'),
         filter: str = Query('public'),
@@ -198,22 +199,24 @@ async def list_scenarios(
 ):
     """
     DB에서 시나리오를 조회하여 HTML 카드로 반환합니다.
-    - 메인화면: 가로 스크롤을 위한 고정 크기(w-80) 적용
-    - 마이페이지: 그리드 배치를 위한 반응형 크기(w-full) 적용
-    - 공통: 정사각형 비율, 관리자 버튼(수정/삭제) 복구
+    - Sync 함수 사용 (Server Blocking 방지)
+    - 메인화면: 가로 스크롤 유지 (w-80 flex-shrink-0)
+    - 마이페이지: 그리드 채움 (w-full)
     """
 
     # 1. DB 쿼리 생성
     query = db.query(Scenario)
 
+    # 2. 필터링
     if filter == 'my':
         if not user.is_authenticated:
             return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
         query = query.filter(Scenario.author_id == user.id)
     elif filter == 'public':
         query = query.filter(Scenario.is_public == True)
-    # filter='all'은 전체 조회 (메인화면 등)
+    # filter='all'은 조건 없이 전체 조회
 
+    # 3. 정렬
     if sort == 'oldest':
         query = query.order_by(Scenario.created_at.asc())
     elif sort == 'name_asc':
@@ -221,6 +224,7 @@ async def list_scenarios(
     else:
         query = query.order_by(Scenario.created_at.desc())
 
+    # 4. 데이터 조회
     if limit:
         query = query.limit(limit)
 
@@ -231,7 +235,7 @@ async def list_scenarios(
         return HTMLResponse(
             f'<div class="col-span-full text-center text-gray-500 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
 
-    # 2. HTML 생성
+    # 5. HTML 생성
     from datetime import datetime
     import time as time_module
     current_ts = time_module.time()
@@ -259,15 +263,15 @@ async def list_scenarios(
         is_new = (current_ts - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
-        # [핵심 1] 뷰 모드에 따른 카드 스타일 분기
+        # [디자인 분기]
         if filter == 'my':
-            # 마이페이지: 그리드에 꽉 차게 (w-full) + 정사각형 비율
+            # 마이페이지: 반응형 너비 + 정사각형 비율
             card_style = "w-full aspect-square"
         else:
-            # 메인화면: 슬라이드 되도록 고정 너비(w-80) + 수축 방지(flex-shrink-0)
+            # 메인화면: 고정 너비(가로 스크롤용) + 정사각형 비율
             card_style = "w-80 h-80 flex-shrink-0 snap-center"
 
-        # [핵심 2] 버튼 구성 (주인일 때 수정/삭제 표시)
+        # [버튼 구성] 주인은 수정/삭제 표시
         if is_owner:
             buttons_html = f"""
             <div class="flex items-center gap-2 mt-auto pt-3 border-t border-white/10">
