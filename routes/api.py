@@ -190,6 +190,7 @@ async def reset_build_progress():
 # [API 라우트] 시나리오 관리 (CRUD)
 # ==========================================
 # [교체] routes/api.py -> list_scenarios 함수
+# [교체] routes/api.py -> list_scenarios 함수
 @api_router.get('/scenarios', response_class=HTMLResponse)
 async def list_scenarios(
         request: Request,
@@ -201,9 +202,8 @@ async def list_scenarios(
 ):
     """
     DB(Scenario 테이블)에서 시나리오를 조회하여 HTML 카드로 반환합니다.
-    - filter='public': 모든 공개 시나리오 (메인화면)
-    - filter='all': (관리자용) 공개/비공개 모두 포함
-    - filter='my': 내 시나리오
+    - filter='all': (메인화면용) 공개/비공개 모두 포함하여 조회
+    - 디자인: 메인/플레이어 화면 모두 호환되는 Tailwind 스타일 적용
     """
 
     # 1. DB 쿼리 생성
@@ -215,40 +215,24 @@ async def list_scenarios(
             return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
         query = query.filter(Scenario.author_id == user.id)
     elif filter == 'public':
-        # 메인 화면: 공개된 모든 시나리오
+        # 공개된 시나리오만
         query = query.filter(Scenario.is_public == True)
-    # filter == 'all'인 경우는 조건 없이 전체 조회 (비공개 포함)
+    # filter == 'all'인 경우는 조건 없이 전체 조회 (메인 화면용)
 
     # 3. 정렬 로직 (DB 레벨)
     if sort == 'oldest':
         query = query.order_by(Scenario.created_at.asc())
     elif sort == 'name_asc':
         query = query.order_by(Scenario.title.asc())
-    else:  # newest, popular, steady 등은 기본적으로 최신순으로 가져온 뒤 재정렬
+    else:  # newest, popular, steady (기본 최신순)
         query = query.order_by(Scenario.created_at.desc())
 
-    # 4. 데이터 조회 (전체 가져오기 -> 정렬/자르기는 메모리에서)
-    # 인기순/스테디셀러는 JSON 데이터 내부(views, plays)를 봐야 하므로 일단 다 가져옵니다.
-    if limit and sort not in ['popular', 'steady']:
+    # 4. 데이터 조회
+    # (인기순 정렬이 필요하면 전체를 가져와야 하지만, 일단 DB 정렬 위주로 처리)
+    if limit:
         query = query.limit(limit)
 
     scenarios = query.all()
-
-    # 5. 인기순/스테디셀러 Python 정렬 (JSON 필드)
-    if sort in ['popular', 'steady']:
-        # JSON 데이터가 없는 경우를 대비해 안전하게 처리
-        def get_stat(s, key):
-            if not s.data: return 0
-            return s.data.get(key, 0) if isinstance(s.data, dict) else 0
-
-        if sort == 'popular':
-            scenarios.sort(key=lambda x: get_stat(x, 'views') + get_stat(x, 'clicks'), reverse=True)
-        elif sort == 'steady':
-            scenarios.sort(key=lambda x: get_stat(x, 'plays'), reverse=True)
-
-        # 정렬 후 자르기
-        if limit:
-            scenarios = scenarios[:limit]
 
     # 데이터 없음 처리
     if not scenarios:
@@ -256,20 +240,19 @@ async def list_scenarios(
         return HTMLResponse(
             f'<div class="col-span-full text-center text-gray-500 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
 
-    # 6. HTML 생성 (index.html CSS 클래스 적용)
+    # 5. HTML 생성 (메인/플레이어 뷰 호환 디자인)
     from datetime import datetime
     import time as time_module
-    current_time = time_module.time()
+    current_ts = time_module.time()
     NEW_THRESHOLD = 30 * 60
 
     html = ""
     for s in scenarios:
-        # JSON 데이터 추출
+        # JSON 데이터 파싱
         s_data = s.data if isinstance(s.data, dict) else {}
-        # 이중 포장된 경우 처리 (data['scenario']...)
         if 'scenario' in s_data: s_data = s_data['scenario']
 
-        fid = str(s.id)  # DB ID 사용 (문자열 변환)
+        fid = str(s.id)
         title = s.title or "제목 없음"
         desc = s_data.get('prologue', s_data.get('desc', '설명이 없습니다.'))
         if len(desc) > 80: desc = desc[:80] + "..."
@@ -278,22 +261,23 @@ async def list_scenarios(
         is_owner = (user.is_authenticated and s.author_id == user.id)
         is_public = s.is_public
 
-        # created_at이 datetime 객체임
         created_ts = s.created_at.timestamp() if s.created_at else 0
         time_str = s.created_at.strftime('%Y-%m-%d') if s.created_at else "-"
 
         img_src = s_data.get('image') or "https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=800"
 
         # 뱃지
-        is_new = (current_time - created_ts) < NEW_THRESHOLD
+        is_new = (current_ts - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
-        status_badge = f'<span class="ml-2 text-[10px] {"bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"} px-1 rounded font-bold">{"PUBLIC" if is_public else "PRIVATE"}</span>' if is_owner else ''
+        status_text = "PUBLIC" if is_public else "PRIVATE"
+        status_class = "bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"
+        status_badge = f'<span class="ml-2 text-[10px] {status_class} px-1 rounded font-bold">{status_text}</span>' if is_owner else ''
 
         # 관리자 버튼
         admin_buttons = ""
         if is_owner:
             admin_buttons = f"""
-            <div class="flex gap-2 mt-3 pt-3 border-t border-rpg-700/50">
+            <div class="flex gap-2 mt-3 pt-3 border-t border-gray-700/50">
                 <button onclick="editScenario('{fid}')" class="flex-1 py-2 rounded-lg bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-400 hover:text-white transition-colors flex items-center justify-center gap-1">
                     <i data-lucide="edit" class="w-3 h-3"></i> <span class="text-xs">EDIT</span>
                 </button>
@@ -303,31 +287,31 @@ async def list_scenarios(
             </div>
             """
 
-        # HTML 조립
+        # [디자인 적용] Tailwind 클래스 직접 사용하여 호환성 확보
         card_html = f"""
-        <div class="scenario-card-base group">
-            <div class="card-image-wrapper">
-                <img src="{img_src}" class="card-image" alt="Cover">
-                <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-rpg-accent border border-rpg-accent/30">
+        <div class="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden group hover:border-[#38bdf8] transition-all flex flex-col h-full shadow-lg relative" style="min-height: 320px;">
+            <div class="relative h-40 overflow-hidden bg-black shrink-0">
+                <img src="{img_src}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
+                <div class="absolute top-2 left-2 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-[#38bdf8] border border-[#38bdf8]/30">
                     Fantasy
                 </div>
             </div>
 
-            <div class="card-content">
+            <div class="p-4 flex-1 flex flex-col gap-2">
                 <div>
                     <div class="flex justify-between items-start mb-1">
-                        <h3 class="card-title text-white group-hover:text-rpg-accent transition-colors">{title} {new_badge}</h3>
+                        <h3 class="text-base font-bold text-white tracking-wide truncate group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
                         {status_badge}
                     </div>
                     <div class="flex justify-between items-center text-xs text-gray-400 mb-2">
                         <span>{author}</span>
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
                     </div>
-                    <p class="card-desc text-gray-400">{desc}</p>
+                    <p class="text-xs text-gray-400 line-clamp-2 min-h-[2.5em]">{desc}</p>
                 </div>
 
-                <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-accent/10 hover:bg-rpg-accent text-rpg-accent hover:text-black font-bold rounded-lg transition-all flex items-center justify-center gap-2 border border-rpg-accent/50 mt-auto shadow-[0_0_10px_rgba(56,189,248,0.1)] hover:shadow-[0_0_15px_rgba(56,189,248,0.4)]">
-                    <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
+                <button onclick="playScenario('{fid}', this)" class="w-full py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] mt-auto text-sm">
+                    <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
                 </button>
 
                 {admin_buttons}
