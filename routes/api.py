@@ -190,8 +190,6 @@ async def reset_build_progress():
 # [API 라우트] 시나리오 관리 (CRUD)
 # ==========================================
 # [교체] routes/api.py -> list_scenarios 함수
-# [교체] routes/api.py -> list_scenarios 함수
-# [교체] routes/api.py -> list_scenarios 함수
 @api_router.get('/scenarios', response_class=HTMLResponse)
 async def list_scenarios(
         request: Request,
@@ -203,7 +201,8 @@ async def list_scenarios(
 ):
     """
     DB(Scenario 테이블)에서 시나리오를 조회하여 HTML 카드로 반환합니다.
-    - 버튼 디자인 개선: 테두리 제거, 호버 효과 강화 (확대 + 색상 변경)
+    - filter='all': 공개/비공개 상관없이 모든 시나리오 반환 (메인화면용)
+    - 디자인: 가로 스크롤 복구 및 버튼 스타일 개선
     """
 
     # 1. DB 쿼리 생성
@@ -216,14 +215,14 @@ async def list_scenarios(
         query = query.filter(Scenario.author_id == user.id)
     elif filter == 'public':
         query = query.filter(Scenario.is_public == True)
-    # filter='all'은 전체 조회
+    # filter='all'인 경우 조건 없이 모든 시나리오 조회 (메인 화면 요청)
 
     # 3. 정렬 로직
     if sort == 'oldest':
         query = query.order_by(Scenario.created_at.asc())
     elif sort == 'name_asc':
         query = query.order_by(Scenario.title.asc())
-    else:
+    else:  # newest, popular, steady 등은 기본적으로 최신순
         query = query.order_by(Scenario.created_at.desc())
 
     # 4. 데이터 조회
@@ -232,6 +231,7 @@ async def list_scenarios(
 
     scenarios = query.all()
 
+    # 데이터 없음 처리
     if not scenarios:
         msg = "등록된 시나리오가 없습니다." if filter != 'my' else "아직 생성한 시나리오가 없습니다."
         return HTMLResponse(
@@ -241,10 +241,11 @@ async def list_scenarios(
     from datetime import datetime
     import time as time_module
     current_ts = time_module.time()
-    NEW_THRESHOLD = 30 * 60
+    NEW_THRESHOLD = 30 * 60  # 30분 이내 작성글 NEW 표시
 
     html = ""
     for s in scenarios:
+        # JSON 데이터 안전하게 파싱
         s_data = s.data if isinstance(s.data, dict) else {}
         if 'scenario' in s_data: s_data = s_data['scenario']
 
@@ -269,7 +270,7 @@ async def list_scenarios(
         status_class = "bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"
         status_badge = f'<span class="ml-2 text-[10px] {status_class} px-1 rounded font-bold">{status_text}</span>' if is_owner else ''
 
-        # [디자인 수정] 관리자 버튼 (테두리 제거, 호버 효과 추가)
+        # [디자인 수정] 관리자 버튼 (테두리 제거, 호버 효과 강화)
         admin_buttons = ""
         if is_owner:
             admin_buttons = f"""
@@ -288,9 +289,9 @@ async def list_scenarios(
             </div>
             """
 
-        # 카드 HTML
+        # [핵심 수정] min-w-[280px] flex-shrink-0 추가 -> 메인화면 가로 스크롤 복구
         card_html = f"""
-        <div class="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden group hover:border-[#38bdf8] transition-all flex flex-col h-full shadow-lg relative" style="min-height: 320px;">
+        <div class="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden group hover:border-[#38bdf8] transition-all flex flex-col h-full shadow-lg relative min-w-[280px] flex-shrink-0" style="min-height: 320px;">
             <div class="relative h-40 overflow-hidden bg-black shrink-0">
                 <img src="{img_src}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
                 <div class="absolute top-2 left-2 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-[#38bdf8] border border-[#38bdf8]/30">
