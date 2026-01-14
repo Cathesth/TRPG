@@ -339,11 +339,14 @@ async def game_act_stream(
                     world_state_with_scene['turn_count'] = 0
 
                 # [추가] stuck_count를 world_state에 포함
-                world_state_with_scene['stuck_count'] = processed_state.get('stuck_count', 0)
+                stuck_count_value = processed_state.get('stuck_count', 0)
+                world_state_with_scene['stuck_count'] = stuck_count_value
 
                 # 디버그: 전송되는 데이터 로그
                 logger.info(
-                    f"📤 [WORLD STATE] Sending: scene_id={world_state_with_scene['current_scene_id']}, title={world_state_with_scene['current_scene_title']}")
+                    f"📤 [WORLD STATE] Sending: scene_id={world_state_with_scene['current_scene_id']}, "
+                    f"title={world_state_with_scene['current_scene_title']}, "
+                    f"stuck_count={stuck_count_value}")
 
                 yield f"data: {json.dumps({'type': 'world_state', 'content': world_state_with_scene})}\n\n"
 

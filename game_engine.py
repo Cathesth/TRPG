@@ -600,11 +600,18 @@ def rule_node(state: PlayerState):
     # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
     if 'stuck_count' not in state:
         state['stuck_count'] = 0
+        logger.info(f"🔧 [STUCK_COUNT] Initialized to 0")
+
+    # 장면 전환 시도 전 현재 씬 기록
+    scene_before_transition = state.get('current_scene_id', '')
+    logger.info(f"🎬 [APPLY_EFFECTS] Current scene: {scene_before_transition}, Intent: {state['parsed_intent']}, Transition index: {idx}")
 
     if state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
         trans = transitions[idx]
         effects = trans.get('effects', [])
         next_id = trans.get('target_scene_id')
+
+        logger.info(f"🎯 [TRANSITION] Attempting transition to: {next_id}")
 
         # 효과 적용
         for eff in effects:
@@ -671,13 +678,22 @@ def rule_node(state: PlayerState):
             world_state.location = next_id
 
             # [추가] 장면 전환 성공 시 stuck_count 초기화
+            old_stuck_count = state.get('stuck_count', 0)
             state['stuck_count'] = 0
-            logger.info(f"👣 [MOVE] {curr_scene_id} -> {next_id} | stuck_count reset to 0")
-    else:
-        # [추가] 장면 전환 실패 (씬 유지) 시 stuck_count 증가
-        if prev_scene_id == curr_scene_id and state.get('last_user_input', '').strip():
+            logger.info(f"✅ [MOVE SUCCESS] {scene_before_transition} -> {next_id} | stuck_count: {old_stuck_count} -> 0")
+        else:
+            # target_scene_id가 없는 경우 (비정상)
             state['stuck_count'] = state.get('stuck_count', 0) + 1
-            logger.info(f"🔄 [STUCK] Player stuck in scene '{curr_scene_id}' | stuck_count: {state['stuck_count']}")
+            logger.warning(f"⚠️ [TRANSITION FAILED] No target_scene_id | stuck_count: {state['stuck_count']}")
+    else:
+        # [수정] 장면 전환 실패 (씨 유지) 시 stuck_count 증가
+        # 유저가 입력을 했지만 장면 전환이 일어나지 않은 모든 경우
+        if state.get('last_user_input', '').strip():
+            old_stuck_count = state.get('stuck_count', 0)
+            state['stuck_count'] = old_stuck_count + 1
+            logger.info(f"🔄 [STUCK] Player stuck in scene '{scene_before_transition}' | Intent: {state['parsed_intent']} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+        else:
+            logger.debug(f"⏸️ [NO INPUT] No user input, stuck_count unchanged: {state.get('stuck_count', 0)}")
 
     # 엔딩 체크
     if state['current_scene_id'] in all_endings:
