@@ -137,13 +137,14 @@ async def game_act_stream(
         user: CurrentUser = Depends(get_current_user_optional),
         db: Session = Depends(get_db)
 ):
-    """스트리밍 방식 - SSE (LangGraph 기반) + WorldState DB 영속성"""
+    """스트리밍 방식 - SSE (LangGraph 기반) + WorldState DB 영속성 + 세션/시나리오 정합성 검증"""
 
     # [수정] JSON 요청으로 데이터 읽기
     try:
         json_body = await request.json()
         action = json_body.get('action', '').strip()
         session_id = json_body.get('session_id')
+        scenario_id = json_body.get('scenario_id')  # ✅ 추가: 클라이언트에서 보낸 scenario_id
         model = json_body.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
         provider = json_body.get('provider', 'deepseek')
     except:
@@ -152,27 +153,56 @@ async def game_act_stream(
             yield f"data: {json.dumps({'type': 'error', 'content': 'Invalid request format'})}\n\n"
         return StreamingResponse(error_gen(), media_type='text/event-stream')
 
-    # ✅ [중요] 클라이언트가 보낸 세션 ID를 우선적으로 사용
-    # 세션 ID가 있으면 해당 세션만 복구, 없으면 현재 game_state 사용
+    # ✅ [중요] 세션 ID와 시나리오 ID 검증 로직
+    should_create_new_session = False
+
     if session_id:
-        logger.info(f"🔍 [SESSION] Client provided session_id: {session_id}")
+        logger.info(f"🔍 [SESSION] Client provided session_id: {session_id}, scenario_id: {scenario_id}")
 
         # DB에서 세션 복구 시도
-        restored_state = load_game_session(db, session_id)
+        game_session_record = db.query(GameSession).filter_by(session_key=session_id).first()
 
-        if restored_state:
-            # ✅ DB에서 복구한 세션으로 game_state 완전히 교체
-            game_state.state = restored_state
+        if game_session_record:
+            # ✅ [중요] 세션의 scenario_id와 요청받은 scenario_id 일치 여부 검증
+            stored_scenario_id = game_session_record.scenario_id
 
-            # WorldState도 복구
-            wsm = WorldStateManager()
-            if 'world_state' in restored_state:
-                wsm.from_dict(restored_state['world_state'])
+            if scenario_id is not None and stored_scenario_id != scenario_id:
+                logger.warning(
+                    f"⚠️ [SESSION MISMATCH] Session {session_id} has scenario_id={stored_scenario_id}, "
+                    f"but request has scenario_id={scenario_id}. Creating new session."
+                )
+                should_create_new_session = True
+                session_id = None  # 세션 무효화
+            else:
+                # ✅ 시나리오 일치 확인됨 - 세션 복구
+                restored_state = load_game_session(db, session_id)
 
-            logger.info(f"✅ [SESSION RESTORE] Session restored from DB: {session_id}")
+                if restored_state:
+                    # ✅ DB에서 복구한 세션으로 game_state 완전히 교체
+                    game_state.state = restored_state
+
+                    # WorldState도 복구
+                    wsm = WorldStateManager()
+                    if 'world_state' in restored_state:
+                        wsm.from_dict(restored_state['world_state'])
+
+                    logger.info(f"✅ [SESSION RESTORE] Session restored from DB: {session_id}")
+                else:
+                    logger.warning(f"⚠️ [SESSION] Failed to load state for session: {session_id}")
+                    should_create_new_session = True
+                    session_id = None
         else:
             logger.warning(f"⚠️ [SESSION] Session ID {session_id} not found in DB")
-            # 세션을 찾을 수 없으면 에러 반환
+            should_create_new_session = True
+            session_id = None
+    else:
+        # 세션 ID가 없으면 새로 생성
+        logger.info(f"🆕 [SESSION] No session_id provided, will create new session")
+        should_create_new_session = True
+
+    # ✅ 세션이 무효화된 경우 에러 반환 (클라이언트가 시나리오를 다시 로드하도록)
+    if should_create_new_session and not session_id:
+        if not game_state.state or not game_state.game_graph:
             def error_gen():
                 yield f"data: {json.dumps({'type': 'error', 'content': '세션을 찾을 수 없습니다. 시나리오를 다시 로드해주세요.'})}\n\n"
             return StreamingResponse(error_gen(), media_type='text/event-stream')

@@ -352,12 +352,16 @@
     const CHAT_LOG_KEY = 'trpg_chat_log';
     const SCENARIO_LOADED_KEY = 'trpg_scenario_loaded';
     const CURRENT_SCENARIO_KEY = 'trpg_current_scenario';
+    const CURRENT_SCENARIO_ID_KEY = 'trpg_scenario_id';  // ✅ 추가: 시나리오 ID 저장 키
     const SESSION_KEY_STORAGE = 'trpg_session_key';  // [NEW] 세션 키를 localStorage에 저장
     const MODEL_PROVIDER_KEY = 'trpg_model_provider';
     const MODEL_VERSION_KEY = 'trpg_model_version';
     const DEBUG_MODE_KEY = 'trpg_debug_mode';
     const GAME_ENDED_KEY = 'trpg_game_ended';
     const NAVIGATION_FLAG_KEY = 'trpg_navigation_flag';
+
+    // ✅ 전역 변수 추가
+    let currentScenarioId = null;  // 현재 로드된 시나리오 ID 저장
 
     // 새로고침 감지 및 경고
     window.addEventListener('beforeunload', function(e) {
@@ -731,6 +735,12 @@
                 console.log('📤 Sending session_id to server:', currentSessionId);
             } else {
                 console.warn('⚠️ No session_id available, server will create new session');
+            }
+
+            // 추가: 현재 시나리오 ID 전송
+            if (currentScenarioId) {
+                requestBody.scenario_id = currentScenarioId;
+                console.log('📤 Sending scenario_id to server:', currentScenarioId);
             }
 
             const response = await fetch('/game/act_stream', {
@@ -1531,14 +1541,26 @@
             if (res.ok) {
                 const data = await res.json();
 
-                // ✅ 서버에서 받은 새로운 세션 키 저장
+                // ✅ [중요] 서버에서 받은 새로운 세션 키를 sessionStorage에 즉시 저장 (덮어쓰기)
                 if (data.session_key) {
+                    currentSessionId = data.session_key;  // 메모리 변수 업데이트
                     sessionStorage.setItem('trpg_session_key', data.session_key);
                     console.log('🆕 New session created:', data.session_key);
                 }
 
-                // 이전 게임 상태 완전히 초기화
-                clearAllGameState();
+                // ✅ [중요] 시나리오 ID도 함께 저장 (act_stream 요청 시 함께 전송하기 위함)
+                if (data.scenario_id) {
+                    currentScenarioId = data.scenario_id;  // 메모리 변수 업데이트
+                    sessionStorage.setItem(CURRENT_SCENARIO_ID_KEY, data.scenario_id);
+                    console.log('📋 Scenario ID saved:', data.scenario_id);
+                }
+
+                // ✅ [중요] 기존 게임 상태 완전히 초기화 (이전 시나리오의 히스토리, world_state 등 삭제)
+                sessionStorage.removeItem(CHAT_LOG_KEY);
+                sessionStorage.removeItem(GAME_ENDED_KEY);
+                sessionStorage.removeItem('trpg_world_state');
+                sessionStorage.removeItem('trpg_player_stats');
+                console.log('🧹 Previous game state cleared');
 
                 // 새 시나리오 로드 상태 설정
                 sessionStorage.setItem(SCENARIO_LOADED_KEY, 'true');
