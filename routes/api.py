@@ -187,7 +187,6 @@ async def reset_build_progress():
 
 
 # [교체] routes/api.py -> list_scenarios 함수
-# [교체] routes/api.py -> list_scenarios 함수
 @api_router.get('/scenarios', response_class=HTMLResponse)
 def list_scenarios(
         request: Request,
@@ -199,9 +198,8 @@ def list_scenarios(
 ):
     """
     DB에서 시나리오를 조회하여 HTML 카드로 반환합니다.
-    - 메인화면: w-64 (256px)로 축소하여 딱 4개 배치 유도
-    - 높이: h-[20rem] (320px)로 조정
-    - 마이페이지: w-full (반응형) 유지
+    - 메인화면: w-64 (약 4개 보임) 유지
+    - 마이페이지/플레이어: w-full + 고정 높이(h-[22rem])로 직사각형 비율 복구
     """
 
     # 1. DB 쿼리 생성
@@ -265,15 +263,18 @@ def list_scenarios(
 
         # [디자인 분기]
         if filter == 'my':
-            # 마이페이지: 반응형(w-full) + 정사각형 비율 + flex-1
-            card_style = "w-full aspect-square"
-            img_height = "h-[45%]"
+            # [수정됨] 마이페이지 & 플레이어 화면 (저장된 목록)
+            # - aspect-square 제거: 카드가 너무 길어지는 문제 해결
+            # - h-[22rem]: 높이를 고정하여 직사각형 형태 유지
+            # - w-full: 그리드 칸에 맞춰 가로로 꽉 참
+            card_style = "w-full h-[22rem]"
+            img_height = "h-44"  # 이미지 높이 고정 (176px)
             content_padding = "p-4"
         else:
-            # [메인화면 수정]
-            # w-64 (256px) + h-[20rem] (320px) -> 4개 배치에 최적화
+            # [유지] 메인 화면
+            # - w-64: 4개 배치 최적화
             card_style = "w-64 h-[20rem] flex-shrink-0 snap-center"
-            img_height = "h-40"  # 이미지 높이 (160px)
+            img_height = "h-40"
             content_padding = "p-4"
 
         # [버튼 구성]
@@ -313,9 +314,9 @@ def list_scenarios(
             <div class="{content_padding} flex-1 flex flex-col justify-between">
                 <div>
                     <div class="flex justify-between items-start mb-1">
-                        <h3 class="text-sm font-bold text-white tracking-wide truncate w-full group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
+                        <h3 class="text-base font-bold text-white tracking-wide truncate w-full group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
                     </div>
-                    <div class="flex justify-between items-center text-[10px] text-gray-400 mb-1">
+                    <div class="flex justify-between items-center text-xs text-gray-400 mb-2">
                         <span>{author}</span>
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
                     </div>
