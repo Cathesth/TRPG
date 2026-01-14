@@ -160,7 +160,7 @@ async def game_act_stream(
             # 기존 세션 데이터를 game_state에 복원
             game_state.state = existing_session
 
-            # [수정] WorldState 인스턴스를 복원된 데이터로 업데이트
+            # [수정] WorldState 인스턴스를 복원된 데이터로 업데이트 (변수명 wsm 사용)
             wsm = WorldStateManager()
             if 'world_state' in existing_session:
                 wsm.from_dict(existing_session['world_state'])
@@ -229,7 +229,7 @@ async def game_act_stream(
                 yield f"data: {json.dumps({'type': 'error', 'content': '시나리오를 찾을 수 없습니다.'})}\n\n"
                 return
 
-            # [FIX] WorldState 싱글톤 인스턴스 사용
+            # [FIX] WorldState 싱글톤 인스턴스 사용 - 변수명 wsm으로 통일
             wsm = WorldStateManager()
 
             if is_game_start:
