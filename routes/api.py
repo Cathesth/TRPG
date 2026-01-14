@@ -198,11 +198,12 @@ async def list_scenarios(
 ):
     """
     DB에서 시나리오를 조회하여 HTML 카드로 반환합니다.
-    - 디자인: 정사각형(aspect-square), 반응형 너비(w-full) 적용
-    - 호환성: scenario-card-base 클래스 복구
+    - 메인화면: 가로 스크롤을 위한 고정 크기(w-80) 적용
+    - 마이페이지: 그리드 배치를 위한 반응형 크기(w-full) 적용
+    - 공통: 정사각형 비율, 관리자 버튼(수정/삭제) 복구
     """
 
-    # 1. DB 쿼리
+    # 1. DB 쿼리 생성
     query = db.query(Scenario)
 
     if filter == 'my':
@@ -211,6 +212,7 @@ async def list_scenarios(
         query = query.filter(Scenario.author_id == user.id)
     elif filter == 'public':
         query = query.filter(Scenario.is_public == True)
+    # filter='all'은 전체 조회 (메인화면 등)
 
     if sort == 'oldest':
         query = query.order_by(Scenario.created_at.asc())
@@ -256,29 +258,42 @@ async def list_scenarios(
 
         is_new = (current_ts - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
-        status_text = "PUBLIC" if is_public else "PRIVATE"
-        status_class = "bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"
-        status_badge = f'<span class="ml-2 text-[10px] {status_class} px-1 rounded font-bold">{status_text}</span>' if is_owner else ''
 
-        # 관리자 버튼
-        admin_buttons = ""
+        # [핵심 1] 뷰 모드에 따른 카드 스타일 분기
+        if filter == 'my':
+            # 마이페이지: 그리드에 꽉 차게 (w-full) + 정사각형 비율
+            card_style = "w-full aspect-square"
+        else:
+            # 메인화면: 슬라이드 되도록 고정 너비(w-80) + 수축 방지(flex-shrink-0)
+            card_style = "w-80 h-80 flex-shrink-0 snap-center"
+
+        # [핵심 2] 버튼 구성 (주인일 때 수정/삭제 표시)
         if is_owner:
-            admin_buttons = f"""
-            <div class="flex gap-2 mt-auto pt-2 border-t border-white/5">
-                <button onclick="editScenario('{fid}')" class="flex-1 py-1.5 rounded bg-transparent hover:bg-white/5 text-gray-500 hover:text-rpg-accent transition-all flex items-center justify-center gap-1 group">
-                    <i data-lucide="edit" class="w-3 h-3 transition-transform group-hover:scale-110"></i> 
-                    <span class="text-[10px] font-bold">EDIT</span>
+            buttons_html = f"""
+            <div class="flex items-center gap-2 mt-auto pt-3 border-t border-white/10">
+                <button onclick="playScenario('{fid}', this)" class="flex-1 py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
+                    <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
                 </button>
-                <button onclick="deleteScenario('{fid}', this)" class="flex-1 py-1.5 rounded bg-transparent hover:bg-red-500/10 text-gray-500 hover:text-red-500 transition-all flex items-center justify-center gap-1 group">
-                    <i data-lucide="trash" class="w-3 h-3 transition-transform group-hover:scale-110"></i> 
-                    <span class="text-[10px] font-bold">DEL</span>
+                <button onclick="editScenario('{fid}')" class="p-2 rounded-lg bg-transparent hover:bg-white/10 text-gray-400 hover:text-[#38bdf8] transition-colors" title="수정">
+                    <i data-lucide="edit" class="w-4 h-4"></i>
+                </button>
+                <button onclick="deleteScenario('{fid}', this)" class="p-2 rounded-lg bg-transparent hover:bg-red-500/10 text-gray-400 hover:text-red-500 transition-colors" title="삭제">
+                    <i data-lucide="trash" class="w-4 h-4"></i>
+                </button>
+            </div>
+            """
+        else:
+            buttons_html = f"""
+            <div class="mt-auto pt-3 border-t border-white/10">
+                <button onclick="playScenario('{fid}', this)" class="w-full py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
+                    <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY NOW
                 </button>
             </div>
             """
 
-        # [디자인 핵심] w-full + aspect-square (정사각형)
+        # 카드 HTML 조립
         card_html = f"""
-        <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative w-full aspect-square">
+        <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_style}">
             <div class="relative h-[55%] overflow-hidden bg-black shrink-0">
                 <img src="{img_src}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
                 <div class="absolute top-2 left-2 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-[#38bdf8] border border-[#38bdf8]/30">
@@ -295,15 +310,10 @@ async def list_scenarios(
                         <span>{author}</span>
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
                     </div>
-                    <p class="text-xs text-gray-400 line-clamp-2 leading-tight">{desc}</p>
+                    <p class="text-xs text-gray-400 line-clamp-2 leading-tight min-h-[2.5em]">{desc}</p>
                 </div>
 
-                <div class="mt-auto">
-                    <button onclick="playScenario('{fid}', this)" class="w-full py-1.5 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
-                        <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY NOW
-                    </button>
-                    {admin_buttons}
-                </div>
+                {buttons_html}
             </div>
         </div>
         """
