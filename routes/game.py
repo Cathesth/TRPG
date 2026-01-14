@@ -150,8 +150,7 @@ async def game_act_stream(
             # 기존 세션 데이터를 game_state에 복원
             game_state.state = existing_session
 
-            # WorldState 인스턴스를 복원된 데이터로 업데이트
-            from core.state import WorldState
+            # WorldState 인스턴스를 복원된 데이터로 업데이트 (이미 최상단에서 import됨)
             world_state_instance = WorldState()
             if 'world_state' in existing_session:
                 world_state_instance.from_dict(existing_session['world_state'])
