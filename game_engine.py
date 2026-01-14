@@ -1191,8 +1191,11 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             prompt_key = 'near_miss'
             prompt_template = prompts.get(prompt_key, '')
             if prompt_template:
+                player_status = format_player_status(scenario, state.get('player_vars', {}))
+
                 narrative_prompt = prompt_template.format(
                     user_input=user_input,
+                    player_status=player_status,
                     near_miss_trigger=near_miss
                 )
 
