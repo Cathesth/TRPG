@@ -740,9 +740,6 @@ def rule_node(state: PlayerState):
 
 def npc_node(state: PlayerState):
     """NPC 대화 (이동 아닐 때만 발동)"""
-    if state.get('parsed_intent') != 'chat':
-        state['npc_output'] = ""
-        return state
 
     # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
     if 'stuck_count' not in state:
@@ -755,21 +752,42 @@ def npc_node(state: PlayerState):
     if 'world_state' in state and state['world_state']:
         world_state.from_dict(state['world_state'])
 
-    # [추가] 장면 전환 실패 (씬 유지) 시 stuck_count 증가
+    # [추가] 장면 전환 실패 (씨 유지) 시 stuck_count 증가
     curr_scene_id = state.get('current_scene_id', '')
     prev_scene_id = state.get('previous_scene_id', '')
+    user_input = state.get('last_user_input', '').strip()
+    parsed_intent = state.get('parsed_intent', 'chat')
 
-    if state.get('last_user_input', '').strip():
+    # ✅ 작업 1: stuck_count 증가 로직을 조기 리턴 전에 이동
+    if user_input:
         old_stuck_count = state.get('stuck_count', 0)
         state['stuck_count'] = old_stuck_count + 1
-        logger.info(f"🔄 [STUCK] Player stuck in scene '{curr_scene_id}' | Intent: chat | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+        logger.info(f"🔄 [STUCK] Player stuck in scene '{curr_scene_id}' | Intent: {parsed_intent} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
 
+        # ✅ 작업 4: investigate 의도일 때 서사 기록
+        if parsed_intent == 'investigate':
+            world_state.add_narrative_event(
+                f"유저가 주변을 조사하며 '{user_input[:30]}...'을(를) 확인함"
+            )
+        # 다른 의도일 때도 기록 (attack, defend 등)
+        elif parsed_intent in ['attack', 'defend']:
+            world_state.add_narrative_event(
+                f"유저가 '{user_input[:30]}...'을(를) 시도함"
+            )
+
+    # ✅ 작업 2: WorldState 저장 (stuck_count는 state에, world_state는 딕셔너리로)
+    state['world_state'] = world_state.to_dict()
+
+    # ✅ 작업 1: NPC 대사 생성은 'chat' 의도일 때만 실행
+    if parsed_intent != 'chat':
+        state['npc_output'] = ""
+        return state
+
+    # 기존 NPC 대화 로직
     curr_id = state['current_scene_id']
     all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
     curr_scene = all_scenes.get(curr_id)
     npc_names = curr_scene.get('npcs', []) if curr_scene else []
-
-    user_input = state['last_user_input']
 
     # [추가] 인벤토리 검증: 아이템 사용 시도 감지
     item_keywords = ['사용', '쓴다', '쏜다', '던진다', '먹는다', '마신다', '착용', '장착', '입는다',
