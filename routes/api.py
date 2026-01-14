@@ -198,8 +198,9 @@ def list_scenarios(
 ):
     """
     DB에서 시나리오를 조회하여 HTML 카드로 반환합니다.
-    - 메인화면: 기존 디자인 유지 (w-96, h-[26rem])
-    - 마이페이지: 잘림 방지 패치 (flex-1, 이미지 비율 조정)
+    - 메인화면: w-72 (288px)로 줄여 한 줄에 4~5개 표시
+    - 높이: h-[22rem] (352px)로 조정하여 비율 유지
+    - 마이페이지: w-full (반응형) 유지
     """
 
     # 1. DB 쿼리 생성
@@ -261,22 +262,17 @@ def list_scenarios(
         is_new = (current_ts - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
-        # [디자인 분기 설정]
+        # [디자인 분기]
         if filter == 'my':
-            # [마이페이지 수정]
-            # 1. w-full aspect-square: 그리드에 맞춤
-            # 2. h-[45%]: 이미지 높이를 줄여 텍스트 공간 확보 (기존 55%)
-            # 3. p-4: 패딩을 살짝 줄여 내부 공간 확보 (기존 p-5)
+            # 마이페이지: 반응형(w-full) + 정사각형 비율 + flex-1 (잘림 방지)
             card_style = "w-full aspect-square"
             img_height = "h-[45%]"
             content_padding = "p-4"
         else:
-            # [메인화면 유지]
-            # 1. w-96 h-[26rem]: 기존 크기 유지
-            # 2. h-52: 이미지 높이 유지
-            # 3. p-5: 패딩 유지
-            card_style = "w-96 h-[26rem] flex-shrink-0 snap-center"
-            img_height = "h-52"
+            # [메인화면 수정]
+            # w-72 (288px) + h-[22rem] (352px) -> 4개 배치에 적합한 크기
+            card_style = "w-72 h-[22rem] flex-shrink-0 snap-center"
+            img_height = "h-44"  # 이미지 높이도 살짝 줄임 (176px)
             content_padding = "p-5"
 
         # [버튼 구성]
@@ -304,7 +300,6 @@ def list_scenarios(
             """
 
         # [카드 HTML 조립]
-        # 핵심 수정: h-full -> flex-1 (내용물이 남은 공간만 차지하도록 변경하여 넘침 방지)
         card_html = f"""
         <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_style}">
             <div class="relative {img_height} overflow-hidden bg-black shrink-0">
