@@ -616,7 +616,73 @@ def rule_node(state: PlayerState):
     user_action = state.get('last_user_input', '').strip()
     logger.info(f"🎬 [APPLY_EFFECTS] Scene before transition: {scene_before_transition}, Intent: {state['parsed_intent']}, Transition index: {idx}")
 
-    if state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
+    # ✅ 작업 2: investigate 의도 처리 - Scene Rule에서 스탯 변동 패싱 및 적용
+    if state['parsed_intent'] == 'investigate':
+        logger.info(f"🔍 [INVESTIGATE] Processing scene rule for investigation action")
+
+        # 현재 장면의 rule 필드 가져오기
+        scene_rule = curr_scene.get('rule', '') if curr_scene else ''
+
+        if scene_rule:
+            # 정규표현식으로 스탯 변동 패턴 추출: "Sanity -5", "HP +10", "Radiation +5" 등
+            # 패턴: (스탯명) (부호)(숫자)
+            stat_pattern = re.compile(r'(Sanity|HP|Gold|Radiation|sanity|hp|gold|radiation)\s*([+-]\d+)', re.IGNORECASE)
+            matches = stat_pattern.findall(scene_rule)
+
+            if matches:
+                effects = []
+                for stat_name, value_str in matches:
+                    stat_name_lower = stat_name.lower()
+                    value = int(value_str)  # +5 또는 -5 형태를 정수로 변환
+
+                    effects.append({
+                        "target": stat_name_lower,
+                        "operation": "add",
+                        "value": value
+                    })
+
+                    logger.info(f"📋 [RULE PARSED] {stat_name}: {value_str}")
+
+                # WorldState에 효과 적용
+                if effects:
+                    world_state.update_state(effects)
+
+                    # player_vars에도 동기화
+                    for eff in effects:
+                        key = eff["target"]
+                        val = eff["value"]
+
+                        current_val = state['player_vars'].get(key, 0)
+                        if not isinstance(current_val, (int, float)):
+                            current_val = 0
+
+                        new_val = current_val + val
+                        state['player_vars'][key] = new_val
+
+                        # 시스템 메시지에 추가
+                        if val > 0:
+                            sys_msg.append(f"{key.upper()} +{val}")
+                        else:
+                            sys_msg.append(f"{key.upper()} {val}")
+
+                    # 서사 이벤트 기록
+                    stat_changes = ", ".join([f"{e['target']} {e['value']:+d}" for e in effects])
+                    world_state.add_narrative_event(
+                        f"조사 과정에서 상태 변화 발생: {stat_changes}"
+                    )
+                    logger.info(f"✅ [INVESTIGATE] Applied {len(effects)} stat changes from scene rule")
+            else:
+                logger.info(f"📋 [RULE PARSED] No stat changes found in scene rule")
+        else:
+            logger.info(f"📋 [RULE] No rule field found in current scene")
+
+        # investigate는 장면 전환이 없으므로 stuck_count 증가
+        if user_action:
+            old_stuck_count = state.get('stuck_count', 0)
+            state['stuck_count'] = old_stuck_count + 1
+            logger.info(f"🔄 [INVESTIGATE] stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+
+    elif state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
         trans = transitions[idx]
         effects = trans.get('effects', [])
         next_id = trans.get('target_scene_id')
