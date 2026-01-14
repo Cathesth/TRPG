@@ -610,18 +610,21 @@ def rule_node(state: PlayerState):
         trans = transitions[idx]
         effects = trans.get('effects', [])
         next_id = trans.get('target_scene_id')
+        trigger_used = trans.get('trigger', 'unknown')
 
         logger.info(f"🎯 [TRANSITION] Attempting transition to: {next_id}")
 
-        # 효과 적용
-        for eff in effects:
-            try:
+        # ✅ 효과 적용을 WorldState로 일원화
+        if effects:
+            world_state.update_state(effects)
+            # 효과가 player_vars에도 반영되도록 동기화
+            for eff in effects:
                 if isinstance(eff, dict):
                     key = eff.get("target", "").lower()
                     operation = eff.get("operation", "add")
                     raw_val = eff.get("value", 0)
 
-                    # 아이템 효과 - player_vars에 직접 적용
+                    # 아이템 효과
                     if operation in ["gain_item", "lose_item"]:
                         item_name = str(raw_val)
                         inventory = state['player_vars'].get('inventory', [])
@@ -629,7 +632,8 @@ def rule_node(state: PlayerState):
                             inventory = []
 
                         if operation == "gain_item":
-                            inventory.append(item_name)
+                            if item_name not in inventory:
+                                inventory.append(item_name)
                             sys_msg.append(f"📦 획득: {item_name}")
                         elif operation == "lose_item":
                             if item_name in inventory:
@@ -639,7 +643,7 @@ def rule_node(state: PlayerState):
                         state['player_vars']['inventory'] = inventory
                         continue
 
-                    # 수치 효과 (HP, Gold 등) - player_vars에 직접 적용
+                    # 수치 효과
                     val = 0
                     if isinstance(raw_val, (int, float)):
                         val = int(raw_val)
@@ -669,13 +673,15 @@ def rule_node(state: PlayerState):
 
                         state['player_vars'][key] = new_val
 
-            except Exception as e:
-                logger.error(f"Effect application error: {e}")
-
         # 씬 이동
         if next_id:
             state['current_scene_id'] = next_id
             world_state.location = next_id
+
+            # ✅ 장면 전환 성공 시 서사 이벤트 기록
+            world_state.add_narrative_event(
+                f"[{scene_before_transition}]에서 '{trigger_used}' 트리거를 통해 [{next_id}]로 이동했습니다."
+            )
 
             # [추가] 장면 전환 성공 시 stuck_count 초기화
             old_stuck_count = state.get('stuck_count', 0)
@@ -686,8 +692,7 @@ def rule_node(state: PlayerState):
             state['stuck_count'] = state.get('stuck_count', 0) + 1
             logger.warning(f"⚠️ [TRANSITION FAILED] No target_scene_id | stuck_count: {state['stuck_count']}")
     else:
-        # [수정] 장면 전환 실패 (씨 유지) 시 stuck_count 증가
-        # 유저가 입력을 했지만 장면 전환이 일어나지 않은 모든 경우
+        # [수정] 장면 전환 실패 (씬 유지) 시 stuck_count 증가
         if state.get('last_user_input', '').strip():
             old_stuck_count = state.get('stuck_count', 0)
             state['stuck_count'] = old_stuck_count + 1
@@ -729,6 +734,12 @@ def npc_node(state: PlayerState):
         state['stuck_count'] = 0
         logger.info(f"🔧 [STUCK_COUNT] Initialized to 0 in npc_node")
 
+    # WorldState 인스턴스 가져오기 및 복원
+    scenario_id = state['scenario_id']
+    world_state = WorldState()
+    if 'world_state' in state and state['world_state']:
+        world_state.from_dict(state['world_state'])
+
     # [추가] 장면 전환 실패 (씬 유지) 시 stuck_count 증가
     curr_scene_id = state.get('current_scene_id', '')
     prev_scene_id = state.get('previous_scene_id', '')
@@ -738,7 +749,6 @@ def npc_node(state: PlayerState):
         state['stuck_count'] = old_stuck_count + 1
         logger.info(f"🔄 [STUCK] Player stuck in scene '{curr_scene_id}' | Intent: chat | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
 
-    scenario_id = state['scenario_id']
     curr_id = state['current_scene_id']
     all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
     curr_scene = all_scenes.get(curr_id)
@@ -802,12 +812,17 @@ def npc_node(state: PlayerState):
     prompts = load_player_prompts()
     prompt_template = prompts.get('npc_dialogue', '')
 
+    # ✅ WorldState 컨텍스트 추가
+    world_context = world_state.get_llm_context()
+
     if prompt_template:
         scenario = get_scenario_by_id(scenario_id)
         player_status = format_player_status(scenario, state.get('player_vars', {}))
 
-        # [수정] transitions_hints와 stuck_level을 프롬프트에 전달
-        prompt = prompt_template.format(
+        # [수정] WorldState 컨텍스트를 프롬프트에 포함
+        prompt = f"""{world_context}
+
+{prompt_template.format(
             player_status=player_status,
             npc_name=npc_info['name'],
             npc_role=npc_info['role'],
@@ -816,11 +831,13 @@ def npc_node(state: PlayerState):
             user_input=user_input,
             transitions_hints=transitions_hints,
             stuck_level=stuck_level
-        )
+        )}"""
     else:
         # 폴백 프롬프트 (YAML 로드 실패 시)
         logger.warning("⚠️ Failed to load npc_dialogue from YAML, using fallback")
-        prompt = f"""당신은 텍스트 RPG의 NPC입니다.
+        prompt = f"""{world_context}
+
+당신은 텍스트 RPG의 NPC입니다.
 이름: {npc_info['name']}, 역할: {npc_info['role']}, 성격: {npc_info['personality']}
 플레이어: "{user_input}"
 NPC로서 1-2문장으로 응답하세요."""
@@ -849,11 +866,17 @@ NPC로서 1-2문장으로 응답하세요."""
 
         state['npc_output'] = response
 
+        # ✅ 대화 핵심 내용을 서사 이벤트로 기록
+        # NPC가 중요 정보를 제공했는지 간단히 요약
+        conversation_summary = f"플레이어가 '{target_npc_name}'와 대화: '{user_input[:30]}...' - NPC 응답의 핵심 내용"
+        world_state.add_narrative_event(conversation_summary)
+
         if 'history' not in state: state['history'] = []
         state['history'].append(f"User: {user_input}")
         state['history'].append(f"NPC({target_npc_name}): {response}")
 
         logger.info(f"💬 [NPC] {target_npc_name}: {response}")
+
     except Exception as e:
         logger.error(f"NPC generation error: {e}")
         # 에러 시에도 LLM으로 간단한 응답 생성 시도
@@ -872,6 +895,9 @@ NPC로서 1-2문장으로 응답하세요."""
                 state['npc_output'] = ""
         except Exception:
             state['npc_output'] = ""
+
+    # WorldState 스냅샷 저장
+    state['world_state'] = world_state.to_dict()
 
     return state
 
