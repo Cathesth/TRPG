@@ -89,6 +89,16 @@
         .typing-dot:nth-child(1) { animation: typing-dot 1.4s infinite; }
         .typing-dot:nth-child(2) { animation: typing-dot 1.4s infinite 0.2s; }
         .typing-dot:nth-child(3) { animation: typing-dot 1.4s infinite 0.4s; }
+
+        /* 디버그 정보 영역 스크롤 스타일 (스크롤바 숨김) */
+        #debug-info-area {
+            overflow-y: auto;
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        #debug-info-area::-webkit-scrollbar {
+            display: none;  /* Chrome, Safari, Opera */
+        }
     </style>
 </head>
 <body class="bg-dark-900 text-gray-200 h-screen flex overflow-hidden">
@@ -302,6 +312,17 @@
                         <i data-lucide="git-merge" class="w-4 h-4"></i>
                         <span>전체 씬 보기</span>
                     </button>
+                </div>
+
+                <!-- 세션 ID 표시 -->
+                <div class="bg-gray-800/30 rounded p-2 border border-gray-700/50">
+                    <div class="text-gray-500 text-[10px] mb-1 flex items-center gap-1">
+                        <i data-lucide="key" class="w-2.5 h-2.5"></i>
+                        Session ID
+                    </div>
+                    <div id="session-id-display" class="text-gray-300 text-xs font-mono break-all">
+                        세션 없음
+                    </div>
                 </div>
 
                 <!-- NPC 상태 -->
@@ -878,6 +899,13 @@
                                     // [수정] 세션 ID 업데이트 - 서버에서 받으면 즉시 저장
                                     currentSessionId = data.content;
                                     console.log('🆔 Session ID received and updated:', data.content);
+                                    // 세션 ID 표시 업데이트
+                                    const sessionIdDisplay = document.getElementById('session-id-display');
+                                    if (sessionIdDisplay) {
+                                        sessionIdDisplay.textContent = currentSessionId;
+                                        sessionIdDisplay.classList.remove('text-gray-300');
+                                        sessionIdDisplay.classList.add('text-green-400');
+                                    }
                                     break;
                                 case 'done':
                                     contentDiv.innerHTML = contentDiv.innerHTML.replace('<span class="streaming-cursor">▌</span>', '');
