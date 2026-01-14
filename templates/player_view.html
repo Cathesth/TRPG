@@ -1521,6 +1521,14 @@
             });
 
             if (res.ok) {
+                const data = await res.json();
+
+                // ✅ 서버에서 받은 새로운 세션 키 저장
+                if (data.session_key) {
+                    sessionStorage.setItem('trpg_session_key', data.session_key);
+                    console.log('🆕 New session created:', data.session_key);
+                }
+
                 // 이전 게임 상태 완전히 초기화
                 clearAllGameState();
 
@@ -1535,7 +1543,7 @@
 
                 // UI 초기화 후 새로고침 대신 직접 초기화
                 resetGameUI();
-                showToast('시나리오가 로드되었습니다!', 'success');
+                showToast(data.message || '시나리오가 로드되었습니다!', 'success');
             } else {
                 const text = await res.text();
                 showToast('로드 실패: ' + text, 'error');
