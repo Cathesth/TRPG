@@ -130,6 +130,7 @@ class WorldState:
     def add_narrative_event(self, text: str):
         """
         서사적 이벤트를 기록 (LLM 단기 기억 강화용)
+        중복 방지: 직전 기록과 동일한 내용은 추가하지 않음
 
         Args:
             text: 기록할 서사적 이벤트 문장
@@ -137,7 +138,14 @@ class WorldState:
         if not text or not text.strip():
             return
 
-        self.narrative_history.append(text.strip())
+        text = text.strip()
+
+        # 🔴 중복 방지: 직전 기록과 동일하면 무시
+        if self.narrative_history and self.narrative_history[-1] == text:
+            logger.debug(f"[NARRATIVE] Duplicate event ignored: {text}")
+            return
+
+        self.narrative_history.append(text)
 
         # 슬라이딩 윈도우: 10개를 넘으면 가장 오래된 것부터 제거
         if len(self.narrative_history) > self.max_narrative_history:
@@ -165,7 +173,11 @@ class WorldState:
         start_scene_id = scenario_data.get('start_scene_id')
         if start_scene_id:
             self.location = start_scene_id
-            self.add_narrative_event(f"게임이 '{start_scene_id}'에서 시작되었습니다.")
+            # 🔴 중요: narrative_history가 완전히 비어있을 때만 시작 메시지 기록
+            # (세션 로드 시 중복 방지)
+            if not self.narrative_history:
+                self.add_narrative_event(f"게임이 '{start_scene_id}'에서 시작되었습니다.")
+                logger.info(f"🎮 [GAME START] Initial start event recorded at '{start_scene_id}'")
 
         # NPC 초기화
         npcs_data = scenario_data.get('npcs', [])

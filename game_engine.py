@@ -675,18 +675,21 @@ def rule_node(state: PlayerState):
 
         # 씬 이동
         if next_id:
+            # 🔴 이동 전 현재 위치를 world_state.location에서 가져오기
+            from_scene = world_state.location or scene_before_transition
+
             state['current_scene_id'] = next_id
             world_state.location = next_id
 
-            # ✅ 장면 전환 성공 시 서사 이벤트 기록
+            # ✅ 장면 전환 성공 시 서사 이벤트 기록 (현재 위치 정확히 반영)
             world_state.add_narrative_event(
-                f"[{scene_before_transition}]에서 '{trigger_used}' 트리거를 통해 [{next_id}]로 이동했습니다."
+                f"장면 이동: [{from_scene}] → [{next_id}] (트리거: {trigger_used})"
             )
 
             # [추가] 장면 전환 성공 시 stuck_count 초기화
             old_stuck_count = state.get('stuck_count', 0)
             state['stuck_count'] = 0
-            logger.info(f"✅ [MOVE SUCCESS] {scene_before_transition} -> {next_id} | stuck_count: {old_stuck_count} -> 0")
+            logger.info(f"✅ [MOVE SUCCESS] {from_scene} -> {next_id} | stuck_count: {old_stuck_count} -> 0")
         else:
             # target_scene_id가 없는 경우 (비정상)
             state['stuck_count'] = state.get('stuck_count', 0) + 1
