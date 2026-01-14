@@ -188,7 +188,7 @@ async def reset_build_progress():
 
 # [교체] routes/api.py -> list_scenarios 함수
 @api_router.get('/scenarios', response_class=HTMLResponse)
-async def list_scenarios(
+def list_scenarios(
         request: Request,
         sort: str = Query('newest'),
         filter: str = Query('public'),
@@ -197,14 +197,15 @@ async def list_scenarios(
         db: Session = Depends(get_db)
 ):
     """
-    DB(Scenario 테이블)에서 시나리오를 조회하여 HTML 카드로 반환합니다.
-    - 버튼 디자인 개선: 테두리 제거, 호버 효과 강화 (확대 + 색상 변경)
+    DB에서 시나리오를 조회하여 HTML 카드로 반환합니다.
+    - 메인화면: w-96 (약 384px)로 크기 확대 -> 한 줄에 4~5개 표시
+    - 디자인: 정사각형에 가까운 비율(h-[26rem]), 이미지 크기 최적화
     """
 
     # 1. DB 쿼리 생성
     query = db.query(Scenario)
 
-    # 2. 필터링 로직
+    # 2. 필터링
     if filter == 'my':
         if not user.is_authenticated:
             return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
@@ -213,7 +214,7 @@ async def list_scenarios(
         query = query.filter(Scenario.is_public == True)
     # filter='all'은 전체 조회
 
-    # 3. 정렬 로직
+    # 3. 정렬
     if sort == 'oldest':
         query = query.order_by(Scenario.created_at.asc())
     elif sort == 'name_asc':
@@ -221,7 +222,7 @@ async def list_scenarios(
     else:
         query = query.order_by(Scenario.created_at.desc())
 
-    # 4. 데이터 조회
+    # 4. 데이터 조회 (기본 10개)
     if limit:
         query = query.limit(limit)
 
@@ -257,60 +258,65 @@ async def list_scenarios(
 
         img_src = s_data.get('image') or "https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=800"
 
-        # 뱃지
         is_new = (current_ts - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
-        status_text = "PUBLIC" if is_public else "PRIVATE"
-        status_class = "bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"
-        status_badge = f'<span class="ml-2 text-[10px] {status_class} px-1 rounded font-bold">{status_text}</span>' if is_owner else ''
 
-        # [디자인 수정] 관리자 버튼 (테두리 제거, 호버 효과 추가)
-        admin_buttons = ""
+        # [디자인 분기]
+        if filter == 'my':
+            # 마이페이지: 반응형(w-full) + 정사각형 비율
+            card_style = "w-full aspect-square"
+            img_height = "h-[55%]"
+        else:
+            # 메인화면: w-96(384px)로 확대 + h-[26rem](416px)로 비율 맞춤
+            card_style = "w-96 h-[26rem] flex-shrink-0 snap-center"
+            img_height = "h-52"  # 이미지 높이도 208px로 확대
+
+        # [버튼 구성]
         if is_owner:
-            admin_buttons = f"""
-            <div class="flex gap-2 mt-3 pt-3 border-t border-white/5">
-                <button onclick="editScenario('{fid}')" 
-                        class="flex-1 py-2 rounded-lg bg-transparent hover:bg-white/5 text-gray-500 hover:text-rpg-accent transition-all flex items-center justify-center gap-2 group">
-                    <i data-lucide="edit" class="w-3 h-3 transition-transform group-hover:scale-110"></i> 
-                    <span class="text-xs font-bold">EDIT</span>
+            buttons_html = f"""
+            <div class="flex items-center gap-2 mt-auto pt-3 border-t border-white/10">
+                <button onclick="playScenario('{fid}', this)" class="flex-1 py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
+                    <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
                 </button>
-
-                <button onclick="deleteScenario('{fid}', this)" 
-                        class="flex-1 py-2 rounded-lg bg-transparent hover:bg-red-500/10 text-gray-500 hover:text-red-500 transition-all flex items-center justify-center gap-2 group">
-                    <i data-lucide="trash" class="w-3 h-3 transition-transform group-hover:scale-110"></i> 
-                    <span class="text-xs font-bold">DEL</span>
+                <button onclick="editScenario('{fid}', this)" class="p-2 rounded-lg bg-transparent hover:bg-white/10 text-gray-400 hover:text-[#38bdf8] transition-colors" title="수정">
+                    <i data-lucide="edit" class="w-4 h-4"></i>
+                </button>
+                <button onclick="deleteScenario('{fid}', this)" class="p-2 rounded-lg bg-transparent hover:bg-red-500/10 text-gray-400 hover:text-red-500 transition-colors" title="삭제">
+                    <i data-lucide="trash" class="w-4 h-4"></i>
+                </button>
+            </div>
+            """
+        else:
+            buttons_html = f"""
+            <div class="mt-auto pt-3 border-t border-white/10">
+                <button onclick="playScenario('{fid}', this)" class="w-full py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
+                    <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY NOW
                 </button>
             </div>
             """
 
-        # 카드 HTML
         card_html = f"""
-        <div class="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden group hover:border-[#38bdf8] transition-all flex flex-col h-full shadow-lg relative" style="min-height: 320px;">
-            <div class="relative h-40 overflow-hidden bg-black shrink-0">
+        <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_style}">
+            <div class="relative {img_height} overflow-hidden bg-black shrink-0">
                 <img src="{img_src}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
                 <div class="absolute top-2 left-2 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-[#38bdf8] border border-[#38bdf8]/30">
                     Fantasy
                 </div>
             </div>
 
-            <div class="p-4 flex-1 flex flex-col gap-2">
+            <div class="p-5 h-full flex flex-col justify-between">
                 <div>
                     <div class="flex justify-between items-start mb-1">
-                        <h3 class="text-base font-bold text-white tracking-wide truncate group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
-                        {status_badge}
+                        <h3 class="text-base font-bold text-white tracking-wide truncate w-full group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
                     </div>
                     <div class="flex justify-between items-center text-xs text-gray-400 mb-2">
                         <span>{author}</span>
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
                     </div>
-                    <p class="text-xs text-gray-400 line-clamp-2 min-h-[2.5em]">{desc}</p>
+                    <p class="text-sm text-gray-400 line-clamp-2 leading-relaxed min-h-[3em]">{desc}</p>
                 </div>
 
-                <button onclick="playScenario('{fid}', this)" class="w-full py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] mt-auto text-sm">
-                    <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
-                </button>
-
-                {admin_buttons}
+                {buttons_html}
             </div>
         </div>
         """
