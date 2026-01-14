@@ -807,13 +807,12 @@ def rule_node(state: PlayerState):
 
     state['system_message'] = " | ".join(sys_msg)
 
-    # ✅ 작업 2: WorldState 스냅샷 저장 (stuck_count는 state에 저장됨)
-    state['world_state'] = world_state.to_dict()
-
-    # ✅ [작업 1] 위치 데이터 강제 동기화 - DB 저장 전 player_state와 world_state.location 일치 보장
+    # ✅ [작업 2] 백엔드 위치 데이터 강제 동기화 - DB 저장 전 최신 위치를 world_state.location에 덮어씌움
     world_state.location = state.get("current_scene_id", world_state.location)
+
+    # ✅ WorldState 스냅샷 저장 (위치 동기화 후 저장)
     state['world_state'] = world_state.to_dict()
-    logger.info(f"🔄 [SYNC] Location synchronized: {world_state.location}")
+    logger.info(f"🔄 [SYNC] Location synchronized: world_state.location = {world_state.location}, state['current_scene_id'] = {state.get('current_scene_id')}")
 
     return state
 
