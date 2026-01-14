@@ -116,8 +116,8 @@ class Preset(Base):
     # 프리셋 전체 데이터 (nodes, connections, globalNpcs, settings 등)
     data = Column(JSON_TYPE, nullable=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     def to_dict(self):
         return {
@@ -172,7 +172,7 @@ class CustomNPC(Base):
     data = Column(JSON_TYPE, nullable=False)  # 상세 데이터 JSON
 
     author_id = Column(String(50), ForeignKey('users.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     def to_dict(self):
         return {
@@ -246,9 +246,9 @@ class GameSession(Base):
     turn_count = Column(Integer, default=0)
 
     # 타임스탬프 (인덱스 추가 - 오래된 세션 정리용)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    last_played_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    last_played_at = Column(DateTime, default=datetime.now, index=True)
 
     def to_dict(self):
         return {
