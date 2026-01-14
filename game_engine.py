@@ -597,13 +597,14 @@ def rule_node(state: PlayerState):
         scenario = get_scenario_by_id(scenario_id)
         world_state.initialize_from_scenario(scenario)
 
-    # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
+    # ✅ 작업 2: stuck_count 초기화 (state에 없으면 0으로 설정)
     if 'stuck_count' not in state:
         state['stuck_count'] = 0
         logger.info(f"🔧 [STUCK_COUNT] Initialized to 0")
 
     # 🔴 장면 전환 시도 전 현재 씬을 정확히 캡처 (world_state.location 우선)
     scene_before_transition = world_state.location or state.get('current_scene_id', '')
+    user_action = state.get('last_user_input', '').strip()
     logger.info(f"🎬 [APPLY_EFFECTS] Scene before transition: {scene_before_transition}, Intent: {state['parsed_intent']}, Transition index: {idx}")
 
     if state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
@@ -681,12 +682,12 @@ def rule_node(state: PlayerState):
             state['current_scene_id'] = next_id
             world_state.location = next_id
 
-            # ✅ 장면 전환 성공 시 서사 이벤트 기록 (이동 이유 포함)
+            # ✅ 작업 3: 장면 전환 성공 시 서사 이벤트 기록 (이동 이유 포함)
             world_state.add_narrative_event(
                 f"유저가 '{trigger_used}'을(를) 통해 [{from_scene}]에서 [{next_id}]로 이동함"
             )
 
-            # [추가] 장면 전환 성공 시 stuck_count 초기화
+            # ✅ 작업 2: 장면 전환 성공 시 stuck_count 초기화
             old_stuck_count = state.get('stuck_count', 0)
             state['stuck_count'] = 0
             logger.info(f"✅ [MOVE SUCCESS] {from_scene} -> {next_id} | stuck_count: {old_stuck_count} -> 0")
@@ -694,12 +695,23 @@ def rule_node(state: PlayerState):
             # target_scene_id가 없는 경우 (비정상)
             state['stuck_count'] = state.get('stuck_count', 0) + 1
             logger.warning(f"⚠️ [TRANSITION FAILED] No target_scene_id | stuck_count: {state['stuck_count']}")
+
+            # ✅ 작업 3: 장면 전환 실패 시 서사 기록
+            if user_action:
+                world_state.add_narrative_event(
+                    f"유저가 '{user_action[:30]}...'을(를) 시도했으나 아무 일도 일어나지 않음"
+                )
     else:
-        # [수정] 장면 전환 실패 (씬 유지) 시 stuck_count 증가
-        if state.get('last_user_input', '').strip():
+        # ✅ 작업 3: 장면 전환 실패 (씬 유지) 시 stuck_count 증가 및 서사 기록
+        if user_action:
             old_stuck_count = state.get('stuck_count', 0)
             state['stuck_count'] = old_stuck_count + 1
             logger.info(f"🔄 [STUCK] Player stuck in scene '{scene_before_transition}' | Intent: {state['parsed_intent']} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+
+            # 서사 이벤트 기록
+            world_state.add_narrative_event(
+                f"유저가 '{user_action[:30]}...'을(를) 시도했으나 장면 전환 없이 현재 위치에 머뭄"
+            )
         else:
             logger.debug(f"⏸️ [NO INPUT] No user input, stuck_count unchanged: {state.get('stuck_count', 0)}")
 
@@ -720,7 +732,7 @@ def rule_node(state: PlayerState):
 
     state['system_message'] = " | ".join(sys_msg)
 
-    # WorldState 스냅샷 저장
+    # ✅ 작업 2: WorldState 스냅샷 저장 (stuck_count는 state에 저장됨)
     state['world_state'] = world_state.to_dict()
 
     return state
