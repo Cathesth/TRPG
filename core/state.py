@@ -61,15 +61,16 @@ class GameState:
 
 class WorldState:
     """
-    🛠️ World State Manager (규칙 기반 상태 관리)
+    핵심 World State Manager (규칙 기반 상태 관리)
 
     LLM 환각(Hallucination)을 방지하기 위한 규칙 기반 상태 관리자.
-    LLM이 직접 수정할 수 없으며, 사전에 정의된 로직으로만 상태 변경.
+    LLM이 직접 수정할 수 없으며 사전에 정의된 로직으로만 상태 변경
 
-    관리 항목:
-    - World: 시간, 위치, 전역 플래그, 턴 카운트
+    관리 대상:
+    - World: 시간, 위치, 지역 플래그 등 카운터
     - NPC States: 생존 여부, HP, 감정, 관계도, 위치, 개별 플래그
-    - Player Stats: HP, 골드, 정신력, 방사능, 인벤토리, 퀘스트, 플래그
+    - Player Stats: HP, 골드, 정신력, 방사능, 인벤토리, 스킬 플래그
+    - Narrative History: LLM 단기 기억을 위한 서사적 이벤트 기록 (슬라이딩 윈도우)
     """
 
     _instance = None
@@ -82,16 +83,16 @@ class WorldState:
 
     def _initialize(self):
         """초기 상태 설정"""
-        # A. World (전역 상태)
-        self.time = {"day": 1, "phase": "morning"}  # morning|afternoon|night
+        # A. World (지역 상태)
+        self.time = {"day": 1, "phase": "morning"}  # morning/afternoon/night
         self.location = None  # current_scene_id
-        self.global_flags: Dict[str, bool] = {}  # 전역 이벤트 플래그
-        self.turn_count = 1  # 전체 게임 진행 턴 수
+        self.global_flags: Dict[str, bool] = {}  # 지역 이벤트 플래그
+        self.turn_count = 1  # 전체 게임 진행 턴수
 
-        # B. NPC States (가변 영역) - HP와 위치 추가
+        # B. NPC States (개별 영역) - HP와 위치 추가
         self.npcs: Dict[str, Dict[str, Any]] = {}
         # 구조: { "npc_id": {
-        #   "status": "alive|dead|wounded",
+        #   "status": "alive/dead/wounded",
         #   "hp": 100,
         #   "max_hp": 100,
         #   "emotion": "neutral",
@@ -109,18 +110,52 @@ class WorldState:
             "sanity": 100,
             "radiation": 0,
             "inventory": [],
-            "quests": {},  # { "quest_id": "active|completed|failed" }
+            "quests": {},  # { "quest_id": "active/completed/failed" }
             "flags": {},  # 플레이어 고유 이벤트 플래그
             "custom_stats": {}  # 시나리오별 커스텀 스탯
         }
 
-        # 상태 변경 히스토리 (디버깅/분석용)
+        # 상태 변경 히스토리 (디버깅용)
         self.history: List[Dict[str, Any]] = []
+
+        # D. Narrative History (서사 기억 시스템)
+        self.narrative_history: List[str] = []
+        self.max_narrative_history = 10  # 슬라이딩 윈도우 크기
 
     def reset(self):
         """상태 완전 초기화"""
         self._initialize()
         logger.info("WorldState has been reset")
+
+    def add_narrative_event(self, text: str):
+        """
+        서사적 이벤트를 기록 (LLM 단기 기억 강화용)
+        중복 방지: 직전 기록과 동일한 내용은 추가하지 않음
+
+        Args:
+            text: 기록할 서사적 이벤트 문장
+        """
+        if not text or not text.strip():
+            return
+
+        text = text.strip()
+
+        # 🔴 중복 방지: 직전 기록과 동일하면 무시
+        if self.narrative_history and self.narrative_history[-1] == text:
+            logger.debug(f"[NARRATIVE] Duplicate event ignored: {text}")
+            return
+
+        # ✅ 작업 4: 턴 번호 접두사 추가 (시간 순서 명확화)
+        prefixed_text = f"[Turn {self.turn_count}] {text}"
+        self.narrative_history.append(prefixed_text)
+
+        # 슬라이딩 윈도우: 10개를 넘으면 가장 오래된 것부터 제거
+        if len(self.narrative_history) > self.max_narrative_history:
+            # 간단한 전략: 가장 오래된 것 제거
+            self.narrative_history.pop(0)
+            logger.debug(f"[NARRATIVE] History trimmed, size: {len(self.narrative_history)}")
+
+        logger.info(f"📖 [NARRATIVE] Event added: {prefixed_text}")
 
     # ========================================
     # 1. 초기화 및 로딩
@@ -133,13 +168,18 @@ class WorldState:
         Args:
             scenario_data: 시나리오 JSON 데이터
         """
-        # [삭제] 플레이어 초기 스탯 설정 - player_vars로 이동
+        # [변경] 플레이어 초기 스탯 설정 - player_vars로 이동
         # player_state의 player_vars가 플레이어 스탯을 관리함
 
         # 시작 위치 설정
         start_scene_id = scenario_data.get('start_scene_id')
         if start_scene_id:
             self.location = start_scene_id
+            # 🔴 중요: narrative_history가 완전히 비어있을 때만 시작 메시지 기록
+            # (세션 로드 시 중복 방지)
+            if not self.narrative_history:
+                self.add_narrative_event(f"게임이 '{start_scene_id}'에서 시작되었습니다.")
+                logger.info(f"🎮 [GAME START] Initial start event recorded at '{start_scene_id}'")
 
         # NPC 초기화
         npcs_data = scenario_data.get('npcs', [])
@@ -159,11 +199,27 @@ class WorldState:
                     npc_location = scene.get('scene_id')
                     break
 
+            # 🔴 FIX: HP 값을 정수로 강제 변환 (문자열 방지)
+            npc_hp_raw = npc.get('hp', 100)
+            npc_max_hp_raw = npc.get('max_hp', npc_hp_raw)
+
+            try:
+                npc_hp = int(npc_hp_raw)
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid HP value for NPC '{npc_name}': {npc_hp_raw}, using default 100")
+                npc_hp = 100
+
+            try:
+                npc_max_hp = int(npc_max_hp_raw)
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid max_hp value for NPC '{npc_name}': {npc_max_hp_raw}, using HP value {npc_hp}")
+                npc_max_hp = npc_hp
+
             # NPC 초기 상태 설정
             self.npcs[npc_name] = {
                 "status": "alive",
-                "hp": npc.get('hp', 100),
-                "max_hp": npc.get('max_hp', npc.get('hp', 100)),
+                "hp": npc_hp,
+                "max_hp": npc_max_hp,
                 "emotion": "neutral",
                 "relationship": 50,
                 "is_hostile": npc.get('isEnemy', False),
@@ -182,15 +238,15 @@ class WorldState:
         효과 데이터를 받아 상태를 업데이트 (순수 규칙 기반, LLM 개입 없음)
 
         Args:
-            effect_data: 효과 데이터 (단일 dict 또는 list)
-                예시: {"hp": -10, "gold": +5, "item_add": "포션"}
-                      [{"hp": -10}, {"npc": "노인 J", "relationship": +10}]
+            effect_data: 효과 데이터(단일 dict 또는 list)
+                예시: {"hp": -10, "gold": +5, "item_add": "물약"}
+                      [{"hp": -10}, {"npc": "마인 J", "relationship": +10}]
 
         지원 효과:
-        - hp, gold, sanity, radiation 등: 수치 증감
+        - hp, gold, sanity, radiation 등 수치 증감
         - item_add, item_remove: 아이템 추가/제거
         - npc: NPC 이름과 함께 relationship, emotion, status, flags 변경
-        - global_flag: 전역 플래그 설정
+        - global_flag: 지역 플래그 설정
         - quest_start, quest_complete, quest_fail: 퀘스트 상태 변경
         """
         if not effect_data:
@@ -213,37 +269,60 @@ class WorldState:
             # 플레이어 스탯 변경
             for stat in ["hp", "gold", "sanity", "radiation"]:
                 if stat in effect:
+                    old_value = self.player.get(stat, 0)
                     self._update_player_stat(stat, effect[stat])
+                    new_value = self.player.get(stat, 0)
+                    if old_value != new_value:
+                        self.add_narrative_event(f"플레이어의 {stat.upper()}이 {old_value}에서 {new_value}로 변경되었습니다.")
 
             # 커스텀 스탯 변경
             for key, value in effect.items():
                 if key in self.player["custom_stats"]:
+                    old_value = self.player["custom_stats"].get(key, 0)
                     self._update_player_stat(key, value, is_custom=True)
+                    new_value = self.player["custom_stats"].get(key, 0)
+                    if old_value != new_value:
+                        self.add_narrative_event(f"플레이어의 {key}이(가) {old_value}에서 {new_value}로 변경되었습니다.")
 
             # 아이템 관리
             if "item_add" in effect:
-                self._add_item(effect["item_add"])
+                item_name = effect["item_add"]
+                self._add_item(item_name)
+                self.add_narrative_event(f"플레이어가 '{item_name}'을(를) 획득했습니다.")
             if "item_remove" in effect:
-                self._remove_item(effect["item_remove"])
+                item_name = effect["item_remove"]
+                self._remove_item(item_name)
+                self.add_narrative_event(f"플레이어가 '{item_name}'을(를) 사용/잃었습니다.")
 
             # NPC 관계 변경
             if "npc" in effect:
                 npc_name = effect["npc"]
                 self._update_npc_state(npc_name, effect)
 
-            # 전역 플래그
+            # 글로벌 플래그
             if "global_flag" in effect:
                 flag_name = effect["global_flag"]
                 flag_value = effect.get("value", True)
+                old_flag_value = self.global_flags.get(flag_name, False)
                 self.global_flags[flag_name] = flag_value
+
+                # 플래그 변경 시 자동으로 서사 이벤트 추가
+                if old_flag_value != flag_value:
+                    self.add_narrative_event(f"팩트: [{flag_name}]이(가) [{flag_value}]로 변경되었습니다.")
 
             # 퀘스트 관리
             if "quest_start" in effect:
-                self.player["quests"][effect["quest_start"]] = "active"
+                quest_id = effect["quest_start"]
+                self.player["quests"][quest_id] = "active"
+                self.add_narrative_event(f"퀘스트 '{quest_id}'이(가) 시작되었습니다.")
             if "quest_complete" in effect:
-                self.player["quests"][effect["quest_complete"]] = "completed"
+                quest_id = effect["quest_complete"]
+                self.player["quests"][quest_id] = "completed"
+                self.add_narrative_event(f"퀘스트 '{quest_id}'을(를) 완료했습니다.")
             if "quest_fail" in effect:
-                self.player["quests"][effect["quest_fail"]] = "failed"
+                quest_id = effect["quest_fail"]
+                self.player["quests"][quest_id] = "failed"
+                self.add_narrative_event(f"퀘스트 '{quest_id}'이(가) 실패했습니다.")
 
     def _update_player_stat(self, stat_name: str, value: Union[int, float], is_custom: bool = False):
         """플레이어 스탯 업데이트 (증감 계산)"""
@@ -310,38 +389,57 @@ class WorldState:
             }
 
         npc = self.npcs[npc_name]
+        changes = []
 
         # 관계도 변경
         if "relationship" in effect:
             delta = effect["relationship"]
             if isinstance(delta, (int, float)):
+                old_rel = npc["relationship"]
                 npc["relationship"] += delta
                 npc["relationship"] = max(0, min(100, npc["relationship"]))
+                changes.append(f"관계도 {old_rel} → {npc['relationship']}")
 
         # 감정 변경
         if "emotion" in effect:
+            old_emotion = npc["emotion"]
             npc["emotion"] = effect["emotion"]
+            if old_emotion != npc["emotion"]:
+                changes.append(f"감정 {old_emotion} → {npc['emotion']}")
 
         # 생존 여부
         if "status" in effect:
+            old_status = npc["status"]
             npc["status"] = effect["status"]
+            if old_status != npc["status"]:
+                changes.append(f"상태 {old_status} → {npc['status']}")
 
         # NPC 개별 플래그
         if "npc_flag" in effect:
             flag_name = effect["npc_flag"]
             flag_value = effect.get("flag_value", True)
             npc["flags"][flag_name] = flag_value
+            changes.append(f"플래그 '{flag_name}' = {flag_value}")
 
-        # HP 변경 (적용 예: {"npc": "노인 J", "hp": -10})
+        # HP 변경(적용 예: {"npc": "마인 J", "hp": -10})
         if "hp" in effect:
             hp_change = effect["hp"]
             if isinstance(hp_change, (int, float)):
+                old_hp = npc.get("hp", 100)
                 npc["hp"] = npc.get("hp", 100) + hp_change
                 npc["hp"] = max(0, min(npc["hp"], npc.get("max_hp", 100)))
+                changes.append(f"HP {old_hp} → {npc['hp']}")
 
-        # 위치 변경 (적용 예: {"npc": "노인 J", "location": "다리 위"})
+        # 위치 변경(적용 예: {"npc": "마인 J", "location": "오리 집"})
         if "location" in effect:
+            old_loc = npc.get("location", "unknown")
             npc["location"] = effect["location"]
+            changes.append(f"위치 {old_loc} → {npc['location']}")
+
+        # 변경사항이 있으면 서사 이벤트 추가
+        if changes:
+            change_text = ", ".join(changes)
+            self.add_narrative_event(f"NPC '{npc_name}': {change_text}")
 
     # ========================================
     # 3. 조건 체크 (Condition Checker)
@@ -462,10 +560,6 @@ class WorldState:
         else:
             self.npcs[npc_name] = state_data
 
-    def increment_turn(self):
-        """턴 증가"""
-        self.turn_count += 1
-
     def to_dict(self) -> Dict[str, Any]:
         """딕셔너리로 변환 (직렬화)"""
         return {
@@ -474,7 +568,8 @@ class WorldState:
             "global_flags": self.global_flags,
             "turn_count": self.turn_count,
             "npcs": self.npcs,
-            "history": self.history
+            "history": self.history,
+            "narrative_history": self.narrative_history
         }
 
     def from_dict(self, data: Dict[str, Any]):
@@ -485,6 +580,7 @@ class WorldState:
         self.turn_count = data.get("turn_count", 0)
         self.npcs = data.get("npcs", {})
         self.history = data.get("history", [])
+        self.narrative_history = data.get("narrative_history", [])
 
         logger.info(f"WorldState restored from saved data (Turn: {self.turn_count})")
 
@@ -497,7 +593,7 @@ class WorldState:
         }
 
     # ========================================
-    # 8. NPC HP 관리 및 불사신 방지 (핵심 로직)
+    # 4. NPC HP 관리 및 불사신 방지 (핵심 로직)
     # ========================================
 
     def update_npc_hp(self, npc_id: str, amount: int) -> Dict[str, Any]:
@@ -513,6 +609,13 @@ class WorldState:
         Returns:
             결과 정보 {"npc_id": str, "hp": int, "status": str, "is_dead": bool}
         """
+        # 🔴 FIX: amount를 정수로 강제 변환
+        try:
+            amount = int(amount)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid amount type for update_npc_hp: {type(amount).__name__} = {amount}, using 0")
+            amount = 0
+
         # NPC가 없으면 초기화
         if npc_id not in self.npcs:
             logger.warning(f"NPC '{npc_id}' not found. Initializing with default values.")
@@ -538,14 +641,29 @@ class WorldState:
                 "message": f"{npc_id}는 이미 죽었습니다."
             }
 
+        # 🔴 FIX: HP 값을 정수로 강제 변환
+        old_hp_raw = npc.get("hp", 100)
+        max_hp_raw = npc.get("max_hp", 100)
+
+        try:
+            old_hp = int(old_hp_raw)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid HP type for NPC '{npc_id}': {type(old_hp_raw).__name__} = {old_hp_raw}, using 100")
+            old_hp = 100
+
+        try:
+            max_hp = int(max_hp_raw)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid max_hp type for NPC '{npc_id}': {type(max_hp_raw).__name__} = {max_hp_raw}, using 100")
+            max_hp = 100
+
         # HP 변경 (순수 정수 연산)
-        old_hp = npc.get("hp", 100)
         new_hp = old_hp + amount
-        max_hp = npc.get("max_hp", 100)
 
         # HP 범위 제한 (0 ~ max_hp)
         new_hp = max(0, min(new_hp, max_hp))
         npc["hp"] = new_hp
+        npc["max_hp"] = max_hp  # max_hp도 정수로 보장
 
         # 🔴 사망 판정 (규칙 기반 - LLM 개입 불가)
         is_dead = False
@@ -580,14 +698,25 @@ class WorldState:
         """
         return item_name in self.player["inventory"]
 
+    def get_stat(self, stat_name: str) -> Optional[Union[int, float]]:
+        """스탯 값 조회 (플레이어 또는 커스텀 스탯)"""
+        if stat_name in self.player:
+            return self.player.get(stat_name)
+        elif stat_name in self.player.get("custom_stats", {}):
+            return self.player["custom_stats"].get(stat_name)
+        return None
+
     def get_llm_context(self) -> str:
         """
-        🔴 LLM 프롬프트에 주입할 절대적 진실 컨텍스트
+        현재 LLM 프롬프트에 주입할 단단한 진실 컨텍스트
+        - 플레이어 현재 스탯
+        - NPC 생존 상태
+        - 최근 서사 이벤트 (최근 5개)
 
-        LLM은 이 정보를 절대로 무시할 수 없으며,
-        서사 생성 시 반드시 이 데이터를 기반으로 작성해야 함.
+        LLM은 이 정보를 토대로 무시할 수 없으며
+        서사 생성 시 반드시 이 데이터를 기준으로 작성해야 함
         """
-        lines = ["=== 🔴 WORLD STATE (절대적 진실) ===\n"]
+        lines = ["=== 🌍 WORLD STATE (단단한 진실) ===\n"]
 
         # 플레이어 상태
         lines.append("[플레이어 상태]")
@@ -600,11 +729,11 @@ class WorldState:
             lines.append(f"- {key}: {value}")
 
         if self.player["inventory"]:
-            lines.append(f"- 소지품: {', '.join(self.player['inventory'])}")
+            lines.append(f"- 보유중: {', '.join(self.player['inventory'])}")
         else:
-            lines.append("- 소지품: 없음")
+            lines.append("- 보유중: 없음")
 
-        # NPC 생존 상태 (생사만 표시 - 환각 방지)
+        # NPC 생존 상태 (핵심만 표시 - 환각 방지)
         if self.npcs:
             lines.append("\n[NPC/적 상태]")
             for npc_name, npc_data in self.npcs.items():
@@ -612,13 +741,20 @@ class WorldState:
                 hp = npc_data.get("hp", 100)
 
                 if status == "dead":
-                    lines.append(f"- {npc_name}: ☠️ 사망 (HP: 0) ← 절대 부활 불가")
+                    lines.append(f"- {npc_name}: 전투 사망 (HP: 0) - 더이상 무력/불가능")
                 elif hp <= 0:
-                    lines.append(f"- {npc_name}: ☠️ 사망 (HP: 0) ← 절대 부활 불가")
+                    lines.append(f"- {npc_name}: 전투 사망 (HP: 0) - 더이상 무력/불가능")
                 else:
                     lines.append(f"- {npc_name}: 생존 (HP: {hp})")
 
-        lines.append("\n⚠️ 위 수치는 절대적 진실이며, 이를 무시하거나 변경하지 마세요.")
+        # 최근 서사 이벤트 (최근 5개)
+        if self.narrative_history:
+            lines.append("\n[최근 사건 요약]")
+            recent_events = self.narrative_history[-5:]
+            for i, event in enumerate(recent_events, 1):
+                lines.append(f"{i}. {event}")
+
+        lines.append("\n⚠️ 전투 후 수치는 단단한 진실이며, 이를 무시하거나 변경하지 마세요.")
 
         return "\n".join(lines)
 

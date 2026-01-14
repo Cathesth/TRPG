@@ -309,6 +309,14 @@
                 });
 
                 if (res.ok) {
+                    const data = await res.json();
+
+                    // ✅ 서버에서 받은 새로운 세션 키 저장
+                    if (data.session_key) {
+                        sessionStorage.setItem('trpg_session_key', data.session_key);
+                        console.log('🆕 New session created:', data.session_key);
+                    }
+
                     window.location.href = '/views/player';
                 } else {
                     alert('시나리오를 불러오는 데 실패했습니다.');

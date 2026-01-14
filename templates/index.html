@@ -320,6 +320,27 @@
                 formData.append('filename', filename);
                 const res = await fetch('/api/load_scenario', { method: 'POST', body: formData });
                 if (res.ok) {
+                    const data = await res.json();
+
+                    // ✅ [중요] 서버에서 받은 새로운 세션 키를 sessionStorage에 즉시 저장 (덮어쓰기)
+                    if (data.session_key) {
+                        sessionStorage.setItem('trpg_session_key', data.session_key);
+                        console.log('🆕 New session created:', data.session_key);
+                    }
+
+                    // ✅ [중요] 시나리오 ID도 함께 저장 (act_stream 요청 시 함께 전송하기 위함)
+                    if (data.scenario_id) {
+                        sessionStorage.setItem('trpg_scenario_id', data.scenario_id);
+                        console.log('📋 Scenario ID saved:', data.scenario_id);
+                    }
+
+                    // ✅ [중요] 기존 게임 상태 완전히 초기화 (이전 시나리오의 히스토리, world_state 등 삭제)
+                    sessionStorage.removeItem('trpg_chat_log');
+                    sessionStorage.removeItem('trpg_game_ended');
+                    sessionStorage.removeItem('trpg_world_state');
+                    sessionStorage.removeItem('trpg_player_stats');
+                    console.log('🧹 Previous game state cleared');
+
                     sessionStorage.setItem('trpg_scenario_loaded', 'true');
                     window.location.href = '/views/player';
                 } else {
@@ -400,3 +421,4 @@
     </script>
 </body>
 </html>
+

@@ -336,6 +336,10 @@ async def load_scenario(
         filename: str = Form(...),
         user: CurrentUser = Depends(get_current_user_optional)
 ):
+    import uuid
+    from core.state import WorldState
+    from routes.game import save_game_session
+
     user_id = user.id if user.is_authenticated else None
     result, error = ScenarioService.load_scenario(filename, user_id)
     if error:
@@ -344,18 +348,32 @@ async def load_scenario(
     scenario = result['scenario']
     start_id = pick_start_scene_id(scenario)
 
+    # ============================================
+    # 🔥 새로운 세션 ID 생성 (기존 세션 완전히 무시)
+    # ============================================
+    new_session_key = str(uuid.uuid4())
+    logger.info(f"🆕 [LOAD_SCENARIO] Creating new session: {new_session_key}")
+
+    # ============================================
+    # 🔄 GameState 완전 초기화
+    # ============================================
+    game_state.clear()  # 싱글톤 인스턴스 초기화
     game_state.config['title'] = scenario.get('title', 'Loaded')
 
     # [경량화] scenario 전체 대신 scenario_id만 저장
     scenario_id = scenario.get('id', 0)
 
-    # [FIX] WorldState 초기화 (싱글톤 인스턴스 사용)
-    from core.state import WorldState
+    # ============================================
+    # 🔄 WorldState 완전 초기화 (싱글톤 인스턴스 리셋)
+    # ============================================
     world_state_instance = WorldState()
-    world_state_instance.reset()
+    world_state_instance.reset()  # 기존 데이터 완전 삭제
     world_state_instance.initialize_from_scenario(scenario)
+    logger.info(f"🌍 [LOAD_SCENARIO] WorldState reset and initialized")
 
-    # [경량화] player_state에는 world_state를 포함하지 않음
+    # ============================================
+    # 📝 새로운 player_state 생성
+    # ============================================
     game_state.state = {
         "scenario_id": scenario_id,  # [경량화] ID만 저장
         "current_scene_id": "prologue",
@@ -377,7 +395,33 @@ async def load_scenario(
         "_internal_flags": {}
     }
     game_state.game_graph = create_game_graph()
-    return {"success": True}
+
+    # ============================================
+    # 💾 DB에 새로운 세션 저장 (완전히 새로운 세션으로 강제)
+    # ============================================
+    db = next(get_db())
+    try:
+        saved_session_key = save_game_session(
+            db=db,
+            state=game_state.state.copy(),
+            user_id=user_id,
+            session_key=new_session_key  # 새로운 세션 키 강제 사용
+        )
+        logger.info(f"✅ [LOAD_SCENARIO] New session saved to DB: {saved_session_key}")
+    except Exception as e:
+        logger.error(f"❌ [LOAD_SCENARIO] Failed to save session: {e}")
+        saved_session_key = new_session_key
+    finally:
+        db.close()
+
+    # ============================================
+    # 🎯 클라이언트에 새로운 세션 ID 반환 (이후 요청에서 사용)
+    # ============================================
+    return {
+        "success": True,
+        "session_key": saved_session_key,
+        "message": "New game session created. Previous session data cleared."
+    }
 
 
 @api_router.post('/publish_scenario')
