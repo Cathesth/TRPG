@@ -288,52 +288,27 @@
         function enableHorizontalScroll() {
             const containers = document.querySelectorAll('.horizontal-scroll-container');
             containers.forEach(slider => {
-                slider.style.cursor = 'grab';
-            slider.style.userSelect = 'none'; // 드래그 중 텍스트 선택 방지
-
-            let isDown = false;
-            let startX;
-            let scrollLeft;
-
-            const startDragging = (e) => {
-                isDown = true;
-                slider.classList.add('active');
-                slider.style.cursor = 'grabbing'; // 드래그 중 grabbing
-                startX = e.pageX - slider.offsetLeft;
-                scrollLeft = slider.scrollLeft;
-            };
-
-            const stopDragging = () => {
-                isDown = false;
-                slider.classList.remove('active');
-                slider.style.cursor = 'grab';
-            };
-
-            const move = (e) => {
-                if (!isDown) return;
-                e.preventDefault();
-                const x = e.pageX - slider.offsetLeft;
-                const walk = (x - startX) * 1.5; // * 1.5로 부드러운 가속
-                slider.scrollLeft = scrollLeft - walk;
-            };
-
-            // 이벤트 리스너 등록
-            slider.addEventListener('mousedown', startDragging);
-
-            // [중요] 마우스가 요소를 벗어나도 드래그가 끊기지 않도록 window에 이벤트 위임
-            window.addEventListener('mouseup', stopDragging);
-            window.addEventListener('mousemove', move);
-        });
-    }
-
-    // HTMX 로드 완료 후 스크롤 기능 활성화
-    document.body.addEventListener('htmx:afterSwap', function(evt) {
-        lucide.createIcons();
-        enableHorizontalScroll();
-    });
-
-    // 초기 로드 시 실행
-    document.addEventListener('DOMContentLoaded', enableHorizontalScroll);
+                let isDown = false;
+                let startX;
+                let scrollLeft;
+                slider.addEventListener('mousedown', (e) => {
+                    isDown = true;
+                    slider.classList.add('active');
+                    startX = e.pageX - slider.offsetLeft;
+                    scrollLeft = slider.scrollLeft;
+                });
+                slider.addEventListener('mouseleave', () => { isDown = false; });
+                slider.addEventListener('mouseup', () => { isDown = false; });
+                slider.addEventListener('mousemove', (e) => {
+                    if(!isDown) return;
+                    e.preventDefault();
+                    const x = e.pageX - slider.offsetLeft;
+                    const walk = (x - startX) * 2;
+                    slider.scrollLeft = scrollLeft - walk;
+                });
+            });
+        }
+        document.addEventListener('DOMContentLoaded', enableHorizontalScroll);
 
         window.playScenario = async function(filename, btn) {
             const originalText = btn.innerHTML;
