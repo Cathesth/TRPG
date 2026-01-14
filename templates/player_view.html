@@ -488,13 +488,19 @@
     // 모든 게임 상태 초기화 함수
     function clearAllGameState() {
         sessionStorage.removeItem(CHAT_LOG_KEY);
-        sessionStorage.removeItem(GAME_ENDED_KEY);
         sessionStorage.removeItem(SCENARIO_LOADED_KEY);
         sessionStorage.removeItem(CURRENT_SCENARIO_KEY);
-        isGameEnded = false;
-        isScenarioLoaded = false;
-        hasGameStarted = false;
-        isStreaming = false;
+        sessionStorage.removeItem('trpg_session_key');  // 세션 키 제거
+        sessionStorage.removeItem(GAME_ENDED_KEY);
+        sessionStorage.removeItem('trpg_world_state');
+        sessionStorage.removeItem('trpg_player_stats');
+        localStorage.removeItem(SESSION_KEY_STORAGE);
+
+        // ✅ 메모리 변수도 초기화
+        currentSessionId = null;
+        currentSessionKey = '';
+
+        console.log('🧹 All game state cleared (including session ID)');
     }
 
     function openScenesView() {
@@ -719,10 +725,12 @@
                 requestBody.provider = providerSelect.value;
             }
 
-            // [수정] 세션 ID 포함 (있으면)
+            // ✅ [중요] 세션 ID 포함 - currentSessionId가 있으면 반드시 전송
             if (currentSessionId) {
                 requestBody.session_id = currentSessionId;
-                console.log('📤 Sending session_id:', currentSessionId);
+                console.log('📤 Sending session_id to server:', currentSessionId);
+            } else {
+                console.warn('⚠️ No session_id available, server will create new session');
             }
 
             const response = await fetch('/game/act_stream', {
@@ -1618,9 +1626,6 @@
             `;
         }
 
-        // [FIX] 이전 세션 키 제거
-        currentSessionKey = '';
-        localStorage.removeItem(SESSION_KEY_STORAGE);
 
         // 상태 초기화
         isGameEnded = false;

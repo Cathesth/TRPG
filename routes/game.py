@@ -152,41 +152,30 @@ async def game_act_stream(
             yield f"data: {json.dumps({'type': 'error', 'content': 'Invalid request format'})}\n\n"
         return StreamingResponse(error_gen(), media_type='text/event-stream')
 
-    # [수정] 세션 ID로 기존 세션 복구 - session_id가 있을 때만
+    # ✅ [중요] 클라이언트가 보낸 세션 ID를 우선적으로 사용
+    # 세션 ID가 있으면 해당 세션만 복구, 없으면 현재 game_state 사용
     if session_id:
-        from services.history_service import HistoryService
-        existing_session = HistoryService.get_session(session_id)
-        if existing_session:
-            # 기존 세션 데이터를 game_state에 복원
-            game_state.state = existing_session
+        logger.info(f"🔍 [SESSION] Client provided session_id: {session_id}")
 
-            # [수정] WorldState 인스턴스를 복원된 데이터로 업데이트 (변수명 wsm 사용)
+        # DB에서 세션 복구 시도
+        restored_state = load_game_session(db, session_id)
+
+        if restored_state:
+            # ✅ DB에서 복구한 세션으로 game_state 완전히 교체
+            game_state.state = restored_state
+
+            # WorldState도 복구
             wsm = WorldStateManager()
-            if 'world_state' in existing_session:
-                wsm.from_dict(existing_session['world_state'])
+            if 'world_state' in restored_state:
+                wsm.from_dict(restored_state['world_state'])
 
-            # [추가] current_scene_id가 'prologue'인 경우 실제 시작 씬으로 보정
-            current_scene_id = existing_session.get('current_scene_id', '')
-            scenario_id = existing_session.get('scenario_id')
-
-            if current_scene_id == 'prologue' and scenario_id:
-                scenario = get_scenario_by_id(scenario_id)
-                # start_scene_id 또는 첫 번째 씬으로 보정
-                start_scene_id = scenario.get('start_scene_id')
-                if not start_scene_id:
-                    scenes = scenario.get('scenes', [])
-                    if scenes:
-                        start_scene_id = scenes[0].get('scene_id', 'Scene-1')
-                    else:
-                        start_scene_id = 'Scene-1'
-
-                game_state.state['current_scene_id'] = start_scene_id
-                wsm.location = start_scene_id
-                logger.info(f"🔧 [SESSION RESTORE] Corrected prologue -> {start_scene_id}")
-
-            logger.info(f"🔄 [SESSION RESTORE] Session ID: {session_id}, Scene: {game_state.state.get('current_scene_id')}, Stuck: {game_state.state.get('stuck_count', 0)}")
+            logger.info(f"✅ [SESSION RESTORE] Session restored from DB: {session_id}")
         else:
-            logger.warning(f"⚠️ [SESSION] Session ID {session_id} not found, starting fresh")
+            logger.warning(f"⚠️ [SESSION] Session ID {session_id} not found in DB")
+            # 세션을 찾을 수 없으면 에러 반환
+            def error_gen():
+                yield f"data: {json.dumps({'type': 'error', 'content': '세션을 찾을 수 없습니다. 시나리오를 다시 로드해주세요.'})}\n\n"
+            return StreamingResponse(error_gen(), media_type='text/event-stream')
 
     if not game_state.state or not game_state.game_graph:
         def error_gen():
@@ -233,8 +222,8 @@ async def game_act_stream(
             wsm = WorldStateManager()
 
             if is_game_start:
-                # 게임 시작 시: WorldState 초기화 (첫 게임 시작일 때만)
-                if not session_id:  # [수정] 세션 ID가 없을 때만 reset
+                # 게임 시작 시: 세션이 있으면 유지, 없으면 새로 생성
+                if not session_id:
                     wsm.reset()
                     wsm.initialize_from_scenario(scenario)
                     logger.info(f"🎮 [GAME START] New game session created")
@@ -275,15 +264,15 @@ async def game_act_stream(
             # 🛠️ WorldState DB 저장 (매 턴마다)
             user_id = user.id if user else None
 
-            # [수정] session_id를 session_key로 사용 (기존 세션 유지)
+            # ✅ [중요] 세션 ID 유지 - 클라이언트가 보낸 세션 ID로 계속 저장
             if not session_id:
                 # 새 세션 생성
                 session_id = save_game_session(db, processed_state, user_id, None)
                 logger.info(f"✅ [NEW SESSION] Created: {session_id}")
             else:
-                # 기존 세션 업데이트
+                # ✅ 기존 세션 업데이트 (클라이언트가 보낸 session_id 사용)
                 session_id = save_game_session(db, processed_state, user_id, session_id)
-                logger.info(f"✅ [SESSION UPDATE] Updated: {session_id}")
+                logger.info(f"✅ [SESSION UPDATE] Updated existing session: {session_id}")
 
             # 결과 추출
             npc_say = processed_state.get('npc_output', '')
@@ -293,7 +282,7 @@ async def game_act_stream(
 
             # --- [스트리밍 응답 전송] ---
 
-            # [추가] 세션 ID 전송 (프론트엔드에서 저장)
+            # ✅ [중요] 세션 ID 전송 (프론트엔드에서 저장)
             if session_id:
                 yield f"data: {json.dumps({'type': 'session_id', 'content': session_id})}\n\n"
 
