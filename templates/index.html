@@ -52,6 +52,13 @@
         .modal { transition: opacity 0.25s ease; }
         body.modal-active { overflow: hidden; }
 
+        /* [새로 추가] 슬라이드 컨테이너 여백 설정 (테두리 잘림 방지) */
+        .horizontal-scroll-container {
+            /* 상하좌우 여백을 주어 호버 시 카드가 잘리지 않게 함 */
+            padding: 20px 10px 40px 10px !important;
+            margin: -20px -10px 0 -10px !important; /* 레이아웃 틀어짐 보정 */
+        }
+
         /* API 카드 디자인 */
         .scenario-card-base {
             background-color: #0f172a !important;
@@ -62,8 +69,7 @@
             transition: all 0.3s ease !important;
             display: flex !important;
             flex-direction: column !important;
-            min-width: 24rem !important;
-            width: 24rem !important;
+            min-width: 280px !important;
             max-width: 280px !important;
             margin-right: 1.5rem !important;
             flex-shrink: 0 !important;
