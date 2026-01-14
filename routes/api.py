@@ -94,6 +94,157 @@ async def mypage_view(request: Request, user: CurrentUser = Depends(get_current_
 
 
 # ==========================================
+# [추가] 마이페이지 서브 뷰 (회원정보, 결제, 시나리오 래퍼)
+# ==========================================
+
+@api_router.get('/views/mypage/scenarios', response_class=HTMLResponse)
+def get_mypage_scenarios_view():
+    """마이페이지: '내 작품 보기' 클릭 시 시나리오 목록 영역 반환"""
+    return """
+    <div class="fade-in">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                <i data-lucide="book-open" class="w-5 h-5 text-rpg-accent"></i> My Scenarios
+            </h2>
+            <div class="flex gap-2">
+                <button class="px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors">All</button>
+                <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Public</button>
+                <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Private</button>
+            </div>
+        </div>
+
+        <div id="my-scenario-grid"
+             class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+             hx-get="/api/scenarios?filter=my"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+            <div class="col-span-full py-12 flex flex-col items-center justify-center text-gray-500 animate-pulse">
+                <i data-lucide="loader-2" class="w-8 h-8 mb-4 animate-spin"></i>
+                <p>Loading your archives...</p>
+            </div>
+        </div>
+    </div>
+    <script>lucide.createIcons();</script>
+    """
+
+
+@api_router.get('/views/mypage/profile', response_class=HTMLResponse)
+def get_profile_view(user: CurrentUser = Depends(get_current_user)):
+    """마이페이지: 회원 정보 수정 폼 반환"""
+    username = user.id if user.is_authenticated else "Guest"
+
+    return f"""
+    <div class="fade-in max-w-2xl mx-auto">
+        <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-2 border-b border-rpg-700 pb-4">
+            <i data-lucide="user-cog" class="w-6 h-6 text-rpg-accent"></i> Edit Profile
+        </h2>
+
+        <form class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="col-span-full flex flex-col items-center justify-center p-6 bg-rpg-800 rounded-xl border border-rpg-700 border-dashed hover:border-rpg-accent transition-colors cursor-pointer group">
+                    <div class="w-24 h-24 rounded-full bg-rpg-900 flex items-center justify-center mb-3 relative overflow-hidden">
+                        <span class="text-3xl font-bold text-gray-500 group-hover:text-white transition-colors">{username[:2].upper()}</span>
+                        <div class="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i data-lucide="camera" class="w-6 h-6 text-white"></i>
+                        </div>
+                    </div>
+                    <p class="text-sm text-gray-400 group-hover:text-rpg-accent">Change Avatar</p>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="text-xs font-bold text-gray-400 uppercase">Username</label>
+                    <input type="text" value="{username}" disabled class="w-full bg-rpg-900/50 border border-rpg-700 rounded-lg p-3 text-gray-500 cursor-not-allowed">
+                    <p class="text-[10px] text-gray-600">* 아이디는 변경할 수 없습니다.</p>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="text-xs font-bold text-gray-400 uppercase">Email Address</label>
+                    <input type="email" placeholder="email@example.com" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
+                </div>
+
+                <div class="space-y-2">
+                    <label class="text-xs font-bold text-gray-400 uppercase">New Password</label>
+                    <input type="password" placeholder="••••••••" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
+                </div>
+
+                <div class="space-y-2">
+                    <label class="text-xs font-bold text-gray-400 uppercase">Confirm Password</label>
+                    <input type="password" placeholder="••••••••" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 pt-6 border-t border-rpg-700">
+                <button type="button" class="px-6 py-2.5 rounded-lg border border-rpg-700 text-gray-400 hover:text-white hover:bg-rpg-800 transition-colors">Cancel</button>
+                <button type="submit" onclick="alert('준비 중인 기능입니다.')" class="px-6 py-2.5 rounded-lg bg-rpg-accent text-black font-bold hover:bg-white transition-colors shadow-lg shadow-rpg-accent/20">Save Changes</button>
+            </div>
+        </form>
+    </div>
+    <script>lucide.createIcons();</script>
+    """
+
+
+@api_router.get('/views/mypage/billing', response_class=HTMLResponse)
+def get_billing_view():
+    """마이페이지: 결제/플랜 변경 화면 반환"""
+    return """
+    <div class="fade-in">
+        <h2 class="text-2xl font-bold text-white mb-2 flex items-center gap-2">
+            <i data-lucide="credit-card" class="w-6 h-6 text-rpg-accent"></i> Plans & Billing
+        </h2>
+        <p class="text-gray-400 mb-8">모험의 규모에 맞는 플랜을 선택하세요.</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="bg-rpg-800 border border-rpg-700 rounded-2xl p-6 flex flex-col relative overflow-hidden">
+                <div class="mb-4">
+                    <h3 class="text-xl font-bold text-white">Adventurer</h3>
+                    <p class="text-sm text-gray-400">입문자를 위한 기본 플랜</p>
+                </div>
+                <div class="text-3xl font-black text-white mb-6">Free</div>
+                <ul class="space-y-3 mb-8 flex-1 text-sm text-gray-300">
+                    <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-green-500"></i> 시나리오 생성 3개</li>
+                    <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-green-500"></i> 기본 AI 모델 사용</li>
+                    <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-green-500"></i> 커뮤니티 접근</li>
+                </ul>
+                <button class="w-full py-3 bg-rpg-700 text-gray-300 font-bold rounded-xl cursor-not-allowed">Current Plan</button>
+            </div>
+
+            <div class="bg-rpg-800 border border-rpg-accent rounded-2xl p-6 flex flex-col relative overflow-hidden shadow-[0_0_30px_rgba(56,189,248,0.15)] transform md:-translate-y-4">
+                <div class="absolute top-0 right-0 bg-rpg-accent text-black text-[10px] font-bold px-3 py-1 rounded-bl-xl">POPULAR</div>
+                <div class="mb-4">
+                    <h3 class="text-xl font-bold text-rpg-accent">Dungeon Master</h3>
+                    <p class="text-sm text-gray-400">진지한 모험가를 위한 플랜</p>
+                </div>
+                <div class="text-3xl font-black text-white mb-6">₩9,900 <span class="text-sm text-gray-500 font-normal">/mo</span></div>
+                <ul class="space-y-3 mb-8 flex-1 text-sm text-gray-300">
+                    <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-rpg-accent"></i> 시나리오 무제한</li>
+                    <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-rpg-accent"></i> 고급 AI (GPT-4 등)</li>
+                    <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-rpg-accent"></i> 이미지 생성 50회/월</li>
+                    <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-rpg-accent"></i> 비공개 시나리오</li>
+                </ul>
+                <button onclick="alert('결제 모듈 연동 준비 중입니다.')" class="w-full py-3 bg-rpg-accent hover:bg-white text-black font-bold rounded-xl transition-all shadow-lg shadow-rpg-accent/20">Upgrade Now</button>
+            </div>
+
+            <div class="bg-rpg-800 border border-rpg-700 rounded-2xl p-6 flex flex-col relative overflow-hidden">
+                <div class="mb-4">
+                    <h3 class="text-xl font-bold text-purple-400">World Creator</h3>
+                    <p class="text-sm text-gray-400">전문가를 위한 궁극의 도구</p>
+                </div>
+                <div class="text-3xl font-black text-white mb-6">₩29,900 <span class="text-sm text-gray-500 font-normal">/mo</span></div>
+                <ul class="space-y-3 mb-8 flex-1 text-sm text-gray-300">
+                    <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-purple-400"></i> 모든 Pro 기능 포함</li>
+                    <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-purple-400"></i> 전용 파인튜닝 모델</li>
+                    <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-purple-400"></i> API 액세스</li>
+                    <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-purple-400"></i> 우선 기술 지원</li>
+                </ul>
+                <button onclick="alert('문의가 필요합니다.')" class="w-full py-3 bg-rpg-700 hover:bg-purple-600 hover:text-white text-white font-bold rounded-xl transition-all">Contact Sales</button>
+            </div>
+        </div>
+    </div>
+    <script>lucide.createIcons();</script>
+    """
+
+
+# ==========================================
 # [API 라우트] 인증 (Auth)
 # ==========================================
 @api_router.post('/auth/register')

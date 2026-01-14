@@ -149,22 +149,28 @@
                 <nav class="bg-rpg-800/80 backdrop-blur border border-rpg-700 rounded-2xl p-4 shadow-xl overflow-hidden">
                     <ul class="space-y-1">
                         <li>
-                            <a href="/views/mypage" class="flex items-center gap-3 px-4 py-3 rounded-xl bg-rpg-700/50 text-rpg-accent font-bold border border-rpg-700/50 transition-all">
+                            <button hx-get="/api/views/mypage/scenarios"
+                                    hx-target="#main-content-area"
+                                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-rpg-700/50 text-gray-300 hover:text-rpg-accent font-bold border border-transparent hover:border-rpg-700/50 transition-all text-left focus:bg-rpg-700 focus:text-white">
                                 <i data-lucide="book" class="w-5 h-5"></i>
                                 내 작품 보기
-                            </a>
+                            </button>
                         </li>
                         <li>
-                            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-rpg-700 hover:text-white transition-all">
+                            <button hx-get="/api/views/mypage/profile"
+                                    hx-target="#main-content-area"
+                                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-rpg-700/50 text-gray-300 hover:text-rpg-accent font-bold border border-transparent hover:border-rpg-700/50 transition-all text-left focus:bg-rpg-700 focus:text-white">
                                 <i data-lucide="user-cog" class="w-5 h-5"></i>
                                 회원 정보 수정
-                            </a>
+                            </button>
                         </li>
                         <li>
-                            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-rpg-700 hover:text-white transition-all">
+                            <button hx-get="/api/views/mypage/billing"
+                                    hx-target="#main-content-area"
+                                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-rpg-700/50 text-gray-300 hover:text-rpg-accent font-bold border border-transparent hover:border-rpg-700/50 transition-all text-left focus:bg-rpg-700 focus:text-white">
                                 <i data-lucide="credit-card" class="w-5 h-5"></i>
                                 결제 / 플랜 변경
-                            </a>
+                            </button>
                         </li>
                     </ul>
                 </nav>
@@ -199,31 +205,32 @@
                 </div>
             </div>
 
-            <div class="lg:col-span-3">
-                <div class="flex items-center justify-between mb-6">
-                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                        <i data-lucide="book-open" class="w-5 h-5 text-rpg-accent"></i> My Scenarios
-                    </h2>
-                    <div class="flex gap-2">
-                        <button class="px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors">All</button>
-                        <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Public</button>
-                        <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Private</button>
+            <div id="main-content-area" class="lg:col-span-3">
+                <div class="fade-in">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                            <i data-lucide="book-open" class="w-5 h-5 text-rpg-accent"></i> My Scenarios
+                        </h2>
+                        <div class="flex gap-2">
+                            <button class="px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors">All</button>
+                            <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Public</button>
+                            <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Private</button>
+                        </div>
                     </div>
-                </div>
 
-                <div id="my-scenario-grid"
-                     class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-                     hx-get="/api/scenarios?filter=my"
-                     hx-trigger="load"
-                     hx-swap="innerHTML">
+                    <div id="my-scenario-grid"
+                         class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+                         hx-get="/api/scenarios?filter=my"
+                         hx-trigger="load"
+                         hx-swap="innerHTML">
 
-                    <div class="col-span-full py-12 flex flex-col items-center justify-center text-gray-500 animate-pulse">
-                        <i data-lucide="loader-2" class="w-8 h-8 mb-4 animate-spin"></i>
-                        <p>Loading your archives...</p>
+                        <div class="col-span-full py-12 flex flex-col items-center justify-center text-gray-500 animate-pulse">
+                            <i data-lucide="loader-2" class="w-8 h-8 mb-4 animate-spin"></i>
+                            <p>Loading your archives...</p>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
     </div>
 
     <div id="login-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-[100]">
