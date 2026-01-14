@@ -198,8 +198,8 @@ def list_scenarios(
 ):
     """
     DB에서 시나리오를 조회하여 HTML 카드로 반환합니다.
-    - 메인화면: w-96 (약 384px)로 크기 확대 -> 한 줄에 4~5개 표시
-    - 디자인: 정사각형에 가까운 비율(h-[26rem]), 이미지 크기 최적화
+    - 메인화면: 기존 디자인 유지 (w-96, h-[26rem])
+    - 마이페이지: 잘림 방지 패치 (flex-1, 이미지 비율 조정)
     """
 
     # 1. DB 쿼리 생성
@@ -222,7 +222,7 @@ def list_scenarios(
     else:
         query = query.order_by(Scenario.created_at.desc())
 
-    # 4. 데이터 조회 (기본 10개)
+    # 4. 데이터 조회
     if limit:
         query = query.limit(limit)
 
@@ -247,7 +247,7 @@ def list_scenarios(
         fid = str(s.id)
         title = s.title or "제목 없음"
         desc = s_data.get('prologue', s_data.get('desc', '설명이 없습니다.'))
-        if len(desc) > 80: desc = desc[:80] + "..."
+        if len(desc) > 60: desc = desc[:60] + "..."
 
         author = s.author_id or "System"
         is_owner = (user.is_authenticated and s.author_id == user.id)
@@ -261,15 +261,23 @@ def list_scenarios(
         is_new = (current_ts - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
-        # [디자인 분기]
+        # [디자인 분기 설정]
         if filter == 'my':
-            # 마이페이지: 반응형(w-full) + 정사각형 비율
+            # [마이페이지 수정]
+            # 1. w-full aspect-square: 그리드에 맞춤
+            # 2. h-[45%]: 이미지 높이를 줄여 텍스트 공간 확보 (기존 55%)
+            # 3. p-4: 패딩을 살짝 줄여 내부 공간 확보 (기존 p-5)
             card_style = "w-full aspect-square"
-            img_height = "h-[55%]"
+            img_height = "h-[45%]"
+            content_padding = "p-4"
         else:
-            # 메인화면: w-96(384px)로 확대 + h-[26rem](416px)로 비율 맞춤
+            # [메인화면 유지]
+            # 1. w-96 h-[26rem]: 기존 크기 유지
+            # 2. h-52: 이미지 높이 유지
+            # 3. p-5: 패딩 유지
             card_style = "w-96 h-[26rem] flex-shrink-0 snap-center"
-            img_height = "h-52"  # 이미지 높이도 208px로 확대
+            img_height = "h-52"
+            content_padding = "p-5"
 
         # [버튼 구성]
         if is_owner:
@@ -295,6 +303,8 @@ def list_scenarios(
             </div>
             """
 
+        # [카드 HTML 조립]
+        # 핵심 수정: h-full -> flex-1 (내용물이 남은 공간만 차지하도록 변경하여 넘침 방지)
         card_html = f"""
         <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_style}">
             <div class="relative {img_height} overflow-hidden bg-black shrink-0">
@@ -304,7 +314,7 @@ def list_scenarios(
                 </div>
             </div>
 
-            <div class="p-5 h-full flex flex-col justify-between">
+            <div class="{content_padding} flex-1 flex flex-col justify-between">
                 <div>
                     <div class="flex justify-between items-start mb-1">
                         <h3 class="text-base font-bold text-white tracking-wide truncate w-full group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
