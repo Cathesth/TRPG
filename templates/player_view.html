@@ -376,7 +376,7 @@
     let responseTimerInterval = null;  // 응답 시간 타이머
     let responseStartTime = null;  // 응답 시작 시간
     let currentSessionKey = '';  // 현재 세션 키 저장
-    let currentSessionId = null;  // [수정] 세션 ID 유지 - null로 초기화
+    let currentSessionId = sessionStorage.getItem("current_session_id") || null;  // [수정] 세션 ID 유지 - sessionStorage에서 복원
 
     // 상수 정의
     const CHAT_LOG_KEY = 'trpg_chat_log';
@@ -1085,6 +1085,12 @@
 
     // [NEW] Railway DB에서 게임 데이터 불러오기
     async function fetchGameDataFromDB() {
+        // [작업 1] currentSessionId가 비어있으면 sessionStorage에서 복원
+        if (!currentSessionId) {
+            currentSessionId = sessionStorage.getItem("current_session_id");
+            console.log('🔄 [FETCH] Restored session ID from sessionStorage:', currentSessionId);
+        }
+
         const sessionKey = currentSessionKey || localStorage.getItem(SESSION_KEY_STORAGE);
 
         if (!sessionKey) {
@@ -1586,6 +1592,7 @@
                 // ✅ [중요] 서버에서 받은 새로운 세션 키를 sessionStorage에 즉시 저장 (덮어쓰기)
                 if (data.session_key) {
                     currentSessionId = data.session_key;  // 메모리 변수 업데이트
+                    sessionStorage.setItem('current_session_id', data.session_key);  // [작업 1] sessionStorage에 저장
                     sessionStorage.setItem('trpg_session_key', data.session_key);
                     console.log('🆕 New session created:', data.session_key);
                 }
