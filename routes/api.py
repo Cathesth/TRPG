@@ -187,6 +187,7 @@ async def reset_build_progress():
 
 
 # [교체] routes/api.py -> list_scenarios 함수
+# [교체] routes/api.py -> list_scenarios 함수
 @api_router.get('/scenarios', response_class=HTMLResponse)
 def list_scenarios(
         request: Request,
@@ -198,8 +199,8 @@ def list_scenarios(
 ):
     """
     DB에서 시나리오를 조회하여 HTML 카드로 반환합니다.
-    - 메인화면: w-72 (288px)로 줄여 한 줄에 4~5개 표시
-    - 높이: h-[22rem] (352px)로 조정하여 비율 유지
+    - 메인화면: w-64 (256px)로 축소하여 딱 4개 배치 유도
+    - 높이: h-[20rem] (320px)로 조정
     - 마이페이지: w-full (반응형) 유지
     """
 
@@ -264,16 +265,16 @@ def list_scenarios(
 
         # [디자인 분기]
         if filter == 'my':
-            # 마이페이지: 반응형(w-full) + 정사각형 비율 + flex-1 (잘림 방지)
+            # 마이페이지: 반응형(w-full) + 정사각형 비율 + flex-1
             card_style = "w-full aspect-square"
             img_height = "h-[45%]"
             content_padding = "p-4"
         else:
             # [메인화면 수정]
-            # w-72 (288px) + h-[22rem] (352px) -> 4개 배치에 적합한 크기
-            card_style = "w-72 h-[22rem] flex-shrink-0 snap-center"
-            img_height = "h-44"  # 이미지 높이도 살짝 줄임 (176px)
-            content_padding = "p-5"
+            # w-64 (256px) + h-[20rem] (320px) -> 4개 배치에 최적화
+            card_style = "w-64 h-[20rem] flex-shrink-0 snap-center"
+            img_height = "h-40"  # 이미지 높이 (160px)
+            content_padding = "p-4"
 
         # [버튼 구성]
         if is_owner:
@@ -312,13 +313,13 @@ def list_scenarios(
             <div class="{content_padding} flex-1 flex flex-col justify-between">
                 <div>
                     <div class="flex justify-between items-start mb-1">
-                        <h3 class="text-base font-bold text-white tracking-wide truncate w-full group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
+                        <h3 class="text-sm font-bold text-white tracking-wide truncate w-full group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
                     </div>
-                    <div class="flex justify-between items-center text-xs text-gray-400 mb-2">
+                    <div class="flex justify-between items-center text-[10px] text-gray-400 mb-1">
                         <span>{author}</span>
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
                     </div>
-                    <p class="text-sm text-gray-400 line-clamp-2 leading-relaxed min-h-[3em]">{desc}</p>
+                    <p class="text-xs text-gray-400 line-clamp-2 leading-tight min-h-[2.5em]">{desc}</p>
                 </div>
 
                 {buttons_html}
