@@ -69,7 +69,7 @@
             scroll-behavior: auto;
         }
 
-        /* [유지] API 카드 디자인 - 메인화면용 (4개 배치) */
+        /* API 카드 디자인 */
         .scenario-card-base {
             background-color: #0f172a !important;
             border: 1px solid #1e293b !important;
@@ -104,23 +104,27 @@
             <span class="font-title text-2xl font-black text-white tracking-widest hover:text-rpg-accent transition-colors">TRPG.OS</span>
         </div>
 
-        <div class="flex items-center gap-6">
-            <button class="text-gray-400 hover:text-rpg-accent transition-colors p-2 rounded-full hover:bg-white/5" title="검색">
-                <i data-lucide="search" class="w-6 h-6"></i>
-            </button>
+        <div class="flex items-center gap-5">
 
-            <button class="text-gray-400 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-white/5" title="찜한 목록">
-                <i data-lucide="heart" class="w-6 h-6"></i>
+            <div class="hidden md:flex items-center bg-rpg-800 border border-rpg-700 rounded-full px-4 py-1.5 focus-within:border-rpg-accent transition-colors group shadow-inner">
+                <input type="text" placeholder="Search scenarios..."
+                       class="bg-transparent border-none text-sm text-gray-300 focus:outline-none w-48 placeholder-gray-600 transition-all focus:w-64">
+                <button class="ml-2 text-gray-500 group-hover:text-white transition-colors" title="검색">
+                    <i data-lucide="search" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <div class="h-6 w-px bg-rpg-700 hidden md:block"></div>
+
+            <button class="text-gray-400 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-white/5 relative group" title="찜한 목록">
+                <i data-lucide="heart" class="w-6 h-6 transition-transform group-hover:scale-110"></i>
             </button>
 
             {% if user and user.is_authenticated %}
                 <div class="flex items-center gap-3 cursor-pointer group" onclick="location.href='/views/mypage'" title="마이페이지">
-                    <button class="text-gray-400 group-hover:text-white transition-colors p-2 rounded-full bg-rpg-800 border border-rpg-700 group-hover:border-rpg-accent">
+                    <button class="text-gray-400 group-hover:text-white transition-colors p-2 rounded-full bg-rpg-800 border border-rpg-700 group-hover:border-rpg-accent shadow-md">
                         <i data-lucide="user" class="w-6 h-6"></i>
                     </button>
-                    <div class="text-right hidden sm:block">
-                        <p class="text-sm font-bold text-white group-hover:text-rpg-accent transition-colors">{{ user.id }}</p>
-                    </div>
                 </div>
             {% else %}
                 <button onclick="openModal('login-modal')" class="flex items-center gap-2 px-5 py-2.5 bg-rpg-accent hover:bg-white text-black font-bold rounded shadow-lg shadow-rpg-accent/20 transition-all">
@@ -185,12 +189,6 @@
                         <button onclick="filterGenre('romance')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">로맨스</button>
                         <button onclick="filterGenre('etc')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">기타</button>
                     </div>
-                </div>
-
-                <div class="relative w-full md:w-64">
-                    <input type="text" placeholder="Search scenarios..."
-                           class="w-full bg-rpg-800 border border-rpg-700 text-white text-sm rounded-lg px-4 py-2.5 pl-10 focus:outline-none focus:border-rpg-accent transition-colors shadow-sm">
-                    <i data-lucide="search" class="absolute left-3 top-2.5 w-4 h-4 text-gray-500"></i>
                 </div>
 
             </div>
