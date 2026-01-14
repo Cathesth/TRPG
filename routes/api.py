@@ -196,151 +196,137 @@ async def list_scenarios(
         sort: str = Query('newest'),
         filter: str = Query('public'),
         limit: int = Query(10),
-        user: CurrentUser = Depends(get_current_user_optional)
+        user: CurrentUser = Depends(get_current_user_optional),
+        db: Session = Depends(get_db)  # [중요] DB 세션 주입
 ):
     """
-    시나리오 목록을 HTML 카드 형태로 반환합니다. (DB + 파일 통합 조회)
-    - 메인화면(index.html)과 플레이어(player_view.html)의 디자인에 맞춘 HTML을 생성합니다.
+    DB(Scenario 테이블)에서 시나리오를 조회하여 HTML 카드로 반환합니다.
+    - filter='public': 모든 공개 시나리오 (메인화면)
+    - filter='all': (관리자용) 공개/비공개 모두 포함
+    - filter='my': 내 시나리오
     """
-    file_infos = []
 
-    # 1. [파일 시스템 조회] DB/scenarios 폴더의 JSON 파일 읽기
-    # (필터가 'my'가 아니거나, 전체 보기일 때 수행)
-    if filter in ['public', 'all']:
-        try:
-            import glob
-            base_path = os.path.join("DB", "scenarios")
-            if not os.path.exists(base_path):
-                os.makedirs(base_path, exist_ok=True)
+    # 1. DB 쿼리 생성
+    query = db.query(Scenario)
 
-            json_files = glob.glob(os.path.join(base_path, "*.json"))
+    # 2. 필터링 로직
+    if filter == 'my':
+        if not user.is_authenticated:
+            return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
+        query = query.filter(Scenario.author_id == user.id)
+    elif filter == 'public':
+        # 메인 화면: 공개된 모든 시나리오
+        query = query.filter(Scenario.is_public == True)
+    # filter == 'all'인 경우는 조건 없이 전체 조회 (비공개 포함)
 
-            for file_path in json_files:
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
+    # 3. 정렬 로직 (DB 레벨)
+    if sort == 'oldest':
+        query = query.order_by(Scenario.created_at.asc())
+    elif sort == 'name_asc':
+        query = query.order_by(Scenario.title.asc())
+    else:  # newest, popular, steady 등은 기본적으로 최신순으로 가져온 뒤 재정렬
+        query = query.order_by(Scenario.created_at.desc())
 
-                    filename = os.path.basename(file_path).replace('.json', '')
+    # 4. 데이터 조회 (전체 가져오기 -> 정렬/자르기는 메모리에서)
+    # 인기순/스테디셀러는 JSON 데이터 내부(views, plays)를 봐야 하므로 일단 다 가져옵니다.
+    if limit and sort not in ['popular', 'steady']:
+        query = query.limit(limit)
 
-                    info = {
-                        'filename': filename,
-                        'title': data.get('title', filename),
-                        'desc': data.get('desc', '') or data.get('description', '설명 없음'),
-                        'author': data.get('author', 'System'),
-                        'created_time': os.path.getctime(file_path),
-                        'image': data.get('image', ''),
-                        'is_public': True,
-                        'is_owner': False,
-                        'views': data.get('views', 0),
-                        'clicks': data.get('clicks', 0),
-                        'plays': data.get('plays', 0)
-                    }
-                    file_infos.append(info)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+    scenarios = query.all()
 
-    # 2. [DB 조회] 기존 Service 이용
-    query_user_id = user.id if filter == 'my' and user.is_authenticated else None
+    # 5. 인기순/스테디셀러 Python 정렬 (JSON 필드)
+    if sort in ['popular', 'steady']:
+        # JSON 데이터가 없는 경우를 대비해 안전하게 처리
+        def get_stat(s, key):
+            if not s.data: return 0
+            return s.data.get(key, 0) if isinstance(s.data, dict) else 0
 
-    # Service 호출 (기존 로직 유지)
-    # filter='all'일 경우에도 모든 데이터를 가져오도록 처리 (public 필터 우회)
-    target_filter = 'all' if filter == 'all' else filter
-    db_infos = ScenarioService.list_scenarios('newest', query_user_id, target_filter, None)
+        if sort == 'popular':
+            scenarios.sort(key=lambda x: get_stat(x, 'views') + get_stat(x, 'clicks'), reverse=True)
+        elif sort == 'steady':
+            scenarios.sort(key=lambda x: get_stat(x, 'plays'), reverse=True)
 
-    if db_infos:
-        existing_filenames = {f['filename'] for f in file_infos}
-        for info in db_infos:
-            if info['filename'] not in existing_filenames:
-                file_infos.append(info)
+        # 정렬 후 자르기
+        if limit:
+            scenarios = scenarios[:limit]
 
-    # 3. 데이터가 없을 경우 처리
-    if not file_infos:
+    # 데이터 없음 처리
+    if not scenarios:
         msg = "등록된 시나리오가 없습니다." if filter != 'my' else "아직 생성한 시나리오가 없습니다."
-        # 플레이어 뷰의 모달에서도 잘 보이도록 스타일 조정
         return HTMLResponse(
             f'<div class="col-span-full text-center text-gray-500 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
 
-    # 4. 정렬 로직 (Sort)
-    if sort == 'popular':
-        file_infos.sort(key=lambda x: x.get('views', 0) + x.get('clicks', 0), reverse=True)
-    elif sort == 'steady':
-        file_infos.sort(key=lambda x: x.get('plays', 0), reverse=True)
-    elif sort == 'name_asc':
-        file_infos.sort(key=lambda x: x.get('title', ''))
-    else:  # newest (기본값)
-        file_infos.sort(key=lambda x: x.get('created_time', 0), reverse=True)
-
-    # 5. 개수 제한 (Limit)
-    if limit > 0:
-        file_infos = file_infos[:limit]
-
-    # 6. HTML 생성 (index.html 및 player_view.html 호환 클래스 사용)
+    # 6. HTML 생성 (index.html CSS 클래스 적용)
     from datetime import datetime
     import time as time_module
     current_time = time_module.time()
     NEW_THRESHOLD = 30 * 60
 
     html = ""
-    for info in file_infos:
-        fid = info['filename']
-        title = info['title']
-        desc = info['desc']
-        author = info['author']
+    for s in scenarios:
+        # JSON 데이터 추출
+        s_data = s.data if isinstance(s.data, dict) else {}
+        # 이중 포장된 경우 처리 (data['scenario']...)
+        if 'scenario' in s_data: s_data = s_data['scenario']
 
-        created_time = info.get('created_time', 0)
-        img_src = info.get('image') or "https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=800"
+        fid = str(s.id)  # DB ID 사용 (문자열 변환)
+        title = s.title or "제목 없음"
+        desc = s_data.get('prologue', s_data.get('desc', '설명이 없습니다.'))
+        if len(desc) > 80: desc = desc[:80] + "..."
 
-        time_str = datetime.fromtimestamp(created_time).strftime('%Y-%m-%d') if created_time else "-"
+        author = s.author_id or "System"
+        is_owner = (user.is_authenticated and s.author_id == user.id)
+        is_public = s.is_public
 
-        is_owner = info.get('is_owner', False)
-        is_public = info.get('is_public', False)
+        # created_at이 datetime 객체임
+        created_ts = s.created_at.timestamp() if s.created_at else 0
+        time_str = s.created_at.strftime('%Y-%m-%d') if s.created_at else "-"
 
-        is_new = (current_time - created_time) < NEW_THRESHOLD if created_time else False
+        img_src = s_data.get('image') or "https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=800"
+
+        # 뱃지
+        is_new = (current_time - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
         status_badge = f'<span class="ml-2 text-[10px] {"bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"} px-1 rounded font-bold">{"PUBLIC" if is_public else "PRIVATE"}</span>' if is_owner else ''
 
-        # 관리자 버튼 (마이페이지 등에서만 보임)
+        # 관리자 버튼
         admin_buttons = ""
         if is_owner:
             admin_buttons = f"""
-            <div class="flex gap-2 mt-3 pt-3 border-t border-white/10 admin-controls">
-                <button onclick="editScenario('{fid}')" class="flex-1 py-2 rounded-lg bg-rpg-900/50 border border-rpg-700 hover:border-rpg-accent text-gray-400 hover:text-white transition-colors flex items-center justify-center gap-1">
+            <div class="flex gap-2 mt-3 pt-3 border-t border-rpg-700/50">
+                <button onclick="editScenario('{fid}')" class="flex-1 py-2 rounded-lg bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-400 hover:text-white transition-colors flex items-center justify-center gap-1">
                     <i data-lucide="edit" class="w-3 h-3"></i> <span class="text-xs">EDIT</span>
                 </button>
-                <button onclick="deleteScenario('{fid}', this)" class="flex-1 py-2 rounded-lg bg-rpg-900/50 border border-rpg-700 hover:border-danger hover:text-danger text-gray-400 transition-colors flex items-center justify-center gap-1">
+                <button onclick="deleteScenario('{fid}', this)" class="flex-1 py-2 rounded-lg bg-rpg-800 border border-rpg-700 hover:border-danger hover:text-danger text-gray-400 transition-colors flex items-center justify-center gap-1">
                     <i data-lucide="trash" class="w-3 h-3"></i> <span class="text-xs">DEL</span>
                 </button>
             </div>
             """
 
-        # [디자인 복구 핵심] scenario-card-base 클래스 사용
-        # 플레이어 뷰의 모달에서는 .scenario-card-base 스타일이 적용되어 작게 보이고,
-        # 메인 화면에서는 기존 스타일이 적용됩니다.
+        # HTML 조립
         card_html = f"""
-        <div class="scenario-card-base group bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden hover:border-rpg-accent transition-all flex flex-col h-full shadow-lg">
-            <div class="card-image-wrapper relative h-48 overflow-hidden bg-black">
-                <img src="{img_src}" class="card-image w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100" alt="Cover">
+        <div class="scenario-card-base group">
+            <div class="card-image-wrapper">
+                <img src="{img_src}" class="card-image" alt="Cover">
                 <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-rpg-accent border border-rpg-accent/30">
                     Fantasy
                 </div>
             </div>
 
-            <div class="card-content p-5 flex-1 flex flex-col gap-3">
+            <div class="card-content">
                 <div>
                     <div class="flex justify-between items-start mb-1">
-                        <h3 class="card-title text-lg font-bold text-white font-title tracking-wide truncate group-hover:text-rpg-accent transition-colors">{title} {new_badge}</h3>
+                        <h3 class="card-title text-white group-hover:text-rpg-accent transition-colors">{title} {new_badge}</h3>
                         {status_badge}
                     </div>
                     <div class="flex justify-between items-center text-xs text-gray-400 mb-2">
                         <span>{author}</span>
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
                     </div>
-                    <p class="card-desc text-sm text-gray-400 line-clamp-2 min-h-[2.5rem]">{desc}</p>
+                    <p class="card-desc text-gray-400">{desc}</p>
                 </div>
 
-                <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 mt-auto">
+                <button onclick="playScenario('{fid}', this)" class="w-full py-3 bg-rpg-accent/10 hover:bg-rpg-accent text-rpg-accent hover:text-black font-bold rounded-lg transition-all flex items-center justify-center gap-2 border border-rpg-accent/50 mt-auto shadow-[0_0_10px_rgba(56,189,248,0.1)] hover:shadow-[0_0_15px_rgba(56,189,248,0.4)]">
                     <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
                 </button>
 
