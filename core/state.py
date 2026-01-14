@@ -197,11 +197,27 @@ class WorldState:
                     npc_location = scene.get('scene_id')
                     break
 
+            # 🔴 FIX: HP 값을 정수로 강제 변환 (문자열 방지)
+            npc_hp_raw = npc.get('hp', 100)
+            npc_max_hp_raw = npc.get('max_hp', npc_hp_raw)
+
+            try:
+                npc_hp = int(npc_hp_raw)
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid HP value for NPC '{npc_name}': {npc_hp_raw}, using default 100")
+                npc_hp = 100
+
+            try:
+                npc_max_hp = int(npc_max_hp_raw)
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid max_hp value for NPC '{npc_name}': {npc_max_hp_raw}, using HP value {npc_hp}")
+                npc_max_hp = npc_hp
+
             # NPC 초기 상태 설정
             self.npcs[npc_name] = {
                 "status": "alive",
-                "hp": npc.get('hp', 100),
-                "max_hp": npc.get('max_hp', npc.get('hp', 100)),
+                "hp": npc_hp,
+                "max_hp": npc_max_hp,
                 "emotion": "neutral",
                 "relationship": 50,
                 "is_hostile": npc.get('isEnemy', False),
@@ -591,6 +607,13 @@ class WorldState:
         Returns:
             결과 정보 {"npc_id": str, "hp": int, "status": str, "is_dead": bool}
         """
+        # 🔴 FIX: amount를 정수로 강제 변환
+        try:
+            amount = int(amount)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid amount type for update_npc_hp: {type(amount).__name__} = {amount}, using 0")
+            amount = 0
+
         # NPC가 없으면 초기화
         if npc_id not in self.npcs:
             logger.warning(f"NPC '{npc_id}' not found. Initializing with default values.")
@@ -616,14 +639,29 @@ class WorldState:
                 "message": f"{npc_id}는 이미 죽었습니다."
             }
 
+        # 🔴 FIX: HP 값을 정수로 강제 변환
+        old_hp_raw = npc.get("hp", 100)
+        max_hp_raw = npc.get("max_hp", 100)
+
+        try:
+            old_hp = int(old_hp_raw)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid HP type for NPC '{npc_id}': {type(old_hp_raw).__name__} = {old_hp_raw}, using 100")
+            old_hp = 100
+
+        try:
+            max_hp = int(max_hp_raw)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid max_hp type for NPC '{npc_id}': {type(max_hp_raw).__name__} = {max_hp_raw}, using 100")
+            max_hp = 100
+
         # HP 변경 (순수 정수 연산)
-        old_hp = npc.get("hp", 100)
         new_hp = old_hp + amount
-        max_hp = npc.get("max_hp", 100)
 
         # HP 범위 제한 (0 ~ max_hp)
         new_hp = max(0, min(new_hp, max_hp))
         npc["hp"] = new_hp
+        npc["max_hp"] = max_hp  # max_hp도 정수로 보장
 
         # 🔴 사망 판정 (규칙 기반 - LLM 개입 불가)
         is_dead = False
