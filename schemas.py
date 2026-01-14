@@ -96,3 +96,13 @@ class GameScenario(BaseModel):
     endings: List[Ending]
 
     world_state: Optional[Dict[str, Any]] = Field(default=None, description="The state of the world, affecting all scenes and characters")
+
+
+# --- Game Action Schema (for API endpoints) ---
+
+class GameAction(BaseModel):
+    action: str = Field(default='', description="Player action text")
+    model: str = Field(default='openai/tngtech/deepseek-r1t2-chimera:free', description="AI model to use")
+    provider: str = Field(default='deepseek', description="AI provider")
+    session_id: Optional[str] = Field(None, description="Session ID for continuing game")
+    session_key: Optional[str] = Field(None, description="Session key for DB persistence")

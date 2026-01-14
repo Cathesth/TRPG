@@ -11,6 +11,7 @@ from game_engine import scene_stream_generator, prologue_stream_generator, get_n
     get_scenario_by_id
 from routes.auth import get_current_user_optional, CurrentUser
 from models import GameSession, get_db
+from schemas import GameAction
 
 logger = logging.getLogger(__name__)
 
@@ -136,37 +137,29 @@ async def game_act_stream(
         action: str = Form(default=''),
         model: str = Form(default='openai/tngtech/deepseek-r1t2-chimera:free'),
         session_key: str = Form(default=None),
+        session_id: str = Form(default=None),
+        provider: str = Form(default='deepseek'),
         user: CurrentUser = Depends(get_current_user_optional),
         db: Session = Depends(get_db)
 ):
     """스트리밍 방식 - SSE (LangGraph 기반) + WorldState DB 영속성"""
 
-    # [추가] JSON body에서 session_id 읽기
-    request_body = await request.body()
-    session_id_from_body = None
-    try:
-        if request_body:
-            body_data = json.loads(request_body.decode('utf-8'))
-            session_id_from_body = body_data.get('session_id')
-    except:
-        pass
-
-    # [추가] 🔄 세션 ID 복구 로직 - 기존 세션을 복원하고 WorldState를 절대 reset하지 않음
-    if session_id_from_body:
+    # [수정] 세션 ID 복구 로직 - session_id가 있을 때만 복구 시도
+    if session_id:
         from services.history_service import HistoryService
-        existing_session = HistoryService.get_session(session_id_from_body)
+        existing_session = HistoryService.get_session(session_id)
         if existing_session:
             # 기존 세션 데이터를 game_state에 복원
             game_state.state = existing_session
 
-            # WorldState 인스턴스를 복원된 데이터로 업데이트
+            # WorldState 인스턴스를 복원된 데이터로 업데이트 (변수명 wsm 사용)
             wsm = WorldStateManager()
             if 'world_state' in existing_session:
                 wsm.from_dict(existing_session['world_state'])
 
-            logger.info(f"🔄 [SESSION RESTORE] Session ID: {session_id_from_body}, Scene: {existing_session.get('current_scene_id')}, Stuck: {existing_session.get('stuck_count', 0)}")
+            logger.info(f"🔄 [SESSION RESTORE] Session ID: {session_id}, Scene: {existing_session.get('current_scene_id')}, Stuck: {existing_session.get('stuck_count', 0)}")
         else:
-            logger.warning(f"⚠️ [SESSION] Session ID {session_id_from_body} not found, starting fresh")
+            logger.warning(f"⚠️ [SESSION] Session ID {session_id} not found, starting fresh")
 
     # 🛠️ 세션 복원 시도 (DB에서 WorldState 로드)
     if session_key:
@@ -221,12 +214,12 @@ async def game_act_stream(
 
             if is_game_start:
                 # 게임 시작 시: WorldState 초기화 (첫 게임 시작일 때만)
-                if not session_id_from_body:  # [수정] 세션 ID가 없을 때만 reset
+                if not session_id:  # [수정] 세션 ID가 없을 때만 reset
                     wsm.reset()
                     wsm.initialize_from_scenario(scenario)
                     logger.info(f"🎮 [GAME START] New game session created")
                 else:
-                    logger.info(f"🎮 [GAME START] Resuming existing session: {session_id_from_body}")
+                    logger.info(f"🎮 [GAME START] Resuming existing session: {session_id}")
 
                 start_scene_id = current_state.get('start_scene_id') or current_state.get('current_scene_id')
                 logger.info(f"🎮 [GAME START] Start Scene: {start_scene_id}")

@@ -722,33 +722,50 @@
         try {
             const formData = new FormData();
             formData.append('action', actionText);
+
             // 선택한 모델 추가
             if (providerSelect && modelVersionSelect) {
                 formData.append('model', modelVersionSelect.value);
                 formData.append('provider', providerSelect.value);
             }
 
-            // [추가] 세션 ID 전송 (있으면)
+            // [수정] 세션 ID 전송 (있으면)
             if (currentSessionId) {
                 formData.append('session_id', currentSessionId);
+                console.log('📤 Sending session_id:', currentSessionId);
             }
 
             const response = await fetch('/game/act_stream', { method: 'POST', body: formData });
 
-            // [추가] 서버 에러(500, 400 등) 먼저 체크
+            // [수정] 서버 에러(500, 400 등) 먼저 체크 - response.body 읽기 전에!
             if (!response.ok) {
                 let errorMsg = '서버 오류';
                 try {
-                    // JSON 에러 메시지 시도
-                    const errData = await response.json();
-                    errorMsg = errData.error || errData.detail || '알 수 없는 오류';
+                    // 에러 응답은 body를 한 번만 읽어야 함
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let errorText = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        errorText += decoder.decode(value, { stream: true });
+                    }
+
+                    // JSON 파싱 시도
+                    try {
+                        const errData = JSON.parse(errorText);
+                        errorMsg = errData.error || errData.detail || errorText;
+                    } catch {
+                        errorMsg = errorText || `HTTP ${response.status}`;
+                    }
                 } catch (e) {
-                    // 텍스트 에러 메시지 시도
-                    errorMsg = await response.text();
+                    errorMsg = `HTTP ${response.status}: ${e.message}`;
                 }
                 throw new Error(errorMsg);
             }
 
+            // [수정] 오직 response.body.getReader()만 사용
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let narratorText = '';
@@ -798,7 +815,6 @@
                                     narratorText = '';
                                     contentDiv.innerHTML = currentContent + '<span id="narrator-stream"></span><span class="streaming-cursor">▌</span>';
                                     break;
-
                                 case 'ending_start':
                                     currentContent = data.content;
                                     contentDiv.innerHTML = currentContent + '<span class="streaming-cursor">▌</span>';
@@ -845,9 +861,9 @@
                                     console.log('🔑 Session key saved:', data.content);
                                     break;
                                 case 'session_id':
-                                    // 세션 ID 저장
+                                    // [수정] 세션 ID 저장 - 다음 요청 시 사용
                                     currentSessionId = data.content;
-                                    console.log('🆔 Session ID saved:', data.content);
+                                    console.log('🆔 Session ID received and saved:', data.content);
                                     break;
                                 case 'done':
                                     contentDiv.innerHTML = contentDiv.innerHTML.replace('<span class="streaming-cursor">▌</span>', '');
@@ -875,6 +891,7 @@
             }
         } catch (error) {
             contentDiv.innerHTML = `<div class="text-red-500">통신 오류: ${error.message}</div>`;
+            console.error('Streaming error:', error);
         } finally {
             // 스트리밍 종료
             isStreaming = false;
