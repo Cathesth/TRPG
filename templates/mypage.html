@@ -59,6 +59,22 @@
 
         /* 모달 활성화 시 바디 스크롤 방지 */
         body.modal-active { overflow: hidden; }
+
+        /* [수정] 마이페이지 전용 카드 스타일 오버라이드 */
+        /* 카드가 너무 길쭉해 보이지 않도록 높이와 여백을 조정합니다 */
+        #my-scenario-grid .scenario-card-base {
+            min-width: 0 !important; /* 고정 최소 너비 제거 */
+            width: 100% !important;
+            aspect-ratio: 1 / 1.2; /* 약간의 세로 직사각형 비율 유지 (너무 길지 않게) */
+        }
+
+        #my-scenario-grid .card-image-wrapper {
+            height: 50% !important; /* 이미지 비율 확대 */
+        }
+
+        #my-scenario-grid .card-content {
+            padding: 1rem !important; /* 내부 패딩 축소 */
+        }
     </style>
 </head>
 <body class="min-h-screen bg-rpg-900 text-gray-200 overflow-x-hidden">
@@ -107,19 +123,19 @@
                 <nav class="bg-rpg-800/80 backdrop-blur border border-rpg-700 rounded-2xl p-4 shadow-xl overflow-hidden">
                     <ul class="space-y-1">
                         <li>
-                            <a href="/my_page" class="flex items-center gap-3 px-4 py-3 rounded-xl bg-rpg-700/50 text-rpg-accent font-bold border border-rpg-700/50 transition-all">
+                            <a href="/views/mypage" class="flex items-center gap-3 px-4 py-3 rounded-xl bg-rpg-700/50 text-rpg-accent font-bold border border-rpg-700/50 transition-all">
                                 <i data-lucide="book" class="w-5 h-5"></i>
                                 내 작품 보기
                             </a>
                         </li>
                         <li>
-                            <a href="/profile/edit" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-rpg-700 hover:text-white transition-all">
+                            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-rpg-700 hover:text-white transition-all">
                                 <i data-lucide="user-cog" class="w-5 h-5"></i>
                                 회원 정보 수정
                             </a>
                         </li>
                         <li>
-                            <a href="/billing" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-rpg-700 hover:text-white transition-all">
+                            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-rpg-700 hover:text-white transition-all">
                                 <i data-lucide="credit-card" class="w-5 h-5"></i>
                                 결제 / 플랜 변경
                             </a>
@@ -170,7 +186,7 @@
                 </div>
 
                 <div id="my-scenario-grid"
-                     class="grid grid-cols-1 md:grid-cols-2 gap-6"
+                     class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
                      hx-get="/api/scenarios?filter=my"
                      hx-trigger="load"
                      hx-swap="innerHTML">
@@ -299,7 +315,6 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    // HTMX 트리거를 이용해 목록 새로고침
                     htmx.trigger("#my-scenario-grid", "load");
                 } else {
                     alert('삭제 중 오류가 발생했습니다: ' + (data.error || 'Unknown error'));
@@ -310,7 +325,6 @@
             }
         };
 
-        // [수정된 모달 제어 함수들]
         window.openModal = function(id) {
             const modal = document.getElementById(id);
             const container = modal.querySelector('.modal-container');
@@ -384,12 +398,10 @@
             }
         });
 
-        // HTMX 스왑 후에도 아이콘 재생성 (중복 안전장치)
         document.body.addEventListener('htmx:afterSwap', function(evt) {
             lucide.createIcons();
         });
 
-        // 에러 로깅
         document.body.addEventListener('htmx:error', function(evt) {
             console.error('HTMX Error:', evt.detail);
         });
