@@ -745,7 +745,14 @@ class WorldState:
             lines.append("\n[NPC/적 상태]")
             for npc_name, npc_data in self.npcs.items():
                 status = npc_data.get("status", "alive")
-                hp = npc_data.get("hp", 100)
+                hp_raw = npc_data.get("hp", 100)
+
+                # ✅ 작업 3: HP 값을 정수로 강제 변환 (타입 에러 방지)
+                try:
+                    hp = int(float(hp_raw))
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid HP value for NPC '{npc_name}': {hp_raw}, using default 100")
+                    hp = 100
 
                 if status == "dead":
                     lines.append(f"- {npc_name}: 전투 사망 (HP: 0) - 더이상 무력/불가능")
