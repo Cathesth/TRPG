@@ -43,8 +43,8 @@ class HistoryService:
                 world_state_instance.from_dict(game_session.world_state)
 
             # PlayerState 복원 (world_state 포함)
-            player_state = game_session.player_state.copy()
-            player_state['world_state'] = game_session.world_state
+            player_state = game_session.player_state.copy() if game_session.player_state else {}
+            player_state['world_state'] = game_session.world_state if game_session.world_state else {}
 
             logger.info(f"✅ [GET_SESSION] Session loaded: {session_id}, Scene: {game_session.current_scene_id}")
             return player_state

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 
-from core.state import game_state, WorldState
+from core.state import game_state, WorldState as WorldStateManager
 from game_engine import scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message, \
     get_scenario_by_id
 from routes.auth import get_current_user_optional, CurrentUser
@@ -43,8 +43,8 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
 
         # WorldState 인스턴스에서 직접 가져오기
         if not world_state_data:
-            world_state_instance = WorldState()
-            world_state_data = world_state_instance.to_dict()
+            wsm = WorldStateManager()
+            world_state_data = wsm.to_dict()
 
         turn_count = world_state_data.get('turn_count', 0) if isinstance(world_state_data, dict) else 0
 
@@ -109,8 +109,8 @@ def load_game_session(db: Session, session_key: str):
             return None
 
         # WorldState 복원 (싱글톤 인스턴스에 로드)
-        world_state_instance = WorldState()
-        world_state_instance.from_dict(game_session.world_state)
+        wsm = WorldStateManager()
+        wsm.from_dict(game_session.world_state)
 
         # [경량화] PlayerState는 world_state를 포함하지 않음
         player_state = game_session.player_state
@@ -136,28 +136,37 @@ async def game_act_stream(
         action: str = Form(default=''),
         model: str = Form(default='openai/tngtech/deepseek-r1t2-chimera:free'),
         session_key: str = Form(default=None),
-        session_id: str = Form(default=None),  # [추가] 세션 ID 받기
         user: CurrentUser = Depends(get_current_user_optional),
         db: Session = Depends(get_db)
 ):
     """스트리밍 방식 - SSE (LangGraph 기반) + WorldState DB 영속성"""
 
+    # [추가] JSON body에서 session_id 읽기
+    request_body = await request.body()
+    session_id_from_body = None
+    try:
+        if request_body:
+            body_data = json.loads(request_body.decode('utf-8'))
+            session_id_from_body = body_data.get('session_id')
+    except:
+        pass
+
     # [추가] 🔄 세션 ID 복구 로직 - 기존 세션을 복원하고 WorldState를 절대 reset하지 않음
-    if session_id:
+    if session_id_from_body:
         from services.history_service import HistoryService
-        existing_session = HistoryService.get_session(session_id)
+        existing_session = HistoryService.get_session(session_id_from_body)
         if existing_session:
             # 기존 세션 데이터를 game_state에 복원
             game_state.state = existing_session
 
-            # WorldState 인스턴스를 복원된 데이터로 업데이트 (이미 최상단에서 import됨)
-            world_state_instance = WorldState()
+            # WorldState 인스턴스를 복원된 데이터로 업데이트
+            wsm = WorldStateManager()
             if 'world_state' in existing_session:
-                world_state_instance.from_dict(existing_session['world_state'])
+                wsm.from_dict(existing_session['world_state'])
 
-            logger.info(f"🔄 [SESSION RESTORE] Session ID: {session_id}, Scene: {existing_session.get('current_scene_id')}, Stuck: {existing_session.get('stuck_count', 0)}")
+            logger.info(f"🔄 [SESSION RESTORE] Session ID: {session_id_from_body}, Scene: {existing_session.get('current_scene_id')}, Stuck: {existing_session.get('stuck_count', 0)}")
         else:
-            logger.warning(f"⚠️ [SESSION] Session ID {session_id} not found, starting fresh")
+            logger.warning(f"⚠️ [SESSION] Session ID {session_id_from_body} not found, starting fresh")
 
     # 🛠️ 세션 복원 시도 (DB에서 WorldState 로드)
     if session_key:
@@ -207,17 +216,17 @@ async def game_act_stream(
                 yield f"data: {json.dumps({'type': 'error', 'content': '시나리오를 찾을 수 없습니다.'})}\n\n"
                 return
 
-            # [경량화] WorldState 싱글톤 인스턴스 사용
-            world_state_instance = WorldState()
+            # [FIX] WorldState 싱글톤 인스턴스 사용 - 변수명을 wsm으로 변경
+            wsm = WorldStateManager()
 
             if is_game_start:
                 # 게임 시작 시: WorldState 초기화 (첫 게임 시작일 때만)
-                if not session_id:  # [수정] 세션 ID가 없을 때만 reset
-                    world_state_instance.reset()
-                    world_state_instance.initialize_from_scenario(scenario)
+                if not session_id_from_body:  # [수정] 세션 ID가 없을 때만 reset
+                    wsm.reset()
+                    wsm.initialize_from_scenario(scenario)
                     logger.info(f"🎮 [GAME START] New game session created")
                 else:
-                    logger.info(f"🎮 [GAME START] Resuming existing session: {session_id}")
+                    logger.info(f"🎮 [GAME START] Resuming existing session: {session_id_from_body}")
 
                 start_scene_id = current_state.get('start_scene_id') or current_state.get('current_scene_id')
                 logger.info(f"🎮 [GAME START] Start Scene: {start_scene_id}")
@@ -226,7 +235,7 @@ async def game_act_stream(
                 current_state['is_game_start'] = True  # 게임 시작 플래그 추가
 
                 # [FIX] 게임 시작 시에도 location을 start_scene_id로 설정
-                world_state_instance.location = start_scene_id
+                wsm.location = start_scene_id
             else:
                 # 일반 턴: LangGraph 실행
                 logger.info(f"🎮 Action: {action_text}")
@@ -235,7 +244,7 @@ async def game_act_stream(
                 game_state.state = processed_state
 
             # [경량화] WorldState를 player_state에 임시 추가 (저장용)
-            processed_state['world_state'] = world_state_instance.to_dict()
+            processed_state['world_state'] = wsm.to_dict()
 
             # [추가] 🛠️ 턴 종료 시 DB 세션에 current_scene_id와 stuck_count 업데이트
             if session_key:
@@ -334,7 +343,7 @@ async def game_act_stream(
             yield f"data: {json.dumps({'type': 'stats', 'content': stats_data})}\n\n"
 
             # [경량화] World State는 싱글톤 인스턴스에서 직접 가져옴 (디버그 모드용)
-            world_state_data = world_state_instance.to_dict()
+            world_state_data = wsm.to_dict()
             if world_state_data:
                 # World State에 씬 정보 추가
                 world_state_with_scene = world_state_data.copy()
