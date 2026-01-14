@@ -18,7 +18,7 @@
                 extend: {
                     colors: {
                         rpg: {
-                            900: '#020617', // Main Background (Deep Dark)
+                            900: '#020617', // Main Background
                             800: '#0f172a', // Card Background
                             700: '#1e293b', // Border
                             accent: '#38bdf8', // Cyan
@@ -44,7 +44,6 @@
         }
     </script>
     <style>
-        /* 배경색 강제 적용 */
         body { background-color: #020617 !important; color: #e2e8f0 !important; font-family: 'Inter', sans-serif; }
 
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -52,14 +51,25 @@
         .modal { transition: opacity 0.25s ease; }
         body.modal-active { overflow: hidden; }
 
-        /* [새로 추가] 슬라이드 컨테이너 여백 설정 (테두리 잘림 방지) */
+        /* 메인 화면 슬라이드 컨테이너 */
         .horizontal-scroll-container {
-            /* 상하좌우 여백을 주어 호버 시 카드가 잘리지 않게 함 */
+            display: flex;
+            overflow-x: auto;
+            gap: 1.5rem;
             padding: 20px 10px 40px 10px !important;
-            margin: -20px -10px 0 -10px !important; /* 레이아웃 틀어짐 보정 */
+            margin: -20px -10px 0 -10px !important;
+            cursor: grab;
+            -webkit-user-select: none;
+            user-select: none;
+            scroll-behavior: smooth;
         }
 
-        /* API 카드 디자인 */
+        .horizontal-scroll-container.active {
+            cursor: grabbing;
+            scroll-behavior: auto;
+        }
+
+        /* [유지] API 카드 디자인 - 메인화면용 (4개 배치) */
         .scenario-card-base {
             background-color: #0f172a !important;
             border: 1px solid #1e293b !important;
@@ -69,8 +79,11 @@
             transition: all 0.3s ease !important;
             display: flex !important;
             flex-direction: column !important;
-            min-width: 280px !important;
-            max-width: 280px !important;
+
+            /* w-64 (256px) + 여백 = 4개 배치 */
+            min-width: 16rem !important;
+            width: 16rem !important;
+
             margin-right: 1.5rem !important;
             flex-shrink: 0 !important;
         }
@@ -79,12 +92,6 @@
             box-shadow: 0 0 20px rgba(56, 189, 248, 0.2) !important;
             transform: translateY(-4px) !important;
         }
-        .card-image-wrapper { position: relative !important; height: 160px !important; overflow: hidden !important; background-color: #000 !important; }
-        .card-image { width: 100% !important; height: 100% !important; object-fit: cover !important; transition: transform 0.5s ease !important; opacity: 0.8 !important; }
-        .scenario-card-base:hover .card-image { transform: scale(1.1) !important; opacity: 1 !important; }
-        .card-content { padding: 1.25rem !important; display: flex !important; flex-direction: column !important; gap: 0.75rem !important; flex: 1 !important; background-color: #0f172a !important; color: #e2e8f0 !important; }
-        .card-title { font-size: 1.125rem !important; font-weight: 700 !important; font-family: 'Cinzel', serif !important; color: #ffffff !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; margin-bottom: 0.25rem !important; }
-        .card-desc { font-size: 0.875rem !important; color: #9ca3af !important; display: -webkit-box !important; -webkit-line-clamp: 2 !important; -webkit-box-orient: vertical !important; overflow: hidden !important; min-height: 2.5rem !important; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col selection:bg-rpg-accent selection:text-black">
@@ -96,27 +103,29 @@
             </div>
             <span class="font-title text-2xl font-black text-white tracking-widest hover:text-rpg-accent transition-colors">TRPG.OS</span>
         </div>
-        <div>
+
+        <div class="flex items-center gap-6">
+            <button class="text-gray-400 hover:text-rpg-accent transition-colors p-2 rounded-full hover:bg-white/5" title="검색">
+                <i data-lucide="search" class="w-6 h-6"></i>
+            </button>
+
+            <button class="text-gray-400 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-white/5" title="찜한 목록">
+                <i data-lucide="heart" class="w-6 h-6"></i>
+            </button>
+
             {% if user and user.is_authenticated %}
-            <div class="flex items-center gap-4">
-                <div class="flex items-center gap-3 cursor-pointer group" onclick="location.href='/views/mypage'">
+                <div class="flex items-center gap-3 cursor-pointer group" onclick="location.href='/views/mypage'" title="마이페이지">
+                    <button class="text-gray-400 group-hover:text-white transition-colors p-2 rounded-full bg-rpg-800 border border-rpg-700 group-hover:border-rpg-accent">
+                        <i data-lucide="user" class="w-6 h-6"></i>
+                    </button>
                     <div class="text-right hidden sm:block">
                         <p class="text-sm font-bold text-white group-hover:text-rpg-accent transition-colors">{{ user.id }}</p>
-                        <p class="text-[10px] text-gray-400">OPERATOR</p>
                     </div>
-                    {% if user.profile_img %}
-                        <img src="{{ user.profile_img }}" class="w-10 h-10 rounded border border-rpg-700 group-hover:border-rpg-accent transition-all object-cover bg-rpg-800">
-                    {% else %}
-                        <div class="w-10 h-10 rounded border border-rpg-700 bg-rpg-800 flex items-center justify-center text-rpg-accent font-bold">
-                            {{ user.id[:2].upper() }}
-                        </div>
-                    {% endif %}
                 </div>
-            </div>
             {% else %}
-            <button onclick="openModal('login-modal')" class="flex items-center gap-2 px-5 py-2.5 bg-rpg-accent hover:bg-white text-black font-bold rounded shadow-lg shadow-rpg-accent/20 transition-all">
-                <i data-lucide="log-in" class="w-4 h-4"></i> LOGIN
-            </button>
+                <button onclick="openModal('login-modal')" class="flex items-center gap-2 px-5 py-2.5 bg-rpg-accent hover:bg-white text-black font-bold rounded shadow-lg shadow-rpg-accent/20 transition-all">
+                    <i data-lucide="log-in" class="w-4 h-4"></i> LOGIN
+                </button>
             {% endif %}
         </div>
     </header>
@@ -162,16 +171,28 @@
         </div>
 
         <div class="container mx-auto px-8 mt-12">
-            <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                <i data-lucide="filter" class="w-5 h-5 text-rpg-accent"></i> GENRE
-            </h2>
-            <div class="flex flex-wrap gap-3">
-                <button onclick="filterGenre('all')" class="px-4 py-2 rounded-full bg-rpg-accent text-black font-bold text-sm hover:opacity-80 transition-all shadow-[0_0_10px_rgba(56,189,248,0.3)]">전체</button>
-                <button onclick="filterGenre('fantasy')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">SF/판타지</button>
-                <button onclick="filterGenre('thriller')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">스릴러</button>
-                <button onclick="filterGenre('mystery')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">추리</button>
-                <button onclick="filterGenre('romance')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">로맨스</button>
-                <button onclick="filterGenre('etc')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">기타</button>
+            <div class="flex flex-col md:flex-row justify-between items-end gap-4 mb-4">
+
+                <div>
+                    <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                        <i data-lucide="filter" class="w-5 h-5 text-rpg-accent"></i> GENRE
+                    </h2>
+                    <div class="flex flex-wrap gap-3">
+                        <button onclick="filterGenre('all')" class="px-4 py-2 rounded-full bg-rpg-accent text-black font-bold text-sm hover:opacity-80 transition-all shadow-[0_0_10px_rgba(56,189,248,0.3)]">전체</button>
+                        <button onclick="filterGenre('fantasy')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">SF/판타지</button>
+                        <button onclick="filterGenre('thriller')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">스릴러</button>
+                        <button onclick="filterGenre('mystery')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">추리</button>
+                        <button onclick="filterGenre('romance')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">로맨스</button>
+                        <button onclick="filterGenre('etc')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">기타</button>
+                    </div>
+                </div>
+
+                <div class="relative w-full md:w-64">
+                    <input type="text" placeholder="Search scenarios..."
+                           class="w-full bg-rpg-800 border border-rpg-700 text-white text-sm rounded-lg px-4 py-2.5 pl-10 focus:outline-none focus:border-rpg-accent transition-colors shadow-sm">
+                    <i data-lucide="search" class="absolute left-3 top-2.5 w-4 h-4 text-gray-500"></i>
+                </div>
+
             </div>
         </div>
 
@@ -185,11 +206,11 @@
                     <span class="text-xs text-gray-500">Drag to scroll <i data-lucide="arrow-right" class="inline w-3 h-3"></i></span>
                 </div>
                 <div id="realtime-grid"
-                     class="horizontal-scroll-container flex overflow-x-auto gap-4 pb-8 no-scrollbar cursor-grab active:cursor-grabbing"
+                     class="horizontal-scroll-container flex no-scrollbar"
                      hx-get="/api/scenarios?sort=newest&limit=10&filter=all"
                      hx-trigger="load">
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
+                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
+                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
 
@@ -200,11 +221,10 @@
                     </h2>
                 </div>
                 <div id="popular-grid"
-                     class="horizontal-scroll-container flex overflow-x-auto gap-4 pb-8 no-scrollbar cursor-grab active:cursor-grabbing"
+                     class="horizontal-scroll-container flex no-scrollbar"
                      hx-get="/api/scenarios?sort=popular&limit=10&filter=all"
                      hx-trigger="load">
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
+                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
 
@@ -215,11 +235,10 @@
                     </h2>
                 </div>
                 <div id="steady-grid"
-                     class="horizontal-scroll-container flex overflow-x-auto gap-4 pb-8 no-scrollbar cursor-grab active:cursor-grabbing"
+                     class="horizontal-scroll-container flex no-scrollbar"
                      hx-get="/api/scenarios?sort=steady&limit=10&filter=all"
                      hx-trigger="load">
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
+                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
 
@@ -304,9 +323,8 @@
                     startX = e.pageX - slider.offsetLeft;
                     scrollLeft = slider.scrollLeft;
                 });
-                slider.addEventListener('mouseleave', () => { isDown = false; });
-                slider.addEventListener('mouseup', () => { isDown = false; });
-                slider.addEventListener('mousemove', (e) => {
+                window.addEventListener('mouseup', () => { isDown = false; slider.classList.remove('active'); });
+                window.addEventListener('mousemove', (e) => {
                     if(!isDown) return;
                     e.preventDefault();
                     const x = e.pageX - slider.offsetLeft;
@@ -328,26 +346,9 @@
                 const res = await fetch('/api/load_scenario', { method: 'POST', body: formData });
                 if (res.ok) {
                     const data = await res.json();
-
-                    // ✅ [중요] 서버에서 받은 새로운 세션 키를 sessionStorage에 즉시 저장 (덮어쓰기)
-                    if (data.session_key) {
-                        sessionStorage.setItem('trpg_session_key', data.session_key);
-                        console.log('🆕 New session created:', data.session_key);
-                    }
-
-                    // ✅ [중요] 시나리오 ID도 함께 저장 (act_stream 요청 시 함께 전송하기 위함)
-                    if (data.scenario_id) {
-                        sessionStorage.setItem('trpg_scenario_id', data.scenario_id);
-                        console.log('📋 Scenario ID saved:', data.scenario_id);
-                    }
-
-                    // ✅ [중요] 기존 게임 상태 완전히 초기화 (이전 시나리오의 히스토리, world_state 등 삭제)
+                    if (data.session_key) { sessionStorage.setItem('trpg_session_key', data.session_key); }
+                    if (data.scenario_id) { sessionStorage.setItem('trpg_scenario_id', data.scenario_id); }
                     sessionStorage.removeItem('trpg_chat_log');
-                    sessionStorage.removeItem('trpg_game_ended');
-                    sessionStorage.removeItem('trpg_world_state');
-                    sessionStorage.removeItem('trpg_player_stats');
-                    console.log('🧹 Previous game state cleared');
-
                     sessionStorage.setItem('trpg_scenario_loaded', 'true');
                     window.location.href = '/views/player';
                 } else {
@@ -428,4 +429,3 @@
     </script>
 </body>
 </html>
-
