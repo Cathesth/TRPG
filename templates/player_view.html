@@ -7,22 +7,6 @@
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
 
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        // Tailwind CDN 프로덕션 경고 숨기기
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        dark: { 900: '#111111', 800: '#1c1c1c', 700: '#2c2c2c', 600: '#3f3f46' },
-                        brand: { purple: '#6E47E6', light: '#9F7AEA' }
-                    }
-                }
-            }
-        }
-
-        // [추가] 세션 ID 전역 변수
-        let currentSessionId = null;
-    </script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -91,23 +75,6 @@
             font-family: 'Courier New', monospace; z-index: 1000; pointer-events: none; user-select: none;
         }
     </style>
-
-    <script>
-        // Tailwind CDN 프로덕션 경고 숨기기
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        dark: { 900: '#111111', 800: '#1c1c1c', 700: '#2c2c2c', 600: '#3f3f46' },
-                        brand: { purple: '#6E47E6', light: '#9F7AEA' }
-                    }
-                }
-            }
-        }
-
-        // [추가] 세션 ID 전역 변수
-        let currentSessionId = null;
-    </script>
 </head>
 <body class="bg-dark-900 text-gray-200 h-screen flex overflow-hidden">
 
