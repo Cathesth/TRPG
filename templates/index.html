@@ -415,11 +415,18 @@
                 if (res.ok) {
                     const data = await res.json();
 
-                    // ✅ 서버에서 받은 새로운 세션 키 저장
+                    // ✅ 서버에서 받은 새로운 세션 키를 sessionStorage에 저장
                     if (data.session_key) {
                         sessionStorage.setItem('trpg_session_key', data.session_key);
                         console.log('🆕 New session created:', data.session_key);
                     }
+
+                    // ✅ 기존 게임 상태 완전히 초기화 (히스토리, world_state 등)
+                    sessionStorage.removeItem('trpg_chat_log');
+                    sessionStorage.removeItem('trpg_game_ended');
+                    sessionStorage.removeItem('trpg_world_state');
+                    sessionStorage.removeItem('trpg_player_stats');
+                    console.log('🧹 Previous game state cleared');
 
                     sessionStorage.setItem('trpg_scenario_loaded', 'true');
                     window.location.href = '/views/player';
