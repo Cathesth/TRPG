@@ -1112,7 +1112,11 @@
                 }
 
                 // 2. World State 업데이트
-                if (data.world_state) {
+                if (data.world_state && data.player_state) {
+                    // stuck_count를 player_state에서 world_state로 동기화
+                    data.world_state.stuck_count = data.player_state.stuck_count || 0;
+                    updateWorldState(data.world_state);
+                } else if (data.world_state) {
                     updateWorldState(data.world_state);
                 }
 
