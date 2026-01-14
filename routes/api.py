@@ -197,24 +197,21 @@ async def list_scenarios(
         db: Session = Depends(get_db)
 ):
     """
-    DB(Scenario 테이블)에서 시나리오를 조회하여 HTML 카드로 반환합니다.
-    - filter='all': 공개/비공개 상관없이 모든 시나리오 반환 (메인화면용)
-    - 디자인 개선: 버튼 레이아웃 최적화 (Play 버튼 옆에 Edit/Del 배치)
+    DB에서 시나리오를 조회하여 HTML 카드로 반환합니다.
+    - 디자인: 정사각형(aspect-square), 반응형 너비(w-full) 적용
+    - 호환성: scenario-card-base 클래스 복구
     """
 
-    # 1. DB 쿼리 생성
+    # 1. DB 쿼리
     query = db.query(Scenario)
 
-    # 2. 필터링 로직
     if filter == 'my':
         if not user.is_authenticated:
             return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
         query = query.filter(Scenario.author_id == user.id)
     elif filter == 'public':
         query = query.filter(Scenario.is_public == True)
-    # filter='all'인 경우 조건 없이 전체 조회
 
-    # 3. 정렬 로직
     if sort == 'oldest':
         query = query.order_by(Scenario.created_at.asc())
     elif sort == 'name_asc':
@@ -222,19 +219,17 @@ async def list_scenarios(
     else:
         query = query.order_by(Scenario.created_at.desc())
 
-    # 4. 데이터 조회
     if limit:
         query = query.limit(limit)
 
     scenarios = query.all()
 
-    # 데이터 없음 처리
     if not scenarios:
         msg = "등록된 시나리오가 없습니다." if filter != 'my' else "아직 생성한 시나리오가 없습니다."
         return HTMLResponse(
             f'<div class="col-span-full text-center text-gray-500 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
 
-    # 5. HTML 생성
+    # 2. HTML 생성
     from datetime import datetime
     import time as time_module
     current_ts = time_module.time()
@@ -242,14 +237,13 @@ async def list_scenarios(
 
     html = ""
     for s in scenarios:
-        # JSON 데이터 파싱
         s_data = s.data if isinstance(s.data, dict) else {}
         if 'scenario' in s_data: s_data = s_data['scenario']
 
         fid = str(s.id)
         title = s.title or "제목 없음"
         desc = s_data.get('prologue', s_data.get('desc', '설명이 없습니다.'))
-        if len(desc) > 80: desc = desc[:80] + "..."
+        if len(desc) > 60: desc = desc[:60] + "..."
 
         author = s.author_id or "System"
         is_owner = (user.is_authenticated and s.author_id == user.id)
@@ -260,62 +254,56 @@ async def list_scenarios(
 
         img_src = s_data.get('image') or "https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=800"
 
-        # 뱃지
         is_new = (current_ts - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
         status_text = "PUBLIC" if is_public else "PRIVATE"
         status_class = "bg-green-900 text-green-300" if is_public else "bg-gray-700 text-gray-300"
         status_badge = f'<span class="ml-2 text-[10px] {status_class} px-1 rounded font-bold">{status_text}</span>' if is_owner else ''
 
-        # [버튼 영역 구성]
-        # 주인일 경우: Play(확장) + Edit(아이콘) + Del(아이콘) 한 줄 배치
-        # 아닐 경우: Play(전체)
+        # 관리자 버튼
+        admin_buttons = ""
         if is_owner:
-            buttons_html = f"""
-            <div class="flex gap-2 mt-auto">
-                <button onclick="playScenario('{fid}', this)" class="flex-1 py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-sm">
-                    <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
+            admin_buttons = f"""
+            <div class="flex gap-2 mt-auto pt-2 border-t border-white/5">
+                <button onclick="editScenario('{fid}')" class="flex-1 py-1.5 rounded bg-transparent hover:bg-white/5 text-gray-500 hover:text-rpg-accent transition-all flex items-center justify-center gap-1 group">
+                    <i data-lucide="edit" class="w-3 h-3 transition-transform group-hover:scale-110"></i> 
+                    <span class="text-[10px] font-bold">EDIT</span>
                 </button>
-
-                <button onclick="editScenario('{fid}')" class="w-10 py-2 rounded-lg bg-[#1e293b]/50 hover:bg-[#1e293b] text-gray-400 hover:text-[#38bdf8] border border-transparent hover:border-[#38bdf8]/30 transition-all flex items-center justify-center" title="수정">
-                    <i data-lucide="edit" class="w-4 h-4"></i>
-                </button>
-
-                <button onclick="deleteScenario('{fid}', this)" class="w-10 py-2 rounded-lg bg-[#1e293b]/50 hover:bg-red-900/20 text-gray-400 hover:text-red-500 border border-transparent hover:border-red-500/30 transition-all flex items-center justify-center" title="삭제">
-                    <i data-lucide="trash" class="w-4 h-4"></i>
+                <button onclick="deleteScenario('{fid}', this)" class="flex-1 py-1.5 rounded bg-transparent hover:bg-red-500/10 text-gray-500 hover:text-red-500 transition-all flex items-center justify-center gap-1 group">
+                    <i data-lucide="trash" class="w-3 h-3 transition-transform group-hover:scale-110"></i> 
+                    <span class="text-[10px] font-bold">DEL</span>
                 </button>
             </div>
             """
-        else:
-            buttons_html = f"""
-            <button onclick="playScenario('{fid}', this)" class="w-full py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] mt-auto text-sm">
-                <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
-            </button>
-            """
 
-        # [카드 HTML 조립]
+        # [디자인 핵심] w-full + aspect-square (정사각형)
         card_html = f"""
-        <div class="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden group hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative w-80 h-80 flex-shrink-0 snap-center">
-            <div class="relative h-40 overflow-hidden bg-black shrink-0">
+        <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative w-full aspect-square">
+            <div class="relative h-[55%] overflow-hidden bg-black shrink-0">
                 <img src="{img_src}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
                 <div class="absolute top-2 left-2 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-[#38bdf8] border border-[#38bdf8]/30">
                     Fantasy
                 </div>
             </div>
 
-            <div class="p-4 flex-1 flex flex-col justify-between">
+            <div class="p-4 h-[45%] flex flex-col justify-between">
                 <div>
                     <div class="flex justify-between items-start mb-1">
                         <h3 class="text-sm font-bold text-white tracking-wide truncate w-full group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
                     </div>
-                    <div class="flex justify-between items-center text-[10px] text-gray-400 mb-2">
+                    <div class="flex justify-between items-center text-[10px] text-gray-400 mb-1">
                         <span>{author}</span>
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
                     </div>
-                    <p class="text-xs text-gray-400 line-clamp-2">{desc}</p>
+                    <p class="text-xs text-gray-400 line-clamp-2 leading-tight">{desc}</p>
                 </div>
 
-                {buttons_html}
+                <div class="mt-auto">
+                    <button onclick="playScenario('{fid}', this)" class="w-full py-1.5 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
+                        <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY NOW
+                    </button>
+                    {admin_buttons}
+                </div>
             </div>
         </div>
         """

@@ -52,32 +52,21 @@
         .modal { transition: opacity 0.25s ease; }
         body.modal-active { overflow: hidden; }
 
-        /* API 카드 디자인 */
-        .scenario-card-base {
-            background-color: #0f172a !important;
-            border: 1px solid #1e293b !important;
-            border-radius: 0.75rem !important;
-            overflow: hidden !important;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
-            transition: all 0.3s ease !important;
-            display: flex !important;
-            flex-direction: column !important;
+        /* [중요] 메인 화면 슬라이드 컨테이너 내 카드 스타일 */
+        /* 메인화면에서는 가로 스크롤을 위해 고정 너비가 필요합니다 */
+        .horizontal-scroll-container .scenario-card-base {
             min-width: 280px !important;
-            max-width: 280px !important;
-            margin-right: 1.5rem !important;
+            width: 280px !important;
             flex-shrink: 0 !important;
         }
-        .scenario-card-base:hover {
-            border-color: #38bdf8 !important;
-            box-shadow: 0 0 20px rgba(56, 189, 248, 0.2) !important;
-            transform: translateY(-4px) !important;
+
+        /* 드래그 중 텍스트 선택 방지 */
+        .horizontal-scroll-container {
+            -webkit-user-select: none;
+            user-select: none;
+            /* 드래그 시 부드러운 스크롤과 충돌 방지 */
+            scroll-behavior: auto !important;
         }
-        .card-image-wrapper { position: relative !important; height: 160px !important; overflow: hidden !important; background-color: #000 !important; }
-        .card-image { width: 100% !important; height: 100% !important; object-fit: cover !important; transition: transform 0.5s ease !important; opacity: 0.8 !important; }
-        .scenario-card-base:hover .card-image { transform: scale(1.1) !important; opacity: 1 !important; }
-        .card-content { padding: 1.25rem !important; display: flex !important; flex-direction: column !important; gap: 0.75rem !important; flex: 1 !important; background-color: #0f172a !important; color: #e2e8f0 !important; }
-        .card-title { font-size: 1.125rem !important; font-weight: 700 !important; font-family: 'Cinzel', serif !important; color: #ffffff !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; margin-bottom: 0.25rem !important; }
-        .card-desc { font-size: 0.875rem !important; color: #9ca3af !important; display: -webkit-box !important; -webkit-line-clamp: 2 !important; -webkit-box-orient: vertical !important; overflow: hidden !important; min-height: 2.5rem !important; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col selection:bg-rpg-accent selection:text-black">
@@ -197,7 +186,6 @@
                      hx-get="/api/scenarios?sort=popular&limit=10&filter=all"
                      hx-trigger="load">
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
 
@@ -211,7 +199,6 @@
                      class="horizontal-scroll-container flex overflow-x-auto gap-4 pb-8 no-scrollbar cursor-grab active:cursor-grabbing"
                      hx-get="/api/scenarios?sort=steady&limit=10&filter=all"
                      hx-trigger="load">
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[280px] h-[320px] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
@@ -285,31 +272,49 @@
             enableHorizontalScroll();
         });
 
+        // [수정된 스크롤 기능] 부드러운 움직임 & 멈춤 현상 해결
         function enableHorizontalScroll() {
             const containers = document.querySelectorAll('.horizontal-scroll-container');
+
             containers.forEach(slider => {
+                slider.style.cursor = 'grab';
+
                 let isDown = false;
                 let startX;
                 let scrollLeft;
-                slider.addEventListener('mousedown', (e) => {
+
+                const startDragging = (e) => {
                     isDown = true;
                     slider.classList.add('active');
+                    slider.style.cursor = 'grabbing';
                     startX = e.pageX - slider.offsetLeft;
                     scrollLeft = slider.scrollLeft;
-                });
-                slider.addEventListener('mouseleave', () => { isDown = false; });
-                slider.addEventListener('mouseup', () => { isDown = false; });
-                slider.addEventListener('mousemove', (e) => {
-                    if(!isDown) return;
+                };
+
+                const stopDragging = () => {
+                    isDown = false;
+                    slider.classList.remove('active');
+                    slider.style.cursor = 'grab';
+                };
+
+                const move = (e) => {
+                    if (!isDown) return;
                     e.preventDefault();
                     const x = e.pageX - slider.offsetLeft;
-                    const walk = (x - startX) * 2;
+                    const walk = (x - startX) * 1.5; // 스크롤 속도 조절
                     slider.scrollLeft = scrollLeft - walk;
-                });
+                };
+
+                // 이벤트 등록 (window로 위임하여 멈춤 현상 방지)
+                slider.addEventListener('mousedown', startDragging);
+                window.addEventListener('mouseleave', stopDragging);
+                window.addEventListener('mouseup', stopDragging);
+                window.addEventListener('mousemove', move);
             });
         }
         document.addEventListener('DOMContentLoaded', enableHorizontalScroll);
 
+        // ... 기존 함수들 유지 ...
         window.playScenario = async function(filename, btn) {
             const originalText = btn.innerHTML;
             btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Loading...';
