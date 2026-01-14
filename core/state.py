@@ -145,7 +145,9 @@ class WorldState:
             logger.debug(f"[NARRATIVE] Duplicate event ignored: {text}")
             return
 
-        self.narrative_history.append(text)
+        # ✅ 작업 4: 턴 번호 접두사 추가 (시간 순서 명확화)
+        prefixed_text = f"[Turn {self.turn_count}] {text}"
+        self.narrative_history.append(prefixed_text)
 
         # 슬라이딩 윈도우: 10개를 넘으면 가장 오래된 것부터 제거
         if len(self.narrative_history) > self.max_narrative_history:
@@ -153,7 +155,7 @@ class WorldState:
             self.narrative_history.pop(0)
             logger.debug(f"[NARRATIVE] History trimmed, size: {len(self.narrative_history)}")
 
-        logger.info(f"📖 [NARRATIVE] Event added: {text}")
+        logger.info(f"📖 [NARRATIVE] Event added: {prefixed_text}")
 
     # ========================================
     # 1. 초기화 및 로딩

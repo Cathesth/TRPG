@@ -602,9 +602,9 @@ def rule_node(state: PlayerState):
         state['stuck_count'] = 0
         logger.info(f"🔧 [STUCK_COUNT] Initialized to 0")
 
-    # 장면 전환 시도 전 현재 씬 기록
-    scene_before_transition = state.get('current_scene_id', '')
-    logger.info(f"🎬 [APPLY_EFFECTS] Current scene: {scene_before_transition}, Intent: {state['parsed_intent']}, Transition index: {idx}")
+    # 🔴 장면 전환 시도 전 현재 씬을 정확히 캡처 (world_state.location 우선)
+    scene_before_transition = world_state.location or state.get('current_scene_id', '')
+    logger.info(f"🎬 [APPLY_EFFECTS] Scene before transition: {scene_before_transition}, Intent: {state['parsed_intent']}, Transition index: {idx}")
 
     if state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
         trans = transitions[idx]
@@ -675,15 +675,15 @@ def rule_node(state: PlayerState):
 
         # 씬 이동
         if next_id:
-            # 🔴 이동 전 현재 위치를 world_state.location에서 가져오기
-            from_scene = world_state.location or scene_before_transition
+            # 🔴 이동 전 현재 위치를 scene_before_transition에서 가져오기
+            from_scene = scene_before_transition
 
             state['current_scene_id'] = next_id
             world_state.location = next_id
 
-            # ✅ 장면 전환 성공 시 서사 이벤트 기록 (현재 위치 정확히 반영)
+            # ✅ 장면 전환 성공 시 서사 이벤트 기록 (이동 이유 포함)
             world_state.add_narrative_event(
-                f"장면 이동: [{from_scene}] → [{next_id}] (트리거: {trigger_used})"
+                f"유저가 '{trigger_used}'을(를) 통해 [{from_scene}]에서 [{next_id}]로 이동함"
             )
 
             # [추가] 장면 전환 성공 시 stuck_count 초기화
@@ -869,10 +869,33 @@ NPC로서 1-2문장으로 응답하세요."""
 
         state['npc_output'] = response
 
-        # ✅ 대화 핵심 내용을 서사 이벤트로 기록
-        # NPC가 중요 정보를 제공했는지 간단히 요약
-        conversation_summary = f"플레이어가 '{target_npc_name}'와 대화: '{user_input[:30]}...' - NPC 응답의 핵심 내용"
-        world_state.add_narrative_event(conversation_summary)
+        # ✅ 작업 2: NPC 대화 서사 요약 및 기록 - LLM을 활용하여 대화 핵심 내용 요약
+        try:
+            # 대화 요약 프롬프트 생성
+            summary_prompt = f"""다음 대화를 한 문장으로 간결하게 요약하세요:
+플레이어: "{user_input}"
+NPC ({target_npc_name}): "{response}"
+
+요약 형식: "플레이어가 [NPC]에게 [행동/요청]했고, NPC는 [반응]함"
+예시: "플레이어가 노인 J에게 술집을 불태우겠다고 협박하며 지도를 요구했고, 노인은 겁에 질려 반응함"
+
+요약:"""
+
+            summary_llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
+            conversation_summary = summary_llm.invoke(summary_prompt).content.strip()
+
+            # 요약이 너무 길면 잘라내기
+            if len(conversation_summary) > 100:
+                conversation_summary = conversation_summary[:97] + "..."
+
+            world_state.add_narrative_event(conversation_summary)
+            logger.info(f"📖 [NPC DIALOGUE] Summary added to narrative: {conversation_summary}")
+
+        except Exception as summary_error:
+            # 요약 실패 시 간단한 템플릿 사용
+            logger.warning(f"⚠️ Failed to generate conversation summary: {summary_error}")
+            fallback_summary = f"플레이어가 '{target_npc_name}'와 대화함 (주제: {user_input[:20]}...)"
+            world_state.add_narrative_event(fallback_summary)
 
         if 'history' not in state: state['history'] = []
         state['history'].append(f"User: {user_input}")
