@@ -60,20 +60,46 @@
         /* 모달 활성화 시 바디 스크롤 방지 */
         body.modal-active { overflow: hidden; }
 
-        /* [수정] 마이페이지 전용 카드 스타일 오버라이드 */
-        /* 카드가 너무 길쭉해 보이지 않도록 높이와 여백을 조정합니다 */
+        /* [수정] 카드 스타일 조정 (정사각형 비율, 크기 축소) */
         #my-scenario-grid .scenario-card-base {
-            min-width: 0 !important; /* 고정 최소 너비 제거 */
             width: 100% !important;
-            aspect-ratio: 1 / 1.2; /* 약간의 세로 직사각형 비율 유지 (너무 길지 않게) */
+            aspect-ratio: 1 / 1.1 !important; /* 약간 세로 직사각형 (너무 길지 않게) */
+            display: flex !important;
+            flex-direction: column !important;
         }
 
         #my-scenario-grid .card-image-wrapper {
-            height: 50% !important; /* 이미지 비율 확대 */
+            height: 55% !important; /* 이미지 영역 비율 확대 */
         }
 
         #my-scenario-grid .card-content {
-            padding: 1rem !important; /* 내부 패딩 축소 */
+            padding: 1rem !important; /* 패딩 축소 */
+            flex: 1 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+        }
+
+        /* 제목 한 줄 처리 */
+        #my-scenario-grid .card-title {
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            font-size: 1rem !important;
+        }
+
+        /* 설명 두 줄 제한 */
+        #my-scenario-grid .card-desc {
+            font-size: 0.8rem !important;
+            -webkit-line-clamp: 2 !important;
+            min-height: 2.4em !important;
+        }
+
+        /* 버튼 크기 조정 */
+        #my-scenario-grid button {
+            padding-top: 0.5rem !important;
+            padding-bottom: 0.5rem !important;
+            font-size: 0.8rem !important;
         }
     </style>
 </head>
@@ -315,6 +341,7 @@
                 const data = await res.json();
 
                 if (data.success) {
+                    // HTMX 트리거를 이용해 목록 새로고침
                     htmx.trigger("#my-scenario-grid", "load");
                 } else {
                     alert('삭제 중 오류가 발생했습니다: ' + (data.error || 'Unknown error'));
@@ -325,6 +352,7 @@
             }
         };
 
+        // [수정된 모달 제어 함수들]
         window.openModal = function(id) {
             const modal = document.getElementById(id);
             const container = modal.querySelector('.modal-container');
@@ -398,10 +426,12 @@
             }
         });
 
+        // HTMX 스왑 후에도 아이콘 재생성 (중복 안전장치)
         document.body.addEventListener('htmx:afterSwap', function(evt) {
             lucide.createIcons();
         });
 
+        // 에러 로깅
         document.body.addEventListener('htmx:error', function(evt) {
             console.error('HTMX Error:', evt.detail);
         });
