@@ -46,17 +46,15 @@
     <style>
         /* 배경색 강제 적용 */
         body { background-color: #020617 !important; color: #e2e8f0 !important; font-family: 'Inter', sans-serif; }
-
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .modal { transition: opacity 0.25s ease; }
         body.modal-active { overflow: hidden; }
 
-        /* [새로 추가] 슬라이드 컨테이너 여백 설정 (테두리 잘림 방지) */
+        /* 메인 화면 슬라이드 컨테이너 */
         .horizontal-scroll-container {
-            /* 상하좌우 여백을 주어 호버 시 카드가 잘리지 않게 함 */
-            padding: 20px 10px 40px 10px !important;
-            margin: -20px -10px 0 -10px !important; /* 레이아웃 틀어짐 보정 */
+            padding: 20px 10px 40px 10px !important; /* 테두리 잘림 방지 여백 */
+            margin: -20px -10px 0 -10px !important;
         }
 
         /* [수정] API 카드 디자인 */

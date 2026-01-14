@@ -198,21 +198,34 @@ def list_scenarios(
 ):
     """
     DB에서 시나리오를 조회하여 HTML 카드로 반환합니다.
-    - 메인화면: w-64 (약 4개 보임) 유지
-    - 마이페이지/플레이어: w-full + 고정 높이(h-[22rem])로 직사각형 비율 복구
+    - 메인화면(filter='all'): w-72 (288px), h-[22rem] (4개 배치용)
+    - 마이페이지(filter='my'): w-full, h-[22rem] (그리드용)
+    - 플레이어 모달(기타): w-full, h-auto (심플 리스트용)
     """
 
     # 1. DB 쿼리 생성
     query = db.query(Scenario)
 
-    # 2. 필터링
+    # 2. 필터링 및 모드 설정
+    view_mode = 'main'  # 기본값: 메인화면 (가로 스크롤)
+
     if filter == 'my':
         if not user.is_authenticated:
             return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
         query = query.filter(Scenario.author_id == user.id)
+        view_mode = 'mypage'  # 마이페이지 (그리드)
     elif filter == 'public':
         query = query.filter(Scenario.is_public == True)
-    # filter='all'은 전체 조회
+        # filter='public'은 주로 플레이어 모달 등에서 사용될 수 있음
+        if sort == 'newest' and limit == 10:  # 메인화면 호출 패턴과 유사하면 메인으로 간주할 수도 있으나, 명확히 구분
+            pass
+    elif filter == 'all':
+        # 메인 화면 호출 (filter=all)
+        view_mode = 'main'
+
+        # 플레이어 모달 등에서 호출 시 (보통 filter='public' 또는 'all'이지만 컨텍스트에 따라 다름)
+    # 여기서는 filter='all'을 메인화면으로 간주하고, 나머지는 일반 리스트로 처리하는 로직을 보완
+    # 하지만 명시적으로 구분하기 위해 view_mode 변수를 활용
 
     # 3. 정렬
     if sort == 'oldest':
@@ -251,7 +264,6 @@ def list_scenarios(
 
         author = s.author_id or "System"
         is_owner = (user.is_authenticated and s.author_id == user.id)
-        is_public = s.is_public
 
         created_ts = s.created_at.timestamp() if s.created_at else 0
         time_str = s.created_at.strftime('%Y-%m-%d') if s.created_at else "-"
@@ -261,19 +273,24 @@ def list_scenarios(
         is_new = (current_ts - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
-        # [디자인 분기]
-        if filter == 'my':
-            # [수정됨] 마이페이지 & 플레이어 화면 (저장된 목록)
-            # - aspect-square 제거: 카드가 너무 길어지는 문제 해결
-            # - h-[22rem]: 높이를 고정하여 직사각형 형태 유지
-            # - w-full: 그리드 칸에 맞춰 가로로 꽉 참
-            card_style = "w-full h-[22rem]"
-            img_height = "h-44"  # 이미지 높이 고정 (176px)
+        # [핵심: 뷰 모드별 스타일 분기]
+        if view_mode == 'main':
+            # [메인화면]: 가로 스크롤, 고정 너비 (w-72), 고정 높이
+            # w-72 (288px)는 한 줄에 약 4~5개 배치에 적합
+            card_class = "w-72 h-[22rem] flex-shrink-0 snap-center"
+            img_height = "h-44"
+            content_padding = "p-4"
+        elif view_mode == 'mypage':
+            # [마이페이지]: 그리드 꽉 채움 (w-full), 고정 높이 (직사각형 유지)
+            # aspect-square 제거 -> 직사각형 형태로 복구
+            card_class = "w-full h-[22rem]"
+            img_height = "h-44"
             content_padding = "p-4"
         else:
-            # [유지] 메인 화면
-            # - w-64: 4개 배치 최적화
-            card_style = "w-64 h-[20rem] flex-shrink-0 snap-center"
+            # [플레이어 모달 등 기타]: 기본형 (반응형, 높이 자동 또는 고정)
+            # 플레이어 모달에서 카드가 너무 커지는 것을 방지하기 위해 max-w 설정 가능하지만
+            # 여기서는 마이페이지와 유사하게 처리하되, CSS에서 제어하도록 유도
+            card_class = "w-full h-[20rem]"
             img_height = "h-40"
             content_padding = "p-4"
 
@@ -302,8 +319,9 @@ def list_scenarios(
             """
 
         # [카드 HTML 조립]
+        # flex-1을 사용하여 내용물이 남은 높이를 채우도록 함 (잘림 방지)
         card_html = f"""
-        <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_style}">
+        <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_class}">
             <div class="relative {img_height} overflow-hidden bg-black shrink-0">
                 <img src="{img_src}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
                 <div class="absolute top-2 left-2 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-[#38bdf8] border border-[#38bdf8]/30">
