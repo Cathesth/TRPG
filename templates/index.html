@@ -19,16 +19,11 @@
                     colors: {
                         rpg: {
                             900: '#020617', // Main Background
-                            800: '#0f172a', // Panel Background
+                            800: '#0f172a', // Card Background
                             700: '#1e293b', // Border
                             accent: '#38bdf8', // Cyan
                             hover: '#0ea5e9', // Blue
                             danger: '#ef4444', // Red
-                        },
-                        brand: {
-                            purple: '#38bdf8',
-                            light: '#e0f2fe',
-                            dark: '#0f172a'
                         }
                     },
                     fontFamily: {
@@ -49,281 +44,329 @@
         }
     </script>
     <style>
-        body { @apply font-body bg-rpg-900 text-gray-200; }
+        body { background-color: #020617 !important; color: #e2e8f0 !important; font-family: 'Inter', sans-serif; }
+
         .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .modal { transition: opacity 0.25s ease; }
-        body.modal-active { overflow-x: hidden; overflow-y: hidden !important; }
+        body.modal-active { overflow: hidden; }
 
-        /* [API 호환성 패치] */
-        #scenario-grid .bg-dark-800,
-        #scenario-grid .border-white\/5 {
-            @apply bg-rpg-800 border border-rpg-700 shadow-lg rounded-xl overflow-hidden flex flex-col h-full transition-all hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] !important;
-            min-height: auto !important;
-        }
-        #scenario-grid .bg-dark-800 > div:first-child { @apply relative h-48 overflow-hidden !important; }
-        #scenario-grid img { @apply w-full h-full object-cover transition-transform duration-500 hover:scale-110 opacity-80 hover:opacity-100 !important; }
-        #scenario-grid .bg-dark-800 > div:last-child { @apply p-5 flex flex-col gap-3 bg-rpg-800 !important; }
-        #scenario-grid h3, #scenario-grid h4, #scenario-grid .text-lg { @apply text-lg font-bold text-white font-title tracking-wide truncate !important; margin-bottom: 0 !important; }
-        #scenario-grid p, #scenario-grid .text-sm { @apply text-sm text-gray-400 line-clamp-2 !important; margin-bottom: 0 !important; }
-
-        /* 버튼 스타일 */
-        #scenario-grid button[onclick*="playScenario"] {
-            @apply w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 !important;
-            margin-top: 0.5rem !important;
-        }
-        #scenario-grid button:not([onclick*="playScenario"]) {
-            @apply p-2 rounded-lg transition-all border border-transparent hover:bg-rpg-900 hover:border-rpg-accent text-gray-400 hover:text-white !important;
+        /* 메인 화면 슬라이드 컨테이너 */
+        .horizontal-scroll-container {
+            display: flex;
+            overflow-x: auto;
+            gap: 1.5rem;
+            padding: 20px 10px 40px 10px !important;
+            margin: -20px -10px 0 -10px !important;
+            cursor: grab;
+            -webkit-user-select: none;
+            user-select: none;
+            scroll-behavior: smooth;
         }
 
-        /* [사이드바 텍스트 애니메이션] */
-        .sidebar-text {
-            opacity: 0;
-            visibility: hidden;
-            transition: opacity 0.2s ease, visibility 0.2s ease;
-            white-space: nowrap;
+        .horizontal-scroll-container.active {
+            cursor: grabbing;
+            scroll-behavior: auto;
         }
-        #sidebar.expanded .sidebar-text {
-            opacity: 1;
-            visibility: visible;
-            transition-delay: 0.1s;
+
+        /* API 카드 디자인 */
+        .scenario-card-base {
+            background-color: #0f172a !important;
+            border: 1px solid #1e293b !important;
+            border-radius: 0.75rem !important;
+            overflow: hidden !important;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+            transition: all 0.3s ease !important;
+            display: flex !important;
+            flex-direction: column !important;
+
+            /* w-64 (256px) + 여백 = 4개 배치 */
+            min-width: 16rem !important;
+            width: 16rem !important;
+
+            margin-right: 1.5rem !important;
+            flex-shrink: 0 !important;
         }
-        #sidebar {
-            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        .scenario-card-base:hover {
+            border-color: #38bdf8 !important;
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.2) !important;
+            transform: translateY(-4px) !important;
         }
     </style>
 </head>
-<body class="h-screen flex overflow-hidden selection:bg-rpg-accent selection:text-black">
+<body class="min-h-screen flex flex-col selection:bg-rpg-accent selection:text-black">
 
-    <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-40 hidden opacity-0 transition-opacity duration-300 backdrop-blur-sm pointer-events-none"></div>
-
-    <div id="sidebar" class="fixed left-0 top-0 h-full bg-rpg-900/95 backdrop-blur-xl border-r border-rpg-700 z-50 w-20 flex flex-col shadow-2xl overflow-hidden"
-         onmouseenter="openSidebar()"
-         onmouseleave="closeSidebar()">
-
-        <div class="h-20 flex items-center shrink-0 px-6 border-b border-rpg-700 cursor-pointer hover:bg-rpg-800 transition-colors" onclick="location.href='/'">
-            <div class="w-8 h-8 bg-rpg-accent rounded flex items-center justify-center shrink-0 shadow-[0_0_10px_#38bdf8]">
-                <i data-lucide="sword" class="text-black w-5 h-5 fill-current"></i>
+    <header class="fixed top-0 left-0 w-full h-20 bg-rpg-900/90 backdrop-blur-md border-b border-rpg-700 z-50 px-8 flex items-center justify-between">
+        <div class="flex items-center gap-3 cursor-pointer" onclick="location.href='/'">
+            <div class="w-10 h-10 bg-rpg-accent rounded flex items-center justify-center shadow-[0_0_15px_#38bdf8]">
+                <i data-lucide="sword" class="text-black w-6 h-6 fill-current"></i>
             </div>
-            <span class="ml-4 font-title text-xl font-black text-white sidebar-text tracking-widest">
-                TRPG.OS
-            </span>
+            <span class="font-title text-2xl font-black text-white tracking-widest hover:text-rpg-accent transition-colors">TRPG.OS</span>
         </div>
 
-        <nav class="flex-1 py-6 px-3 space-y-2 overflow-y-auto no-scrollbar">
-            <a href="/" class="flex items-center h-12 px-3 rounded-lg bg-rpg-800 text-rpg-accent border border-rpg-700 transition-all hover:bg-rpg-accent hover:text-black whitespace-nowrap">
-                <i data-lucide="layout-grid" class="w-6 h-6 shrink-0"></i>
-                <span class="ml-4 font-bold sidebar-text delay-75">DASHBOARD</span>
-            </a>
+        <div class="flex items-center gap-5">
 
-            <a href="/views/mypage" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all whitespace-nowrap">
-                <i data-lucide="user" class="w-6 h-6 shrink-0"></i>
-                <span class="ml-4 font-bold sidebar-text delay-75">MY PAGE</span>
-            </a>
-
-            <a href="/views/builder" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all whitespace-nowrap">
-                <i data-lucide="pen-tool" class="w-6 h-6 shrink-0"></i>
-                <span class="ml-4 font-bold sidebar-text delay-75">BUILDER</span>
-            </a>
-
-            <a href="/views/player" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all whitespace-nowrap">
-                <i data-lucide="gamepad-2" class="w-6 h-6 shrink-0"></i>
-                <span class="ml-4 font-bold sidebar-text delay-75">PLAYER</span>
-            </a>
-
-            <a href="/views/scenes" class="flex items-center h-12 px-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all whitespace-nowrap">
-                <i data-lucide="network" class="w-6 h-6 shrink-0"></i>
-                <span class="ml-4 font-bold sidebar-text delay-75">SCENES</span>
-            </a>
-        </nav>
-
-        <div class="p-4 border-t border-rpg-700 bg-black/20 overflow-hidden shrink-0">
-            {% if user.is_authenticated %}
-            <div class="flex items-center gap-3 cursor-pointer" onclick="location.href='/views/mypage'">
-                <img src="{{ user.profile_img }}" class="w-10 h-10 rounded border border-rpg-700 shrink-0 object-cover bg-rpg-800">
-                <div class="sidebar-text">
-                    <p class="text-sm font-bold text-white truncate">{{ user.id }}</p>
-                    <p class="text-[10px] text-rpg-accent font-bold">OPERATOR</p>
-                </div>
-                <div onclick="logout(event)" class="ml-auto">
-                    <i data-lucide="log-out" class="w-4 h-4 text-gray-500 sidebar-text hover:text-rpg-danger"></i>
-                </div>
+            <div class="hidden md:flex items-center bg-rpg-800 border border-rpg-700 rounded-full px-4 py-1.5 focus-within:border-rpg-accent transition-colors group shadow-inner">
+                <input type="text" placeholder="Search scenarios..."
+                       class="bg-transparent border-none text-sm text-gray-300 focus:outline-none w-48 placeholder-gray-600 transition-all focus:w-64">
+                <button class="ml-2 text-gray-500 group-hover:text-white transition-colors" title="검색">
+                    <i data-lucide="search" class="w-4 h-4"></i>
+                </button>
             </div>
+
+            <div class="h-6 w-px bg-rpg-700 hidden md:block"></div>
+
+            <button class="text-gray-400 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-white/5 relative group" title="찜한 목록">
+                <i data-lucide="heart" class="w-6 h-6 transition-transform group-hover:scale-110"></i>
+            </button>
+
+            {% if user and user.is_authenticated %}
+                <div class="flex items-center gap-3 cursor-pointer group" onclick="location.href='/views/mypage'" title="마이페이지">
+                    <button class="text-gray-400 group-hover:text-white transition-colors p-2 rounded-full bg-rpg-800 border border-rpg-700 group-hover:border-rpg-accent shadow-md">
+                        <i data-lucide="user" class="w-6 h-6"></i>
+                    </button>
+                </div>
             {% else %}
-            <button onclick="openModal('login-modal')" class="w-full h-10 flex items-center justify-center bg-rpg-accent text-black font-bold rounded hover:bg-white transition-all overflow-hidden">
-                <i data-lucide="log-in" class="w-5 h-5 shrink-0"></i>
-                <span class="ml-2 sidebar-text">LOGIN</span>
-            </button>
-            <button onclick="openModal('register-modal')" class="w-full h-10 flex items-center justify-center text-gray-400 hover:text-white mt-2 transition-all overflow-hidden sidebar-text">
-                <span class="text-xs font-bold">SIGN UP</span>
-            </button>
+                <button onclick="openModal('login-modal')" class="flex items-center gap-2 px-5 py-2.5 bg-rpg-accent hover:bg-white text-black font-bold rounded shadow-lg shadow-rpg-accent/20 transition-all">
+                    <i data-lucide="log-in" class="w-4 h-4"></i> LOGIN
+                </button>
             {% endif %}
         </div>
-    </div>
+    </header>
 
-    <main class="flex-1 ml-20 h-full overflow-y-auto no-scrollbar relative bg-[#020617]">
+    <main class="flex-1 mt-20 pb-20">
 
-        <div class="relative w-full h-[450px] overflow-hidden group border-b border-rpg-700">
-            <div class="absolute inset-0 bg-gradient-to-t from-[#020617] via-transparent to-black/50 z-20 pointer-events-none"></div>
-
-            <div id="banner-track" class="flex w-[200%] h-full animate-slide-infinite">
-                <div class="w-1/6 h-full relative"><img src="https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=1600" class="w-full h-full object-cover grayscale-[30%] contrast-125"></div>
-                <div class="w-1/6 h-full relative"><img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=1600" class="w-full h-full object-cover grayscale-[30%] contrast-125"></div>
-                <div class="w-1/6 h-full relative"><img src="https://images.unsplash.com/photo-1533230500755-667923232c95?q=80&w=1600" class="w-full h-full object-cover grayscale-[30%] contrast-125"></div>
-                <div class="w-1/6 h-full relative"><img src="https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=1600" class="w-full h-full object-cover grayscale-[30%] contrast-125"></div>
-                <div class="w-1/6 h-full relative"><img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=1600" class="w-full h-full object-cover grayscale-[30%] contrast-125"></div>
-                <div class="w-1/6 h-full relative"><img src="https://images.unsplash.com/photo-1533230500755-667923232c95?q=80&w=1600" class="w-full h-full object-cover grayscale-[30%] contrast-125"></div>
-            </div>
-
-            <div class="absolute bottom-0 left-0 w-full p-12 z-30">
-                <div class="max-w-[1800px] mx-auto">
-                    <h1 class="text-6xl font-title font-black text-white mb-2 drop-shadow-2xl tracking-tighter">
-                        START YOUR <span class="text-rpg-accent">LEGEND</span>
+        <div class="container mx-auto px-8 mt-8">
+            <div class="relative w-full h-[25vh] min-h-[250px] overflow-hidden group border border-rpg-700 bg-black rounded-2xl shadow-2xl">
+                <div class="absolute inset-0 bg-gradient-to-t from-rpg-900 via-rpg-900/40 to-transparent z-20 pointer-events-none"></div>
+                <div class="flex w-[200%] h-full animate-slide-infinite">
+                    <div class="w-1/5 h-full relative flex-shrink-0"><img src="https://images.unsplash.com/photo-1555680202-c86f0e12f086?q=80&w=1600" class="w-full h-full object-cover"></div>
+                    <div class="w-1/5 h-full relative flex-shrink-0"><img src="https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=1600" class="w-full h-full object-cover"></div>
+                    <div class="w-1/5 h-full relative flex-shrink-0"><img src="https://images.unsplash.com/photo-1533230500755-667923232c95?q=80&w=1600" class="w-full h-full object-cover"></div>
+                    <div class="w-1/5 h-full relative flex-shrink-0"><img src="https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=1600" class="w-full h-full object-cover"></div>
+                    <div class="w-1/5 h-full relative flex-shrink-0"><img src="https://images.unsplash.com/photo-1550745165-9bc0b252726f?q=80&w=1600" class="w-full h-full object-cover"></div>
+                    <div class="w-1/5 h-full relative flex-shrink-0"><img src="https://images.unsplash.com/photo-1555680202-c86f0e12f086?q=80&w=1600" class="w-full h-full object-cover"></div>
+                    <div class="w-1/5 h-full relative flex-shrink-0"><img src="https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=1600" class="w-full h-full object-cover"></div>
+                    <div class="w-1/5 h-full relative flex-shrink-0"><img src="https://images.unsplash.com/photo-1533230500755-667923232c95?q=80&w=1600" class="w-full h-full object-cover"></div>
+                    <div class="w-1/5 h-full relative flex-shrink-0"><img src="https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=1600" class="w-full h-full object-cover"></div>
+                    <div class="w-1/5 h-full relative flex-shrink-0"><img src="https://images.unsplash.com/photo-1550745165-9bc0b252726f?q=80&w=1600" class="w-full h-full object-cover"></div>
+                </div>
+                <div class="absolute bottom-0 left-0 w-full p-8 z-30">
+                    <h1 class="text-4xl md:text-5xl font-title font-black text-white mb-2 drop-shadow-2xl tracking-tighter">
+                        Dive into the <span class="text-rpg-accent">Abyss</span>
                     </h1>
-                    <p class="text-xl text-gray-300 font-medium drop-shadow-lg max-w-2xl border-l-4 border-rpg-accent pl-4 mt-4">
-                        상상을 현실로 만드는 궁극의 TRPG 플랫폼.<br>
-                        지금 바로 당신만의 세계를 창조하세요.
+                    <p class="text-base md:text-lg text-gray-300 max-w-2xl font-medium drop-shadow-lg">
+                        상상을 초월하는 모험이 당신을 기다립니다.<br>지금 바로 시작하세요.
                     </p>
                 </div>
             </div>
         </div>
 
-        <div class="max-w-[1800px] mx-auto p-12 space-y-16">
+        <div class="container mx-auto px-8 mt-8">
+            <a href="/views/builder" class="block w-full bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 hover:border-rpg-accent rounded-xl p-6 text-center group transition-all shadow-lg hover:shadow-[0_0_20px_rgba(56,189,248,0.15)]">
+                <div class="flex flex-col items-center justify-center gap-3">
+                    <div class="p-3 bg-rpg-accent/10 rounded-full group-hover:scale-110 transition-transform ring-1 ring-rpg-accent/30">
+                        <i data-lucide="plus" class="w-8 h-8 text-rpg-accent"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-white group-hover:text-rpg-accent transition-colors tracking-widest">CREATE NEW SCENARIO</h3>
+                    <p class="text-sm text-gray-500 group-hover:text-gray-400">당신만의 세계를 직접 창조해보세요</p>
+                </div>
+            </a>
+        </div>
 
-            <section>
-                <div class="flex items-center justify-between mb-8 pb-4 border-b border-rpg-700">
-                    <h2 class="text-2xl font-title font-black text-white flex items-center gap-3 tracking-widest">
-                        <i data-lucide="flame" class="text-rpg-accent w-6 h-6"></i>
-                        RECOMMENDED SCENARIOS
+        <div class="container mx-auto px-8 mt-12">
+            <div class="flex flex-col md:flex-row justify-between items-end gap-4 mb-4">
+
+                <div>
+                    <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                        <i data-lucide="filter" class="w-5 h-5 text-rpg-accent"></i> GENRE
                     </h2>
-                    <span class="text-xs font-bold text-rpg-accent bg-rpg-accent/10 px-3 py-1 rounded border border-rpg-accent/20">POPULAR</span>
+                    <div class="flex flex-wrap gap-3">
+                        <button onclick="filterGenre('all')" class="px-4 py-2 rounded-full bg-rpg-accent text-black font-bold text-sm hover:opacity-80 transition-all shadow-[0_0_10px_rgba(56,189,248,0.3)]">전체</button>
+                        <button onclick="filterGenre('fantasy')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">SF/판타지</button>
+                        <button onclick="filterGenre('thriller')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">스릴러</button>
+                        <button onclick="filterGenre('mystery')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">추리</button>
+                        <button onclick="filterGenre('romance')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">로맨스</button>
+                        <button onclick="filterGenre('etc')" class="px-4 py-2 rounded-full bg-rpg-800 border border-rpg-700 hover:border-rpg-accent text-gray-300 hover:text-white text-sm transition-all">기타</button>
+                    </div>
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] transition-all flex flex-col h-full">
-                        <div class="relative h-48 overflow-hidden">
-                            <img src="https://images.unsplash.com/photo-1627850604058-52e40de1b847?q=80&w=800" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
-                            <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-rpg-accent border border-rpg-accent/30">CYBERPUNK</div>
-                        </div>
-                        <div class="p-5 flex-1 flex flex-col gap-3">
-                            <h3 class="text-lg font-bold text-white mb-1 font-title tracking-wide truncate">NEON CITY: REBOOT</h3>
-                            <p class="text-sm text-gray-400 line-clamp-2">비 내리는 미래 도시의 밤, 기업의 음모를 파헤치는 해커들의 이야기.</p>
-                            <button onclick="playScenario('sample_cyberpunk', this)" class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 mt-2">
-                                <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
-                            </button>
-                        </div>
-                    </div>
+            </div>
+        </div>
 
-                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] transition-all flex flex-col h-full">
-                        <div class="relative h-48 overflow-hidden">
-                            <img src="https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=800" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
-                            <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-yellow-500 border border-yellow-500/30">FANTASY</div>
-                        </div>
-                        <div class="p-5 flex-1 flex flex-col gap-3">
-                            <h3 class="text-lg font-bold text-white mb-1 font-title tracking-wide truncate">TOMB OF THE KING</h3>
-                            <p class="text-sm text-gray-400 line-clamp-2">지하 깊은 곳, 잠든 왕을 깨우는 자는 누구인가. 숨겨진 보물을 찾아라.</p>
-                            <button onclick="playScenario('sample_fantasy', this)" class="w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 mt-2">
-                                <i data-lucide="play" class="w-4 h-4 fill-current"></i> PLAY NOW
-                            </button>
-                        </div>
-                    </div>
+        <div class="space-y-16 mt-12 pb-20">
 
-                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent transition-all flex flex-col h-full">
-                        <div class="relative h-48 overflow-hidden bg-black flex items-center justify-center">
-                            <i data-lucide="lock" class="w-10 h-10 text-rpg-700"></i>
-                        </div>
-                        <div class="p-5 flex-1 flex flex-col gap-3">
-                            <h3 class="text-lg font-bold text-gray-500 mb-1 font-title tracking-wide truncate">COMING SOON</h3>
-                            <p class="text-sm text-gray-600 line-clamp-2">새로운 모험이 준비 중입니다.</p>
-                            <button disabled class="w-full py-3 bg-rpg-900 text-gray-600 font-bold rounded-lg cursor-not-allowed mt-2">LOCKED</button>
-                        </div>
-                    </div>
-
-                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl overflow-hidden group hover:border-rpg-accent transition-all flex flex-col h-full">
-                        <div class="relative h-48 overflow-hidden bg-black flex items-center justify-center">
-                            <i data-lucide="lock" class="w-10 h-10 text-rpg-700"></i>
-                        </div>
-                        <div class="p-5 flex-1 flex flex-col gap-3">
-                            <h3 class="text-lg font-bold text-gray-500 mb-1 font-title tracking-wide truncate">COMING SOON</h3>
-                            <p class="text-sm text-gray-600 line-clamp-2">새로운 모험이 준비 중입니다.</p>
-                            <button disabled class="w-full py-3 bg-rpg-900 text-gray-600 font-bold rounded-lg cursor-not-allowed mt-2">LOCKED</button>
-                        </div>
-                    </div>
+            <section class="container mx-auto pl-8">
+                <div class="flex items-center justify-between pr-8 mb-4">
+                    <h2 class="text-2xl font-title font-bold text-white flex items-center gap-2">
+                        <span class="w-1 h-6 bg-rpg-accent rounded-full shadow-[0_0_10px_#38bdf8]"></span> 실시간 (Newest)
+                    </h2>
+                    <span class="text-xs text-gray-500">Drag to scroll <i data-lucide="arrow-right" class="inline w-3 h-3"></i></span>
+                </div>
+                <div id="realtime-grid"
+                     class="horizontal-scroll-container flex no-scrollbar"
+                     hx-get="/api/scenarios?sort=newest&limit=10&filter=all"
+                     hx-trigger="load">
+                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
+                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
 
-            <section>
-                <div class="flex items-center justify-between mb-8 pb-4 border-b border-rpg-700">
-                    <h2 class="text-2xl font-title font-black text-white flex items-center gap-3 tracking-widest">
-                        <i data-lucide="book-open" class="text-rpg-accent w-6 h-6"></i>
-                        MY SCENARIOS
+            <section class="container mx-auto pl-8">
+                <div class="flex items-center justify-between pr-8 mb-4">
+                    <h2 class="text-2xl font-title font-bold text-white flex items-center gap-2">
+                        <span class="w-1 h-6 bg-yellow-500 rounded-full shadow-[0_0_10px_#eab308]"></span> 인기 (Popular)
                     </h2>
-                    <a href="/views/builder" class="flex items-center gap-2 px-4 py-2 bg-rpg-accent hover:bg-white text-black font-bold rounded text-sm transition-all">
-                        <i data-lucide="plus" class="w-4 h-4"></i> CREATE NEW
-                    </a>
                 </div>
+                <div id="popular-grid"
+                     class="horizontal-scroll-container flex no-scrollbar"
+                     hx-get="/api/scenarios?sort=popular&limit=10&filter=all"
+                     hx-trigger="load">
+                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
+                </div>
+            </section>
 
-                <div id="scenario-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" hx-get="/api/scenarios?filter=my&limit=4" hx-trigger="load">
-                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl p-0 h-[380px] animate-pulse"></div>
-                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl p-0 h-[380px] animate-pulse hidden sm:block"></div>
-                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl p-0 h-[380px] animate-pulse hidden lg:block"></div>
-                    <div class="bg-rpg-800 border border-rpg-700 rounded-xl p-0 h-[380px] animate-pulse hidden lg:block"></div>
+            <section class="container mx-auto pl-8">
+                <div class="flex items-center justify-between pr-8 mb-4">
+                    <h2 class="text-2xl font-title font-bold text-white flex items-center gap-2">
+                        <span class="w-1 h-6 bg-green-500 rounded-full shadow-[0_0_10px_#22c55e]"></span> 스테디셀러
+                    </h2>
+                </div>
+                <div id="steady-grid"
+                     class="horizontal-scroll-container flex no-scrollbar"
+                     hx-get="/api/scenarios?sort=steady&limit=10&filter=all"
+                     hx-trigger="load">
+                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
 
         </div>
+        <footer class="border-t border-rpg-700 mt-20 bg-[#020617] relative z-10 w-full">
+            <div class="max-w-[1800px] mx-auto px-12 py-16">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
+
+                    <div class="col-span-1">
+                        <div class="flex items-center gap-3 mb-6">
+                            <div class="w-8 h-8 bg-rpg-700 rounded flex items-center justify-center">
+                                <i data-lucide="sword" class="text-gray-400 w-4 h-4 fill-current"></i>
+                            </div>
+                            <span class="font-title text-lg font-bold text-gray-200 tracking-widest">TRPG.OS</span>
+                        </div>
+                        <p class="text-xs text-gray-500 leading-relaxed mb-6">
+                            Imagination into Reality.<br>
+                            나만의 세계를 창조하고 공유하세요.
+                        </p>
+                        <div class="flex gap-4">
+                            <a href="https://github.com/your-repo" target="_blank" class="text-gray-500 hover:text-white transition-colors flex items-center gap-2">
+                                <i data-lucide="github" class="w-5 h-5"></i>
+                                <span class="text-xs">v1.2.0</span>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="col-span-1 md:col-span-2">
+                        <h4 class="text-sm font-bold text-gray-300 mb-6 flex items-center gap-2">
+                            <i data-lucide="building-2" class="w-4 h-4 text-rpg-accent"></i> COMPANY INFO
+                        </h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-gray-500">
+                            <div>
+                                <p class="mb-2"><span class="font-bold text-gray-400">상호명:</span> TRPG Studio Team</p>
+                                <p class="mb-2"><span class="font-bold text-gray-400">대표자:</span> 김개발</p>
+                                <p class="mb-2"><span class="font-bold text-gray-400">사업자등록번호:</span> 123-45-67890</p>
+                            </div>
+                            <div>
+                                <p class="mb-2"><span class="font-bold text-gray-400">주소:</span> 서울특별시 강남구 테헤란로 000, 10층</p>
+                                <p class="mb-2"><span class="font-bold text-gray-400">Contact:</span> help@trpg.os</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-span-1">
+                        <h4 class="text-sm font-bold text-gray-300 mb-6 flex items-center gap-2">
+                            <i data-lucide="cpu" class="w-4 h-4 text-rpg-accent"></i> POWERED BY
+                        </h4>
+                        <ul class="text-xs text-gray-500 space-y-3">
+                            <li class="flex items-center justify-between border-b border-white/5 pb-2">
+                                <span>Core Framework</span>
+                                <span class="text-gray-400 font-mono">FastAPI</span>
+                            </li>
+                            <li class="flex items-center justify-between border-b border-white/5 pb-2">
+                                <span>Frontend</span>
+                                <span class="text-gray-400 font-mono">HTMX + Tailwind</span>
+                            </li>
+                            <li class="flex items-center justify-between border-b border-white/5 pb-2">
+                                <span>Generative AI</span>
+                                <span class="text-rpg-accent font-bold">GPT-4o / DeepSeek</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="border-t border-rpg-800 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
+                    <p class="text-[10px] text-gray-600">© 2026 TRPG Studio. All rights reserved.</p>
+                    <div class="flex gap-6 text-[10px] text-gray-500 font-bold">
+                        <a href="#" class="hover:text-white transition-colors">이용약관</a>
+                        <a href="#" class="hover:text-white transition-colors">개인정보처리방침</a>
+                    </div>
+                </div>
+            </div>
+        </footer>
     </main>
 
-    <div id="login-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-[100]">
-        <div class="modal-overlay absolute w-full h-full bg-black/80 backdrop-blur-sm" onclick="closeModal('login-modal')"></div>
-        <div class="modal-container bg-rpg-800 w-11/12 md:max-w-md mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-rpg-700 transform transition-all scale-95 opacity-0 duration-300">
+    <div id="login-modal" class="modal opacity-0 pointer-events-none fixed inset-0 z-[100] flex items-center justify-center">
+        <div class="modal-overlay absolute inset-0 bg-black/80 backdrop-blur-sm" onclick="closeModal('login-modal')"></div>
+        <div class="modal-container bg-rpg-800 w-full max-w-md mx-4 rounded-2xl border border-rpg-700 shadow-2xl transform scale-95 opacity-0 transition-all duration-300 relative z-10">
             <div class="p-8">
-                <div class="flex justify-between items-center mb-6">
+                <div class="flex justify-between items-center mb-8">
                     <h3 class="text-2xl font-title font-bold text-white">LOGIN</h3>
-                    <button onclick="closeModal('login-modal')" class="text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
+                    <button onclick="closeModal('login-modal')" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
                 <form onsubmit="handleLogin(event)" class="space-y-6">
                     <div>
-                        <label class="block text-gray-400 text-xs font-bold mb-2 uppercase">Username</label>
-                        <input type="text" name="username" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all font-bold">
+                        <label class="block text-gray-400 text-xs font-bold mb-2">USERNAME</label>
+                        <input type="text" name="username" required class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
                     </div>
                     <div>
-                        <label class="block text-gray-400 text-xs font-bold mb-2 uppercase">Password</label>
-                        <input type="password" name="password" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all font-bold">
+                        <label class="block text-gray-400 text-xs font-bold mb-2">PASSWORD</label>
+                        <input type="password" name="password" required class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
                     </div>
-                    <div id="login-error" class="text-red-400 text-xs bg-red-500/10 p-3 rounded border border-red-500/20 hidden font-bold"></div>
-                    <button type="submit" class="w-full bg-rpg-accent hover:bg-white text-black font-black py-4 rounded-lg shadow-lg shadow-rpg-accent/20 transition-all text-lg">ACCESS SYSTEM</button>
+                    <div id="login-error" class="text-red-400 text-xs hidden"></div>
+                    <button type="submit" class="w-full bg-rpg-accent hover:bg-white text-black font-bold py-4 rounded-lg shadow-lg transition-all">ACCESS SYSTEM</button>
                 </form>
+                <div class="mt-6 text-center text-sm text-gray-500">
+                    계정이 없으신가요? <button onclick="closeModal('login-modal'); openModal('register-modal')" class="text-rpg-accent hover:underline font-bold ml-1">회원가입 하기</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <div id="register-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-[100]">
-        <div class="modal-overlay absolute w-full h-full bg-black/80 backdrop-blur-sm" onclick="closeModal('register-modal')"></div>
-        <div class="modal-container bg-rpg-800 w-11/12 md:max-w-md mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-rpg-700 transform transition-all scale-95 opacity-0 duration-300">
+    <div id="register-modal" class="modal opacity-0 pointer-events-none fixed inset-0 z-[100] flex items-center justify-center">
+        <div class="modal-overlay absolute inset-0 bg-black/80 backdrop-blur-sm" onclick="closeModal('register-modal')"></div>
+        <div class="modal-container bg-rpg-800 w-full max-w-md mx-4 rounded-2xl border border-rpg-700 shadow-2xl transform scale-95 opacity-0 transition-all duration-300 relative z-10">
             <div class="p-8">
-                <div class="flex justify-between items-center mb-6">
+                <div class="flex justify-between items-center mb-8">
                     <h3 class="text-2xl font-title font-bold text-white">REGISTER</h3>
-                    <button onclick="closeModal('register-modal')" class="text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
+                    <button onclick="closeModal('register-modal')" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
                 <form onsubmit="handleRegister(event)" class="space-y-4">
                     <div>
-                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Username</label>
-                        <input type="text" name="username" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
+                        <label class="block text-gray-400 text-xs font-bold mb-1">USERNAME</label>
+                        <input type="text" name="username" required class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none">
                     </div>
                     <div>
-                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Email</label>
-                        <input type="email" name="email" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
+                        <label class="block text-gray-400 text-xs font-bold mb-1">EMAIL</label>
+                        <input type="email" name="email" required class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none">
                     </div>
                     <div>
-                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Password</label>
-                        <input type="password" name="password" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
+                        <label class="block text-gray-400 text-xs font-bold mb-1">PASSWORD</label>
+                        <input type="password" name="password" required class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none">
                     </div>
                     <div>
-                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Confirm Password</label>
-                        <input type="password" name="confirm_password" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
+                        <label class="block text-gray-400 text-xs font-bold mb-1">CONFIRM PASSWORD</label>
+                        <input type="password" name="confirm_password" required class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none">
                     </div>
-                    <div id="register-error" class="text-red-400 text-xs bg-red-500/10 p-3 rounded border border-red-500/20 hidden font-bold"></div>
-                    <button type="submit" class="w-full bg-green-600 hover:bg-green-500 text-white font-black py-4 rounded-lg shadow-lg transition-all text-lg mt-2">CREATE ACCOUNT</button>
+                    <div id="register-error" class="text-red-400 text-xs hidden"></div>
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-lg shadow-lg mt-2 transition-all">CREATE ACCOUNT</button>
                 </form>
             </div>
         </div>
@@ -331,241 +374,126 @@
 
     <script>
         lucide.createIcons();
-
-        // HTMX 로드 후 스타일/아이콘 재적용 + 버튼 강제 스타일링
         document.body.addEventListener('htmx:afterSwap', function(evt) {
             lucide.createIcons();
-
-            const container = document.getElementById('scenario-grid');
-            if (container) {
-                const buttons = container.querySelectorAll('button');
-                buttons.forEach(btn => {
-                    if (btn.innerText.includes('Play') || btn.innerText.includes('플레이') || btn.querySelector('i') || btn.querySelector('svg')) {
-                        btn.className = "w-full py-3 bg-rpg-700 hover:bg-rpg-accent hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-rpg-700 mt-2";
-                        if (!btn.getAttribute('onclick')) {
-                            // 카드에서 ID 찾기 시도 (생략 가능)
-                        }
-                    } else {
-                        const card = btn.closest('.bg-dark-800');
-                        if (card) {
-                            const playBtn = card.querySelector('button[onclick*="playScenario"]');
-                            if (playBtn) {
-                                const match = playBtn.getAttribute('onclick').match(/'([^']+)'/);
-                                const scenarioId = match ? match[1] : null;
-                                if (scenarioId) {
-                                    if (btn.querySelector('.lucide-edit') || btn.innerText.includes('수정')) {
-                                        btn.onclick = function() { editScenario(scenarioId); };
-                                    } else if (btn.querySelector('.lucide-trash') || btn.innerText.includes('삭제')) {
-                                        btn.onclick = function() { deleteScenario(scenarioId, this); };
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-            }
+            enableHorizontalScroll();
         });
 
-        // 사이드바 토글 함수 (Hover + Scroll Lock + Banner Pause)
-        function openSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebar-overlay');
-            const banner = document.getElementById('banner-track');
-
-            sidebar.classList.remove('w-20');
-            sidebar.classList.add('w-64');
-            sidebar.classList.add('expanded');
-
-            overlay.classList.remove('hidden');
-            setTimeout(() => overlay.classList.remove('opacity-0'), 10);
-
-            // 스크롤 및 애니메이션 잠금
-            document.body.style.overflow = 'hidden';
-            if(banner) banner.style.animationPlayState = 'paused';
+        function enableHorizontalScroll() {
+            const containers = document.querySelectorAll('.horizontal-scroll-container');
+            containers.forEach(slider => {
+                let isDown = false;
+                let startX;
+                let scrollLeft;
+                slider.addEventListener('mousedown', (e) => {
+                    isDown = true;
+                    slider.classList.add('active');
+                    startX = e.pageX - slider.offsetLeft;
+                    scrollLeft = slider.scrollLeft;
+                });
+                window.addEventListener('mouseup', () => { isDown = false; slider.classList.remove('active'); });
+                window.addEventListener('mousemove', (e) => {
+                    if(!isDown) return;
+                    e.preventDefault();
+                    const x = e.pageX - slider.offsetLeft;
+                    const walk = (x - startX) * 2;
+                    slider.scrollLeft = scrollLeft - walk;
+                });
+            });
         }
+        document.addEventListener('DOMContentLoaded', enableHorizontalScroll);
 
-        function closeSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebar-overlay');
-            const banner = document.getElementById('banner-track');
-
-            sidebar.classList.remove('w-64');
-            sidebar.classList.add('w-20');
-            sidebar.classList.remove('expanded');
-
-            overlay.classList.add('opacity-0');
-            setTimeout(() => overlay.classList.add('hidden'), 300);
-
-            // 잠금 해제
-            document.body.style.overflow = '';
-            if(banner) banner.style.animationPlayState = 'running';
-        }
-
-        // 전역 함수들
         window.playScenario = async function(filename, btn) {
             const originalText = btn.innerHTML;
-            btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> LOADING...';
+            btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Loading...';
             btn.disabled = true;
             lucide.createIcons();
-
             try {
                 const formData = new FormData();
                 formData.append('filename', filename);
                 const res = await fetch('/api/load_scenario', { method: 'POST', body: formData });
                 if (res.ok) {
                     const data = await res.json();
-
-                    // ✅ [중요] 서버에서 받은 새로운 세션 키를 sessionStorage에 즉시 저장 (덮어쓰기)
-                    if (data.session_key) {
-                        sessionStorage.setItem('trpg_session_key', data.session_key);
-                        console.log('🆕 New session created:', data.session_key);
-                    }
-
-                    // ✅ [중요] 시나리오 ID도 함께 저장 (act_stream 요청 시 함께 전송하기 위함)
-                    if (data.scenario_id) {
-                        sessionStorage.setItem('trpg_scenario_id', data.scenario_id);
-                        console.log('📋 Scenario ID saved:', data.scenario_id);
-                    }
-
-                    // ✅ [중요] 기존 게임 상태 완전히 초기화 (이전 시나리오의 히스토리, world_state 등 삭제)
+                    if (data.session_key) { sessionStorage.setItem('trpg_session_key', data.session_key); }
+                    if (data.scenario_id) { sessionStorage.setItem('trpg_scenario_id', data.scenario_id); }
                     sessionStorage.removeItem('trpg_chat_log');
-                    sessionStorage.removeItem('trpg_game_ended');
-                    sessionStorage.removeItem('trpg_world_state');
-                    sessionStorage.removeItem('trpg_player_stats');
-                    console.log('🧹 Previous game state cleared');
-
                     sessionStorage.setItem('trpg_scenario_loaded', 'true');
                     window.location.href = '/views/player';
                 } else {
-                    const text = await res.text();
-                    alert('로드 실패: ' + text);
+                    alert('로드 실패: ' + await res.text());
                     btn.innerHTML = originalText;
                     btn.disabled = false;
                 }
-            } catch (e) {
-                console.error(e);
-                alert('오류 발생');
-                btn.innerHTML = originalText;
-                btn.disabled = false;
-            }
+            } catch (e) { console.error(e); btn.innerHTML = originalText; btn.disabled = false; }
         };
 
         window.deleteScenario = async function(filename, btn) {
-            if(!confirm('정말 삭제하시겠습니까? (복구 불가)')) return;
-
+            if(!confirm('정말 삭제하시겠습니까?')) return;
             try {
                 const res = await fetch('/api/delete_scenario', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({filename: filename})
                 });
-
-                if (!res.ok) throw new Error(`서버 오류: ${res.status}`);
-
-                const result = await res.json();
-
-                if(result.success) {
-                    const card = btn.closest('.bg-dark-800') || btn.closest('.bg-rpg-800') || btn.parentElement.parentElement;
+                const data = await res.json();
+                if(data.success) {
+                    const card = btn.closest('.scenario-card-base');
                     if(card) {
-                        card.style.transition = 'all 0.3s ease';
                         card.style.opacity = '0';
-                        card.style.transform = 'scale(0.9)';
-
-                        setTimeout(() => {
-                            card.remove();
-                            const grid = document.getElementById('scenario-grid');
-                            if (grid && grid.children.length === 0) {
-                                grid.innerHTML = '<div class="col-span-full text-center text-gray-500 py-10">저장된 시나리오가 없습니다.</div>';
-                            }
-                        }, 300);
-                    } else {
-                        window.location.reload();
-                    }
-                } else {
-                    alert('삭제 실패: ' + (result.error || '알 수 없는 오류'));
-                }
-            } catch(e) {
-                console.error("삭제 로직 에러 상세:", e);
-                window.location.reload();
-            }
+                        setTimeout(() => card.remove(), 300);
+                    } else window.location.reload();
+                } else alert('삭제 실패: ' + data.error);
+            } catch(e) { alert('오류'); }
         };
 
         window.editScenario = function(filename) {
-            const encodedName = encodeURIComponent(filename);
-            window.location.href = `/views/builder?scenario=${encodedName}`;
+            window.location.href = `/views/builder?scenario=${encodeURIComponent(filename)}`;
         };
 
-        // [수정된 openModal 함수] 모달 내부 컨텐츠 애니메이션 처리 추가
         window.openModal = function(id) {
             const modal = document.getElementById(id);
-            const container = modal.querySelector('.modal-container'); // 내부 컨테이너 선택
-
-            const form = modal.querySelector('form');
-            if (form) form.reset();
-            const errorMsg = modal.querySelector('[id$="-error"]');
-            if (errorMsg) errorMsg.classList.add('hidden');
-
             modal.classList.remove('opacity-0', 'pointer-events-none');
             document.body.classList.add('modal-active');
-
-            // 내부 컨텐츠 등장 애니메이션
             setTimeout(() => {
-                if (container) {
-                    container.classList.remove('scale-95', 'opacity-0');
-                    container.classList.add('scale-100', 'opacity-100');
-                }
+                modal.querySelector('.modal-container').classList.remove('scale-95', 'opacity-0');
+                modal.querySelector('.modal-container').classList.add('scale-100', 'opacity-100');
             }, 10);
         };
 
-        // [수정된 closeModal 함수]
         window.closeModal = function(id) {
             const modal = document.getElementById(id);
-            const container = modal.querySelector('.modal-container');
-
-            // 내부 컨텐츠 퇴장 애니메이션
-            if (container) {
-                container.classList.remove('scale-100', 'opacity-100');
-                container.classList.add('scale-95', 'opacity-0');
-            }
-
+            modal.querySelector('.modal-container').classList.remove('scale-100', 'opacity-100');
+            modal.querySelector('.modal-container').classList.add('scale-95', 'opacity-0');
             setTimeout(() => {
                 modal.classList.add('opacity-0', 'pointer-events-none');
                 document.body.classList.remove('modal-active');
-            }, 300); // transition duration과 일치시킴
+            }, 300);
         };
 
         window.handleLogin = async function(e) {
             e.preventDefault(); const form = e.target;
-            const errorMsg = document.getElementById('login-error');
             try {
                 const res = await fetch('/api/auth/login', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: form.username.value, password: form.password.value}) });
                 const data = await res.json();
                 if (data.success) window.location.reload();
-                else { errorMsg.innerText = data.error; errorMsg.classList.remove('hidden'); }
-            } catch(e) { errorMsg.innerText = "서버 통신 오류"; errorMsg.classList.remove('hidden'); }
+                else alert(data.error);
+            } catch(e) { alert("통신 오류"); }
         };
 
         window.handleRegister = async function(e) {
             e.preventDefault(); const form = e.target;
-            const errorMsg = document.getElementById('register-error');
-            if (form.password.value !== form.confirm_password.value) { errorMsg.innerText = "비밀번호 불일치"; errorMsg.classList.remove('hidden'); return; }
+            if(form.password.value !== form.confirm_password.value) return alert("비밀번호 불일치");
             try {
                 const res = await fetch('/api/auth/register', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: form.username.value, password: form.password.value, email: form.email.value}) });
                 const data = await res.json();
-                if (data.success) { alert('가입 성공!'); closeModal('register-modal'); openModal('login-modal'); }
-                else { errorMsg.innerText = data.error; errorMsg.classList.remove('hidden'); }
-            } catch(e) { errorMsg.innerText = "서버 오류"; errorMsg.classList.remove('hidden'); }
+                if (data.success) { alert("가입 성공!"); closeModal('register-modal'); openModal('login-modal'); }
+                else alert(data.error);
+            } catch(e) { alert("통신 오류"); }
         };
 
-        // 로그아웃 함수 (이벤트 버블링 방지)
-        window.logout = async function(e) {
-            if(e) e.stopPropagation();
-            if(confirm('로그아웃 하시겠습니까?')) {
-                await fetch('/api/auth/logout', {method:'POST'});
-                window.location.reload();
-            }
-        };
+        function filterGenre(genre) {
+            alert("장르 필터: " + genre + " (기능 준비중)");
+        }
     </script>
 </body>
 </html>
-

@@ -59,6 +59,48 @@
 
         /* 모달 활성화 시 바디 스크롤 방지 */
         body.modal-active { overflow: hidden; }
+
+        /* [수정] 카드 스타일 조정 (정사각형 비율, 크기 축소) */
+        #my-scenario-grid .scenario-card-base {
+            width: 100% !important;
+            aspect-ratio: 1 / 1.1 !important; /* 약간 세로 직사각형 (너무 길지 않게) */
+            display: flex !important;
+            flex-direction: column !important;
+        }
+
+        #my-scenario-grid .card-image-wrapper {
+            height: 55% !important; /* 이미지 영역 비율 확대 */
+        }
+
+        #my-scenario-grid .card-content {
+            padding: 1rem !important; /* 패딩 축소 */
+            flex: 1 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+        }
+
+        /* 제목 한 줄 처리 */
+        #my-scenario-grid .card-title {
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            font-size: 1rem !important;
+        }
+
+        /* 설명 두 줄 제한 */
+        #my-scenario-grid .card-desc {
+            font-size: 0.8rem !important;
+            -webkit-line-clamp: 2 !important;
+            min-height: 2.4em !important;
+        }
+
+        /* 버튼 크기 조정 */
+        #my-scenario-grid button {
+            padding-top: 0.5rem !important;
+            padding-bottom: 0.5rem !important;
+            font-size: 0.8rem !important;
+        }
     </style>
 </head>
 <body class="min-h-screen bg-rpg-900 text-gray-200 overflow-x-hidden">
@@ -107,22 +149,28 @@
                 <nav class="bg-rpg-800/80 backdrop-blur border border-rpg-700 rounded-2xl p-4 shadow-xl overflow-hidden">
                     <ul class="space-y-1">
                         <li>
-                            <a href="/my_page" class="flex items-center gap-3 px-4 py-3 rounded-xl bg-rpg-700/50 text-rpg-accent font-bold border border-rpg-700/50 transition-all">
+                            <button hx-get="/api/views/mypage/scenarios"
+                                    hx-target="#main-content-area"
+                                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-rpg-700/50 text-gray-300 hover:text-rpg-accent font-bold border border-transparent hover:border-rpg-700/50 transition-all text-left focus:bg-rpg-700 focus:text-white">
                                 <i data-lucide="book" class="w-5 h-5"></i>
                                 내 작품 보기
-                            </a>
+                            </button>
                         </li>
                         <li>
-                            <a href="/profile/edit" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-rpg-700 hover:text-white transition-all">
+                            <button hx-get="/api/views/mypage/profile"
+                                    hx-target="#main-content-area"
+                                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-rpg-700/50 text-gray-300 hover:text-rpg-accent font-bold border border-transparent hover:border-rpg-700/50 transition-all text-left focus:bg-rpg-700 focus:text-white">
                                 <i data-lucide="user-cog" class="w-5 h-5"></i>
                                 회원 정보 수정
-                            </a>
+                            </button>
                         </li>
                         <li>
-                            <a href="/billing" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-rpg-700 hover:text-white transition-all">
+                            <button hx-get="/api/views/mypage/billing"
+                                    hx-target="#main-content-area"
+                                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-rpg-700/50 text-gray-300 hover:text-rpg-accent font-bold border border-transparent hover:border-rpg-700/50 transition-all text-left focus:bg-rpg-700 focus:text-white">
                                 <i data-lucide="credit-card" class="w-5 h-5"></i>
                                 결제 / 플랜 변경
-                            </a>
+                            </button>
                         </li>
                     </ul>
                 </nav>
@@ -157,31 +205,32 @@
                 </div>
             </div>
 
-            <div class="lg:col-span-3">
-                <div class="flex items-center justify-between mb-6">
-                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                        <i data-lucide="book-open" class="w-5 h-5 text-rpg-accent"></i> My Scenarios
-                    </h2>
-                    <div class="flex gap-2">
-                        <button class="px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors">All</button>
-                        <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Public</button>
-                        <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Private</button>
+            <div id="main-content-area" class="lg:col-span-3">
+                <div class="fade-in">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                            <i data-lucide="book-open" class="w-5 h-5 text-rpg-accent"></i> My Scenarios
+                        </h2>
+                        <div class="flex gap-2">
+                            <button class="px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors">All</button>
+                            <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Public</button>
+                            <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Private</button>
+                        </div>
                     </div>
-                </div>
 
-                <div id="my-scenario-grid"
-                     class="grid grid-cols-1 md:grid-cols-2 gap-6"
-                     hx-get="/api/scenarios?filter=my"
-                     hx-trigger="load"
-                     hx-swap="innerHTML">
+                    <div id="my-scenario-grid"
+                         class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+                         hx-get="/api/scenarios?filter=my"
+                         hx-trigger="load"
+                         hx-swap="innerHTML">
 
-                    <div class="col-span-full py-12 flex flex-col items-center justify-center text-gray-500 animate-pulse">
-                        <i data-lucide="loader-2" class="w-8 h-8 mb-4 animate-spin"></i>
-                        <p>Loading your archives...</p>
+                        <div class="col-span-full py-12 flex flex-col items-center justify-center text-gray-500 animate-pulse">
+                            <i data-lucide="loader-2" class="w-8 h-8 mb-4 animate-spin"></i>
+                            <p>Loading your archives...</p>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
     </div>
 
     <div id="login-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-[100]">
