@@ -1114,6 +1114,11 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     all_scenes = {s['scene_id']: s for s in scenario['scenes']}
     all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
 
+    # WorldState 인스턴스 가져오기
+    world_state = WorldState()
+    if 'world_state' in state and state['world_state']:
+        world_state.from_dict(state['world_state'])
+
     # [추가] current_scene_id가 'prologue'이거나 존재하지 않는 경우 폴백 처리
     if curr_id == 'prologue' or curr_id not in all_scenes:
         logger.warning(f"⚠️ Scene not found or is prologue: {curr_id}")
@@ -1130,6 +1135,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
         logger.info(f"🔧 [SCENE FALLBACK] {curr_id} -> {start_scene_id}")
         state['current_scene_id'] = start_scene_id
+        world_state.location = start_scene_id
         curr_id = start_scene_id
 
         # [추가] 폴백 후 다시 all_scenes에서 확인
@@ -1174,8 +1180,11 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         start_scene_id = scenario.get('start_scene_id')
         if start_scene_id and start_scene_id in all_scenes:
             state['current_scene_id'] = start_scene_id
+            world_state.location = start_scene_id
         elif scenario.get('scenes'):
-            state['current_scene_id'] = scenario['scenes'][0].get('scene_id', 'Scene-1')
+            fallback_scene_id = scenario['scenes'][0].get('scene_id', 'Scene-1')
+            state['current_scene_id'] = fallback_scene_id
+            world_state.location = fallback_scene_id
         return
 
     scene_title = curr_scene.get('title', 'Untitled')
