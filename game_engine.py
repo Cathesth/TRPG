@@ -724,6 +724,20 @@ def npc_node(state: PlayerState):
         state['npc_output'] = ""
         return state
 
+    # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
+    if 'stuck_count' not in state:
+        state['stuck_count'] = 0
+        logger.info(f"🔧 [STUCK_COUNT] Initialized to 0 in npc_node")
+
+    # [추가] 장면 전환 실패 (씬 유지) 시 stuck_count 증가
+    curr_scene_id = state.get('current_scene_id', '')
+    prev_scene_id = state.get('previous_scene_id', '')
+
+    if state.get('last_user_input', '').strip():
+        old_stuck_count = state.get('stuck_count', 0)
+        state['stuck_count'] = old_stuck_count + 1
+        logger.info(f"🔄 [STUCK] Player stuck in scene '{curr_scene_id}' | Intent: chat | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+
     scenario_id = state['scenario_id']
     curr_id = state['current_scene_id']
     all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}

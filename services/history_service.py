@@ -108,7 +108,7 @@ class HistoryService:
                 snapshot_data=copy.deepcopy(snapshot_data),
                 sequence=new_sequence,
                 is_current=True,
-                created_at=datetime.utcnow()
+                created_at=datetime.now()
             )
             db.add(new_entry)
 
