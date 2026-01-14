@@ -1132,6 +1132,21 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         state['current_scene_id'] = start_scene_id
         curr_id = start_scene_id
 
+        # [추가] 폴백 후 다시 all_scenes에서 확인
+        if curr_id not in all_scenes:
+            logger.error(f"❌ [CRITICAL] Even after fallback, scene not found: {curr_id}")
+            # 재시도 로직
+            if retry_count < max_retries:
+                yield f"__RETRY_SIGNAL__"
+                return
+            fallback_msg = get_narrative_fallback_message(scenario)
+            yield f"""
+            <div class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4 my-2">
+                <div class="text-yellow-400 serif-font">{fallback_msg}</div>
+            </div>
+            """
+            return
+
     if curr_id in all_endings:
         ending = all_endings[curr_id]
         yield f"""
