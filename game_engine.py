@@ -597,6 +597,15 @@ def rule_node(state: PlayerState):
         scenario = get_scenario_by_id(scenario_id)
         world_state.initialize_from_scenario(scenario)
 
+    # ✅ [작업 1] 턴 카운트 증가 로직을 함수 시작 부분으로 이동
+    # 게임 시작이 아닐 때만 턴 증가 (Game Started는 Turn 1을 가져감)
+    is_game_start = state.get('is_game_start', False)
+    if not is_game_start:
+        world_state.increment_turn()
+        logger.info(f"⏱️ [TURN] Turn count increased to {world_state.turn_count} at rule_node start")
+    else:
+        logger.info(f"⏱️ [TURN] Game start - turn count not increased (current: {world_state.turn_count})")
+
     # ✅ 작업 2: stuck_count 초기화 (state에 없으면 0으로 설정)
     if 'stuck_count' not in state:
         state['stuck_count'] = 0
@@ -752,7 +761,16 @@ def npc_node(state: PlayerState):
     if 'world_state' in state and state['world_state']:
         world_state.from_dict(state['world_state'])
 
-    # [추가] 장면 전환 실패 (씨 유지) 시 stuck_count 증가
+    # ✅ [작업 1] 턴 카운트 증가 로직을 함수 시작 부분으로 이동
+    # 게임 시작이 아닐 때만 턴 증가 (Game Started는 Turn 1을 가져감)
+    is_game_start = state.get('is_game_start', False)
+    if not is_game_start:
+        world_state.increment_turn()
+        logger.info(f"⏱️ [TURN] Turn count increased to {world_state.turn_count} at npc_node start")
+    else:
+        logger.info(f"⏱️ [TURN] Game start - turn count not increased (current: {world_state.turn_count})")
+
+    # [추가] 장면 전환 실패 (씬 유지) 시 stuck_count 증가
     curr_scene_id = state.get('current_scene_id', '')
     prev_scene_id = state.get('previous_scene_id', '')
     user_input = state.get('last_user_input', '').strip()
@@ -1097,7 +1115,7 @@ def check_npc_appearance(state: PlayerState) -> str:
 def narrator_node(state: PlayerState):
     """
     내레이션 노드 - 모든 액션의 마지막에 실행됨
-    턴 증가 로직을 여기서 처리 (게임 시작이 아닐 때만)
+    ✅ [작업 1] 턴 증가 로직 제거 - rule_node와 npc_node에서 이미 처리됨
     """
     # WorldState 인스턴스 가져오기 및 복원
     scenario_id = state.get('scenario_id')
@@ -1111,13 +1129,8 @@ def narrator_node(state: PlayerState):
         scenario = get_scenario_by_id(scenario_id)
         world_state.initialize_from_scenario(scenario)
 
-    # 턴 증가 (게임 시작이 아닐 때만)
-    is_game_start = state.get('is_game_start', False)
-    if not is_game_start:
-        world_state.increment_turn()
-        logger.info(f"⏱️ [TURN] Turn count increased to {world_state.turn_count}")
-    else:
-        logger.info(f"⏱️ [TURN] Game start - turn count not increased (current: {world_state.turn_count})")
+    # ✅ [작업 1] 턴 증가 로직 제거됨 - rule_node와 npc_node에서 각 함수 시작 시 처리
+    # 더 이상 여기서 턴을 증가시키지 않음
 
     # WorldState 스냅샷 저장
     state['world_state'] = world_state.to_dict()
@@ -1534,27 +1547,3 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             </div>
             """
 
-def create_game_graph():
-    # ... (기존 코드 동일) ...
-    workflow = StateGraph(PlayerState)
-    workflow.add_node("intent_parser", intent_parser_node)
-    workflow.add_node("rule_engine", rule_node)
-    workflow.add_node("npc_actor", npc_node)
-    workflow.add_node("narrator", narrator_node)
-
-    workflow.set_entry_point("intent_parser")
-
-    def route_action(state):
-        intent = state.get('parsed_intent')
-        if intent == 'transition' or intent == 'ending':
-            return "rule_engine"
-        else:
-            return "npc_actor"
-
-    workflow.add_conditional_edges("intent_parser", route_action,
-                                   {"rule_engine": "rule_engine", "npc_actor": "npc_actor"})
-    workflow.add_edge("rule_engine", "narrator")
-    workflow.add_edge("npc_actor", "narrator")
-    workflow.add_edge("narrator", END)
-
-    return workflow.compile()
