@@ -19,6 +19,9 @@
                 }
             }
         }
+
+        // [추가] 세션 ID 전역 변수
+        let currentSessionId = null;
     </script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -101,6 +104,9 @@
                 }
             }
         }
+
+        // [추가] 세션 ID 전역 변수
+        let currentSessionId = null;
     </script>
 </head>
 <body class="bg-dark-900 text-gray-200 h-screen flex overflow-hidden">
@@ -720,22 +726,30 @@
         scrollToBottom();
 
         try {
-            const formData = new FormData();
-            formData.append('action', actionText);
+            // [수정] FormData 대신 JSON 방식으로 전송
+            const requestBody = {
+                action: actionText
+            };
 
             // 선택한 모델 추가
             if (providerSelect && modelVersionSelect) {
-                formData.append('model', modelVersionSelect.value);
-                formData.append('provider', providerSelect.value);
+                requestBody.model = modelVersionSelect.value;
+                requestBody.provider = providerSelect.value;
             }
 
-            // [수정] 세션 ID 전송 (있으면)
+            // [수정] 세션 ID 포함 (있으면)
             if (currentSessionId) {
-                formData.append('session_id', currentSessionId);
+                requestBody.session_id = currentSessionId;
                 console.log('📤 Sending session_id:', currentSessionId);
             }
 
-            const response = await fetch('/game/act_stream', { method: 'POST', body: formData });
+            const response = await fetch('/game/act_stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
 
             // [수정] 서버 에러(500, 400 등) 먼저 체크 - response.body 읽기 전에!
             if (!response.ok) {
