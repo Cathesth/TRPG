@@ -597,16 +597,92 @@ def rule_node(state: PlayerState):
         scenario = get_scenario_by_id(scenario_id)
         world_state.initialize_from_scenario(scenario)
 
-    # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
+    # ✅ [작업 1] 턴 카운트 증가 로직을 함수 시작 부분으로 이동
+    # 게임 시작이 아닐 때만 턴 증가 (Game Started는 Turn 1을 가져감)
+    is_game_start = state.get('is_game_start', False)
+    if not is_game_start:
+        world_state.increment_turn()
+        logger.info(f"⏱️ [TURN] Turn count increased to {world_state.turn_count} at rule_node start")
+    else:
+        logger.info(f"⏱️ [TURN] Game start - turn count not increased (current: {world_state.turn_count})")
+
+    # ✅ 작업 2: stuck_count 초기화 (state에 없으면 0으로 설정)
     if 'stuck_count' not in state:
         state['stuck_count'] = 0
         logger.info(f"🔧 [STUCK_COUNT] Initialized to 0")
 
     # 🔴 장면 전환 시도 전 현재 씬을 정확히 캡처 (world_state.location 우선)
     scene_before_transition = world_state.location or state.get('current_scene_id', '')
+    user_action = state.get('last_user_input', '').strip()
     logger.info(f"🎬 [APPLY_EFFECTS] Scene before transition: {scene_before_transition}, Intent: {state['parsed_intent']}, Transition index: {idx}")
 
-    if state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
+    # ✅ 작업 2: investigate 의도 처리 - Scene Rule에서 스탯 변동 패싱 및 적용
+    if state['parsed_intent'] == 'investigate':
+        logger.info(f"🔍 [INVESTIGATE] Processing scene rule for investigation action")
+
+        # 현재 장면의 rule 필드 가져오기
+        scene_rule = curr_scene.get('rule', '') if curr_scene else ''
+
+        if scene_rule:
+            # 정규표현식으로 스탯 변동 패턴 추출: "Sanity -5", "HP +10", "Radiation +5" 등
+            # 패턴: (스탯명) (부호)(숫자)
+            stat_pattern = re.compile(r'(Sanity|HP|Gold|Radiation|sanity|hp|gold|radiation)\s*([+-]\d+)', re.IGNORECASE)
+            matches = stat_pattern.findall(scene_rule)
+
+            if matches:
+                effects = []
+                for stat_name, value_str in matches:
+                    stat_name_lower = stat_name.lower()
+                    value = int(value_str)  # +5 또는 -5 형태를 정수로 변환
+
+                    effects.append({
+                        "target": stat_name_lower,
+                        "operation": "add",
+                        "value": value
+                    })
+
+                    logger.info(f"📋 [RULE PARSED] {stat_name}: {value_str}")
+
+                # WorldState에 효과 적용
+                if effects:
+                    world_state.update_state(effects)
+
+                    # player_vars에도 동기화
+                    for eff in effects:
+                        key = eff["target"]
+                        val = eff["value"]
+
+                        current_val = state['player_vars'].get(key, 0)
+                        if not isinstance(current_val, (int, float)):
+                            current_val = 0
+
+                        new_val = current_val + val
+                        state['player_vars'][key] = new_val
+
+                        # 시스템 메시지에 추가
+                        if val > 0:
+                            sys_msg.append(f"{key.upper()} +{val}")
+                        else:
+                            sys_msg.append(f"{key.upper()} {val}")
+
+                    # 서사 이벤트 기록
+                    stat_changes = ", ".join([f"{e['target']} {e['value']:+d}" for e in effects])
+                    world_state.add_narrative_event(
+                        f"조사 과정에서 상태 변화 발생: {stat_changes}"
+                    )
+                    logger.info(f"✅ [INVESTIGATE] Applied {len(effects)} stat changes from scene rule")
+            else:
+                logger.info(f"📋 [RULE PARSED] No stat changes found in scene rule")
+        else:
+            logger.info(f"📋 [RULE] No rule field found in current scene")
+
+        # investigate는 장면 전환이 없으므로 stuck_count 증가
+        if user_action:
+            old_stuck_count = state.get('stuck_count', 0)
+            state['stuck_count'] = old_stuck_count + 1
+            logger.info(f"🔄 [INVESTIGATE] stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+
+    elif state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
         trans = transitions[idx]
         effects = trans.get('effects', [])
         next_id = trans.get('target_scene_id')
@@ -681,12 +757,12 @@ def rule_node(state: PlayerState):
             state['current_scene_id'] = next_id
             world_state.location = next_id
 
-            # ✅ 장면 전환 성공 시 서사 이벤트 기록 (이동 이유 포함)
+            # ✅ 작업 3: 장면 전환 성공 시 서사 이벤트 기록 (이동 이유 포함)
             world_state.add_narrative_event(
                 f"유저가 '{trigger_used}'을(를) 통해 [{from_scene}]에서 [{next_id}]로 이동함"
             )
 
-            # [추가] 장면 전환 성공 시 stuck_count 초기화
+            # ✅ 작업 2: 장면 전환 성공 시 stuck_count 초기화
             old_stuck_count = state.get('stuck_count', 0)
             state['stuck_count'] = 0
             logger.info(f"✅ [MOVE SUCCESS] {from_scene} -> {next_id} | stuck_count: {old_stuck_count} -> 0")
@@ -694,12 +770,23 @@ def rule_node(state: PlayerState):
             # target_scene_id가 없는 경우 (비정상)
             state['stuck_count'] = state.get('stuck_count', 0) + 1
             logger.warning(f"⚠️ [TRANSITION FAILED] No target_scene_id | stuck_count: {state['stuck_count']}")
+
+            # ✅ 작업 3: 장면 전환 실패 시 서사 기록
+            if user_action:
+                world_state.add_narrative_event(
+                    f"유저가 '{user_action[:30]}...'을(를) 시도했으나 아무 일도 일어나지 않음"
+                )
     else:
-        # [수정] 장면 전환 실패 (씬 유지) 시 stuck_count 증가
-        if state.get('last_user_input', '').strip():
+        # ✅ 작업 3: 장면 전환 실패 (씬 유지) 시 stuck_count 증가 및 서사 기록
+        if user_action:
             old_stuck_count = state.get('stuck_count', 0)
             state['stuck_count'] = old_stuck_count + 1
             logger.info(f"🔄 [STUCK] Player stuck in scene '{scene_before_transition}' | Intent: {state['parsed_intent']} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+
+            # 서사 이벤트 기록
+            world_state.add_narrative_event(
+                f"유저가 '{user_action[:30]}...'을(를) 시도했으나 장면 전환 없이 현재 위치에 머뭄"
+            )
         else:
             logger.debug(f"⏸️ [NO INPUT] No user input, stuck_count unchanged: {state.get('stuck_count', 0)}")
 
@@ -720,17 +807,18 @@ def rule_node(state: PlayerState):
 
     state['system_message'] = " | ".join(sys_msg)
 
-    # WorldState 스냅샷 저장
+    # ✅ [작업 2] 백엔드 위치 데이터 강제 동기화 - DB 저장 전 최신 위치를 world_state.location에 덮어씌움
+    world_state.location = state.get("current_scene_id", world_state.location)
+
+    # ✅ WorldState 스냅샷 저장 (위치 동기화 후 저장)
     state['world_state'] = world_state.to_dict()
+    logger.info(f"🔄 [SYNC] Location synchronized: world_state.location = {world_state.location}, state['current_scene_id'] = {state.get('current_scene_id')}")
 
     return state
 
 
 def npc_node(state: PlayerState):
     """NPC 대화 (이동 아닐 때만 발동)"""
-    if state.get('parsed_intent') != 'chat':
-        state['npc_output'] = ""
-        return state
 
     # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
     if 'stuck_count' not in state:
@@ -743,21 +831,51 @@ def npc_node(state: PlayerState):
     if 'world_state' in state and state['world_state']:
         world_state.from_dict(state['world_state'])
 
+    # ✅ [작업 1] 턴 카운트 증가 로직을 함수 시작 부분으로 이동
+    # 게임 시작이 아닐 때만 턴 증가 (Game Started는 Turn 1을 가져감)
+    is_game_start = state.get('is_game_start', False)
+    if not is_game_start:
+        world_state.increment_turn()
+        logger.info(f"⏱️ [TURN] Turn count increased to {world_state.turn_count} at npc_node start")
+    else:
+        logger.info(f"⏱️ [TURN] Game start - turn count not increased (current: {world_state.turn_count})")
+
     # [추가] 장면 전환 실패 (씬 유지) 시 stuck_count 증가
     curr_scene_id = state.get('current_scene_id', '')
     prev_scene_id = state.get('previous_scene_id', '')
+    user_input = state.get('last_user_input', '').strip()
+    parsed_intent = state.get('parsed_intent', 'chat')
 
-    if state.get('last_user_input', '').strip():
+    # ✅ 작업 1: stuck_count 증가 로직을 조기 리턴 전에 이동
+    if user_input:
         old_stuck_count = state.get('stuck_count', 0)
         state['stuck_count'] = old_stuck_count + 1
-        logger.info(f"🔄 [STUCK] Player stuck in scene '{curr_scene_id}' | Intent: chat | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+        logger.info(f"🔄 [STUCK] Player stuck in scene '{curr_scene_id}' | Intent: {parsed_intent} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
 
+        # ✅ 작업 4: investigate 의도일 때 서사 기록
+        if parsed_intent == 'investigate':
+            world_state.add_narrative_event(
+                f"유저가 주변을 조사하며 '{user_input[:30]}...'을(를) 확인함"
+            )
+        # 다른 의도일 때도 기록 (attack, defend 등)
+        elif parsed_intent in ['attack', 'defend']:
+            world_state.add_narrative_event(
+                f"유저가 '{user_input[:30]}...'을(를) 시도함"
+            )
+
+    # ✅ 작업 2: WorldState 저장 (stuck_count는 state에, world_state는 딕셔너리로)
+    state['world_state'] = world_state.to_dict()
+
+    # ✅ 작업 1: NPC 대사 생성은 'chat' 의도일 때만 실행
+    if parsed_intent != 'chat':
+        state['npc_output'] = ""
+        return state
+
+    # 기존 NPC 대화 로직
     curr_id = state['current_scene_id']
     all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
     curr_scene = all_scenes.get(curr_id)
     npc_names = curr_scene.get('npcs', []) if curr_scene else []
-
-    user_input = state['last_user_input']
 
     # [추가] 인벤토리 검증: 아이템 사용 시도 감지
     item_keywords = ['사용', '쓴다', '쏜다', '던진다', '먹는다', '마신다', '착용', '장착', '입는다',
@@ -925,6 +1043,11 @@ NPC ({target_npc_name}): "{response}"
     # WorldState 스냅샷 저장
     state['world_state'] = world_state.to_dict()
 
+    # ✅ [작업 1] 위치 데이터 강제 동기화 - DB 저장 전 player_state와 world_state.location 일치 보장
+    world_state.location = state.get("current_scene_id", world_state.location)
+    state['world_state'] = world_state.to_dict()
+    logger.info(f"🔄 [SYNC] Location synchronized: {world_state.location}")
+
     return state
 
 
@@ -1067,7 +1190,7 @@ def check_npc_appearance(state: PlayerState) -> str:
 def narrator_node(state: PlayerState):
     """
     내레이션 노드 - 모든 액션의 마지막에 실행됨
-    턴 증가 로직을 여기서 처리 (게임 시작이 아닐 때만)
+    ✅ [작업 1] 턴 증가 로직 제거 - rule_node와 npc_node에서 이미 처리됨
     """
     # WorldState 인스턴스 가져오기 및 복원
     scenario_id = state.get('scenario_id')
@@ -1081,13 +1204,8 @@ def narrator_node(state: PlayerState):
         scenario = get_scenario_by_id(scenario_id)
         world_state.initialize_from_scenario(scenario)
 
-    # 턴 증가 (게임 시작이 아닐 때만)
-    is_game_start = state.get('is_game_start', False)
-    if not is_game_start:
-        world_state.increment_turn()
-        logger.info(f"⏱️ [TURN] Turn count increased to {world_state.turn_count}")
-    else:
-        logger.info(f"⏱️ [TURN] Game start - turn count not increased (current: {world_state.turn_count})")
+    # ✅ [작업 1] 턴 증가 로직 제거됨 - rule_node와 npc_node에서 각 함수 시작 시 처리
+    # 더 이상 여기서 턴을 증가시키지 않음
 
     # WorldState 스냅샷 저장
     state['world_state'] = world_state.to_dict()
@@ -1504,25 +1622,44 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             </div>
             """
 
+
+# --- Graph Construction ---
+
 def create_game_graph():
-    # ... (기존 코드 동일) ...
+    """
+    LangGraph 워크플로우 생성
+    intent_parser -> (rule_engine | npc_actor) -> narrator -> END
+    """
     workflow = StateGraph(PlayerState)
+
+    # 노드 추가
     workflow.add_node("intent_parser", intent_parser_node)
     workflow.add_node("rule_engine", rule_node)
     workflow.add_node("npc_actor", npc_node)
     workflow.add_node("narrator", narrator_node)
 
+    # 시작점 설정
     workflow.set_entry_point("intent_parser")
 
+    # 라우팅 함수: 의도에 따라 rule_engine 또는 npc_actor로 분기
     def route_action(state):
         intent = state.get('parsed_intent')
-        if intent == 'transition' or intent == 'ending':
+        if intent in ['transition', 'ending', 'investigate']:
             return "rule_engine"
         else:
             return "npc_actor"
 
-    workflow.add_conditional_edges("intent_parser", route_action,
-                                   {"rule_engine": "rule_engine", "npc_actor": "npc_actor"})
+    # 조건부 엣지 추가
+    workflow.add_conditional_edges(
+        "intent_parser",
+        route_action,
+        {
+            "rule_engine": "rule_engine",
+            "npc_actor": "npc_actor"
+        }
+    )
+
+    # 순차 엣지 추가
     workflow.add_edge("rule_engine", "narrator")
     workflow.add_edge("npc_actor", "narrator")
     workflow.add_edge("narrator", END)

@@ -140,13 +140,20 @@ class WorldState:
 
         text = text.strip()
 
+        # 🔴 Turn 번호가 이미 포함된 경우 제거 (중복 방지)
+        if text.startswith("[Turn "):
+            # 이미 턴 번호가 있으면 제거
+            import re
+            text = re.sub(r'^\[Turn \d+\]\s*', '', text)
+
         # 🔴 중복 방지: 직전 기록과 동일하면 무시
-        if self.narrative_history and self.narrative_history[-1] == text:
-            logger.debug(f"[NARRATIVE] Duplicate event ignored: {text}")
+        prefixed_text = f"[Turn {self.turn_count}] {text}"
+
+        if self.narrative_history and self.narrative_history[-1] == prefixed_text:
+            logger.debug(f"[NARRATIVE] Duplicate event ignored: {prefixed_text}")
             return
 
         # ✅ 작업 4: 턴 번호 접두사 추가 (시간 순서 명확화)
-        prefixed_text = f"[Turn {self.turn_count}] {text}"
         self.narrative_history.append(prefixed_text)
 
         # 슬라이딩 윈도우: 10개를 넘으면 가장 오래된 것부터 제거
@@ -738,7 +745,14 @@ class WorldState:
             lines.append("\n[NPC/적 상태]")
             for npc_name, npc_data in self.npcs.items():
                 status = npc_data.get("status", "alive")
-                hp = npc_data.get("hp", 100)
+                hp_raw = npc_data.get("hp", 100)
+
+                # ✅ 작업 3: HP 값을 정수로 강제 변환 (타입 에러 방지)
+                try:
+                    hp = int(float(hp_raw))
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid HP value for NPC '{npc_name}': {hp_raw}, using default 100")
+                    hp = 100
 
                 if status == "dead":
                     lines.append(f"- {npc_name}: 전투 사망 (HP: 0) - 더이상 무력/불가능")
