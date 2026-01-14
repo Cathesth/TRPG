@@ -358,7 +358,7 @@
     let responseTimerInterval = null;  // 응답 시간 타이머
     let responseStartTime = null;  // 응답 시작 시간
     let currentSessionKey = '';  // 현재 세션 키 저장
-    let currentSessionId = null;  // [추가] 세션 ID 유지
+    let currentSessionId = null;  // [수정] 세션 ID 유지 - null로 초기화
 
     // 상수 정의
     const CHAT_LOG_KEY = 'trpg_chat_log';
@@ -861,9 +861,9 @@
                                     console.log('🔑 Session key saved:', data.content);
                                     break;
                                 case 'session_id':
-                                    // [수정] 세션 ID 저장 - 다음 요청 시 사용
+                                    // [수정] 세션 ID 업데이트 - 서버에서 받으면 즉시 저장
                                     currentSessionId = data.content;
-                                    console.log('🆔 Session ID received and saved:', data.content);
+                                    console.log('🆔 Session ID received and updated:', data.content);
                                     break;
                                 case 'done':
                                     contentDiv.innerHTML = contentDiv.innerHTML.replace('<span class="streaming-cursor">▌</span>', '');

@@ -144,6 +144,16 @@ async def game_act_stream(
 ):
     """스트리밍 방식 - SSE (LangGraph 기반) + WorldState DB 영속성"""
 
+    # [수정] request.get_json()으로 session_id 읽기 (JSON 요청 지원)
+    try:
+        json_body = await request.json()
+        if not session_id and 'session_id' in json_body:
+            session_id = json_body.get('session_id')
+        if not action and 'action' in json_body:
+            action = json_body.get('action')
+    except:
+        pass  # Form 데이터인 경우 무시
+
     # [수정] 세션 ID 복구 로직 - session_id가 있을 때만 복구 시도
     if session_id:
         from services.history_service import HistoryService
@@ -152,12 +162,31 @@ async def game_act_stream(
             # 기존 세션 데이터를 game_state에 복원
             game_state.state = existing_session
 
-            # WorldState 인스턴스를 복원된 데이터로 업데이트 (변수명 wsm 사용)
+            # [수정] WorldState 인스턴스를 복원된 데이터로 업데이트 (변수명 wsm 사용)
             wsm = WorldStateManager()
             if 'world_state' in existing_session:
                 wsm.from_dict(existing_session['world_state'])
 
-            logger.info(f"🔄 [SESSION RESTORE] Session ID: {session_id}, Scene: {existing_session.get('current_scene_id')}, Stuck: {existing_session.get('stuck_count', 0)}")
+            # [추가] current_scene_id가 'prologue'인 경우 실제 시작 씬으로 보정
+            current_scene_id = existing_session.get('current_scene_id', '')
+            scenario_id = existing_session.get('scenario_id')
+
+            if current_scene_id == 'prologue' and scenario_id:
+                scenario = get_scenario_by_id(scenario_id)
+                # start_scene_id 또는 첫 번째 씬으로 보정
+                start_scene_id = scenario.get('start_scene_id')
+                if not start_scene_id:
+                    scenes = scenario.get('scenes', [])
+                    if scenes:
+                        start_scene_id = scenes[0].get('scene_id', 'Scene-1')
+                    else:
+                        start_scene_id = 'Scene-1'
+
+                game_state.state['current_scene_id'] = start_scene_id
+                wsm.location = start_scene_id
+                logger.info(f"🔧 [SESSION RESTORE] Corrected prologue -> {start_scene_id}")
+
+            logger.info(f"🔄 [SESSION RESTORE] Session ID: {session_id}, Scene: {game_state.state.get('current_scene_id')}, Stuck: {game_state.state.get('stuck_count', 0)}")
         else:
             logger.warning(f"⚠️ [SESSION] Session ID {session_id} not found, starting fresh")
 
@@ -209,7 +238,7 @@ async def game_act_stream(
                 yield f"data: {json.dumps({'type': 'error', 'content': '시나리오를 찾을 수 없습니다.'})}\n\n"
                 return
 
-            # [FIX] WorldState 싱글톤 인스턴스 사용 - 변수명을 wsm으로 변경
+            # [FIX] WorldState 싱글톤 인스턴스 사용 - 변수명을 wsm으로 통일
             wsm = WorldStateManager()
 
             if is_game_start:
@@ -222,10 +251,23 @@ async def game_act_stream(
                     logger.info(f"🎮 [GAME START] Resuming existing session: {session_id}")
 
                 start_scene_id = current_state.get('start_scene_id') or current_state.get('current_scene_id')
+
+                # [추가] start_scene_id가 prologue인 경우 보정
+                if start_scene_id == 'prologue':
+                    actual_start_scene_id = scenario.get('start_scene_id')
+                    if not actual_start_scene_id:
+                        scenes = scenario.get('scenes', [])
+                        if scenes:
+                            actual_start_scene_id = scenes[0].get('scene_id', 'Scene-1')
+                        else:
+                            actual_start_scene_id = 'Scene-1'
+                    start_scene_id = actual_start_scene_id
+                    logger.info(f"🔧 [GAME START] Corrected prologue -> {start_scene_id}")
+
                 logger.info(f"🎮 [GAME START] Start Scene: {start_scene_id}")
                 current_state['current_scene_id'] = start_scene_id
                 current_state['system_message'] = 'Game Started'
-                current_state['is_game_start'] = True  # 게임 시작 플래그 추가
+                current_state['is_game_start'] = True
 
                 # [FIX] 게임 시작 시에도 location을 start_scene_id로 설정
                 wsm.location = start_scene_id

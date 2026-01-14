@@ -1114,6 +1114,24 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     all_scenes = {s['scene_id']: s for s in scenario['scenes']}
     all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
 
+    # [추가] current_scene_id가 'prologue'이거나 존재하지 않는 경우 폴백 처리
+    if curr_id == 'prologue' or curr_id not in all_scenes:
+        logger.warning(f"⚠️ Scene not found or is prologue: {curr_id}")
+
+        # start_scene_id로 폴백
+        start_scene_id = scenario.get('start_scene_id')
+        if not start_scene_id or start_scene_id not in all_scenes:
+            # start_scene_id도 없으면 첫 번째 씬 사용
+            scenes_list = scenario.get('scenes', [])
+            if scenes_list:
+                start_scene_id = scenes_list[0].get('scene_id', 'Scene-1')
+            else:
+                start_scene_id = 'Scene-1'
+
+        logger.info(f"🔧 [SCENE FALLBACK] {curr_id} -> {start_scene_id}")
+        state['current_scene_id'] = start_scene_id
+        curr_id = start_scene_id
+
     if curr_id in all_endings:
         ending = all_endings[curr_id]
         yield f"""
@@ -1127,7 +1145,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     curr_scene = all_scenes.get(curr_id)
 
     if not curr_scene:
-        logger.warning(f"Scene not found: {curr_id}")
+        logger.warning(f"❌ Scene not found after fallback: {curr_id}")
         if retry_count < max_retries:
             yield f"__RETRY_SIGNAL__"
             return
@@ -1137,9 +1155,12 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             <div class="text-yellow-400 serif-font">{fallback_msg}</div>
         </div>
         """
+        # 최후의 수단: start_scene_id로 강제 이동
         start_scene_id = scenario.get('start_scene_id')
         if start_scene_id and start_scene_id in all_scenes:
             state['current_scene_id'] = start_scene_id
+        elif scenario.get('scenes'):
+            state['current_scene_id'] = scenario['scenes'][0].get('scene_id', 'Scene-1')
         return
 
     scene_title = curr_scene.get('title', 'Untitled')
