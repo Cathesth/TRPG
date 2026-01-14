@@ -75,19 +75,6 @@
             font-family: 'Courier New', monospace; z-index: 1000; pointer-events: none; user-select: none;
         }
     </style>
-
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        dark: { 900: '#111111', 800: '#1c1c1c', 700: '#2c2c2c', 600: '#3f3f46' },
-                        brand: { purple: '#6E47E6', light: '#9F7AEA' }
-                    }
-                }
-            }
-        }
-    </script>
 </head>
 <body class="bg-dark-900 text-gray-200 h-screen flex overflow-hidden">
 
@@ -344,6 +331,7 @@
     let responseTimerInterval = null;  // 응답 시간 타이머
     let responseStartTime = null;  // 응답 시작 시간
     let currentSessionKey = '';  // 현재 세션 키 저장
+    let currentSessionId = null;  // [수정] 세션 ID 유지 - null로 초기화
 
     // 상수 정의
     const CHAT_LOG_KEY = 'trpg_chat_log';
@@ -705,30 +693,60 @@
         scrollToBottom();
 
         try {
-            const formData = new FormData();
-            formData.append('action', actionText);
+            // [수정] FormData 대신 JSON 방식으로 전송
+            const requestBody = {
+                action: actionText
+            };
+
             // 선택한 모델 추가
             if (providerSelect && modelVersionSelect) {
-                formData.append('model', modelVersionSelect.value);
-                formData.append('provider', providerSelect.value);
+                requestBody.model = modelVersionSelect.value;
+                requestBody.provider = providerSelect.value;
             }
 
-            const response = await fetch('/game/act_stream', { method: 'POST', body: formData });
+            // [수정] 세션 ID 포함 (있으면)
+            if (currentSessionId) {
+                requestBody.session_id = currentSessionId;
+                console.log('📤 Sending session_id:', currentSessionId);
+            }
 
-            // [추가] 서버 에러(500, 400 등) 먼저 체크
+            const response = await fetch('/game/act_stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            // [수정] 서버 에러(500, 400 등) 먼저 체크 - response.body 읽기 전에!
             if (!response.ok) {
                 let errorMsg = '서버 오류';
                 try {
-                    // JSON 에러 메시지 시도
-                    const errData = await response.json();
-                    errorMsg = errData.error || errData.detail || '알 수 없는 오류';
+                    // 에러 응답은 body를 한 번만 읽어야 함
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let errorText = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        errorText += decoder.decode(value, { stream: true });
+                    }
+
+                    // JSON 파싱 시도
+                    try {
+                        const errData = JSON.parse(errorText);
+                        errorMsg = errData.error || errData.detail || errorText;
+                    } catch {
+                        errorMsg = errorText || `HTTP ${response.status}`;
+                    }
                 } catch (e) {
-                    // 텍스트 에러 메시지 시도
-                    errorMsg = await response.text();
+                    errorMsg = `HTTP ${response.status}: ${e.message}`;
                 }
                 throw new Error(errorMsg);
             }
 
+            // [수정] 오직 response.body.getReader()만 사용
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let narratorText = '';
@@ -778,7 +796,6 @@
                                     narratorText = '';
                                     contentDiv.innerHTML = currentContent + '<span id="narrator-stream"></span><span class="streaming-cursor">▌</span>';
                                     break;
-
                                 case 'ending_start':
                                     currentContent = data.content;
                                     contentDiv.innerHTML = currentContent + '<span class="streaming-cursor">▌</span>';
@@ -824,6 +841,11 @@
                                     localStorage.setItem(SESSION_KEY_STORAGE, data.content);
                                     console.log('🔑 Session key saved:', data.content);
                                     break;
+                                case 'session_id':
+                                    // [수정] 세션 ID 업데이트 - 서버에서 받으면 즉시 저장
+                                    currentSessionId = data.content;
+                                    console.log('🆔 Session ID received and updated:', data.content);
+                                    break;
                                 case 'done':
                                     contentDiv.innerHTML = contentDiv.innerHTML.replace('<span class="streaming-cursor">▌</span>', '');
 
@@ -850,6 +872,7 @@
             }
         } catch (error) {
             contentDiv.innerHTML = `<div class="text-red-500">통신 오류: ${error.message}</div>`;
+            console.error('Streaming error:', error);
         } finally {
             // 스트리밍 종료
             isStreaming = false;
@@ -1203,6 +1226,7 @@
         const day = time.day || 1;
         const phase = time.phase || 'morning';
         const turnCount = worldState.turn_count || 0;
+        const stuckCount = worldState.stuck_count || 0;
         const globalFlags = worldState.global_flags || {};
 
         // 위치 정보 처리: Scene ID와 제목을 함께 표시
@@ -1229,6 +1253,26 @@
         const phaseText = phase === 'morning' ? '아침' :
                          phase === 'afternoon' ? '오후' : '밤';
 
+        // stuck_count에 따른 레벨 텍스트 및 색상
+        let stuckLevelText = '초기 시도';
+        let stuckBarColor = 'bg-green-500';
+        let stuckTextColor = 'text-green-400';
+        let stuckBarWidth = Math.min((stuckCount / 6) * 100, 100); // 최대 6단계로 가정
+
+        if (stuckCount >= 4) {
+            stuckLevelText = '장기 정체 (강한 힌트)';
+            stuckBarColor = 'bg-red-500';
+            stuckTextColor = 'text-red-400';
+        } else if (stuckCount >= 2) {
+            stuckLevelText = '반복 실패 (중간 힌트)';
+            stuckBarColor = 'bg-yellow-500';
+            stuckTextColor = 'text-yellow-400';
+        } else if (stuckCount >= 1) {
+            stuckLevelText = '초기 시도 (약한 힌트)';
+            stuckBarColor = 'bg-green-500';
+            stuckTextColor = 'text-green-400';
+        }
+
         let html = `
             <div class="bg-gray-800/50 rounded p-2 border border-gray-700 space-y-1.5">
                 <div class="flex justify-between items-center">
@@ -1245,6 +1289,18 @@
                 <div class="flex justify-between items-center">
                     <span class="text-gray-400">턴 수:</span>
                     <span class="text-white">${turnCount}</span>
+                </div>
+                <div class="border-t border-gray-700 pt-1.5 mt-1.5">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-gray-400 text-xs">정체 카운트:</span>
+                        <span class="${stuckTextColor} font-bold">${stuckCount}</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden mb-1">
+                        <div class="${stuckBarColor} h-full transition-all duration-300" style="width: ${stuckBarWidth}%"></div>
+                    </div>
+                    <div class="text-[10px] text-gray-500">
+                        힌트 강도: <span class="${stuckTextColor}">${stuckLevelText}</span>
+                    </div>
                 </div>
         `;
 

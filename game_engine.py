@@ -114,6 +114,7 @@ class PlayerState(TypedDict):
     chat_log_html: str
     near_miss_trigger: str  # [필수] Near Miss 저장용
     model: str  # [추가] 사용 중인 LLM 모델
+    stuck_count: int  # [추가] 정체 상태 카운터 (장면 전환 실패 횟수)
     _internal_flags: Dict[str, Any]  # [추가] 내부 플래그 (UI에 노출 안 됨)
 
 
@@ -122,32 +123,39 @@ def normalize_text(text: str) -> str:
     return text.lower().replace(" ", "")
 
 
-def format_player_status(scenario: Dict[str, Any]) -> str:
+def format_player_status(scenario: Dict[str, Any], player_vars: Dict[str, Any] = None) -> str:
     """
-    시나리오의 variables 필드를 기반으로 플레이어 초기 상태를 포맷팅
-    variables 필드가 없으면 initial_state 참조 (하위 호환성)
+    플레이어 현재 상태를 포맷팅 (인벤토리 포함)
+    player_vars가 제공되면 실제 플레이어 상태를 사용, 없으면 초기 상태 사용
     """
-    initial_state = {}
+    if player_vars:
+        # 실제 플레이어 상태 사용
+        current_state = player_vars
+    else:
+        # 초기 상태 구성
+        initial_state = {}
 
-    # 1. variables 필드에서 초기 상태 구성
-    if 'variables' in scenario and isinstance(scenario['variables'], list):
-        for var in scenario['variables']:
-            if isinstance(var, dict) and 'name' in var and 'initial_value' in var:
-                var_name = var['name'].lower()
-                initial_state[var_name] = var['initial_value']
+        # 1. variables 필드에서 초기 상태 구성
+        if 'variables' in scenario and isinstance(scenario['variables'], list):
+            for var in scenario['variables']:
+                if isinstance(var, dict) and 'name' in var and 'initial_value' in var:
+                    var_name = var['name'].lower()
+                    initial_state[var_name] = var['initial_value']
 
-    # 2. initial_state 필드도 확인 (하위 호환성)
-    if 'initial_state' in scenario:
-        initial_state.update(scenario['initial_state'])
+        # 2. initial_state 필드도 확인 (하위 호환성)
+        if 'initial_state' in scenario:
+            initial_state.update(scenario['initial_state'])
+
+        current_state = initial_state
 
     # 상태가 비어있으면 빈 문자열 반환
-    if not initial_state:
+    if not current_state:
         return "초기 상태 없음"
 
     status_lines = []
-    inventory = initial_state.get('inventory', [])
+    inventory = current_state.get('inventory', [])
 
-    for key, value in initial_state.items():
+    for key, value in current_state.items():
         if key == 'inventory':
             continue
         if isinstance(value, (int, float)):
@@ -155,12 +163,12 @@ def format_player_status(scenario: Dict[str, Any]) -> str:
         elif isinstance(value, str):
             status_lines.append(f"- {key}: {value}")
 
-    # 인벤토리는 마지막에 추가
-    if inventory:
-        items_str = ', '.join(inventory)
-        status_lines.append(f"- 소지품: {items_str}")
+    # 인벤토리는 마지막에 추가 (강조)
+    if inventory and isinstance(inventory, list):
+        items_str = ', '.join([str(item) for item in inventory])
+        status_lines.append(f"- 🎒 소지품 (인벤토리): [{items_str}]")
     else:
-        status_lines.append(f"- 소지품: 없음")
+        status_lines.append(f"- 🎒 소지품 (인벤토리): [비어 있음]")
 
     return '\n  '.join(status_lines)
 
@@ -364,15 +372,18 @@ def intent_parser_node(state: PlayerState):
     # =============================================================================
 
     try:
-        # transitions 목록을 문자열로 포맷팅
+        # transitions 목록을 문자열로 포맷팅 - 강조된 섹션으로 변경
         transitions_list = ""
         if transitions:
+            transitions_list += "📋 **[AVAILABLE ACTIONS - 이것들이 다음 장면으로 이동 가능한 정답입니다]**\n"
+            transitions_list += "다음 키워드들 중 하나와 유사한 입력이 들어오면 transition으로 분류하세요:\n\n"
             for idx, trans in enumerate(transitions):
                 trigger = trans.get('trigger', '').strip()
                 target = trans.get('target_scene_id', '')
-                transitions_list += f"{idx}. {trigger} (→ {target})\n"
+                transitions_list += f"  {idx}. 트리거: \"{trigger}\" → {target}\n"
+            transitions_list += "\n⚠️ 유저 입력이 위 트리거와 70% 이상 의미적으로 유사하면 transition으로 분류하세요."
         else:
-            transitions_list = "없음"
+            transitions_list = "없음 (이동 불가)"
 
         # YAML에서 intent_classifier 프롬프트 로드
         prompts = load_player_prompts()
@@ -384,8 +395,8 @@ def intent_parser_node(state: PlayerState):
             return _fast_track_intent_parser(state, user_input, curr_scene, scenario, endings)
 
         # 프롬프트 생성
-        scenario = state.get('scenario', {})
-        player_status = format_player_status(scenario)
+        scenario = get_scenario_by_id(scenario_id)
+        player_status = format_player_status(scenario, state.get('player_vars', {}))
 
         intent_prompt = intent_classifier_template.format(
             player_status=player_status,
@@ -566,6 +577,7 @@ def rule_node(state: PlayerState):
     idx = state['last_user_choice_idx']
     scenario_id = state['scenario_id']
     curr_scene_id = state['current_scene_id']
+    prev_scene_id = state.get('previous_scene_id')
 
     all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
     all_endings = {e['ending_id']: e for e in get_scenario_by_id(scenario_id).get('endings', [])}
@@ -585,10 +597,21 @@ def rule_node(state: PlayerState):
         scenario = get_scenario_by_id(scenario_id)
         world_state.initialize_from_scenario(scenario)
 
+    # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
+    if 'stuck_count' not in state:
+        state['stuck_count'] = 0
+        logger.info(f"🔧 [STUCK_COUNT] Initialized to 0")
+
+    # 장면 전환 시도 전 현재 씬 기록
+    scene_before_transition = state.get('current_scene_id', '')
+    logger.info(f"🎬 [APPLY_EFFECTS] Current scene: {scene_before_transition}, Intent: {state['parsed_intent']}, Transition index: {idx}")
+
     if state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
         trans = transitions[idx]
         effects = trans.get('effects', [])
         next_id = trans.get('target_scene_id')
+
+        logger.info(f"🎯 [TRANSITION] Attempting transition to: {next_id}")
 
         # 효과 적용
         for eff in effects:
@@ -653,7 +676,24 @@ def rule_node(state: PlayerState):
         if next_id:
             state['current_scene_id'] = next_id
             world_state.location = next_id
-            logger.info(f"👣 [MOVE] {curr_scene_id} -> {next_id}")
+
+            # [추가] 장면 전환 성공 시 stuck_count 초기화
+            old_stuck_count = state.get('stuck_count', 0)
+            state['stuck_count'] = 0
+            logger.info(f"✅ [MOVE SUCCESS] {scene_before_transition} -> {next_id} | stuck_count: {old_stuck_count} -> 0")
+        else:
+            # target_scene_id가 없는 경우 (비정상)
+            state['stuck_count'] = state.get('stuck_count', 0) + 1
+            logger.warning(f"⚠️ [TRANSITION FAILED] No target_scene_id | stuck_count: {state['stuck_count']}")
+    else:
+        # [수정] 장면 전환 실패 (씨 유지) 시 stuck_count 증가
+        # 유저가 입력을 했지만 장면 전환이 일어나지 않은 모든 경우
+        if state.get('last_user_input', '').strip():
+            old_stuck_count = state.get('stuck_count', 0)
+            state['stuck_count'] = old_stuck_count + 1
+            logger.info(f"🔄 [STUCK] Player stuck in scene '{scene_before_transition}' | Intent: {state['parsed_intent']} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+        else:
+            logger.debug(f"⏸️ [NO INPUT] No user input, stuck_count unchanged: {state.get('stuck_count', 0)}")
 
     # 엔딩 체크
     if state['current_scene_id'] in all_endings:
@@ -684,12 +724,53 @@ def npc_node(state: PlayerState):
         state['npc_output'] = ""
         return state
 
+    # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
+    if 'stuck_count' not in state:
+        state['stuck_count'] = 0
+        logger.info(f"🔧 [STUCK_COUNT] Initialized to 0 in npc_node")
+
+    # [추가] 장면 전환 실패 (씬 유지) 시 stuck_count 증가
+    curr_scene_id = state.get('current_scene_id', '')
+    prev_scene_id = state.get('previous_scene_id', '')
+
+    if state.get('last_user_input', '').strip():
+        old_stuck_count = state.get('stuck_count', 0)
+        state['stuck_count'] = old_stuck_count + 1
+        logger.info(f"🔄 [STUCK] Player stuck in scene '{curr_scene_id}' | Intent: chat | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+
     scenario_id = state['scenario_id']
     curr_id = state['current_scene_id']
     all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
     curr_scene = all_scenes.get(curr_id)
     npc_names = curr_scene.get('npcs', []) if curr_scene else []
 
+    user_input = state['last_user_input']
+
+    # [추가] 인벤토리 검증: 아이템 사용 시도 감지
+    item_keywords = ['사용', '쓴다', '쏜다', '던진다', '먹는다', '마신다', '착용', '장착', '입는다',
+                     'use', 'shoot', 'throw', 'eat', 'drink', 'wear', '뿌린다', '흔든다', '꺼낸다']
+
+    if any(keyword in user_input.lower() for keyword in item_keywords):
+        player_inventory = state.get('player_vars', {}).get('inventory', [])
+        has_item = False
+
+        for item in player_inventory:
+            if item.lower() in user_input.lower():
+                has_item = True
+                break
+
+        if not has_item:
+            rejection_messages = [
+                "주머니를 더듬어 보았지만 찾을 수 없습니다.",
+                "소지품을 확인해보니 그것은 가지고 있지 않습니다.",
+                "당신은 그 물건을 가지고 있지 않습니다.",
+                "손을 뻗었지만 허공만 움켜쥐게 됩니다. 그것은 당신에게 없는 것입니다."
+            ]
+            state['npc_output'] = random.choice(rejection_messages)
+            logger.info(f"🚫 [INVENTORY CHECK] Item not found in inventory. User input: {user_input}")
+            return state
+
+    # 기존 NPC 대화 로직
     if not npc_names:
         state['npc_output'] = ""
         return state
@@ -706,23 +787,35 @@ def npc_node(state: PlayerState):
 
     history = state.get('history', [])
     history_context = "\n".join(history[-3:]) if history else "대화 시작"
-    user_input = state['last_user_input']
+
+    # [추가] 현재 장면의 transitions_hints와 stuck_level 추출
+    transitions_list = []
+    if curr_scene:
+        for t in curr_scene.get('transitions', []):
+            trigger = t.get('trigger', '알 수 없음')
+            transitions_list.append(trigger)
+
+    transitions_hints = ", ".join(transitions_list) if transitions_list else "힌트 없음"
+    stuck_level = state.get('stuck_count', 0)
 
     # YAML에서 프롬프트 로드
     prompts = load_player_prompts()
     prompt_template = prompts.get('npc_dialogue', '')
 
     if prompt_template:
-        scenario = state.get('scenario', {})
-        player_status = format_player_status(scenario)
+        scenario = get_scenario_by_id(scenario_id)
+        player_status = format_player_status(scenario, state.get('player_vars', {}))
 
+        # [수정] transitions_hints와 stuck_level을 프롬프트에 전달
         prompt = prompt_template.format(
             player_status=player_status,
             npc_name=npc_info['name'],
             npc_role=npc_info['role'],
             npc_personality=npc_info['personality'],
             history_context=history_context,
-            user_input=user_input
+            user_input=user_input,
+            transitions_hints=transitions_hints,
+            stuck_level=stuck_level
         )
     else:
         # 폴백 프롬프트 (YAML 로드 실패 시)
@@ -1021,6 +1114,39 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     all_scenes = {s['scene_id']: s for s in scenario['scenes']}
     all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
 
+    # [추가] current_scene_id가 'prologue'이거나 존재하지 않는 경우 폴백 처리
+    if curr_id == 'prologue' or curr_id not in all_scenes:
+        logger.warning(f"⚠️ Scene not found or is prologue: {curr_id}")
+
+        # start_scene_id로 폴백
+        start_scene_id = scenario.get('start_scene_id')
+        if not start_scene_id or start_scene_id not in all_scenes:
+            # start_scene_id도 없으면 첫 번째 씬 사용
+            scenes_list = scenario.get('scenes', [])
+            if scenes_list:
+                start_scene_id = scenes_list[0].get('scene_id', 'Scene-1')
+            else:
+                start_scene_id = 'Scene-1'
+
+        logger.info(f"🔧 [SCENE FALLBACK] {curr_id} -> {start_scene_id}")
+        state['current_scene_id'] = start_scene_id
+        curr_id = start_scene_id
+
+        # [추가] 폴백 후 다시 all_scenes에서 확인
+        if curr_id not in all_scenes:
+            logger.error(f"❌ [CRITICAL] Even after fallback, scene not found: {curr_id}")
+            # 재시도 로직
+            if retry_count < max_retries:
+                yield f"__RETRY_SIGNAL__"
+                return
+            fallback_msg = get_narrative_fallback_message(scenario)
+            yield f"""
+            <div class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4 my-2">
+                <div class="text-yellow-400 serif-font">{fallback_msg}</div>
+            </div>
+            """
+            return
+
     if curr_id in all_endings:
         ending = all_endings[curr_id]
         yield f"""
@@ -1034,7 +1160,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     curr_scene = all_scenes.get(curr_id)
 
     if not curr_scene:
-        logger.warning(f"Scene not found: {curr_id}")
+        logger.warning(f"❌ Scene not found after fallback: {curr_id}")
         if retry_count < max_retries:
             yield f"__RETRY_SIGNAL__"
             return
@@ -1044,9 +1170,12 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             <div class="text-yellow-400 serif-font">{fallback_msg}</div>
         </div>
         """
+        # 최후의 수단: start_scene_id로 강제 이동
         start_scene_id = scenario.get('start_scene_id')
         if start_scene_id and start_scene_id in all_scenes:
             state['current_scene_id'] = start_scene_id
+        elif scenario.get('scenes'):
+            state['current_scene_id'] = scenario['scenes'][0].get('scene_id', 'Scene-1')
         return
 
     scene_title = curr_scene.get('title', 'Untitled')
@@ -1104,8 +1233,11 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             prompt_key = 'near_miss'
             prompt_template = prompts.get(prompt_key, '')
             if prompt_template:
+                player_status = format_player_status(scenario, state.get('player_vars', {}))
+
                 narrative_prompt = prompt_template.format(
                     user_input=user_input,
+                    player_status=player_status,
                     near_miss_trigger=near_miss
                 )
 
@@ -1178,19 +1310,25 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
                 hint_mode_template = prompts.get('hint_mode', '')
                 if hint_mode_template:
-                    scenario_data = state.get('scenario', {})
-                    player_status = format_player_status(scenario_data)
+                    player_status = format_player_status(scenario, state.get('player_vars', {}))
+
+                    # [추가] stuck_count를 stuck_level로 전달
+                    stuck_level = state.get('stuck_count', 0)
 
                     hint_prompt = hint_mode_template.format(
                         user_input=user_input,
                         player_status=player_status,
                         scene_title=scene_title,
-                        transitions_hints=transitions_hints
+                        transitions_hints=transitions_hints,
+                        stuck_level=stuck_level
                     )
                     try:
                         api_key = os.getenv("OPENROUTER_API_KEY")
                         model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
                         llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
+
+                        logger.info(f"💡 [HINT MODE] stuck_level: {stuck_level}")
+
                         for chunk in llm.stream(hint_prompt):
                             if chunk.content: yield chunk.content
                         return
@@ -1218,8 +1356,20 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     scene_prompt_template = prompts.get('scene_description', '')
 
     if scene_prompt_template:
-        scenario_data = state.get('scenario', {})
-        player_status = format_player_status(scenario_data)
+        player_status = format_player_status(scenario, state.get('player_vars', {}))
+
+        # [추가] transitions 리스트 생성 - 장면 묘사에 포함할 선택지들
+        transitions = curr_scene.get('transitions', [])
+        available_transitions = ""
+        if transitions:
+            # 부정적 엔딩으로 가는 transition 제외
+            filtered_transitions = filter_negative_transitions(transitions, scenario)
+            if filtered_transitions:
+                available_transitions = "\n".join([f"- {t.get('trigger', '')}" for t in filtered_transitions])
+            else:
+                available_transitions = "현재 특별한 선택지가 없습니다."
+        else:
+            available_transitions = "현재 특별한 선택지가 없습니다."
 
         # 씬 변경 시 유저 입력 컨텍스트 포함
         if user_input:
@@ -1230,14 +1380,16 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 player_status=player_status,
                 scene_title=scene_title,
                 scene_desc=scene_desc,
-                npc_list=npc_list
+                npc_list=npc_list,
+                available_transitions=available_transitions
             )
         else:
             prompt = scene_prompt_template.format(
                 player_status=player_status,
                 scene_title=scene_title,
                 scene_desc=scene_desc,
-                npc_list=npc_list
+                npc_list=npc_list,
+                available_transitions=available_transitions
             )
     else:
         # 폴백 프롬프트

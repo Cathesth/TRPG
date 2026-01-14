@@ -22,6 +22,40 @@ class HistoryService:
     """시나리오 변경 이력 관리 서비스"""
 
     @staticmethod
+    def get_session(session_id: str) -> Optional[Dict[str, Any]]:
+        """
+        세션 ID로 기존 게임 세션 조회
+        Returns: PlayerState 딕셔너리 또는 None
+        """
+        db = SessionLocal()
+        try:
+            from models import GameSession
+            game_session = db.query(GameSession).filter_by(session_key=session_id).first()
+
+            if not game_session:
+                logger.warning(f"⚠️ [GET_SESSION] Session not found: {session_id}")
+                return None
+
+            # WorldState 복원
+            from core.state import WorldState
+            world_state_instance = WorldState()
+            if game_session.world_state:
+                world_state_instance.from_dict(game_session.world_state)
+
+            # PlayerState 복원 (world_state 포함)
+            player_state = game_session.player_state.copy() if game_session.player_state else {}
+            player_state['world_state'] = game_session.world_state if game_session.world_state else {}
+
+            logger.info(f"✅ [GET_SESSION] Session loaded: {session_id}, Scene: {game_session.current_scene_id}")
+            return player_state
+
+        except Exception as e:
+            logger.error(f"❌ [GET_SESSION] Error: {e}", exc_info=True)
+            return None
+        finally:
+            db.close()
+
+    @staticmethod
     def initialize_history(
         scenario_id: int,
         editor_id: str,
@@ -108,7 +142,7 @@ class HistoryService:
                 snapshot_data=copy.deepcopy(snapshot_data),
                 sequence=new_sequence,
                 is_current=True,
-                created_at=datetime.utcnow()
+                created_at=datetime.now()
             )
             db.add(new_entry)
 
