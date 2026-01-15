@@ -146,7 +146,10 @@ def get_profile_view(user: CurrentUser = Depends(get_current_user), db: Session 
         return "<div>회원 정보를 찾을 수 없습니다.</div>"
 
     username = user.id
-    email = user.email or ""
+    
+    # [수정] user.email 대신 db_user.email을 사용해야 에러가 나지 않습니다.
+    email = db_user.email or ""
+
     # 프로필 사진이 없으면 기본 이니셜 표시, 있으면 이미지 표시
     avatar_html = f'<span class="text-3xl font-bold text-gray-500 group-hover:text-white transition-colors">{username[:2].upper()}</span>'
     if db_user.avatar_url:
