@@ -116,6 +116,44 @@ async def mypage_view(
 
     return templates.TemplateResponse("mypage.html", {"request": request, "user": user})
 
+
+# [추가] 메인화면 헤더 프로필 로드용 (HTMX)
+@api_router.get('/views/header-profile', response_class=HTMLResponse)
+def header_profile_view(
+        request: Request,
+        user: CurrentUser = Depends(get_current_user_optional),
+        db: Session = Depends(get_db)
+):
+    """메인 헤더 우측 상단 프로필/로그인 버튼 영역을 렌더링"""
+
+    # 1. 로그인 상태인 경우: DB에서 최신 아바타 확인 후 프로필 표시
+    if user.is_authenticated:
+        db_user = db.query(User).filter(User.id == user.id).first()
+        avatar_url = db_user.avatar_url if db_user else None
+
+        if avatar_url:
+            inner_html = f'<img src="{avatar_url}" class="w-full h-full object-cover">'
+        else:
+            inner_html = '<i data-lucide="user" class="w-6 h-6"></i>'
+
+        return f"""
+        <div class="flex items-center gap-3 cursor-pointer group" onclick="location.href='/views/mypage'" title="마이페이지">
+            <button class="text-gray-400 group-hover:text-white transition-colors p-0.5 rounded-full bg-rpg-800 border border-rpg-700 group-hover:border-rpg-accent shadow-md overflow-hidden w-10 h-10 flex items-center justify-center">
+                {inner_html}
+            </button>
+        </div>
+        <script>lucide.createIcons();</script>
+        """
+
+    # 2. 비로그인 상태인 경우: 로그인 버튼 표시
+    else:
+        return """
+        <button onclick="openModal('login-modal')" class="flex items-center gap-2 px-5 py-2.5 bg-rpg-accent hover:bg-white text-black font-bold rounded shadow-lg shadow-rpg-accent/20 transition-all">
+            <i data-lucide="log-in" class="w-4 h-4"></i> LOGIN
+        </button>
+        <script>lucide.createIcons();</script>
+        """
+
 # ==========================================
 # [추가] 마이페이지 서브 뷰 (회원정보, 결제, 시나리오 래퍼)
 # ==========================================

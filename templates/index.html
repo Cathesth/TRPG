@@ -125,6 +125,12 @@
                 <i data-lucide="heart" class="w-6 h-6 transition-transform group-hover:scale-110"></i>
             </button>
 
+            <div hx-get="/api/views/header-profile"
+                 hx-trigger="load from:body"
+                 hx-swap="innerHTML">
+                 <div class="w-10 h-10 rounded-full bg-rpg-800 animate-pulse"></div>
+            </div>
+
 
 
             {% if user and user.is_authenticated %}
