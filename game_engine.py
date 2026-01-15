@@ -329,9 +329,19 @@ def intent_parser_node(state: PlayerState):
     # 0. 상태 초기화 (중요: 이전 턴의 찌꺼기 제거)
     state['near_miss_trigger'] = None
 
-    # 턴 시작 시 위치 기록
+    # ✅ 작업 3: 턴 시작 시 위치 기록 - world_state.location을 우선 참조
+    world_state = WorldState()
+    if 'world_state' in state and state['world_state']:
+        world_state.from_dict(state['world_state'])
+
+    # previous_scene_id 할당 시 world_state.location 값이 이전 턴의 위치를 정확히 반영하도록 검수
     if 'current_scene_id' in state:
         state['previous_scene_id'] = state['current_scene_id']
+    elif world_state.location:
+        # current_scene_id가 없지만 world_state.location이 있으면 복원
+        state['previous_scene_id'] = world_state.location
+        state['current_scene_id'] = world_state.location
+        logger.info(f"🔄 [INTENT_PARSER] Restored scene from world_state.location: {world_state.location}")
 
     user_input = state.get('last_user_input', '').strip()
     logger.info(f"🟢 [USER INPUT]: {user_input}")

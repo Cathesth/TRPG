@@ -152,10 +152,14 @@ async function publishScenario(filename, btnElement) {
 
 // Railway DB에서 게임 데이터 불러오기
 async function fetchGameDataFromDB() {
-    // currentSessionId가 비어있으면 sessionStorage에서 복원
+    // ✅ 작업 3: currentSessionId가 비어있으면 sessionStorage에서 복원 (메모리 유실 대비)
     if (!currentSessionId) {
-        currentSessionId = sessionStorage.getItem("current_session_id");
-        console.log('🔄 [FETCH] Restored session ID from sessionStorage:', currentSessionId);
+        currentSessionId = sessionStorage.getItem("current_session_id") || sessionStorage.getItem("trpg_session_key");
+        if (currentSessionId) {
+            console.log('🔄 [FETCH] Restored session ID from sessionStorage:', currentSessionId);
+        } else {
+            console.warn('⚠️ [FETCH] No session ID available in memory or storage');
+        }
     }
 
     const sessionKey = currentSessionKey || localStorage.getItem(SESSION_KEY_STORAGE);

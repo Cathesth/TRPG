@@ -11,9 +11,9 @@ document.addEventListener('DOMContentLoaded', function() {
         initializeEmptyGameUI();
     }
 
-    // 세션 ID 복원 (sessionStorage에서)
+    // ✅ 작업 1: 세션 ID 복원 (sessionStorage에서) - 하위 호환성 포함
     if (!currentSessionId) {
-        currentSessionId = sessionStorage.getItem("current_session_id");
+        currentSessionId = sessionStorage.getItem("current_session_id") || sessionStorage.getItem("trpg_session_key");
         if (currentSessionId) {
             console.log('🔄 [INIT] Session ID restored from sessionStorage:', currentSessionId);
             // 세션 ID 표시 업데이트
@@ -24,6 +24,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 sessionIdDisplay.classList.add('text-green-400');
             }
         }
+    }
+
+    // ✅ 작업 2: 페이지 로드 시 자동 복구 - 세션 ID가 있으면 최신 상태 동기화
+    if (currentSessionId) {
+        console.log('🔄 [INIT] Auto-recovering game state from DB...');
+        fetchGameDataFromDB();
     }
 
     // 모델 버전 초기화 (가장 먼저 실행)

@@ -178,21 +178,30 @@ function updateWorldState(worldStateData) {
     const stuckCount = worldState.stuck_count || 0;
     const globalFlags = worldState.global_flags || {};
 
-    // 위치 정보 처리: 서버에서 받은 worldStateData.location을 우선적으로 사용
-    let locationDisplay = '?';
-    // 서버 데이터의 location을 최우선으로 사용
+    // ✅ 작업 2: 위치 정보 처리 강화 - 실제 데이터가 있을 때만 표시
+    let locationDisplay = null;
+
+    // worldState.location을 최우선으로 사용 (백엔드에서 동기화된 데이터)
     const sceneId = worldState.location || worldState.current_scene_id;
     const sceneTitle = worldState.current_scene_title;
 
-    if (sceneId && sceneTitle) {
-        // Scene ID와 제목 모두 있는 경우
-        locationDisplay = `${sceneId} (${sceneTitle})`;
-    } else if (sceneTitle) {
-        // 제목만 있는 경우
+    // 실제 데이터가 존재하는지 엄격히 체크
+    if (sceneId && sceneId !== '?' && sceneId !== 'Unknown' && sceneId !== '') {
+        if (sceneTitle && sceneTitle !== '?' && sceneTitle !== 'Unknown' && sceneTitle !== '') {
+            // Scene ID와 제목 모두 유효한 경우
+            locationDisplay = `${sceneId} (${sceneTitle})`;
+        } else {
+            // ID만 유효한 경우
+            locationDisplay = sceneId;
+        }
+    } else if (sceneTitle && sceneTitle !== '?' && sceneTitle !== 'Unknown' && sceneTitle !== '') {
+        // 제목만 유효한 경우
         locationDisplay = sceneTitle;
-    } else if (sceneId) {
-        // ID만 있는 경우
-        locationDisplay = sceneId;
+    }
+
+    // 데이터가 없으면 '위치 정보 없음'으로 표시
+    if (!locationDisplay) {
+        locationDisplay = '<span class="text-gray-500">위치 정보 없음</span>';
     }
 
     // 시간대에 따른 아이콘
@@ -289,4 +298,3 @@ window.toggleDebugInfo = toggleDebugInfo;
 window.openDebugScenesView = openDebugScenesView;
 window.updateNPCStatus = updateNPCStatus;
 window.updateWorldState = updateWorldState;
-
