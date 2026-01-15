@@ -11,18 +11,19 @@ document.addEventListener('DOMContentLoaded', function() {
         sessionStorage.removeItem(NAVIGATION_FLAG_KEY);
     }
 
-    // ✅ 세션 ID 복원 (sessionStorage에서) - 최상단에서 한 번만 실행
+    // ✅ [작업 3] 세션 ID 복원 및 즉시 화면 표시 (fetch 기다리지 않고 먼저 표시)
     if (!currentSessionId) {
         currentSessionId = sessionStorage.getItem("current_session_id") || sessionStorage.getItem("trpg_session_key");
         if (currentSessionId) {
             console.log('🔄 [INIT] Session ID restored from sessionStorage:', currentSessionId);
 
-            // 세션 ID 표시 업데이트
+            // 세션 ID 표시 즉시 업데이트 (fetch 기다리지 않음)
             const sessionIdDisplay = document.getElementById('session-id-display');
             if (sessionIdDisplay) {
                 sessionIdDisplay.textContent = currentSessionId;
                 sessionIdDisplay.classList.remove('text-gray-300');
                 sessionIdDisplay.classList.add('text-green-400');
+                console.log('✅ [INIT] Session ID displayed immediately');
             }
         }
     }

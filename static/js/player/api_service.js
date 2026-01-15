@@ -186,13 +186,29 @@ async function fetchGameDataFromDB() {
         if (data.success) {
             console.log('✅ Data fetched from Railway DB:', data);
 
-            // ✅ 작업 3: 프론트엔드 위치 데이터 매핑 보정 - player_state.current_scene_id를 world_state.location에 강제 할당
+            // ✅ [작업 4] 데이터 매핑 안전장치 - player_state.current_scene_id를 world_state.location에 강제 할당
             if (data.world_state && data.player_state) {
                 data.world_state.location = data.player_state.current_scene_id;
                 data.world_state.stuck_count = data.player_state.stuck_count || 0;
                 console.log('🔄 [SYNC] Location forced from player_state to world_state:', data.world_state.location);
-                updateWorldState(data.world_state);
-            } else if (data.world_state) {
+            }
+
+            // ✅ [작업 3] 세션 ID 갱신 및 화면 즉시 반영
+            if (data.player_state && data.player_state.session_id) {
+                currentSessionId = data.player_state.session_id;
+                sessionStorage.setItem('current_session_id', currentSessionId);
+
+                const sessionIdDisplay = document.getElementById('session-id-display');
+                if (sessionIdDisplay) {
+                    sessionIdDisplay.textContent = currentSessionId;
+                    sessionIdDisplay.classList.remove('text-gray-300');
+                    sessionIdDisplay.classList.add('text-green-400');
+                }
+                console.log('🔄 [SESSION] Updated session ID from server:', currentSessionId);
+            }
+
+            // World State 업데이트
+            if (data.world_state) {
                 updateWorldState(data.world_state);
             }
 
