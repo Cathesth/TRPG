@@ -649,6 +649,11 @@ async def get_game_session_data(
         # world_state.location을 최신 위치로 강제 동기화
         world_state_with_scene['location'] = location_scene_id
 
+        # ✅ [작업 2] 세션 조회 API 데이터 정합성 보강 - player_state의 데이터를 world_state에 강제 덮어쓰기
+        world_state_with_scene['location'] = game_session.current_scene_id
+        world_state_with_scene['stuck_count'] = game_session.player_state.get('stuck_count', 0) if game_session.player_state else 0
+        world_state_with_scene['turn_count'] = game_session.turn_count
+
         location_scene_title = ''
 
         # 시나리오에서 해당 씬의 title 또는 name 찾기
@@ -661,11 +666,6 @@ async def get_game_session_data(
         # current_scene_id와 current_scene_title 명시적으로 설정
         world_state_with_scene['current_scene_id'] = location_scene_id
         world_state_with_scene['current_scene_title'] = location_scene_title
-
-        # stuck_count 동기화 (player_state에서 가져오기)
-        if game_session.player_state:
-            player_stuck_count = game_session.player_state.get('stuck_count', 0)
-            world_state_with_scene['stuck_count'] = player_stuck_count
 
         # turn_count가 없는 경우 0으로 초기화
         if 'turn_count' not in world_state_with_scene:

@@ -1050,6 +1050,11 @@ NPC ({target_npc_name}): "{response}"
         except Exception:
             state['npc_output'] = ""
 
+    # ✅ [작업 1] 백엔드 위치 데이터 강제 동기화 - DB 저장 전 최신 위치를 world_state에 덮어씌움
+    world_state.location = state.get("current_scene_id", world_state.location)
+    world_state.turn_count = state.get("world_state", {}).get("turn_count", world_state.turn_count)
+    world_state.stuck_count = state.get("stuck_count", 0)
+
     # WorldState 스냅샷 저장
     state['world_state'] = world_state.to_dict()
 
@@ -1627,46 +1632,3 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             </div>
             """
 
-
-# --- Graph Construction ---
-
-def create_game_graph():
-    """
-    LangGraph 워크플로우 생성
-    intent_parser -> (rule_engine | npc_actor) -> narrator -> END
-    """
-    workflow = StateGraph(PlayerState)
-
-    # 노드 추가
-    workflow.add_node("intent_parser", intent_parser_node)
-    workflow.add_node("rule_engine", rule_node)
-    workflow.add_node("npc_actor", npc_node)
-    workflow.add_node("narrator", narrator_node)
-
-    # 시작점 설정
-    workflow.set_entry_point("intent_parser")
-
-    # 라우팅 함수: 의도에 따라 rule_engine 또는 npc_actor로 분기
-    def route_action(state):
-        intent = state.get('parsed_intent')
-        if intent in ['transition', 'ending', 'investigate']:
-            return "rule_engine"
-        else:
-            return "npc_actor"
-
-    # 조건부 엣지 추가
-    workflow.add_conditional_edges(
-        "intent_parser",
-        route_action,
-        {
-            "rule_engine": "rule_engine",
-            "npc_actor": "npc_actor"
-        }
-    )
-
-    # 순차 엣지 추가
-    workflow.add_edge("rule_engine", "narrator")
-    workflow.add_edge("npc_actor", "narrator")
-    workflow.add_edge("narrator", END)
-
-    return workflow.compile()
