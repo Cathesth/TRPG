@@ -173,7 +173,7 @@ function updateNPCStatus(npcData) {
     if (!npcStatusArea) return;
 
     // npcData가 직접 NPC 딕셔너리인 경우와 statsData에서 추출한 경우 모두 처리
-    let npcs;
+    let npcs = {};
 
     if (npcData.world_state && npcData.world_state.npcs) {
         // statsData에서 추출한 경우
@@ -276,34 +276,37 @@ function updateWorldState(worldStateData) {
     if (!worldStateArea) return;
 
     // ✅ [FIX 2] 잘못된 입력 방지 가드 - statsData가 아닌 실제 world_state인지 검증
-    if (!worldStateData || typeof worldStateData !== 'object') {
-        console.warn('⚠️ [World State] Invalid input type, skipping update');
-        return;
-    }
-
     // world_state 고유 속성이 하나라도 있는지 확인
     const worldStateKeys = ['turn_count', 'time', 'time_period', 'location', 'current_scene_id',
-                           'identity_count', 'hint_level', 'stuck_count', 'events', 'npcs', 'narrative_log', 'global_flags'];
+                           'identity_count', 'hint_level', 'stuck_count', 'global_flags', 'npcs'];
 
     let hasWorldStateKey = false;
-    let worldState = {};
 
     // worldStateData가 world_state를 포함하는 경우
-    if (worldStateData.world_state) {
-        worldState = worldStateData.world_state;
-        hasWorldStateKey = worldStateKeys.some(key => worldState.hasOwnProperty(key));
-    } else {
+    if (worldStateData && worldStateData.world_state) {
+        const ws = worldStateData.world_state;
+        hasWorldStateKey = worldStateKeys.some(key => ws.hasOwnProperty(key));
+    } else if (worldStateData) {
         // worldStateData가 직접 world_state인 경우
-        worldState = worldStateData;
         hasWorldStateKey = worldStateKeys.some(key => worldStateData.hasOwnProperty(key));
     }
 
     // ✅ world_state로 보이지 않으면 업데이트하지 않음 (statsData 방어)
     if (!hasWorldStateKey) {
-        console.warn('⚠️ [World State] Not a valid world_state object (looks like statsData), skipping update');
+        console.warn('⚠️ [World State] Invalid data detected (not a world_state), skipping update');
         return;
     }
 
+    // worldStateData가 직접 world_state인 경우와 statsData에서 추출한 경우 모두 처리
+    let worldState = {};
+
+    if (worldStateData.world_state) {
+        // statsData에서 추출한 경우
+        worldState = worldStateData.world_state;
+    } else {
+        // 직접 world_state인 경우
+        worldState = worldStateData;
+    }
 
     if (!worldState || Object.keys(worldState).length === 0) {
         worldStateArea.innerHTML = `
