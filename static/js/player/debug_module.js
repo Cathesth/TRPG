@@ -36,7 +36,17 @@ function toggleDebugInfo() {
 // 디버그 모드에서 전체 씬 보기 함수
 function openDebugScenesView() {
     if (isScenarioLoaded) {
+        // ✅ FIX: 세션 ID를 확실히 저장
+        if (currentSessionId) {
+            sessionStorage.setItem('current_session_id', currentSessionId);
+            sessionStorage.setItem('trpg_session_key', currentSessionId);
+            console.log('💾 [Navigation] Saved session ID before navigation:', currentSessionId);
+        }
+
+        // 내부 네비게이션 플래그 설정
         isInternalNavigation = true;
+        sessionStorage.setItem(NAVIGATION_FLAG_KEY, 'true');
+
         window.location.href = '/views/debug_scenes';
     } else {
         showToast('시나리오를 먼저 불러와주세요.', 'error');
