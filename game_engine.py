@@ -819,6 +819,7 @@ def rule_node(state: PlayerState):
 
     # ✅ [작업 2] 백엔드 위치 데이터 강제 동기화 - DB 저장 전 최신 위치를 world_state.location에 덮어씌움
     world_state.location = state.get("current_scene_id", world_state.location)
+    world_state.stuck_count = state.get("stuck_count", 0)
 
     # ✅ WorldState 스냅샷 저장 (위치 동기화 후 저장)
     state['world_state'] = world_state.to_dict()

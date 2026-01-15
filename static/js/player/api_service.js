@@ -185,10 +185,19 @@ async function fetchGameDataFromDB() {
         if (data.success) {
             console.log('✅ Data fetched from Railway DB:', data);
 
-            // ✅ [작업 2] 프론트엔드 데이터 수신 시 강제 매핑 - player_state가 절대 진리
+            // ✅ [작업 4] 프론트엔드 데이터 매핑 강제화 - player_state.current_scene_id가 절대 진리
             if (data.player_state && data.world_state) {
+                // 서버에서 받은 world_state.location 무시하고 player_state.current_scene_id로 강제 덮어쓰기
                 data.world_state.location = data.player_state.current_scene_id;
+                data.world_state.current_scene_id = data.player_state.current_scene_id;
                 console.log('🔄 [SYNC] Forced location sync: world_state.location =', data.world_state.location);
+            }
+
+            // ✅ [작업 4] current_scene_id가 없으면 current_scene_id 필드에서 가져오기
+            if (data.current_scene_id && data.world_state) {
+                data.world_state.location = data.current_scene_id;
+                data.world_state.current_scene_id = data.current_scene_id;
+                console.log('🔄 [SYNC] Applied fallback location from current_scene_id:', data.current_scene_id);
             }
 
             // 2단계: 세션 ID 갱신 및 화면 즉시 반영
