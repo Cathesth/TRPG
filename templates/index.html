@@ -581,8 +581,17 @@
                        const card = btn.closest('.scenario-card-base');
                        card.style.opacity = '0';
                        setTimeout(() => card.remove(), 300);
+                       return; // 모달 안이면 리로드 불필요 (삭제했으므로)
                     }
                 }
+
+                // 2. [추가됨] 찜 목록(#liked-grid)을 백그라운드에서 즉시 새로고침
+                // 이렇게 하면 모달을 열었을 때 이미 추가된 상태로 보입니다.
+                const likedGrid = document.getElementById('liked-grid');
+                if (likedGrid) {
+                    htmx.trigger(likedGrid, 'load');
+                }
+
                 lucide.createIcons(); // 아이콘 갱신
             } else {
                 alert(data.error || '오류가 발생했습니다.');
