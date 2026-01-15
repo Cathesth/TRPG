@@ -17,4 +17,5 @@ redis
 redis[hiredis]
 aioboto3
 botocore
-passlib[bcrypt]
+passlib
+bcrypt==4.0.1
