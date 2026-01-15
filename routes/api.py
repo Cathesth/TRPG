@@ -38,8 +38,11 @@ from services.mermaid_service import MermaidService
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
 from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike, User
 
-# 비밀번호 해싱 설정 (기존에 있다면 생략 가능)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# 변경: schemes=["bcrypt", "sha256_crypt", "pbkdf2_sha256"] -> 예전 형식도 인식 가능
+pwd_context = CryptContext(
+    schemes=["bcrypt", "sha256_crypt", "pbkdf2_sha256"],
+    deprecated="auto"
+)
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
