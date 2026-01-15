@@ -17,7 +17,15 @@ class VectorDBClient:
     """비동기 Qdrant 클라이언트 - NPC 기억 및 대화 기록 저장"""
 
     def __init__(self):
-        self.qdrant_url = os.getenv("QDRANT_URL")
+        qdrant_url_raw = os.getenv("QDRANT_URL")
+
+        # ✅ [작업 3] HTTPS를 HTTP로 강제 치환 (내부망 SSL 문제 해결)
+        if qdrant_url_raw and qdrant_url_raw.startswith("https://"):
+            self.qdrant_url = qdrant_url_raw.replace("https://", "http://")
+            logger.info(f"🔧 [Qdrant] URL converted from HTTPS to HTTP: {self.qdrant_url}")
+        else:
+            self.qdrant_url = qdrant_url_raw
+
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY")
         self.collection_name = os.getenv("QDRANT_COLLECTION", "npc_memories")
         self.vector_size = 1536  # OpenAI text-embedding-ada-002 차원
@@ -35,13 +43,14 @@ class VectorDBClient:
             self.client = None
         else:
             try:
-                # AsyncQdrantClient 초기화
+                # ✅ [작업 3] prefer_grpc=False 설정 추가 (REST 통신 안정성)
                 self.client = AsyncQdrantClient(
                     url=self.qdrant_url,
                     api_key=self.qdrant_api_key,
-                    timeout=30
+                    timeout=30,
+                    prefer_grpc=False  # REST API 사용 강제
                 )
-                logger.info(f"✅ [Qdrant] Vector DB 클라이언트 초기화 완료: {self.qdrant_url}")
+                logger.info(f"✅ [Qdrant] Vector DB 클라이언트 초기화 완료: {self.qdrant_url} (prefer_grpc=False)")
             except Exception as e:
                 logger.error(f"❌ [Qdrant] 초기화 실패: {e}")
                 self.client = None
@@ -50,6 +59,7 @@ class VectorDBClient:
         # OpenAI 임베딩 클라이언트 초기화
         if self.openai_api_key:
             self.openai_client = AsyncOpenAI(api_key=self.openai_api_key)
+            logger.info("✅ [Qdrant] OpenAI 임베딩 클라이언트 초기화 완료")
         else:
             logger.warning("⚠️ [Qdrant] OPENAI_API_KEY가 없어 임베딩 생성이 제한됩니다.")
 
@@ -106,8 +116,13 @@ class VectorDBClient:
 
     async def get_embedding(self, text: str) -> Optional[List[float]]:
         """OpenAI를 사용하여 텍스트를 벡터로 변환"""
+        # ✅ [작업 3] OPENAI_API_KEY 없을 때 예외 처리 강화
         if not self.openai_client:
-            logger.error("❌ [Qdrant] OpenAI 클라이언트가 초기화되지 않았습니다.")
+            logger.warning("⚠️ [Qdrant] OpenAI 클라이언트가 초기화되지 않았습니다. 임베딩 생성을 건너뜁니다.")
+            return None
+
+        if not self.openai_api_key:
+            logger.warning("⚠️ [Qdrant] OPENAI_API_KEY가 없어 임베딩 생성을 건너뜁니다.")
             return None
 
         try:
@@ -140,12 +155,15 @@ class VectorDBClient:
             성공 여부
         """
         if not self.is_available:
+            logger.warning("⚠️ [Qdrant] Vector DB를 사용할 수 없어 기억 저장을 건너뜁니다.")
             return False
 
+        # ✅ [작업 3] 임베딩 생성 실패 시 시스템이 뻗지 않도록 예외 처리
         try:
             # 텍스트를 벡터로 변환
             vector = await self.get_embedding(text)
             if not vector:
+                logger.warning("⚠️ [Qdrant] 임베딩 생성 실패 - 기억 저장을 건너뜁니다.")
                 return False
 
             # 메타데이터 준비
@@ -196,12 +214,15 @@ class VectorDBClient:
             검색 결과 리스트 (score, text, metadata 포함)
         """
         if not self.is_available:
+            logger.warning("⚠️ [Qdrant] Vector DB를 사용할 수 없어 기억 검색을 건너뜁니다.")
             return []
 
+        # ✅ [작업 3] 임베딩 생성 실패 시 빈 리스트 반환
         try:
             # 쿼리를 벡터로 변환
             query_vector = await self.get_embedding(query)
             if not query_vector:
+                logger.warning("⚠️ [Qdrant] 쿼리 임베딩 생성 실패 - 빈 결과 반환")
                 return []
 
             # 필터 조건 구성
@@ -249,7 +270,15 @@ class VectorDBClient:
             return []
 
     async def delete_npc_memories(self, npc_id: int) -> bool:
-        """특정 NPC의 모든 기억 삭제"""
+        """
+        특정 NPC의 모든 기억 삭제
+
+        Args:
+            npc_id: NPC ID
+
+        Returns:
+            성공 여부
+        """
         if not self.is_available:
             return False
 
@@ -267,17 +296,13 @@ class VectorDBClient:
                     }
                 }
             )
+
             logger.info(f"🗑️ [Qdrant] NPC {npc_id}의 기억 삭제 완료")
             return True
-        except Exception as e:
-            logger.error(f"❌ [Qdrant] 기억 삭제 실패: {e}")
-            return False
 
-    async def close(self):
-        """클라이언트 연결 종료"""
-        if self.client:
-            await self.client.close()
-            logger.info("👋 [Qdrant] 클라이언트 연결 종료")
+        except Exception as e:
+            logger.error(f"❌ [Qdrant] NPC 기억 삭제 실패: {e}")
+            return False
 
 
 # 싱글톤 인스턴스
@@ -285,9 +310,8 @@ _vector_db_client: Optional[VectorDBClient] = None
 
 
 def get_vector_db_client() -> VectorDBClient:
-    """VectorDBClient 싱글톤 인스턴스 반환"""
+    """Vector DB 클라이언트 싱글톤 인스턴스 반환"""
     global _vector_db_client
     if _vector_db_client is None:
         _vector_db_client = VectorDBClient()
     return _vector_db_client
-

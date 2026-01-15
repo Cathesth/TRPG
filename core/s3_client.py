@@ -20,8 +20,13 @@ class AsyncS3Client:
         self.endpoint = os.getenv("S3_ENDPOINT")
         self.access_key = os.getenv("S3_ACCESS_KEY")
         self.secret_key = os.getenv("S3_SECRET_KEY")
-        self.bucket = os.getenv("S3_BUCKET", "trpg-assets")
+        # ✅ [작업 2] 버킷 이름을 무조건 소문자로 강제 변환
+        bucket_raw = os.getenv("S3_BUCKET", "trpg-assets")
+        self.bucket = bucket_raw.lower()
         self.region = os.getenv("S3_REGION", "us-east-1")
+
+        # ✅ [작업 2] 내부망 통신을 위한 secure 설정 판단
+        self.use_ssl = self.endpoint and self.endpoint.startswith("https://") if self.endpoint else True
 
         # 로컬 환경 배려: 환경변수 없으면 경고만 출력하고 None으로 설정
         self._is_configured = all([self.endpoint, self.access_key, self.secret_key])
@@ -30,7 +35,7 @@ class AsyncS3Client:
             logger.warning("⚠️ [S3] S3 환경변수가 설정되지 않았습니다. S3 기능이 비활성화됩니다.")
             logger.warning("   필요한 환경변수: S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET")
         else:
-            logger.info(f"✅ [S3] S3 클라이언트 초기화 완료: {self.endpoint} / {self.bucket}")
+            logger.info(f"✅ [S3] S3 클라이언트 초기화 완료: {self.endpoint} / {self.bucket} (SSL: {self.use_ssl})")
 
         self._session = None
         self._initialized = False
@@ -56,22 +61,35 @@ class AsyncS3Client:
                 region_name=self.region
             )
 
+            # ✅ [작업 2] use_ssl 설정 적용
             async with self._session.client(
                 's3',
                 endpoint_url=self.endpoint,
-                region_name=self.region
+                region_name=self.region,
+                use_ssl=self.use_ssl
             ) as s3:
                 try:
                     # 버킷 존재 확인
                     await s3.head_bucket(Bucket=self.bucket)
                     logger.info(f"✅ [S3] 버킷 확인 완료: {self.bucket}")
                 except ClientError as e:
+                    # ✅ [작업 2] HeadBucket 예외 세분화
                     error_code = e.response.get('Error', {}).get('Code', '')
-                    if error_code == '404':
+                    http_status = e.response.get('ResponseMetadata', {}).get('HTTPStatusCode', 0)
+
+                    logger.warning(f"⚠️ [S3] HeadBucket error: code={error_code}, status={http_status}")
+
+                    if error_code == '404' or http_status == 404:
                         # 버킷이 없으면 생성
                         logger.info(f"📦 [S3] 버킷이 없어 생성합니다: {self.bucket}")
                         await s3.create_bucket(Bucket=self.bucket)
                         logger.info(f"✅ [S3] 버킷 생성 완료: {self.bucket}")
+                    elif error_code == '400' or http_status == 400:
+                        # ✅ [작업 2] 400 에러 처리 - 버킷 이름 문제일 수 있으므로 재시도하지 않고 경고만 출력
+                        logger.error(f"❌ [S3] 버킷 이름 오류 (400 Bad Request): {self.bucket}")
+                        logger.error(f"   버킷 이름은 소문자, 숫자, 하이픈만 사용 가능합니다.")
+                        self._is_configured = False
+                        return
                     else:
                         logger.error(f"❌ [S3] 버킷 확인 중 오류: {e}")
                         raise
@@ -118,10 +136,12 @@ class AsyncS3Client:
             # S3 키 생성 (폴더/파일명)
             s3_key = f"{folder}/{unique_filename}"
 
+            # ✅ [작업 2] use_ssl 설정 적용
             async with self._session.client(
                 's3',
                 endpoint_url=self.endpoint,
-                region_name=self.region
+                region_name=self.region,
+                use_ssl=self.use_ssl
             ) as s3:
                 # 업로드 파라미터
                 upload_params = {
@@ -173,10 +193,12 @@ class AsyncS3Client:
             await self.initialize()
 
         try:
+            # ✅ [작업 2] use_ssl 설정 적용
             async with self._session.client(
                 's3',
                 endpoint_url=self.endpoint,
-                region_name=self.region
+                region_name=self.region,
+                use_ssl=self.use_ssl
             ) as s3:
                 await s3.delete_object(Bucket=self.bucket, Key=s3_key)
                 logger.info(f"✅ [S3] 파일 삭제 성공: {s3_key}")
@@ -197,4 +219,3 @@ def get_s3_client() -> AsyncS3Client:
     if _s3_client is None:
         _s3_client = AsyncS3Client()
     return _s3_client
-
