@@ -34,8 +34,35 @@ async def lifespan(app: FastAPI):
         logger.info("DB Tables created successfully.")
     except Exception as e:
         logger.error(f"DB Creation Failed: {e}")
+
+    # S3 클라이언트 초기화
+    try:
+        from core.s3_client import get_s3_client
+        s3_client = get_s3_client()
+        await s3_client.initialize()
+        logger.info("✅ S3 Client initialized.")
+    except Exception as e:
+        logger.error(f"❌ S3 Initialization Failed: {e}")
+
+    # Vector DB 클라이언트 초기화
+    try:
+        from core.vector_db import get_vector_db_client
+        vector_db = get_vector_db_client()
+        await vector_db.initialize()
+        logger.info("✅ Vector DB Client initialized.")
+    except Exception as e:
+        logger.error(f"❌ Vector DB Initialization Failed: {e}")
+
     yield
-    # 앱 종료 시 처리 (필요 시)
+
+    # 앱 종료 시 Vector DB 연결 종료
+    try:
+        from core.vector_db import get_vector_db_client
+        vector_db = get_vector_db_client()
+        await vector_db.close()
+        logger.info("👋 Vector DB connection closed.")
+    except Exception as e:
+        logger.error(f"❌ Vector DB Close Failed: {e}")
 
 
 # FastAPI 앱 초기화
@@ -102,6 +129,9 @@ from routes.api import mypage_router
 # [추가] assets 라우터 등록 (S3 이미지 업로드)
 from routes.assets import router as assets_router
 
+# [추가] Vector DB 라우터 등록
+from routes.vector_api import router as vector_router
+
 app.include_router(views_router)
 app.include_router(api_router)
 app.include_router(game_router)
@@ -113,6 +143,9 @@ app.include_router(mypage_router)
 
 # [S3] Assets 라우터 등록
 app.include_router(assets_router)
+
+# [Vector DB] Vector DB 라우터 등록
+app.include_router(vector_router)
 
 
 # Health check 엔드포인트 (Railway 모니터링용)
