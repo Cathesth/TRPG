@@ -357,28 +357,13 @@ async def register(data: AuthRequest, db: Session = Depends(get_db)):
     existing_user = db.query(User).filter(User.id == data.username).first()
 
     if existing_user:
-        # [추가 로직] 기존 계정의 비밀번호 데이터가 손상된 경우, 재가입을 통해 계정 복구 허용
-        try:
-            # 저장된 해시값이 정상적인지 확인
-            pwd_context.identify(existing_user.password_hash)
+        return JSONResponse({"success": False, "error": "이미 존재하는 아이디"}, status_code=400)
 
-            # 정상이면 -> "이미 존재하는 아이디" 에러 리턴 (기존 로직)
-            return JSONResponse({"success": False, "error": "이미 존재하는 아이디"}, status_code=400)
-
-        except (ValueError, TypeError):
-            # 해시가 깨져있거나 식별 불가능한 경우 -> 비밀번호 덮어쓰기 (계정 복구)
-            logger.warning(f"⚠️ Corrupted hash found for user '{data.username}'. Overwriting with new password.")
-
-            existing_user.password_hash = pwd_context.hash(data.password)
-            if data.email:
-                existing_user.email = data.email
-
-            db.commit()
-            return {"success": True, "message": "손상된 계정이 복구되었습니다. 다시 로그인해주세요."}
-
-    # 2. 신규 회원가입 (기존 로직 유지)
+    # 2. 신규 회원가입 처리
     try:
+        # 비밀번호 해싱 (설정된 암호화 방식 사용)
         hashed_password = pwd_context.hash(data.password)
+
         new_user = User(
             id=data.username,
             password_hash=hashed_password,
@@ -387,11 +372,11 @@ async def register(data: AuthRequest, db: Session = Depends(get_db)):
         db.add(new_user)
         db.commit()
         return {"success": True}
+
     except Exception as e:
         db.rollback()
         logger.error(f"Register Error: {e}")
         return JSONResponse({"success": False, "error": "회원가입 처리 중 오류가 발생했습니다."}, status_code=500)
-
 
 @api_router.post('/auth/login')
 async def login(request: Request, data: AuthRequest, db: Session = Depends(get_db)):
