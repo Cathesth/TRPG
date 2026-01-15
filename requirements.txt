@@ -11,7 +11,7 @@ psycopg2-binary
 python-multipart
 jinja2
 itsdangerous
-sse-starlepy
+sse-starlette
 aiofiles
 redis
 redis[hiredis]
