@@ -22,9 +22,12 @@ class VectorDBClient:
 
         # ✅ [작업 2] HTTPS를 HTTP로 강제 치환 및 포트 보정 (내부망 SSL 문제 해결)
         if qdrant_url_raw:
-            # HTTPS를 HTTP로 변환
+            # 1. HTTPS를 HTTP로 변환
             if qdrant_url_raw.startswith("https://"):
                 self.qdrant_url = qdrant_url_raw.replace("https://", "http://")
+            # 2. HTTP 프로토콜이 없으면 http:// 추가
+            elif not qdrant_url_raw.startswith("http://"):
+                self.qdrant_url = f"http://{qdrant_url_raw}"
             else:
                 self.qdrant_url = qdrant_url_raw
 
@@ -55,13 +58,15 @@ class VectorDBClient:
         else:
             try:
                 # ✅ [작업 2] prefer_grpc=False 설정 추가 (REST 통신 안정성)
+                # ✅ [작업 3] https=False 명시적 추가 (SSL 에러 방지)
                 self.client = AsyncQdrantClient(
                     url=self.qdrant_url,
                     api_key=self.qdrant_api_key,
                     timeout=30,
+                    https=False,  # SSL 비활성화
                     prefer_grpc=False  # REST API 사용 강제
                 )
-                logger.info(f"✅ [Qdrant] Vector DB 클라이언트 초기화 완료: {self.qdrant_url} (prefer_grpc=False)")
+                logger.info(f"✅ [Qdrant] Vector DB 클라이언트 초기화 완료: {self.qdrant_url} (https=False, prefer_grpc=False)")
             except Exception as e:
                 logger.error(f"❌ [Qdrant] 초기화 실패: {e}")
                 self.client = None
