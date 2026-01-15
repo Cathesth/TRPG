@@ -93,12 +93,20 @@ async def add_no_cache_header(request: Request, call_next):
 # 템플릿 설정
 templates = Jinja2Templates(directory="templates")
 
+# =================================================================
+# [수정 시작] 라우터 등록 (Import 방식 변경)
+# routes/__init__.py를 거치지 않고, 각 파일에서 직접 가져와 에러를 방지합니다.
+# =================================================================
+
 # 라우터 등록
-from routes import api_router, game_router, views_router
-
-
+#from routes import api_router, game_router, views_router
 # [추가] api.py에 정의한 mypage_router를 직접 가져옵니다.
-from routes.api import mypage_router
+#from routes.api import mypage_router
+
+# [새 코드] 각 파일에서 직접 Import
+from routes.views import views_router
+from routes.game import game_router
+from routes.api import api_router, mypage_router
 
 # [추가] assets 라우터 등록 (S3 이미지 업로드용 - 해당 파일이 있어야 함)
 # 만약 routes/assets.py 파일이 없다면 이 줄은 에러가 납니다. 확인해주세요.
