@@ -3,6 +3,7 @@ import time
 import logging
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
+from sqlalchemy.orm import Session
 
 from config import DEFAULT_PLAYER_VARS
 from models import SessionLocal, Scenario, ScenarioHistory, TempScenario
