@@ -17,3 +17,4 @@ redis
 redis[hiredis]
 aioboto3
 botocore
+passlib[bcrypt]

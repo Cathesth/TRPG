@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from config import LOG_FORMAT, LOG_DATE_FORMAT
 from models import create_tables
 
+
 # 환경 변수 로드
 load_dotenv()
 
@@ -108,6 +109,7 @@ from routes.views import views_router
 from routes.game import game_router
 from routes.api import api_router, mypage_router
 
+
 # [추가] assets 라우터 등록 (S3 이미지 업로드용 - 해당 파일이 있어야 함)
 # 만약 routes/assets.py 파일이 없다면 이 줄은 에러가 납니다. 확인해주세요.
 try:
@@ -119,6 +121,7 @@ except ImportError:
 app.include_router(views_router)
 app.include_router(api_router)
 app.include_router(game_router)
+
 
 
 # [중요] 마이페이지 라우터를 명시적으로 등록하여 404 에러 해결
