@@ -231,6 +231,7 @@
                     </div>
                 </div>
             </div>
+        </div>
     </div>
 
     <div id="login-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-[100]">
@@ -450,6 +451,44 @@
         document.body.addEventListener('htmx:error', function(evt) {
             console.error('HTMX Error:', evt.detail);
         });
+
+        // [1] 이미지 미리보기 함수
+        function previewImage(input) {
+            if (input.files && input.files[0]) {
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    // 미리보기 영역의 내용을 이미지 태그로 교체
+                    document.getElementById('avatar-preview').innerHTML =
+                        '<img src="' + e.target.result + '" class="w-full h-full object-cover" alt="Preview">';
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        // [2] 프로필 수정 요청 함수
+        async function handleProfileUpdate(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form); // 파일 포함 모든 데이터 자동 수집
+
+            try {
+                const res = await fetch('/api/auth/profile/update', {
+                    method: 'POST',
+                    body: formData // JSON이 아닌 FormData로 전송
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    alert(data.message);
+                    window.location.reload(); // 헤더 사진 갱신을 위해 새로고침
+                } else {
+                    alert(data.error);
+                }
+            } catch (e) {
+                console.error(e);
+                alert("통신 오류가 발생했습니다.");
+            }
+        }
     </script>
 </body>
 </html>

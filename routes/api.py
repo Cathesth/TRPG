@@ -4,8 +4,11 @@ import logging
 import time
 import threading
 import glob  # <--- 이 줄을 추가해주세요!
+import shutil
+from pathlib import Path
+from passlib.context import CryptContext
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, APIRouter, Request, Depends, Form, HTTPException, Query
+from fastapi import FastAPI, APIRouter, Request, Depends, Form, HTTPException, Query, File, UploadFile, Form
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -31,6 +34,9 @@ from services.mermaid_service import MermaidService
 # 인증 및 모델
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
 from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike
+
+# 비밀번호 해싱 설정 (기존에 있다면 생략 가능)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -131,7 +137,15 @@ def get_mypage_scenarios_view():
 @api_router.get('/views/mypage/profile', response_class=HTMLResponse)
 def get_profile_view(user: CurrentUser = Depends(get_current_user)):
     """마이페이지: 회원 정보 수정 폼 반환"""
-    username = user.id if user.is_authenticated else "Guest"
+    if not user.is_authenticated:
+        return "<div>로그인이 필요합니다.</div>"
+
+    username = user.id
+    email = user.email or ""
+    # 프로필 사진이 없으면 기본 이니셜 표시, 있으면 이미지 표시
+    avatar_html = f'<span class="text-3xl font-bold text-gray-500 group-hover:text-white transition-colors">{username[:2].upper()}</span>'
+    if user.avatar_url:
+        avatar_html = f'<img src="{user.avatar_url}" class="w-full h-full object-cover" alt="Profile">'
 
     return f"""
     <div class="fade-in max-w-2xl mx-auto">
@@ -181,6 +195,55 @@ def get_profile_view(user: CurrentUser = Depends(get_current_user)):
     </div>
     <script>lucide.createIcons();</script>
     """
+
+
+# [3. 프로필 업데이트 API 추가]
+@api_router.post('/auth/profile/update')
+async def update_profile(
+        email: str = Form(None),
+        password: str = Form(None),
+        confirm_password: str = Form(None),
+        avatar: UploadFile = File(None),
+        user: CurrentUser = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "로그인이 필요합니다."}, status_code=401)
+
+    # 1. 비밀번호 변경 확인
+    if password:
+        if password != confirm_password:
+            return JSONResponse({"success": False, "error": "비밀번호가 일치하지 않습니다."}, status_code=400)
+        user.password_hash = pwd_context.hash(password)
+
+    # 2. 이메일 업데이트
+    if email is not None:
+        user.email = email
+
+    # 3. 프로필 사진 업로드 처리
+    if avatar and avatar.filename:
+        try:
+            # 파일명 안전하게 생성 (uuid 사용)
+            file_ext = Path(avatar.filename).suffix
+            new_filename = f"{user.id}_{uuid.uuid4()}{file_ext}"
+            save_path = f"static/avatars/{new_filename}"
+
+            # 파일 저장
+            with open(save_path, "wb") as buffer:
+                shutil.copyfileobj(avatar.file, buffer)
+
+            # DB에 경로 저장 (/static/... 형태)
+            user.avatar_url = f"/{save_path}"
+        except Exception as e:
+            return JSONResponse({"success": False, "error": f"이미지 업로드 실패: {str(e)}"}, status_code=500)
+
+    try:
+        db.commit()
+        db.refresh(user)
+        return {"success": True, "message": "회원 정보가 수정되었습니다."}
+    except Exception as e:
+        db.rollback()
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 @api_router.get('/views/mypage/billing', response_class=HTMLResponse)

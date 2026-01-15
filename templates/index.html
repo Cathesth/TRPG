@@ -129,8 +129,12 @@
 
             {% if user and user.is_authenticated %}
                 <div class="flex items-center gap-3 cursor-pointer group" onclick="location.href='/views/mypage'" title="마이페이지">
-                    <button class="text-gray-400 group-hover:text-white transition-colors p-2 rounded-full bg-rpg-800 border border-rpg-700 group-hover:border-rpg-accent shadow-md">
-                        <i data-lucide="user" class="w-6 h-6"></i>
+                    <button class="text-gray-400 group-hover:text-white transition-colors p-0.5 rounded-full bg-rpg-800 border border-rpg-700 group-hover:border-rpg-accent shadow-md overflow-hidden w-10 h-10 flex items-center justify-center">
+                        {% if user.avatar_url %}
+                            <img src="{{ user.avatar_url }}" class="w-full h-full object-cover">
+                        {% else %}
+                            <i data-lucide="user" class="w-6 h-6"></i>
+                        {% endif %}
                     </button>
                 </div>
             {% else %}

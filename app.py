@@ -46,6 +46,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# [수정] 정적 파일 마운트 (이 부분만 남기고 아래 중복 코드는 제거했습니다)
+# static/avatars 폴더가 없으면 생성하고, /static 경로로 접근 가능하게 설정
+os.makedirs("static/avatars", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 # HTTPS 프록시 미들웨어 (Railway 등 프록시 환경 대응)
 class HTTPSMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -85,10 +90,6 @@ async def add_no_cache_header(request: Request, call_next):
     return response
 
 
-# 정적 파일 서빙 (static 폴더가 있는 경우)
-if os.path.exists(os.path.join(os.path.dirname(__file__), 'static')):
-    app.mount("/static", StaticFiles(directory="static"), name="static")
-
 # 템플릿 설정
 templates = Jinja2Templates(directory="templates")
 
@@ -99,8 +100,13 @@ from routes import api_router, game_router, views_router
 # [추가] api.py에 정의한 mypage_router를 직접 가져옵니다.
 from routes.api import mypage_router
 
-# [추가] assets 라우터 등록 (S3 이미지 업로드)
-from routes.assets import router as assets_router
+# [추가] assets 라우터 등록 (S3 이미지 업로드용 - 해당 파일이 있어야 함)
+# 만약 routes/assets.py 파일이 없다면 이 줄은 에러가 납니다. 확인해주세요.
+try:
+    from routes.assets import router as assets_router
+    app.include_router(assets_router) # [S3] Assets 라우터 등록
+except ImportError:
+    logger.warning("routes.assets module not found. Assets router skipped.")
 
 app.include_router(views_router)
 app.include_router(api_router)
@@ -109,10 +115,6 @@ app.include_router(game_router)
 
 # [중요] 마이페이지 라우터를 명시적으로 등록하여 404 에러 해결
 app.include_router(mypage_router)
-
-
-# [S3] Assets 라우터 등록
-app.include_router(assets_router)
 
 
 # Health check 엔드포인트 (Railway 모니터링용)

@@ -61,6 +61,8 @@ class User(Base):
     id = Column(String(50), primary_key=True)  # username을 id로 사용
     password_hash = Column(String(255), nullable=False)
     email = Column(String(120), nullable=True)
+    # ▼ [추가] 프로필 사진 경로 저장 컬럼
+    avatar_url = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
     # 관계 설정
