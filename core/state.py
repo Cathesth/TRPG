@@ -1,5 +1,5 @@
 """
-게임 상태 관리 싱글톤
+게임 상태 관리 클래스
 """
 from typing import Dict, Any, Optional, List, Union
 from config import DEFAULT_CONFIG
@@ -12,18 +12,11 @@ logger = logging.getLogger(__name__)
 
 class GameState:
     """
-    게임 상태를 관리하는 싱글톤 클래스
-    여러 모듈에서 공유되는 상태를 중앙에서 관리
+    게임 상태를 관리하는 클래스 (세션별 독립 인스턴스)
+    여러 모듈에서 공유되는 상태를 관리하되, 세션마다 별도 인스턴스 사용
     """
-    _instance = None
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialize()
-        return cls._instance
-
-    def _initialize(self):
+    def __init__(self):
         """초기 상태 설정"""
         self._config = DEFAULT_CONFIG.copy()
         self._state: Optional[Dict[str, Any]] = None
@@ -57,6 +50,23 @@ class GameState:
         """상태 초기화"""
         self._state = None
         self._game_graph = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """딕셔너리로 변환 (직렬화)"""
+        return {
+            "config": self._config,
+            "state": self._state,
+            # game_graph는 직렬화하지 않음 (런타임에 재생성)
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'GameState':
+        """딕셔너리에서 복원 (역직렬화)"""
+        instance = cls()
+        instance._config = data.get("config", DEFAULT_CONFIG.copy())
+        instance._state = data.get("state")
+        # game_graph는 별도로 재생성 필요
+        return instance
 
 
 class WorldState:
@@ -137,7 +147,7 @@ class WorldState:
         if text.startswith("[Turn "):
             # 이미 턴 번호가 있으면 제거
             import re
-            text = re.sub(r'^\[Turn \d+\]\s*', '', text)
+            text = re.sub(r'^\[Turn \d+]\s*', '', text)
 
         # 🔴 중복 방지: 직전 기록과 동일하면 무시
         prefixed_text = f"[Turn {self.turn_count}] {text}"
@@ -761,10 +771,4 @@ class WorldState:
             for i, event in enumerate(recent_events, 1):
                 lines.append(f"{i}. {event}")
 
-        lines.append("\n⚠️ 전투 후 수치는 단단한 진실이며, 이를 무시하거나 변경하지 마세요.")
-
         return "\n".join(lines)
-
-
-# 싱글톤 인스턴스
-game_state = GameState()

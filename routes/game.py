@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 
-from core.state import game_state, WorldState as WorldStateManager
+from core.state import GameState, WorldState as WorldStateManager
 from game_engine import scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message, \
     get_scenario_by_id
 from routes.auth import get_current_user_optional, CurrentUser
