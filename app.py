@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 
 from config import LOG_FORMAT, LOG_DATE_FORMAT
@@ -44,6 +45,16 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# HTTPS 프록시 미들웨어 (Railway 등 프록시 환경 대응)
+class HTTPSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        # 프록시 헤더 확인 후 스키마 강제 고정
+        if request.headers.get("x-forwarded-proto") == "https":
+            request.scope["scheme"] = "https"
+        return await call_next(request)
+
+app.add_middleware(HTTPSMiddleware)
 
 # 세션 미들웨어 (쿠키 기반 세션)
 app.add_middleware(
