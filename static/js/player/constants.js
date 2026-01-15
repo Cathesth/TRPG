@@ -1,0 +1,73 @@
+// constants.js - 상수 및 전역 변수 관리
+
+// 서버 상태는 무시하고 항상 초기화된 상태로 시작
+const serverHasState = false;  // 항상 false로 설정하여 서버 상태 무시
+
+// 전역 상태 변수
+let isGameEnded = false;
+let isScenarioLoaded = false;
+let isInternalNavigation = false;  // 내부 네비게이션 플래그
+let hasGameStarted = false;  // 게임이 시작되었는지 (채팅 내역이 있는지)
+let isStreaming = false;  // 스트리밍 중 여부 추가
+let responseTimerInterval = null;  // 응답 시간 타이머
+let responseStartTime = null;  // 응답 시작 시간
+let currentSessionKey = '';  // 현재 세션 키 저장
+let currentSessionId = sessionStorage.getItem("current_session_id") || null;  // 세션 ID 유지 - sessionStorage에서 복원
+let currentScenarioId = null;  // 현재 로드된 시나리오 ID 저장
+
+// 상수 정의
+const CHAT_LOG_KEY = 'trpg_chat_log';
+const SCENARIO_LOADED_KEY = 'trpg_scenario_loaded';
+const CURRENT_SCENARIO_KEY = 'trpg_current_scenario';
+const CURRENT_SCENARIO_ID_KEY = 'trpg_scenario_id';
+const SESSION_KEY_STORAGE = 'trpg_session_key';
+const MODEL_PROVIDER_KEY = 'trpg_model_provider';
+const MODEL_VERSION_KEY = 'trpg_model_version';
+const DEBUG_MODE_KEY = 'trpg_debug_mode';
+const GAME_ENDED_KEY = 'trpg_game_ended';
+const NAVIGATION_FLAG_KEY = 'trpg_navigation_flag';
+
+// 새로고침 감지 및 경고
+window.addEventListener('beforeunload', function(e) {
+    // 스트리밍 중이면 무조건 경고
+    if (isStreaming) {
+        e.preventDefault();
+        e.returnValue = 'AI가 답변을 생성하고 있습니다. 페이지를 벗어나시겠습니까?';
+        return e.returnValue;
+    }
+
+    // 내부 네비게이션이면 경고 안 함
+    if (isInternalNavigation) {
+        // 내부 네비게이션 플래그 설정 (다음 페이지 로드 시 복원용)
+        sessionStorage.setItem(NAVIGATION_FLAG_KEY, 'true');
+        return;
+    }
+
+    // 게임이 진행 중이면 경고 (채팅 로그가 있고 게임이 시작됨)
+    if (hasGameStarted && isScenarioLoaded) {
+        e.preventDefault();
+        e.returnValue = '페이지를 벗어나면 현재 진행 내역이 초기화됩니다. 계속하시겠습니까?';
+        return e.returnValue;
+    }
+});
+
+// 모든 게임 상태 초기화 함수
+function clearAllGameState() {
+    sessionStorage.removeItem(CHAT_LOG_KEY);
+    sessionStorage.removeItem(SCENARIO_LOADED_KEY);
+    sessionStorage.removeItem(CURRENT_SCENARIO_KEY);
+    sessionStorage.removeItem('trpg_session_key');
+    sessionStorage.removeItem(GAME_ENDED_KEY);
+    sessionStorage.removeItem('trpg_world_state');
+    sessionStorage.removeItem('trpg_player_stats');
+    localStorage.removeItem(SESSION_KEY_STORAGE);
+
+    // 메모리 변수도 초기화
+    currentSessionId = null;
+    currentSessionKey = '';
+
+    console.log('🧹 All game state cleared (including session ID)');
+}
+
+// 외부에서 접근 가능하도록 함수를 window 객체에 할당
+window.clearAllGameState = clearAllGameState;
