@@ -337,14 +337,14 @@ def intent_parser_node(state: PlayerState):
     state['critic_feedback'] = ''
     logger.info("🧹 [CLEANUP] Output fields cleared for new turn")
 
-    # ✅ 작업 2: PlayerState의 current_scene_id를 절대적 진실(Source of Truth)로 믿고, world_state.location을 동기화
-    world_state = WorldState()
-    if 'world_state' in state and state['world_state']:
-        world_state.from_dict(state['world_state'])
+    # 🔍 [SESSION ISOLATION] WorldState 로컬 인스턴스 생성
+    session_id = state.get('scenario_id', 'unknown')
+    wsm = WorldState.from_dict_new(state.get('world_state', {}))
+    logger.info(f"🔍 [SESSION ISOLATION] Created local WorldState instance for session: {session_id}")
 
-    # current_scene_id를 먼저 캡처 (이것이 진실!)
+    # ✅ 작업 2: PlayerState의 current_scene_id를 절대적 진실(Source of Truth)로 믿고, world_state.location을 동기화
     curr_scene_id_from_state = state.get('current_scene_id', '')
-    ws_location = world_state.location
+    ws_location = wsm.location
 
     # ✅ 작업 2: 위치가 다를 경우, state['current_scene_id']를 기준으로 world_state.location 강제 업데이트
     if curr_scene_id_from_state and ws_location != curr_scene_id_from_state:
@@ -353,7 +353,7 @@ def intent_parser_node(state: PlayerState):
             f"state.current_scene_id: '{curr_scene_id_from_state}' (TRUTH) vs world_state.location: '{ws_location}' (OUTDATED)"
         )
         logger.info(f"🔧 [LOCATION SYNC] Forcing world_state.location = '{curr_scene_id_from_state}' (state.current_scene_id is Source of Truth)")
-        world_state.location = curr_scene_id_from_state
+        wsm.location = curr_scene_id_from_state
     elif not curr_scene_id_from_state and ws_location:
         # current_scene_id가 비어있으면 world_state.location으로 복원
         logger.info(f"🔄 [INTENT_PARSER] Restored scene from world_state.location: {ws_location}")
@@ -364,7 +364,7 @@ def intent_parser_node(state: PlayerState):
         logger.warning("⚠️ [INTENT_PARSER] Both current_scene_id and world_state.location are empty, using 'prologue' as default")
         curr_scene_id_from_state = 'prologue'
         state['current_scene_id'] = curr_scene_id_from_state
-        world_state.location = curr_scene_id_from_state
+        wsm.location = curr_scene_id_from_state
 
     # previous_scene_id 설정
     if curr_scene_id_from_state:
@@ -374,6 +374,9 @@ def intent_parser_node(state: PlayerState):
 
     # ✅ 정합성 로그
     logger.info(f"🟢 [INTENT_PARSER START] USER INPUT: '{user_input}' | Scene: '{curr_scene_id_from_state}' (from state.current_scene_id - SOURCE OF TRUTH)")
+
+    # ✅ 노드 종료 전 world_state 저장
+    state['world_state'] = wsm.to_dict()
 
     if not user_input:
         state['parsed_intent'] = 'chat'

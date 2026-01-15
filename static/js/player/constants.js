@@ -82,6 +82,10 @@ window.clearAllGameState = clearAllGameState;
     const isPageRefresh = performance.navigation.type === 1 ||
                          (performance.getEntriesByType('navigation')[0]?.type === 'reload');
 
+    // ✅ [FIX] 뒤로가기/앞으로가기 탐지 추가 (브라우저 네비게이션)
+    const isBackForward = performance.navigation.type === 2 ||
+                         (performance.getEntriesByType('navigation')[0]?.type === 'back_forward');
+
     // 내부 네비게이션으로 돌아온 경우 (전체 씬 보기 -> 플레이어 모드)
     const isReturningFromNavigation = sessionStorage.getItem(NAVIGATION_FLAG_KEY) === 'true';
     sessionStorage.removeItem(NAVIGATION_FLAG_KEY);  // 플래그 제거
@@ -97,8 +101,8 @@ window.clearAllGameState = clearAllGameState;
     // 저장된 게임 상태가 있는지 확인
     const hasSavedGame = sessionStorage.getItem(CHAT_LOG_KEY) || sessionStorage.getItem(SCENARIO_LOADED_KEY);
 
-    // 내부 네비게이션으로 돌아왔거나 저장된 게임이 있으면 복원
-    if (isReturningFromNavigation && hasSavedGame) {
+    // ✅ [FIX] 뒤로가기나 내부 네비게이션으로 돌아왔거나 저장된 게임이 있으면 복원
+    if ((isReturningFromNavigation || isBackForward) && hasSavedGame) {
         console.log('🔄 내부 네비게이션 복귀 - 게임 상태 복원 중...');
         // 복원은 DOMContentLoaded에서 restoreChatLog()가 처리
         return;

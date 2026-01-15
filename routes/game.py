@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 
-from core.state import game_state, WorldState as WorldStateManager
+from core.state import GameState, WorldState as WorldStateManager
 from game_engine import scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message, \
     get_scenario_by_id
 from routes.auth import get_current_user_optional, CurrentUser
@@ -152,6 +152,11 @@ def load_game_session(db: Session, session_key: str):
         player_state['current_scene_id'] = verified_scene_id
         wsm.location = verified_scene_id
 
+        # ✅ [FIX] world_state를 player_state에 포함시켜 game_engine이 초기화하지 않도록 함
+        if game_session.world_state:
+            player_state['world_state'] = game_session.world_state
+            logger.info(f"🌍 [DB LOAD] world_state included in player_state (location: {verified_scene_id})")
+
         logger.info(
             f"✅ [DB] Game session loaded: {session_key} "
             f"(Turn: {game_session.turn_count}, Scene: {verified_scene_id})"
@@ -196,6 +201,10 @@ async def game_act_stream(
     # ✅ [중요] 세션 ID와 시나리오 ID 검증 로직
     should_create_new_session = False
 
+    # 🔍 [SESSION ISOLATION] 세션별 독립적인 GameState 인스턴스 생성
+    game_state = GameState()
+    logger.info(f"🔍 [SESSION ISOLATION] Created local GameState instance for session: {session_id or 'new'}")
+
     if session_id:
         logger.info(f"🔍 [SESSION] Client provided session_id: {session_id}, scenario_id: {scenario_id}")
 
@@ -218,8 +227,11 @@ async def game_act_stream(
                 restored_state = load_game_session(db, session_id)
 
                 if restored_state:
-                    # ✅ DB에서 복구한 세션으로 game_state 완전히 교체
+                    # ✅ DB에서 복구한 세션으로 로컬 game_state에 설정
                     game_state.state = restored_state
+
+                    # game_graph도 생성
+                    game_state.game_graph = create_game_graph()
 
                     # WorldState도 복구
                     wsm = WorldStateManager()
