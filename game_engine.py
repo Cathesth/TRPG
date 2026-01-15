@@ -1808,3 +1808,45 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             </div>
             """
 
+# --- Graph Construction ---
+
+def create_game_graph():
+    """
+    LangGraph 워크플로우 생성
+    intent_parser -> (rule_engine | npc_actor) -> narrator -> END
+    """
+    workflow = StateGraph(PlayerState)
+
+    # 노드 추가
+    workflow.add_node("intent_parser", intent_parser_node)
+    workflow.add_node("rule_engine", rule_node)
+    workflow.add_node("npc_actor", npc_node)
+    workflow.add_node("narrator", narrator_node)
+
+    # 시작점 설정
+    workflow.set_entry_point("intent_parser")
+
+    # 라우팅 함수: 의도에 따라 rule_engine 또는 npc_actor로 분기
+    def route_action(state):
+        intent = state.get('parsed_intent')
+        if intent in ['transition', 'ending', 'investigate']:
+            return "rule_engine"
+        else:
+            return "npc_actor"
+
+    # 조건부 엣지 추가
+    workflow.add_conditional_edges(
+        "intent_parser",
+        route_action,
+        {
+            "rule_engine": "rule_engine",
+            "npc_actor": "npc_actor"
+        }
+    )
+
+    # 순차 엣지 추가
+    workflow.add_edge("rule_engine", "narrator")
+    workflow.add_edge("npc_actor", "narrator")
+    workflow.add_edge("narrator", END)
+
+    return workflow.compile()
