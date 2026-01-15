@@ -425,6 +425,7 @@ async function submitWithStreaming(actionText) {
                                 currentSessionId = data.content;
                                 // sessionStorage에 세션 ID 저장 (복원용)
                                 sessionStorage.setItem('current_session_id', data.content);
+                                sessionStorage.setItem('trpg_session_key', data.content);  // 하위 호환성
                                 console.log('🆔 Session ID received and updated:', data.content);
                                 const sessionIdDisplay = document.getElementById('session-id-display');
                                 if (sessionIdDisplay) {
