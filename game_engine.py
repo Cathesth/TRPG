@@ -330,7 +330,11 @@ def intent_parser_node(state: PlayerState):
     """
 
     # 0. 상태 초기화 (중요: 이전 턴의 찌꺼기 제거)
-    state['near_miss_trigger'] = None
+    state['near_miss_trigger'] = ''  # None 대신 빈 문자열 사용
+    state['npc_output'] = ''
+    state['narrator_output'] = ''
+    state['system_message'] = ''
+    logger.info("🧹 [CLEANUP] Output fields cleared for new turn")
 
     # ✅ 작업 2: 턴 시작 시 WorldState 위치 검증 및 복구
     world_state = WorldState()
@@ -520,7 +524,7 @@ def intent_parser_node(state: PlayerState):
 
         # JSON 파싱 시도
         # JSON이 마크다운 코드블록에 싸여있을 수 있으므로 추출
-        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        json_match = re.search(r'\{.*}', response, re.DOTALL)
         if json_match:
             json_str = json_match.group(0)
             intent_result = json.loads(json_str)
@@ -863,6 +867,11 @@ def rule_node(state: PlayerState):
 
             state['current_scene_id'] = next_id
             world_state.location = next_id
+
+            # ✅ 작업 2: 장면 전환 성공 시 이전 씬의 출력 필드 명시적으로 제거
+            state['npc_output'] = ''
+            state['narrator_output'] = ''
+            logger.info("🧹 [TRANSITION CLEANUP] Cleared output fields after scene transition")
 
             # ✅ 작업 3: 장면 전환 성공 시 서사 이벤트 기록 (이동 이유 포함)
             world_state.add_narrative_event(
@@ -1486,6 +1495,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         # [2단계] parsed_intent에 따라 전용 프롬프트 선택
         prompt_template = None
         prompt_key = None
+        narrative_prompt = ""  # 초기화
 
         if parsed_intent == 'investigate':
             # 조사/탐색 행동
