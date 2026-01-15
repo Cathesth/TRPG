@@ -408,9 +408,12 @@ def intent_parser_node(state: PlayerState):
     # [작업 1] 하드코딩 기반 고우선순위 필터링
     # =============================================================================
 
+    # ✅ [작업 2] 하드코드 필터 시작 시 대상 장면 ID 로그 출력
+    logger.info(f"🎯 [HARDCODE FILTER START] Filtering based on scene: '{curr_scene_id}' | Total transitions: {len(transitions)}")
+
     # 1-1. 따옴표 감지 -> 무조건 'chat' (대사/대화)
     if '"' in user_input or "'" in user_input or '"' in user_input or '"' in user_input or ''' in user_input or ''' in user_input:
-        logger.info(f"🎤 [HARDCODE FILTER] 따옴표 감지 -> 'chat' 강제 분류")
+        logger.info(f"🎤 [HARDCODE FILTER] 따옴표 감지 -> 'chat' 강제 분류 (scene: '{curr_scene_id}')")
         state['parsed_intent'] = 'chat'
         return state
 
@@ -423,7 +426,7 @@ def intent_parser_node(state: PlayerState):
         norm_trigger = normalize_text(trigger)
 
         if norm_input == norm_trigger:
-            logger.info(f"🎯 [HARDCODE FILTER] 100% 일치 감지 -> '{trigger}' (idx={idx})")
+            logger.info(f"🎯 [HARDCODE FILTER] 100% 일치 감지 -> '{trigger}' (idx={idx}, scene: '{curr_scene_id}')")
             state['last_user_choice_idx'] = idx
             state['parsed_intent'] = 'transition'
             return state
@@ -468,10 +471,13 @@ def intent_parser_node(state: PlayerState):
                             required_items.append(word)
 
             if required_items:
-                logger.info(f"🚫 [HARDCODE FILTER] 인벤토리에 없는 아이템 사용 시도 -> 'chat' 강제 분류")
+                logger.info(f"🚫 [HARDCODE FILTER] 인벤토리에 없는 아이템 사용 시도 -> 'chat' 강제 분류 (scene: '{curr_scene_id}')")
                 state['parsed_intent'] = 'chat'
                 state['system_message'] = f"⚠️ 인벤토리에 필요한 아이템이 없습니다."
                 return state
+
+    # ✅ [작업 2] 하드코드 필터 종료 로그
+    logger.info(f"🎯 [HARDCODE FILTER END] No hardcode match found in scene '{curr_scene_id}', proceeding to LLM classifier")
 
     # =============================================================================
     # [작업 2] LLM을 통한 의도 분류 (2단계 API 호출)
@@ -708,6 +714,22 @@ def rule_node(state: PlayerState):
         scenario = get_scenario_by_id(scenario_id)
         world_state.initialize_from_scenario(scenario)
 
+    # ✅ [작업 1-1] 턴 시작 시점에 실제 현재 위치를 명시적으로 캡처 (이것이 진실!)
+    actual_current_location = world_state.location
+    logger.info(f"📍 [RULE_NODE START] Captured actual_current_location: '{actual_current_location}' (from world_state.location)")
+
+    # ✅ [작업 1-3] 턴 시작 시 위치 정보 검증 - world_state.location과 state['current_scene_id'] 일치 확인
+    if state['current_scene_id'] != actual_current_location:
+        logger.warning(
+            f"⚠️ [LOCATION MISMATCH] state['current_scene_id']: '{state['current_scene_id']}' "
+            f"!= world_state.location: '{actual_current_location}'"
+        )
+        logger.info(f"🔧 [LOCATION FIX] Forcing state['current_scene_id'] = '{actual_current_location}'")
+        state['current_scene_id'] = actual_current_location
+        curr_scene_id = actual_current_location
+        curr_scene = all_scenes.get(curr_scene_id)
+        transitions = curr_scene.get('transitions', []) if curr_scene else []
+
     # ✅ [작업 1] 턴 카운트 증가 로직을 함수 시작 부분으로 이동
     # 게임 시작이 아닐 때만 턴 증가 (Game Started는 Turn 1을 가져감)
     is_game_start = state.get('is_game_start', False)
@@ -722,10 +744,8 @@ def rule_node(state: PlayerState):
         state['stuck_count'] = 0
         logger.info(f"🔧 [STUCK_COUNT] Initialized to 0")
 
-    # 🔴 장면 전환 시도 전 현재 씬을 정확히 캡처 (world_state.location 우선)
-    scene_before_transition = world_state.location or state.get('current_scene_id', '')
     user_action = state.get('last_user_input', '').strip()
-    logger.info(f"🎬 [APPLY_EFFECTS] Scene before transition: {scene_before_transition}, Intent: {state['parsed_intent']}, Transition index: {idx}")
+    logger.info(f"🎬 [APPLY_EFFECTS] Scene before transition: {actual_current_location}, Intent: {state['parsed_intent']}, Transition index: {idx}")
 
     # ✅ 작업 2: investigate 의도 처리 - Scene Rule에서 스탯 변동 패싱 및 적용
     if state['parsed_intent'] == 'investigate':
@@ -862,8 +882,9 @@ def rule_node(state: PlayerState):
 
         # 씬 이동
         if next_id:
-            # 🔴 이동 전 현재 위치를 scene_before_transition에서 가져오기
-            from_scene = scene_before_transition
+            # ✅ [작업 1-2] 장면 전환 성공 시 내러티브 기록의 from_scene은 반드시 actual_current_location 사용
+            from_scene = actual_current_location
+            logger.info(f"🔄 [TRANSITION] Using actual_current_location '{from_scene}' as from_scene for narrative")
 
             state['current_scene_id'] = next_id
             world_state.location = next_id
@@ -873,10 +894,11 @@ def rule_node(state: PlayerState):
             state['narrator_output'] = ''
             logger.info("🧹 [TRANSITION CLEANUP] Cleared output fields after scene transition")
 
-            # ✅ 작업 3: 장면 전환 성공 시 서사 이벤트 기록 (이동 이유 포함)
+            # ✅ [작업 1-2] 장면 전환 성공 시 서사 이벤트 기록 (actual_current_location을 from_scene으로 사용)
             world_state.add_narrative_event(
                 f"유저가 '{trigger_used}'을(를) 통해 [{from_scene}]에서 [{next_id}]로 이동함"
             )
+            logger.info(f"📖 [NARRATIVE] Recorded transition: [{from_scene}] -> [{next_id}] via '{trigger_used}'")
 
             # ✅ 작업 2: 장면 전환 성공 시 stuck_count 초기화
             old_stuck_count = state.get('stuck_count', 0)
@@ -897,7 +919,7 @@ def rule_node(state: PlayerState):
         if user_action:
             old_stuck_count = state.get('stuck_count', 0)
             state['stuck_count'] = old_stuck_count + 1
-            logger.info(f"🔄 [STUCK] Player stuck in scene '{scene_before_transition}' | Intent: {state['parsed_intent']} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+            logger.info(f"🔄 [STUCK] Player stuck in scene '{actual_current_location}' | Intent: {state['parsed_intent']} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
 
             # 서사 이벤트 기록
             world_state.add_narrative_event(
@@ -929,9 +951,29 @@ def rule_node(state: PlayerState):
 
     logger.info(f"🎬 [DATA_SYNC] Synchronized world_state.location to {world_state.location}")
 
+    # ✅ [작업 3] 최종 세이브 포인트 - 노드 끝나기 직전에 위치 일치 검증 및 강제
+    final_scene_id = state.get('current_scene_id', '')
+    final_ws_location = world_state.location
+
+    if final_scene_id != final_ws_location:
+        logger.error(
+            f"❌ [FINAL SYNC ERROR] Mismatch detected before save! "
+            f"state['current_scene_id']: '{final_scene_id}' vs world_state.location: '{final_ws_location}'"
+        )
+        # 강제로 world_state.location을 current_scene_id로 동기화 (state를 진실로 간주)
+        world_state.location = final_scene_id
+        logger.info(f"🔧 [FINAL SYNC FIX] Forced world_state.location = '{final_scene_id}'")
+
+    # Assert: 최종 일치 확인
+    assert state['current_scene_id'] == world_state.location, (
+        f"[CRITICAL] Final location mismatch! "
+        f"state: {state['current_scene_id']}, world_state: {world_state.location}"
+    )
+    logger.info(f"✅ [FINAL ASSERT] Location verified: state['current_scene_id'] == world_state.location == '{world_state.location}'")
+
     # ✅ WorldState 스냅샷 저장 (위치 동기화 후 저장)
     state['world_state'] = world_state.to_dict()
-    logger.info(f"🔄 [SYNC] Location synchronized: world_state.location = {world_state.location}, state['current_scene_id'] = {state.get('current_scene_id')}")
+    logger.info(f"💾 [DB SNAPSHOT] Saved final state to DB with location: {world_state.location}")
 
     return state
 
@@ -1167,9 +1209,30 @@ NPC ({target_npc_name}): "{response}"
 
     logger.info(f"🎬 [DATA_SYNC] Synchronized world_state.location to {world_state.location}")
 
+    # ✅ [작업 3] 최종 세이브 포인트 - 노드 끝나기 직전에 위치 일치 검증 및 강제
+    final_scene_id = state.get('current_scene_id', '')
+    final_ws_location = world_state.location
+
+    if final_scene_id != final_ws_location:
+        logger.error(
+            f"❌ [NPC_NODE FINAL SYNC ERROR] Mismatch detected before save! "
+            f"state['current_scene_id']: '{final_scene_id}' vs world_state.location: '{final_ws_location}'"
+        )
+        # 강제로 world_state.location을 current_scene_id로 동기화 (state를 진실로 간주)
+        world_state.location = final_scene_id
+        logger.info(f"🔧 [NPC_NODE FINAL SYNC FIX] Forced world_state.location = '{final_scene_id}'")
+
+    # Assert: 최종 일치 확인
+    assert state['current_scene_id'] == world_state.location, (
+        f"[CRITICAL] NPC_NODE final location mismatch! "
+        f"state: {state['current_scene_id']}, world_state: {world_state.location}"
+    )
+    logger.info(f"✅ [NPC_NODE FINAL ASSERT] Location verified: state['current_scene_id'] == world_state.location == '{world_state.location}'")
+
     # WorldState 스냅샷 저장 (위치 동기화 후 저장)
     state['world_state'] = world_state.to_dict()
     logger.info(f"🔄 [SYNC] Location synchronized in npc_node: world_state.location = {world_state.location}, stuck_count = {world_state.stuck_count}")
+    logger.info(f"💾 [DB SNAPSHOT] Saved final state to DB with location: {world_state.location}")
 
     return state
 
