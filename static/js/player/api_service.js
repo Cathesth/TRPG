@@ -159,10 +159,13 @@ async function fetchGameDataFromDB() {
             console.log('🔄 [FETCH] Restored session ID from sessionStorage:', currentSessionId);
         } else {
             console.warn('⚠️ [FETCH] No session ID available in memory or storage');
+            showEmptyDebugState();
+            return;
         }
     }
 
-    const sessionKey = currentSessionKey || localStorage.getItem(SESSION_KEY_STORAGE);
+    // ✅ FIX: currentSessionKey 대신 currentSessionId 사용 (세션 ID 통일)
+    const sessionKey = currentSessionId;
 
     if (!sessionKey) {
         console.warn('⚠️ No session key available');

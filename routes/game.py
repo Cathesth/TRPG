@@ -638,8 +638,17 @@ async def get_game_session_data(
         # World State에 씬 정보 추가
         world_state_with_scene = game_session.world_state.copy() if game_session.world_state else {}
 
-        # 현재 위치 scene_id 확인
-        location_scene_id = world_state_with_scene.get('location') or game_session.current_scene_id
+        # ✅ FIX: world_state.location을 player_state.current_scene_id와 동기화
+        # DB에서 복원 시 location이 제대로 업데이트되지 않는 문제 해결
+        player_current_scene = game_session.player_state.get('current_scene_id') if game_session.player_state else None
+        db_current_scene = game_session.current_scene_id
+
+        # 우선순위: player_state.current_scene_id > DB current_scene_id > world_state.location
+        location_scene_id = player_current_scene or db_current_scene or world_state_with_scene.get('location')
+
+        # world_state.location을 최신 위치로 강제 동기화
+        world_state_with_scene['location'] = location_scene_id
+
         location_scene_title = ''
 
         # 시나리오에서 해당 씬의 title 또는 name 찾기
@@ -652,6 +661,11 @@ async def get_game_session_data(
         # current_scene_id와 current_scene_title 명시적으로 설정
         world_state_with_scene['current_scene_id'] = location_scene_id
         world_state_with_scene['current_scene_title'] = location_scene_title
+
+        # stuck_count 동기화 (player_state에서 가져오기)
+        if game_session.player_state:
+            player_stuck_count = game_session.player_state.get('stuck_count', 0)
+            world_state_with_scene['stuck_count'] = player_stuck_count
 
         # turn_count가 없는 경우 0으로 초기화
         if 'turn_count' not in world_state_with_scene:
