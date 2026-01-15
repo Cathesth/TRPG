@@ -34,6 +34,9 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
     Returns:
         session_key: 세션 키
     """
+    # ✅ [작업 2] redis_client 변수를 최상단에서 초기화 (referenced before assignment 방지)
+    redis_client = None
+
     try:
         # [경량화] scenario 전체가 아닌 scenario_id만 사용
         scenario_id = state.get('scenario_id', 0)
@@ -62,37 +65,35 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
                 db.commit()
                 logger.info(f"✅ [DB] Game session updated: {session_key}")
 
-                # ✅ [작업 3] Redis에도 저장 (비동기 처리 최소화)
+                # ✅ [작업 2] Redis에도 저장 (비동기 처리 최소화)
                 try:
                     from core.redis_client import get_redis_client
-                    redis_client = get_redis_client()
-                    if redis_client.redis_url and redis_client.redis_url.strip():
-                        cache_data = {
-                            'player_state': state,
-                            'world_state': world_state_data,
-                            'current_scene_id': current_scene_id,
-                            'turn_count': turn_count,
-                            'scenario_id': scenario_id
-                        }
-                        # 동기 버전으로 Redis 저장 (별도 스레드에서 실행)
-                        import asyncio
-                        import threading
+                    import asyncio
+                    import threading
 
-                        def async_redis_save():
-                            try:
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                                loop.run_until_complete(redis_client.connect())
-                                if redis_client.is_connected:
-                                    loop.run_until_complete(redis_client.set(f"session:{session_key}", cache_data, expire=3600))
-                                    logger.info(f"✅ [REDIS] Session cached: {session_key}")
-                                loop.close()
-                            except Exception as e:
-                                logger.warning(f"⚠️ [REDIS] Async save failed: {e}")
+                    def async_redis_save():
+                        try:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            # get_redis_client를 비동기로 호출
+                            client = loop.run_until_complete(get_redis_client())
+                            if client.is_connected:
+                                cache_data = {
+                                    'player_state': state,
+                                    'world_state': world_state_data,
+                                    'current_scene_id': current_scene_id,
+                                    'turn_count': turn_count,
+                                    'scenario_id': scenario_id
+                                }
+                                loop.run_until_complete(client.set(f"session:{session_key}", cache_data, expire=3600))
+                                logger.info(f"✅ [REDIS] Session cached: {session_key}")
+                            loop.close()
+                        except Exception as e:
+                            logger.warning(f"⚠️ [REDIS] Async save failed: {e}")
 
-                        # 별도 스레드에서 실행 (메인 로직 블로킹 방지)
-                        thread = threading.Thread(target=async_redis_save, daemon=True)
-                        thread.start()
+                    # 별도 스레드에서 실행 (메인 로직 블로킹 방지)
+                    thread = threading.Thread(target=async_redis_save, daemon=True)
+                    thread.start()
                 except Exception as redis_err:
                     logger.warning(f"⚠️ [REDIS] Cache setup failed (continuing): {redis_err}")
 
@@ -118,21 +119,25 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
         db.commit()
         logger.info(f"✅ [DB] New game session created: {new_session_key}")
 
-        # ✅ [작업 3] Redis에도 저장
-        import asyncio
-        redis_client = get_redis_client()
+        # ✅ [작업 2] Redis에도 저장
         try:
-            asyncio.run(redis_client.connect())
-            if redis_client.is_connected:
-                cache_data = {
-                    'player_state': state,
-                    'world_state': world_state_data,
-                    'current_scene_id': current_scene_id,
-                    'turn_count': turn_count,
-                    'scenario_id': scenario_id
-                }
-                asyncio.run(redis_client.set(f"session:{new_session_key}", cache_data, expire=3600))
-                logger.info(f"✅ [REDIS] New session cached: {new_session_key}")
+            from core.redis_client import get_redis_client
+            import asyncio
+
+            async def save_to_redis():
+                redis_client = await get_redis_client()
+                if redis_client.is_connected:
+                    cache_data = {
+                        'player_state': state,
+                        'world_state': world_state_data,
+                        'current_scene_id': current_scene_id,
+                        'turn_count': turn_count,
+                        'scenario_id': scenario_id
+                    }
+                    await redis_client.set(f"session:{new_session_key}", cache_data, expire=3600)
+                    logger.info(f"✅ [REDIS] New session cached: {new_session_key}")
+
+            asyncio.run(save_to_redis())
         except Exception as redis_err:
             logger.warning(f"⚠️ [REDIS] Cache save failed (continuing): {redis_err}")
 

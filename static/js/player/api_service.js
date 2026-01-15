@@ -152,7 +152,7 @@ async function publishScenario(filename, btnElement) {
 
 // Railway DB에서 게임 데이터 불러오기
 async function fetchGameDataFromDB() {
-    // ✅ [작업 2] currentSessionId가 비어있으면 sessionStorage에서 복원 (메모리 유실 대비)
+    // ✅ [작업 4] currentSessionId가 비어있으면 sessionStorage에서 복원 (메모리 유실 대비)
     if (!currentSessionId) {
         currentSessionId = sessionStorage.getItem("current_session_id") || sessionStorage.getItem("trpg_session_key");
         if (currentSessionId) {
@@ -193,7 +193,7 @@ async function fetchGameDataFromDB() {
                 console.log('🔄 [SYNC] Forced location sync: world_state.location =', data.world_state.location);
             }
 
-            // ✅ [작업 4] current_scene_id가 없으면 current_scene_id 필드에서 가져오기
+            // ✅ [작업 4] current_scene_id가 없으면 DB의 current_scene_id 필드에서 가져오기
             if (data.current_scene_id && data.world_state) {
                 data.world_state.location = data.current_scene_id;
                 data.world_state.current_scene_id = data.current_scene_id;
@@ -216,7 +216,7 @@ async function fetchGameDataFromDB() {
             }
 
             // 3단계: UI 업데이트 (순서 중요: World State -> Player Stats -> NPC Status)
-            // World State 덮어쓰기
+            // ✅ [작업 4] World State 덮어쓰기 - 강제 동기화 후 updateWorldState 호출
             if (data.world_state) {
                 updateWorldState(data.world_state);
                 console.log('🌍 [WORLD_STATE] Updated from DB:', data.world_state);
