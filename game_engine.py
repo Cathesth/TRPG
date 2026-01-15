@@ -116,6 +116,8 @@ class PlayerState(TypedDict):
     model: str  # [추가] 사용 중인 LLM 모델
     stuck_count: int  # [추가] 정체 상태 카운터 (장면 전환 실패 횟수)
     _internal_flags: Dict[str, Any]  # [추가] 내부 플래그 (UI에 노출 안 됨)
+    world_state: Dict[str, Any]  # [추가] WorldState 스냅샷
+    is_game_start: bool  # [추가] 게임 시작 여부 플래그
 
 
 def normalize_text(text: str) -> str:
@@ -320,10 +322,11 @@ def check_victory_condition(user_input: str, scenario: Dict[str, Any], curr_scen
 
 def intent_parser_node(state: PlayerState):
     """
-    [2단계 API 호출 구조로 변경됨]
-    1단계: LLM을 통한 의도 분류 (intent_classifier)
-    - transitions 목록을 참고하여 유저 입력의 의도를 파악
-    - transition/chat/investigate/attack/defend 등으로 분류
+    [계층형 파서로 업그레이드]
+    우선순위:
+    1. 하드코딩 필터 (따옴표, 완전 일치, 인벤토리 검증)
+    2. LLM 의도 분류 (intent_classifier)
+    3. Fast-Track 폴백
     """
 
     # 0. 상태 초기화 (중요: 이전 턴의 찌꺼기 제거)
@@ -378,7 +381,76 @@ def intent_parser_node(state: PlayerState):
     enemy_names = curr_scene.get('enemies', [])
 
     # =============================================================================
-    # [1단계 API 호출] LLM을 통한 의도 분류
+    # [작업 1] 하드코딩 기반 고우선순위 필터링
+    # =============================================================================
+
+    # 1-1. 따옴표 감지 -> 무조건 'chat' (대사/대화)
+    if '"' in user_input or "'" in user_input or '"' in user_input or '"' in user_input or ''' in user_input or ''' in user_input:
+        logger.info(f"🎤 [HARDCODE FILTER] 따옴표 감지 -> 'chat' 강제 분류")
+        state['parsed_intent'] = 'chat'
+        return state
+
+    # 1-2. transitions와 100% 완전 일치 -> 즉시 'transition'
+    norm_input = normalize_text(user_input)
+    for idx, trans in enumerate(transitions):
+        trigger = trans.get('trigger', '').strip()
+        if not trigger:
+            continue
+        norm_trigger = normalize_text(trigger)
+
+        if norm_input == norm_trigger:
+            logger.info(f"🎯 [HARDCODE FILTER] 100% 일치 감지 -> '{trigger}' (idx={idx})")
+            state['last_user_choice_idx'] = idx
+            state['parsed_intent'] = 'transition'
+            return state
+
+    # 1-3. 아이템 사용 키워드 감지 + 인벤토리 검증
+    item_use_keywords = ['사용', '쓰', '뿌리', '던지', '먹', '마시', '착용', '장착']
+    if any(kw in user_input for kw in item_use_keywords):
+        # 인벤토리 확인
+        player_vars = state.get('player_vars', {})
+        inventory = player_vars.get('inventory', [])
+
+        # 유저 입력에서 아이템 이름 추출 시도 (간단한 휴리스틱)
+        has_item_in_inventory = False
+        extracted_item = None
+
+        # 인벤토리에 있는 아이템이 입력에 포함되어 있는지 확인
+        for item in inventory:
+            if str(item) in user_input:
+                has_item_in_inventory = True
+                extracted_item = item
+                break
+
+        # transitions에 아이템 사용이 필요한 경우 확인
+        for trans in transitions:
+            trigger = trans.get('trigger', '').strip().lower()
+            # trigger에 아이템 이름이 있는지 확인
+            for item in inventory:
+                if str(item).lower() in trigger:
+                    has_item_in_inventory = True
+                    break
+
+        # 아이템 사용 시도인데 인벤토리에 없으면 chat으로 거부
+        if not has_item_in_inventory and inventory != None:  # 인벤토리가 비어있지 않은 경우에만
+            # transitions에서 필요한 아이템 추출 시도
+            required_items = []
+            for trans in transitions:
+                trigger_text = trans.get('trigger', '')
+                # 간단한 패턴으로 아이템 추출 (개선 가능)
+                for word in trigger_text.split():
+                    if word and word not in ['을', '를', '사용', '던지', '뿌리']:
+                        if word not in [str(i) for i in inventory]:
+                            required_items.append(word)
+
+            if required_items:
+                logger.info(f"🚫 [HARDCODE FILTER] 인벤토리에 없는 아이템 사용 시도 -> 'chat' 강제 분류")
+                state['parsed_intent'] = 'chat'
+                state['system_message'] = f"⚠️ 인벤토리에 필요한 아이템이 없습니다."
+                return state
+
+    # =============================================================================
+    # [작업 2] LLM을 통한 의도 분류 (2단계 API 호출)
     # =============================================================================
 
     try:
@@ -402,7 +474,7 @@ def intent_parser_node(state: PlayerState):
         if not intent_classifier_template:
             # 프롬프트 로드 실패 시 기존 Fast-Track 방식 사용
             logger.warning("⚠️ intent_classifier prompt not found, falling back to fast-track")
-            return _fast_track_intent_parser(state, user_input, curr_scene, scenario, endings)
+            return _fast_track_intent_parser(state, user_input, curr_scene, get_scenario_by_id(scenario_id), endings)
 
         # 프롬프트 생성
         scenario = get_scenario_by_id(scenario_id)
@@ -490,11 +562,14 @@ def intent_parser_node(state: PlayerState):
 
     except Exception as e:
         logger.error(f"❌ [INTENT CLASSIFIER] Error: {e}, falling back to fast-track")
-        return _fast_track_intent_parser(state, user_input, curr_scene, scenario, endings)
+        return _fast_track_intent_parser(state, user_input, curr_scene, get_scenario_by_id(scenario_id), endings)
 
 
 def _fast_track_intent_parser(state: PlayerState, user_input: str, curr_scene: Dict, scenario: Dict, endings: Dict):
-    """기존 Fast-Track 의도 파서 (폴백용)"""
+    """
+    기존 Fast-Track 의도 파서 (폴백용)
+    ✅ [작업 3] Near Miss 로직 강화 - 0.4~0.6 구간에서 trigger 전체 문구 저장
+    """
     norm_input = normalize_text(user_input)
     transitions = curr_scene.get('transitions', [])
     scene_type = curr_scene.get('type', 'normal')
@@ -570,11 +645,13 @@ def _fast_track_intent_parser(state: PlayerState, user_input: str, curr_scene: D
         state['parsed_intent'] = 'transition'
         return state
 
-    # 0.4 ~ 0.59: Near Miss
+    # ✅ [작업 3] 0.4 ~ 0.59: Near Miss - 가장 가까운 트리거 전체 문구 저장
     elif highest_ratio >= 0.4:
-        logger.info(f"⚡ [FAST-TRACK] Near Miss ({highest_ratio:.2f}): '{user_input}' vs '{best_trigger_text}'")
+        logger.info(f"⚠️ [NEAR MISS] Similarity: {highest_ratio:.2f} | User: '{user_input}' vs Trigger: '{best_trigger_text}'")
+        # 트리거 전체 문구를 저장하여 나레이션 노드에서 힌트 제공
         state['near_miss_trigger'] = best_trigger_text
         state['parsed_intent'] = 'chat'
+        logger.info(f"💡 [HINT] near_miss_trigger set to: '{best_trigger_text}' (나레이션에서 힌트 제공 예정)")
         return state
 
     # 매칭 실패 -> 일반 채팅/힌트
