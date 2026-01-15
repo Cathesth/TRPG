@@ -44,6 +44,82 @@ function disableGameUI() {
     if (scenesBtn) scenesBtn.disabled = true;
 }
 
+// UI 초기화 함수 (완전 초기 상태)
+function initializeEmptyGameUI() {
+    const chatLog = document.getElementById('chat-log');
+    const initResult = document.getElementById('init-result');
+    const aiLoading = document.getElementById('ai-loading');
+
+    if (chatLog && initResult && aiLoading) {
+        // 초기 메시지만 남기고 모두 제거
+        chatLog.innerHTML = '';
+        chatLog.appendChild(initResult);
+
+        // 초기 안내 메시지 복원
+        const introHtml = `
+            <div id="intro-message" class="flex gap-4 fade-in mb-4">
+                <div class="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center shrink-0">
+                    <i data-lucide="bot" class="text-white w-4 h-4"></i>
+                </div>
+                <div class="flex-1">
+                    <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
+                    <div class="bg-[#1a1a1e] border-gray-700 p-3 rounded-lg border text-gray-300 text-sm leading-relaxed">
+                        시스템에 접속했습니다. 우측 상단의 <span class="text-indigo-400 font-bold">[시나리오 불러오기]</span> 버튼을 눌러 게임을 로드하세요.
+                    </div>
+                </div>
+            </div>
+        `;
+        initResult.insertAdjacentHTML('afterend', introHtml);
+        chatLog.appendChild(aiLoading);
+
+        // 스탯 영역 초기화
+        const statsArea = document.getElementById('player-stats-area');
+        if (statsArea) {
+            statsArea.innerHTML = `
+                <div class="text-gray-500 text-sm text-center py-4 bg-gray-800/50 rounded-lg border border-gray-700 border-dashed">
+                    <i data-lucide="ghost" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
+                    데이터 없음<br>
+                    <span class="text-xs">상단 [시나리오 불러오기]를 눌러주세요.</span>
+                </div>
+            `;
+        }
+
+        // 디버그 영역 초기화 (NPC Status, World State)
+        showEmptyDebugState();
+
+        // 세션 키 초기화
+        currentSessionKey = '';
+        localStorage.removeItem(SESSION_KEY_STORAGE);
+
+        // UI 비활성화
+        disableGameUI();
+    }
+}
+
+// 빈 디버그 상태 표시
+function showEmptyDebugState() {
+    const npcStatusArea = document.getElementById('npc-status-area');
+    const worldStateArea = document.getElementById('world-state-area');
+
+    if (npcStatusArea) {
+        npcStatusArea.innerHTML = `
+            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                NPC 데이터 없음
+            </div>
+        `;
+    }
+
+    if (worldStateArea) {
+        worldStateArea.innerHTML = `
+            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                World State 데이터 없음
+            </div>
+        `;
+    }
+
+    lucide.createIcons();
+}
+
 function restoreChatLog() {
     const savedLog = sessionStorage.getItem(CHAT_LOG_KEY);
     const savedGameEnded = sessionStorage.getItem(GAME_ENDED_KEY);
@@ -404,9 +480,12 @@ function updateModelVersions() {
 window.scrollToBottom = scrollToBottom;
 window.enableGameUI = enableGameUI;
 window.disableGameUI = disableGameUI;
+window.initializeEmptyGameUI = initializeEmptyGameUI;
+window.showEmptyDebugState = showEmptyDebugState;
 window.restoreChatLog = restoreChatLog;
 window.resetGameUI = resetGameUI;
 window.updateStats = updateStats;
+window.updateDebugInfo = updateDebugInfo;
 window.openLoadModal = openLoadModal;
 window.closeLoadModal = closeLoadModal;
 window.reloadScenarioList = reloadScenarioList;
@@ -414,4 +493,3 @@ window.showToast = showToast;
 window.editScenario = editScenario;
 window.openScenesView = openScenesView;
 window.updateModelVersions = updateModelVersions;
-

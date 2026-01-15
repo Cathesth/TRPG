@@ -522,30 +522,6 @@ function clearChatLog() {
     sessionStorage.removeItem(GAME_ENDED_KEY);
 }
 
-// 빈 디버그 상태 표시
-function showEmptyDebugState() {
-    const npcArea = document.getElementById('npc-status-area');
-    const worldStateArea = document.getElementById('world-state-area');
-
-    if (npcArea) {
-        npcArea.innerHTML = `
-            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
-                NPC 데이터 없음
-            </div>
-        `;
-    }
-
-    if (worldStateArea) {
-        worldStateArea.innerHTML = `
-            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
-                World State 데이터 없음
-            </div>
-        `;
-    }
-
-    lucide.createIcons();
-}
-
 // 외부에서 접근 가능하도록 window 객체에 할당
 window.playScenario = playScenario;
 window.deleteScenario = deleteScenario;
@@ -553,4 +529,6 @@ window.publishScenario = publishScenario;
 window.fetchGameDataFromDB = fetchGameDataFromDB;
 window.submitWithStreaming = submitWithStreaming;
 window.submitGameAction = submitGameAction;
-
+window.disableInput = disableInput;
+window.saveChatLog = saveChatLog;
+window.clearChatLog = clearChatLog;

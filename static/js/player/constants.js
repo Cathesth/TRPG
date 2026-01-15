@@ -51,108 +51,6 @@ window.addEventListener('beforeunload', function(e) {
     }
 });
 
-// 페이지 로드 시 상태 복원 또는 초기화
-(function() {
-    // 새로고침(F5) vs 내부 네비게이션 구분
-    const isPageRefresh = performance.navigation.type === 1 ||
-                         (performance.getEntriesByType('navigation')[0]?.type === 'reload');
-
-    // 내부 네비게이션으로 돌아온 경우 (전체 씬 보기 -> 플레이어 모드)
-    const isReturningFromNavigation = sessionStorage.getItem(NAVIGATION_FLAG_KEY) === 'true';
-    sessionStorage.removeItem(NAVIGATION_FLAG_KEY);  // 플래그 제거
-
-    // 새로고침이면 무조건 초기화
-    if (isPageRefresh) {
-        console.log('🔄 새로고침 감지 - 게임 상태 초기화');
-        clearAllGameState();
-        initializeEmptyGameUI();
-        return;
-    }
-
-    // 저장된 게임 상태가 있는지 확인
-    const hasSavedGame = sessionStorage.getItem(CHAT_LOG_KEY) || sessionStorage.getItem(SCENARIO_LOADED_KEY);
-
-    // 내부 네비게이션으로 돌아왔거나 저장된 게임이 있으면 복원
-    if (isReturningFromNavigation && hasSavedGame) {
-        console.log('🔄 내부 네비게이션 복귀 - 게임 상태 복원 중...');
-        // 복원은 DOMContentLoaded에서 restoreChatLog()가 처리
-        return;
-    }
-
-    // 완전히 새로운 시작 (첫 방문)
-    console.log('🆕 새로운 게임 세션 시작');
-    clearAllGameState();
-    initializeEmptyGameUI();
-})();
-
-// UI 초기화 함수
-function initializeEmptyGameUI() {
-    const chatLog = document.getElementById('chat-log');
-    const initResult = document.getElementById('init-result');
-    const aiLoading = document.getElementById('ai-loading');
-
-    if (chatLog && initResult && aiLoading) {
-        // 초기 메시지만 남기고 모두 제거
-        chatLog.innerHTML = '';
-        chatLog.appendChild(initResult);
-
-        // 초기 안내 메시지 복원
-        const introHtml = `
-            <div id="intro-message" class="flex gap-4 fade-in mb-4">
-                <div class="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center shrink-0">
-                    <i data-lucide="bot" class="text-white w-4 h-4"></i>
-                </div>
-                <div class="flex-1">
-                    <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
-                    <div class="bg-[#1a1a1e] border-gray-700 p-3 rounded-lg border text-gray-300 text-sm leading-relaxed">
-                        시스템에 접속했습니다. 우측 상단의 <span class="text-indigo-400 font-bold">[시나리오 불러오기]</span> 버튼을 눌러 게임을 로드하세요.
-                    </div>
-                </div>
-            </div>
-        `;
-        initResult.insertAdjacentHTML('afterend', introHtml);
-        chatLog.appendChild(aiLoading);
-
-        // 스탯 영역 초기화
-        const statsArea = document.getElementById('player-stats-area');
-        if (statsArea) {
-            statsArea.innerHTML = `
-                <div class="text-gray-500 text-sm text-center py-4 bg-gray-800/50 rounded-lg border border-gray-700 border-dashed">
-                    <i data-lucide="ghost" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
-                    데이터 없음<br>
-                    <span class="text-xs">상단 [시나리오 불러오기]를 눌러주세요.</span>
-                </div>
-            `;
-        }
-
-        // 디버그 영역 초기화 (NPC Status, World State)
-        const npcStatusArea = document.getElementById('npc-status-area');
-        if (npcStatusArea) {
-            npcStatusArea.innerHTML = `
-                <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
-                    NPC 데이터 없음
-                </div>
-            `;
-        }
-
-        const worldStateArea = document.getElementById('world-state-area');
-        if (worldStateArea) {
-            worldStateArea.innerHTML = `
-                <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
-                    World State 데이터 없음
-                </div>
-            `;
-        }
-
-        // 세션 키 초기화
-        currentSessionKey = '';
-        localStorage.removeItem(SESSION_KEY_STORAGE);
-
-        // UI 비활성화
-        disableGameUI();
-    }
-}
-
 // 모든 게임 상태 초기화 함수
 function clearAllGameState() {
     sessionStorage.removeItem(CHAT_LOG_KEY);
@@ -171,7 +69,5 @@ function clearAllGameState() {
     console.log('🧹 All game state cleared (including session ID)');
 }
 
-// 외부에서 접근 가능하도록 함수들을 window 객체에 할당
-window.initializeEmptyGameUI = initializeEmptyGameUI;
+// 외부에서 접근 가능하도록 함수를 window 객체에 할당
 window.clearAllGameState = clearAllGameState;
-
