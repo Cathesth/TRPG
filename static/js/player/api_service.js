@@ -152,7 +152,7 @@ async function publishScenario(filename, btnElement) {
 
 // Railway DB에서 게임 데이터 불러오기
 async function fetchGameDataFromDB() {
-    // ✅ 작업 3: currentSessionId가 비어있으면 sessionStorage에서 복원 (메모리 유실 대비)
+    // ✅ [작업 2] currentSessionId가 비어있으면 sessionStorage에서 복원 (메모리 유실 대비)
     if (!currentSessionId) {
         currentSessionId = sessionStorage.getItem("current_session_id") || sessionStorage.getItem("trpg_session_key");
         if (currentSessionId) {
@@ -164,7 +164,6 @@ async function fetchGameDataFromDB() {
         }
     }
 
-    // ✅ FIX: currentSessionKey 대신 currentSessionId 사용 (세션 ID 통일)
     const sessionKey = currentSessionId;
 
     if (!sessionKey) {
@@ -186,17 +185,19 @@ async function fetchGameDataFromDB() {
         if (data.success) {
             console.log('✅ Data fetched from Railway DB:', data);
 
-            // ✅ [작업 4] 데이터 매핑 안전장치 - player_state.current_scene_id를 world_state.location에 강제 할당
+            // ✅ [작업 3] DB 데이터로 클라이언트 상태 완전히 덮어쓰기
+            // 1단계: 위치 데이터 강제 동기화 (player_state가 절대 진리)
             if (data.world_state && data.player_state) {
                 data.world_state.location = data.player_state.current_scene_id;
                 data.world_state.stuck_count = data.player_state.stuck_count || 0;
-                console.log('🔄 [SYNC] Location forced from player_state to world_state:', data.world_state.location);
+                console.log('🔄 [SYNC] Forced location sync: world_state.location =', data.world_state.location, 'stuck_count =', data.world_state.stuck_count);
             }
 
-            // ✅ [작업 3] 세션 ID 갱신 및 화면 즉시 반영
+            // 2단계: 세션 ID 갱신 및 화면 즉시 반영
             if (data.player_state && data.player_state.session_id) {
                 currentSessionId = data.player_state.session_id;
                 sessionStorage.setItem('current_session_id', currentSessionId);
+                sessionStorage.setItem('trpg_session_key', currentSessionId);
 
                 const sessionIdDisplay = document.getElementById('session-id-display');
                 if (sessionIdDisplay) {
@@ -207,23 +208,27 @@ async function fetchGameDataFromDB() {
                 console.log('🔄 [SESSION] Updated session ID from server:', currentSessionId);
             }
 
-            // World State 업데이트
+            // 3단계: UI 업데이트 (순서 중요: World State -> Player Stats -> NPC Status)
+            // World State 덮어쓰기
             if (data.world_state) {
                 updateWorldState(data.world_state);
+                console.log('🌍 [WORLD_STATE] Updated from DB:', data.world_state);
             }
 
-            // 1. Player Stats 업데이트
+            // Player Stats 덮어쓰기
             if (data.player_state && data.player_state.player_vars) {
                 updateStats(data.player_state.player_vars);
+                console.log('📊 [PLAYER_VARS] Updated from DB:', data.player_state.player_vars);
             }
 
-            // 3. NPC Status 업데이트
+            // NPC Status 업데이트
             if (data.npc_status) {
                 updateNPCStatus(data.npc_status);
+                console.log('🤖 [NPC_STATUS] Updated from DB:', data.npc_status);
             }
 
             lucide.createIcons();
-            console.log('✅ All data updated from Railway DB');
+            console.log('✅ All data updated from Railway DB - Client state overwritten');
         } else {
             console.error('❌ Failed to fetch from DB:', data.error);
             showEmptyDebugState();

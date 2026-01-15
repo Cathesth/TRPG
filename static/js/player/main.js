@@ -4,28 +4,26 @@ document.addEventListener('DOMContentLoaded', function() {
     // 아이콘 초기화
     lucide.createIcons();
 
-    // ✅ 내부 네비게이션 플래그 확인 (전체 씬 보기에서 돌아온 경우)
-    const wasInternalNavigation = sessionStorage.getItem(NAVIGATION_FLAG_KEY) === 'true';
-    if (wasInternalNavigation) {
-        console.log('🔄 [INIT] Returned from internal navigation');
-        sessionStorage.removeItem(NAVIGATION_FLAG_KEY);
-    }
-
-    // ✅ [작업 3] 세션 ID 복원 및 즉시 화면 표시 (fetch 기다리지 않고 먼저 표시)
+    // ✅ [작업 2] 세션 키 복원 및 즉시 DB 데이터 fetch
+    // 1단계: 세션 키 찾기 (모든 가능한 키 확인)
     if (!currentSessionId) {
         currentSessionId = sessionStorage.getItem("current_session_id") || sessionStorage.getItem("trpg_session_key");
-        if (currentSessionId) {
-            console.log('🔄 [INIT] Session ID restored from sessionStorage:', currentSessionId);
+    }
 
-            // 세션 ID 표시 즉시 업데이트 (fetch 기다리지 않음)
-            const sessionIdDisplay = document.getElementById('session-id-display');
-            if (sessionIdDisplay) {
-                sessionIdDisplay.textContent = currentSessionId;
-                sessionIdDisplay.classList.remove('text-gray-300');
-                sessionIdDisplay.classList.add('text-green-400');
-                console.log('✅ [INIT] Session ID displayed immediately');
-            }
+    // 2단계: 세션 키를 찾았으면 UI 갱신 및 DB fetch
+    if (currentSessionId) {
+        console.log('🔑 [INIT] Session ID found:', currentSessionId);
+
+        // UI에 세션 ID 즉시 표시
+        const sessionIdDisplay = document.getElementById('session-id-display');
+        if (sessionIdDisplay) {
+            sessionIdDisplay.textContent = currentSessionId;
+            sessionIdDisplay.classList.remove('text-gray-300');
+            sessionIdDisplay.classList.add('text-green-400');
         }
+
+        // 즉시 DB에서 데이터 가져오기
+        window.fetchGameDataFromDB();
     }
 
     // ✅ 시나리오 ID 복원
@@ -34,12 +32,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (currentScenarioId) {
             console.log('📋 [INIT] Scenario ID restored:', currentScenarioId);
         }
-    }
-
-    // ✅ 세션 ID가 있으면 자동 복구
-    if (currentSessionId) {
-        console.log('🔄 [INIT] Auto-recovering game state from DB...');
-        window.fetchGameDataFromDB();
     }
 
     // 모델 버전 초기화 (가장 먼저 실행)
