@@ -5,6 +5,9 @@ import time
 import threading
 import glob  # <--- 이 줄을 추가해주세요!
 import shutil
+import uuid
+from core.state import WorldState
+from routes.game import save_game_session
 from pathlib import Path
 from passlib.context import CryptContext
 from typing import Optional, List, Dict, Any
@@ -146,7 +149,7 @@ def get_profile_view(user: CurrentUser = Depends(get_current_user), db: Session 
         return "<div>회원 정보를 찾을 수 없습니다.</div>"
 
     username = user.id
-    
+
     # [수정] user.email 대신 db_user.email을 사용해야 에러가 나지 않습니다.
     email = db_user.email or ""
 
@@ -223,16 +226,23 @@ async def update_profile(
     if not user.is_authenticated:
         return JSONResponse({"success": False, "error": "로그인이 필요합니다."}, status_code=401)
 
-    # DB에서 실제 유저 객체 조회 (업데이트 대상)
+    # DB에서 실제 유저 객체 조회
     db_user = db.query(User).filter(User.id == user.id).first()
     if not db_user:
         return JSONResponse({"success": False, "error": "사용자를 찾을 수 없습니다."}, status_code=404)
 
-    # 1. 비밀번호 변경 확인
-    if password:
+    # 1. 비밀번호 변경 (값이 있고, 빈 문자열이 아닐 때만 실행)
+    if password and password.strip():
+        if len(password) > 72:
+            return JSONResponse({"success": False, "error": "비밀번호는 72자 이내여야 합니다."}, status_code=400)
+
         if password != confirm_password:
             return JSONResponse({"success": False, "error": "비밀번호가 일치하지 않습니다."}, status_code=400)
-        db_user.password_hash = pwd_context.hash(password)
+
+        try:
+            db_user.password_hash = pwd_context.hash(password)
+        except Exception as e:
+            return JSONResponse({"success": False, "error": f"비밀번호 처리 중 오류: {str(e)}"}, status_code=500)
 
     # 2. 이메일 업데이트
     if email is not None:
@@ -241,16 +251,13 @@ async def update_profile(
     # 3. 프로필 사진 업로드 처리
     if avatar and avatar.filename:
         try:
-            # 파일명 안전하게 생성 (uuid 사용)
             file_ext = Path(avatar.filename).suffix
             new_filename = f"{user.id}_{uuid.uuid4()}{file_ext}"
             save_path = f"static/avatars/{new_filename}"
 
-            # 파일 저장
             with open(save_path, "wb") as buffer:
                 shutil.copyfileobj(avatar.file, buffer)
 
-            # DB에 경로 저장 (/static/... 형태)
             db_user.avatar_url = f"/{save_path}"
         except Exception as e:
             return JSONResponse({"success": False, "error": f"이미지 업로드 실패: {str(e)}"}, status_code=500)
@@ -667,9 +674,7 @@ async def load_scenario(
         filename: str = Form(...),
         user: CurrentUser = Depends(get_current_user_optional)
 ):
-    import uuid
-    from core.state import WorldState
-    from routes.game import save_game_session
+
 
     user_id = user.id if user.is_authenticated else None
     result, error = ScenarioService.load_scenario(filename, user_id)
