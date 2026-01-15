@@ -130,8 +130,14 @@ async def view_debug_scenes(
 
         scenario_data = result
 
-        # Mermaid 그래프 생성
-        mermaid_code = MermaidService.generate_mermaid_from_scenario(scenario_data)
+        # ✅ [FIX 2-B] Mermaid 그래프 생성 - 실패해도 나머지 데이터는 정상 렌더링
+        mermaid_code = "graph TD\n    A[Mermaid 차트 생성 중...]"
+        try:
+            mermaid_code = MermaidService.generate_mermaid_from_scenario(scenario_data)
+            logger.info(f"✅ [DEBUG SCENES] Mermaid chart generated successfully")
+        except Exception as mermaid_error:
+            logger.error(f"❌ [DEBUG SCENES] Mermaid generation failed: {mermaid_error}", exc_info=True)
+            mermaid_code = "graph TD\n    Error[Mermaid 차트 생성 실패]\n    Error -->|시나리오 데이터는 정상| Info[아래 씬 목록 참조]"
 
         # 현재 진행 중인 씬 정보 (옵션)
         current_scene_id = None
@@ -188,7 +194,7 @@ async def view_debug_scenes(
         })
 
     except Exception as e:
-        logger.error(f"❌ Failed to load debug scenes: {e}")
+        logger.error(f"❌ Failed to load debug scenes: {e}", exc_info=True)
         return templates.TemplateResponse("debug_scenes_view.html", {
             "request": request,
             "title": "오류 발생",
@@ -206,7 +212,6 @@ async def view_debug_scenes(
             "user": user,
             "scenario_id": scenario_id
         })
-
 
 
 @views_router.get("/views/scenes/edit/{scenario_id}", response_class=HTMLResponse)

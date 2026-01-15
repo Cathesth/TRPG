@@ -321,21 +321,26 @@ function updateWorldState(worldStateData) {
     const day = time.day || 1;
     const phase = time.phase || 'morning';
     const turnCount = worldState.turn_count || 0;
-    const stuckCount = worldState.stuck_count || 0;
+
+    // ✅ [FIX 1-C] stuck_count를 더 robust하게 읽기 (world_state → player_state fallback)
+    const stuckCount = worldState.stuck_count ?? (worldStateData.player_state?.stuck_count ?? 0);
+
     const globalFlags = worldState.global_flags || {};
 
-    // ✅ [FIX 1] 위치 정보 처리 강화 - 실제 데이터가 있을 때만 표시
-    let locationDisplay = null;
+    // ✅ [FIX 1-C] 위치 정보 처리 강화 - current_scene_title 우선, 없으면 sceneNameMap, 그래도 없으면 scene_id만
+    let locationDisplay = '위치 정보 없음';
 
-    // worldState.location을 최우선으로 사용 (백엔드에서 동기화된 데이터)
-    const sceneId = worldState.location || worldState.current_scene_id;
+    // 1. worldState.location을 최우선으로 사용 (백엔드에서 동기화된 데이터)
+    const sceneId = worldState.current_scene_id || worldState.location;
     const sceneTitle = worldState.current_scene_title;
 
-    // 실제 데이터가 존재하는지 엄격히 체크
     if (sceneId && sceneId !== '?' && sceneId !== 'Unknown' && sceneId !== '') {
         if (sceneTitle && sceneTitle !== '?' && sceneTitle !== 'Unknown' && sceneTitle !== '') {
             // Scene ID와 제목 모두 유효한 경우
-            locationDisplay = `${sceneId} (${sceneTitle})`;
+            locationDisplay = `${sceneId} ('${sceneTitle}')`;
+        } else if (window.sceneNameMap && window.sceneNameMap[sceneId]) {
+            // sceneNameMap에서 타이틀 찾기 (전체 씬 보기에서 로드한 데이터)
+            locationDisplay = `${sceneId} ('${window.sceneNameMap[sceneId]}')`;
         } else {
             // ID만 유효한 경우
             locationDisplay = sceneId;
