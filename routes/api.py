@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from passlib.context import CryptContext
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, APIRouter, Request, Depends, Form, HTTPException, Query, File, UploadFile, Form
+from fastapi import FastAPI, APIRouter, Request, Depends, Form, HTTPException, Query, File, UploadFile
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -33,7 +33,7 @@ from services.mermaid_service import MermaidService
 
 # 인증 및 모델
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
-from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike
+from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike, User
 
 # 비밀번호 해싱 설정 (기존에 있다면 생략 가능)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -135,17 +135,22 @@ def get_mypage_scenarios_view():
 
 
 @api_router.get('/views/mypage/profile', response_class=HTMLResponse)
-def get_profile_view(user: CurrentUser = Depends(get_current_user)):
+def get_profile_view(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     """마이페이지: 회원 정보 수정 폼 반환"""
     if not user.is_authenticated:
         return "<div>로그인이 필요합니다.</div>"
+
+    # DB에서 최신 유저 정보 조회 (CurrentUser에는 email/avatar_url이 없을 수 있음)
+    db_user = db.query(User).filter(User.id == user.id).first()
+    if not db_user:
+        return "<div>회원 정보를 찾을 수 없습니다.</div>"
 
     username = user.id
     email = user.email or ""
     # 프로필 사진이 없으면 기본 이니셜 표시, 있으면 이미지 표시
     avatar_html = f'<span class="text-3xl font-bold text-gray-500 group-hover:text-white transition-colors">{username[:2].upper()}</span>'
-    if user.avatar_url:
-        avatar_html = f'<img src="{user.avatar_url}" class="w-full h-full object-cover" alt="Profile">'
+    if db_user.avatar_url:
+        avatar_html = f'<img src="{db_user.avatar_url}" class="w-full h-full object-cover" alt="Profile">'
 
     return f"""
     <div class="fade-in max-w-2xl mx-auto">
@@ -153,16 +158,21 @@ def get_profile_view(user: CurrentUser = Depends(get_current_user)):
             <i data-lucide="user-cog" class="w-6 h-6 text-rpg-accent"></i> Edit Profile
         </h2>
 
-        <form class="space-y-6">
+        <form onsubmit="handleProfileUpdate(event)" class="space-y-6" enctype="multipart/form-data">
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="col-span-full flex flex-col items-center justify-center p-6 bg-rpg-800 rounded-xl border border-rpg-700 border-dashed hover:border-rpg-accent transition-colors cursor-pointer group">
-                    <div class="w-24 h-24 rounded-full bg-rpg-900 flex items-center justify-center mb-3 relative overflow-hidden">
-                        <span class="text-3xl font-bold text-gray-500 group-hover:text-white transition-colors">{username[:2].upper()}</span>
+                <div class="col-span-full flex flex-col items-center justify-center p-6 bg-rpg-800 rounded-xl border border-rpg-700 border-dashed hover:border-rpg-accent transition-colors cursor-pointer group"
+                     onclick="document.getElementById('avatar-upload').click()">
+                    <div class="w-24 h-24 rounded-full bg-rpg-900 flex items-center justify-center mb-3 relative overflow-hidden border border-rpg-700">
+                        <div id="avatar-preview" class="w-full h-full flex items-center justify-center">
+                            {avatar_html}
+                        </div>
                         <div class="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                             <i data-lucide="camera" class="w-6 h-6 text-white"></i>
                         </div>
                     </div>
                     <p class="text-sm text-gray-400 group-hover:text-rpg-accent">Change Avatar</p>
+                    <input type="file" id="avatar-upload" name="avatar" class="hidden" accept="image/*" onchange="previewImage(this)">
                 </div>
 
                 <div class="space-y-2">
@@ -173,23 +183,23 @@ def get_profile_view(user: CurrentUser = Depends(get_current_user)):
 
                 <div class="space-y-2">
                     <label class="text-xs font-bold text-gray-400 uppercase">Email Address</label>
-                    <input type="email" placeholder="email@example.com" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
+                    <input type="email" name="email" value="{email}" placeholder="email@example.com" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
                 </div>
 
                 <div class="space-y-2">
                     <label class="text-xs font-bold text-gray-400 uppercase">New Password</label>
-                    <input type="password" placeholder="••••••••" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
+                    <input type="password" name="password" placeholder="••••••••" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
                 </div>
 
                 <div class="space-y-2">
                     <label class="text-xs font-bold text-gray-400 uppercase">Confirm Password</label>
-                    <input type="password" placeholder="••••••••" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
+                    <input type="password" name="confirm_password" placeholder="••••••••" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
                 </div>
             </div>
 
             <div class="flex justify-end gap-3 pt-6 border-t border-rpg-700">
                 <button type="button" class="px-6 py-2.5 rounded-lg border border-rpg-700 text-gray-400 hover:text-white hover:bg-rpg-800 transition-colors">Cancel</button>
-                <button type="submit" onclick="alert('준비 중인 기능입니다.')" class="px-6 py-2.5 rounded-lg bg-rpg-accent text-black font-bold hover:bg-white transition-colors shadow-lg shadow-rpg-accent/20">Save Changes</button>
+                <button type="submit" class="px-6 py-2.5 rounded-lg bg-rpg-accent text-black font-bold hover:bg-white transition-colors shadow-lg shadow-rpg-accent/20">Save Changes</button>
             </div>
         </form>
     </div>
@@ -210,15 +220,20 @@ async def update_profile(
     if not user.is_authenticated:
         return JSONResponse({"success": False, "error": "로그인이 필요합니다."}, status_code=401)
 
+    # DB에서 실제 유저 객체 조회 (업데이트 대상)
+    db_user = db.query(User).filter(User.id == user.id).first()
+    if not db_user:
+        return JSONResponse({"success": False, "error": "사용자를 찾을 수 없습니다."}, status_code=404)
+
     # 1. 비밀번호 변경 확인
     if password:
         if password != confirm_password:
             return JSONResponse({"success": False, "error": "비밀번호가 일치하지 않습니다."}, status_code=400)
-        user.password_hash = pwd_context.hash(password)
+        db_user.password_hash = pwd_context.hash(password)
 
     # 2. 이메일 업데이트
     if email is not None:
-        user.email = email
+        db_user.email = email
 
     # 3. 프로필 사진 업로드 처리
     if avatar and avatar.filename:
@@ -233,13 +248,13 @@ async def update_profile(
                 shutil.copyfileobj(avatar.file, buffer)
 
             # DB에 경로 저장 (/static/... 형태)
-            user.avatar_url = f"/{save_path}"
+            db_user.avatar_url = f"/{save_path}"
         except Exception as e:
             return JSONResponse({"success": False, "error": f"이미지 업로드 실패: {str(e)}"}, status_code=500)
 
     try:
         db.commit()
-        db.refresh(user)
+        db.refresh(db_user)
         return {"success": True, "message": "회원 정보가 수정되었습니다."}
     except Exception as e:
         db.rollback()
