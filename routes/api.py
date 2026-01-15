@@ -584,7 +584,8 @@ async def get_scenarios_data(
 @api_router.post('/load_scenario')
 async def load_scenario(
         filename: str = Form(...),
-        user: CurrentUser = Depends(get_current_user_optional)
+        user: CurrentUser = Depends(get_current_user_optional),
+        db: Session = Depends(get_db)  # ✅ DB 의존성 추가
 ):
     import uuid
     from core.state import WorldState
@@ -632,7 +633,8 @@ async def load_scenario(
         "near_miss_trigger": None,
         "model": "openai/tngtech/deepseek-r1t2-chimera:free",
         "_internal_flags": {},
-        "stuck_count": 0
+        "stuck_count": 0,
+        "world_state": world_state_instance.to_dict()  # ✅ world_state 포함
     }
 
     # ✅ GameState 직렬화 데이터 포함
@@ -641,13 +643,24 @@ async def load_scenario(
         "state": player_state
     }
 
+    # ✅ [핵심 수정] DB에 세션 저장 (순환 import 방지를 위해 지역 import)
+    from routes.game import save_game_session
+
+    try:
+        saved_key = save_game_session(db, player_state, user_id=user_id, session_key=new_session_key)
+        logger.info(f"✅ [LOAD_SCENARIO] Session persisted to DB: {saved_key} (scenario_id={scenario_id})")
+    except Exception as e:
+        logger.error(f"❌ [LOAD_SCENARIO] Failed to save session to DB: {e}")
+        # DB 저장 실패해도 클라이언트에는 세션 키 반환 (첫 턴에서 재시도)
+        saved_key = new_session_key
+
     logger.info(f"✅ [LOAD_SCENARIO] State initialized (session-independent)")
 
-    # ✅ 클라이언트에 세션 데이터 반환 (DB 저장은 첫 턴에서 수행)
+    # ✅ 클라이언트에 세션 데이터 반환
     return {
         "success": True,
-        "session_key": new_session_key,
-        "scenario_id": scenario_id,  # ✅ [FIX 1-3] scenario_id 추가
+        "session_key": saved_key,  # ✅ DB에 저장된 키 반환
+        "scenario_id": scenario_id,
         "game_state": game_state_data,
         "player_vars": result['player_vars'],
         "start_scene_id": start_id
