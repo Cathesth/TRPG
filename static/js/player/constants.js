@@ -12,7 +12,7 @@ let isStreaming = false;  // 스트리밍 중 여부 추가
 let responseTimerInterval = null;  // 응답 시간 타이머
 let responseStartTime = null;  // 응답 시작 시간
 let currentSessionKey = '';  // 현재 세션 키 저장
-// ✅ 작업 2: 세션 ID 복원 로직 강화 - sessionStorage에서 안전하게 복원 (하위 호환성 포함)
+// ✅ [작업 4] 세션 ID 복원 로직 단순화 - 모든 가능한 키를 체크
 let currentSessionId = sessionStorage.getItem("current_session_id") || sessionStorage.getItem("trpg_session_key") || null;
 let currentScenarioId = sessionStorage.getItem('trpg_scenario_id') || null;  // 현재 로드된 시나리오 ID 저장
 

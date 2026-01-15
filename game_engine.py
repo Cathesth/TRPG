@@ -1052,11 +1052,11 @@ NPC ({target_npc_name}): "{response}"
 
     # ✅ [작업 1] 백엔드 위치 데이터 강제 동기화 - DB 저장 전 최신 위치를 world_state에 덮어씌움
     world_state.location = state.get("current_scene_id", world_state.location)
-    world_state.turn_count = state.get("world_state", {}).get("turn_count", world_state.turn_count)
     world_state.stuck_count = state.get("stuck_count", 0)
 
     # WorldState 스냅샷 저장
     state['world_state'] = world_state.to_dict()
+    logger.info(f"🔄 [SYNC] Location synchronized in npc_node: world_state.location = {world_state.location}, stuck_count = {world_state.stuck_count}")
 
     return state
 
