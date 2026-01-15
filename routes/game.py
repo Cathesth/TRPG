@@ -7,8 +7,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from core.state import GameState, WorldState as WorldStateManager
-from game_engine import create_game_graph, scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message, \
-    get_scenario_by_id
+import game_engine
 from routes.auth import get_current_user_optional, CurrentUser
 from models import GameSession, get_db
 from schemas import GameAction
@@ -237,18 +236,17 @@ async def game_act_stream(
                     # ✅ DB에서 복구한 세션으로 로컬 game_state에 설정
                     game_state.state = restored_state
 
-                    # game_graph도 생성
-                    game_state.game_graph = create_game_graph()
+                    # game_graph도 생성 - game_engine 모듈 사용
+                    game_state.game_graph = game_engine.create_game_graph()
 
-                    # ✅ [FIX 2-2] 로컬 WorldState 인스턴스 생성 및 복구
-                    from core.state import WorldState as WorldStateManager
+                    # ✅ [수정 1] 로컬 WorldState 인스턴스는 복원만 하고 덮어쓰지 않음
                     wsm = WorldStateManager()
                     if 'world_state' in restored_state:
                         wsm.from_dict(restored_state['world_state'])
                         turn_count = restored_state.get('world_state', {}).get('turn_count', 0)
-                        logger.info(f"🔍 [SESSION ISOLATION] Using local WorldState instance for session: {session_id}, turn: {turn_count}")
+                        logger.info(f"🔍 [SESSION ISOLATION] Restored WorldState for session: {session_id}, turn: {turn_count}")
                     else:
-                        logger.warning(f"⚠️ [WORLD INIT] world_state missing in state; initializing from scenario (should be rare)")
+                        logger.warning(f"⚠️ [WORLD INIT] world_state missing in restored_state")
 
                     logger.info(f"✅ [SESSION RESTORE] Session restored from DB: {session_id}")
                 else:
@@ -311,22 +309,27 @@ async def game_act_stream(
                 yield f"data: {json.dumps({'type': 'error', 'content': '시나리오 ID가 없습니다.'})}\n\n"
                 return
 
-            scenario = get_scenario_by_id(scenario_id)
+            scenario = game_engine.get_scenario_by_id(scenario_id)
             if not scenario:
                 yield f"data: {json.dumps({'type': 'error', 'content': '시나리오를 찾을 수 없습니다.'})}\n\n"
                 return
 
-            # [FIX] WorldState 싱글톤 인스턴스 사용 - 변수명 wsm으로 통일
-            wsm = WorldStateManager()
-
             if is_game_start:
-                # 게임 시작 시: 세션이 있으면 유지, 없으면 새로 생성
+                # ✅ [수정 2] 게임 시작 시에만 WorldState 초기화
                 if not session_id:
+                    # 새 게임: WorldState 초기화
+                    wsm = WorldStateManager()
                     wsm.reset()
                     wsm.initialize_from_scenario(scenario)
-                    logger.info(f"🎮 [GAME START] New game session created")
+                    logger.info(f"🎮 [GAME START] New game - WorldState initialized")
+
+                    # 초기화된 world_state를 processed_state에 설정
+                    processed_state['world_state'] = wsm.to_dict()
                 else:
+                    # 기존 세션 재개: world_state가 이미 processed_state에 있으면 그대로 사용
                     logger.info(f"🎮 [GAME START] Resuming existing session: {session_id}")
+                    if 'world_state' not in processed_state:
+                        logger.warning(f"⚠️ [GAME START] world_state missing in resumed session")
 
                 start_scene_id = current_state.get('start_scene_id') or current_state.get('current_scene_id')
 
@@ -347,22 +350,34 @@ async def game_act_stream(
                 current_state['system_message'] = 'Game Started'
                 current_state['is_game_start'] = True
 
-                # ✅ [작업 2] 게임 시작 시에도 location을 start_scene_id로 강제 설정
-                wsm.location = start_scene_id
-                logger.info(f"🔧 [GAME START] Forced wsm.location = {start_scene_id}")
+                # location 동기화 (world_state가 있는 경우에만)
+                if 'world_state' in processed_state and isinstance(processed_state['world_state'], dict):
+                    processed_state['world_state']['location'] = start_scene_id
+                    logger.info(f"🔧 [GAME START] Synced world_state.location = {start_scene_id}")
             else:
-                # 일반 턴: LangGraph 실행
+                # ✅ [수정 2-핵심] 일반 턴: LangGraph가 world_state를 생성/갱신
                 logger.info(f"🎮 Action: {action_text}")
                 current_state['is_game_start'] = False
+
+                # LangGraph invoke - 이미 world_state를 포함하고 있음
                 processed_state = game_state.game_graph.invoke(current_state)
                 game_state.state = processed_state
 
-            # ✅ [작업 2] WorldState를 player_state에 추가하기 전 location을 current_scene_id로 강제 동기화
-            wsm.location = processed_state.get('current_scene_id', wsm.location)
-            logger.info(f"🔧 [PRE-SAVE] Forced wsm.location = {wsm.location} before to_dict()")
+                # ✅ [치명적 버그 수정] LangGraph가 생성한 world_state를 절대 덮어쓰지 않음
+                # processed_state에 이미 world_state가 있으면 그대로 사용
+                if 'world_state' in processed_state:
+                    logger.info(f"✅ [WORLD STATE] Using LangGraph-generated world_state (turn: {processed_state.get('world_state', {}).get('turn_count', 'N/A')})")
+                else:
+                    logger.warning(f"⚠️ [WORLD STATE] LangGraph did not return world_state!")
 
-            # [경량화] WorldState를 player_state에 임시 추가 (저장용)
-            processed_state['world_state'] = wsm.to_dict()
+            # ✅ [수정 3] 검증이 필요한 경우에만 복원해서 읽기만 함 (덮어쓰지 않음)
+            if 'world_state' in processed_state and isinstance(processed_state['world_state'], dict):
+                # 검증용 로그
+                ws_turn = processed_state['world_state'].get('turn_count', 0)
+                ws_location = processed_state['world_state'].get('location', 'unknown')
+                logger.info(f"🌍 [WORLD STATE VERIFY] turn_count={ws_turn}, location={ws_location}")
+            else:
+                logger.error(f"❌ [WORLD STATE] Missing or invalid world_state in processed_state!")
 
             # 🛠️ WorldState DB 저장
             user_id = user.id if user else None
@@ -441,7 +456,7 @@ async def game_act_stream(
                     prologue_html = '<div class="mb-6 p-4 bg-indigo-900/20 rounded-xl border border-indigo-500/30"><div class="text-indigo-400 font-bold text-sm mb-3 uppercase tracking-wider">[ Prologue ]</div><div class="text-gray-200 leading-relaxed serif-font text-lg">'
                     yield f"data: {json.dumps({'type': 'prefix', 'content': prologue_html})}\n\n"
 
-                    for chunk in prologue_stream_generator(processed_state):
+                    for chunk in game_engine.prologue_stream_generator(processed_state):
                         yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
 
                     yield f"data: {json.dumps({'type': 'section_end', 'content': '</div></div>'})}\n\n"
@@ -479,8 +494,8 @@ async def game_act_stream(
             stats_data = processed_state.get('player_vars', {})
             yield f"data: {json.dumps({'type': 'stats', 'content': stats_data})}\n\n"
 
-            # [경량화] World State는 싱글톤 인스턴스에서 직접 가져옴 (디버그 모드용)
-            world_state_data = wsm.to_dict()
+            # ✅ [수정 3] World State 전송 시 processed_state의 world_state를 그대로 사용
+            world_state_data = processed_state.get('world_state', {})
             if world_state_data:
                 # World State에 씬 정보 추가
                 world_state_with_scene = world_state_data.copy()
@@ -619,7 +634,7 @@ def stream_scene_with_retry(state):
         buffer = ""
         need_retry = False
 
-        for chunk in scene_stream_generator(state, retry_count=retry_count, max_retries=MAX_RETRIES):
+        for chunk in game_engine.scene_stream_generator(state, retry_count=retry_count, max_retries=MAX_RETRIES):
             # 재시도 신호 감지
             if "__RETRY_SIGNAL__" in chunk:
                 need_retry = True
@@ -635,7 +650,7 @@ def stream_scene_with_retry(state):
                 yield f"data: {json.dumps({'type': 'retry', 'attempt': retry_count, 'max': MAX_RETRIES})}\n\n"
             else:
                 logger.warning(f"⚠️ [FALLBACK] Max retries exceeded")
-                fallback_msg = get_narrative_fallback_message(state.get('scenario', {}))
+                fallback_msg = game_engine.get_narrative_fallback_message(state.get('scenario', {}))
                 fallback_html = f"""
                 <div class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4 my-2">
                     <div class="text-yellow-400 serif-font">{fallback_msg}</div>
@@ -667,7 +682,7 @@ async def get_game_session_data(
             }, status_code=404)
 
         # 시나리오 정보 조회 (NPC 전체 정보 필요)
-        scenario = get_scenario_by_id(game_session.scenario_id)
+        scenario = game_engine.get_scenario_by_id(game_session.scenario_id)
 
         # 시나리오의 모든 NPC 정보를 딕셔너리로 구성
         all_scenario_npcs = {}
