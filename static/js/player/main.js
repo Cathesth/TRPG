@@ -4,10 +4,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // 아이콘 초기화
     lucide.createIcons();
 
-    // ✅ [작업 2] 세션 키 복원 및 즉시 DB 데이터 fetch
+    // ✅ [FIX 2&4] 세션 키 복원 및 즉시 DB 데이터 fetch
     // 1단계: 세션 키 찾기 (모든 가능한 키 확인)
     if (!currentSessionId) {
-        currentSessionId = sessionStorage.getItem("current_session_id") || sessionStorage.getItem("trpg_session_key");
+        currentSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY) || sessionStorage.getItem("trpg_session_key");
     }
 
     // 2단계: 세션 키를 찾았으면 UI 갱신 및 DB fetch
@@ -22,8 +22,15 @@ document.addEventListener('DOMContentLoaded', function() {
             sessionIdDisplay.classList.add('text-green-400');
         }
 
-        // 즉시 DB에서 데이터 가져오기
-        window.fetchGameDataFromDB();
+        // ✅ [FIX 4] 디버그 모드가 켜져있으면 서버에서 최신 상태 조회
+        const isDebugActive = localStorage.getItem(DEBUG_MODE_KEY) === 'true';
+        if (isDebugActive) {
+            console.log('🔍 [INIT] Debug mode active, fetching latest state from server...');
+            fetchLatestSessionState();
+        } else {
+            // 디버그 모드가 꺼져있어도 기존 DB fetch 유지 (하위 호환성)
+            window.fetchGameDataFromDB();
+        }
     }
 
     // ✅ 시나리오 ID 복원
@@ -31,6 +38,8 @@ document.addEventListener('DOMContentLoaded', function() {
         currentScenarioId = sessionStorage.getItem(CURRENT_SCENARIO_ID_KEY);
         if (currentScenarioId) {
             console.log('📋 [INIT] Scenario ID restored:', currentScenarioId);
+            // 시나리오 로드 상태 설정
+            isScenarioLoaded = true;
         }
     }
 

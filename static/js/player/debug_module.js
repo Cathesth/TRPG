@@ -9,15 +9,16 @@ function toggleDebugInfo() {
     const isDebugActive = localStorage.getItem(DEBUG_MODE_KEY) === 'true';
 
     if (isDebugActive) {
-        // 디버그 모드 끄기
+        // 디버그 모드 끄기 - UI만 숨기고 상태는 유지
         debugInfoArea.classList.add('hidden');
         localStorage.setItem(DEBUG_MODE_KEY, 'false');
         if (debugIcon) {
             debugIcon.classList.remove('text-indigo-400');
             debugIcon.classList.add('text-gray-500');
         }
+        console.log('🔍 [Debug Toggle OFF] UI hidden, state preserved');
     } else {
-        // 디버그 모드 켜기
+        // 디버그 모드 켜기 - 서버 최신 데이터 조회
         debugInfoArea.classList.remove('hidden');
         localStorage.setItem(DEBUG_MODE_KEY, 'true');
         if (debugIcon) {
@@ -25,32 +26,115 @@ function toggleDebugInfo() {
             debugIcon.classList.add('text-indigo-400');
         }
 
-        // 무조건 DB에서 최신 데이터 불러오기
-        console.log('🔍 [Debug Toggle ON] Fetching from Railway DB...');
-        fetchGameDataFromDB();
+        // ✅ [FIX 5] 세션 ID 복원 후 서버 최신 상태 조회
+        if (!currentSessionId) {
+            currentSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY) || sessionStorage.getItem('trpg_session_key');
+        }
+
+        if (currentSessionId) {
+            console.log('🔍 [Debug Toggle ON] Fetching latest state from server...');
+            fetchLatestSessionState();
+        } else {
+            console.log('⚠️ [Debug Toggle ON] No session ID, showing empty state');
+            showEmptyDebugState();
+        }
     }
 
     lucide.createIcons();
 }
 
-// 디버그 모드에서 전체 씬 보기 함수
-function openDebugScenesView() {
-    if (isScenarioLoaded) {
-        // ✅ FIX: 세션 ID를 확실히 저장
-        if (currentSessionId) {
-            sessionStorage.setItem('current_session_id', currentSessionId);
-            sessionStorage.setItem('trpg_session_key', currentSessionId);
-            console.log('💾 [Navigation] Saved session ID before navigation:', currentSessionId);
+// ✅ [NEW] 서버에서 최신 세션 상태를 조회하는 함수
+async function fetchLatestSessionState() {
+    if (!currentSessionId) {
+        console.warn('⚠️ [FETCH] No session ID available');
+        showEmptyDebugState();
+        return;
+    }
+
+    try {
+        console.log(`📡 [FETCH] Requesting session state: ${currentSessionId}`);
+        const response = await fetch(`/game/session_state?session_id=${currentSessionId}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        // 내부 네비게이션 플래그 설정
-        isInternalNavigation = true;
-        sessionStorage.setItem(NAVIGATION_FLAG_KEY, 'true');
+        const data = await response.json();
 
-        window.location.href = '/views/debug_scenes';
-    } else {
-        showToast('시나리오를 먼저 불러와주세요.', 'error');
+        if (data.success) {
+            console.log('✅ [FETCH] Session state received from server:', data);
+
+            // 세션 ID와 시나리오 ID 갱신
+            if (data.session_id) {
+                currentSessionId = data.session_id;
+                sessionStorage.setItem(CURRENT_SESSION_ID_KEY, data.session_id);
+                sessionStorage.setItem('trpg_session_key', data.session_id);
+            }
+
+            if (data.scenario_id) {
+                currentScenarioId = data.scenario_id;
+                sessionStorage.setItem(CURRENT_SCENARIO_ID_KEY, data.scenario_id);
+            }
+
+            // UI 업데이트 (서버 최신 데이터 기준)
+            if (data.world_state) {
+                updateWorldState(data.world_state);
+            }
+
+            if (data.player_state && data.player_state.player_vars) {
+                updateStats(data.player_state.player_vars);
+            }
+
+            // NPC 상태는 world_state에서 추출
+            if (data.world_state && data.world_state.npcs) {
+                updateNPCStatus({ npcs: data.world_state.npcs });
+            }
+
+            lucide.createIcons();
+        } else {
+            console.error('❌ [FETCH] Failed to fetch session state:', data.error);
+            showEmptyDebugState();
+        }
+    } catch (err) {
+        console.error('❌ [FETCH] Error:', err);
+        showEmptyDebugState();
     }
+}
+
+// 디버그 모드에서 전체 씬 보기 함수
+function openDebugScenesView() {
+    // ✅ [FIX 3] 시나리오 ID와 세션 ID를 모두 확인
+    if (!currentScenarioId) {
+        currentScenarioId = sessionStorage.getItem(CURRENT_SCENARIO_ID_KEY);
+    }
+
+    if (!currentSessionId) {
+        currentSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY) || sessionStorage.getItem('trpg_session_key');
+    }
+
+    if (!currentScenarioId) {
+        showToast('시나리오를 먼저 불러와주세요.', 'error');
+        return;
+    }
+
+    // ✅ [FIX 3] 세션 ID와 시나리오 ID를 확실히 저장
+    if (currentSessionId) {
+        sessionStorage.setItem(CURRENT_SESSION_ID_KEY, currentSessionId);
+        sessionStorage.setItem('trpg_session_key', currentSessionId);
+        console.log('💾 [Navigation] Saved session ID:', currentSessionId);
+    }
+
+    if (currentScenarioId) {
+        sessionStorage.setItem(CURRENT_SCENARIO_ID_KEY, currentScenarioId);
+        console.log('💾 [Navigation] Saved scenario ID:', currentScenarioId);
+    }
+
+    // 내부 네비게이션 플래그 설정
+    isInternalNavigation = true;
+    sessionStorage.setItem(NAVIGATION_FLAG_KEY, 'true');
+
+    // 시나리오 ID를 쿼리 파라미터로 전달
+    window.location.href = `/views/debug_scenes?scenario_id=${currentScenarioId}`;
 }
 
 // NPC 상태 업데이트 함수
