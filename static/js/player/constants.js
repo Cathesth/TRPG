@@ -71,3 +71,37 @@ function clearAllGameState() {
 
 // 외부에서 접근 가능하도록 함수를 window 객체에 할당
 window.clearAllGameState = clearAllGameState;
+
+// 페이지 로드 시 상태 복원 또는 초기화
+(function() {
+    // 🔍 새로고침(F5) vs 내부 네비게이션 구분
+    const isPageRefresh = performance.navigation.type === 1 ||
+                         (performance.getEntriesByType('navigation')[0]?.type === 'reload');
+
+    // 내부 네비게이션으로 돌아온 경우 (전체 씬 보기 -> 플레이어 모드)
+    const isReturningFromNavigation = sessionStorage.getItem(NAVIGATION_FLAG_KEY) === 'true';
+    sessionStorage.removeItem(NAVIGATION_FLAG_KEY);  // 플래그 제거
+
+    // 🔄 새로고침이면 무조건 초기화
+    if (isPageRefresh) {
+        console.log('🔄 새로고침 감지 - 게임 상태 초기화');
+        clearAllGameState();
+        // initializeEmptyGameUI는 DOMContentLoaded에서 호출됨
+        return;
+    }
+
+    // 저장된 게임 상태가 있는지 확인
+    const hasSavedGame = sessionStorage.getItem(CHAT_LOG_KEY) || sessionStorage.getItem(SCENARIO_LOADED_KEY);
+
+    // 내부 네비게이션으로 돌아왔거나 저장된 게임이 있으면 복원
+    if (isReturningFromNavigation && hasSavedGame) {
+        console.log('🔄 내부 네비게이션 복귀 - 게임 상태 복원 중...');
+        // 복원은 DOMContentLoaded에서 restoreChatLog()가 처리
+        return;
+    }
+
+    // 완전히 새로운 시작 (첫 방문)
+    console.log('🆕 새로운 게임 세션 시작');
+    clearAllGameState();
+    // initializeEmptyGameUI는 DOMContentLoaded에서 호출됨
+})();
