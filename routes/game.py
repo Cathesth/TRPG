@@ -2,7 +2,7 @@ import logging
 import json
 import traceback
 from datetime import datetime
-from fastapi import APIRouter, Request, Form, Depends
+from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,18 @@ game_router = APIRouter(prefix="/game", tags=["game"])
 MAX_RETRIES = 2
 
 
+async def save_to_redis_async(session_key: str, cache_data: dict):
+    """Redis에 비동기로 저장하는 헬퍼 함수"""
+    try:
+        from core.redis_client import get_redis_client
+        redis_client = await get_redis_client()
+        if redis_client.is_connected:
+            await redis_client.set(f"session:{session_key}", cache_data, expire=3600)
+            logger.info(f"✅ [REDIS] Session cached: {session_key}")
+    except Exception as e:
+        logger.warning(f"⚠️ [REDIS] Cache save failed: {e}")
+
+
 def save_game_session(db: Session, state: dict, user_id: str = None, session_key: str = None):
     """
     🛠️ WorldState를 DB에 영속적으로 저장 (경량화 버전)
@@ -34,9 +46,6 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
     Returns:
         session_key: 세션 키
     """
-    # ✅ [작업 2] redis_client 변수를 최상단에서 초기화 (referenced before assignment 방지)
-    redis_client = None
-
     try:
         # [경량화] scenario 전체가 아닌 scenario_id만 사용
         scenario_id = state.get('scenario_id', 0)
@@ -49,6 +58,10 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
         if not world_state_data:
             wsm = WorldStateManager()
             world_state_data = wsm.to_dict()
+
+        # ✅ [작업 4] world_state.location을 current_scene_id로 강제 동기화
+        world_state_data['location'] = current_scene_id
+        logger.info(f"🔧 [DB SAVE] Forced world_state.location = {current_scene_id}")
 
         turn_count = world_state_data.get('turn_count', 0) if isinstance(world_state_data, dict) else 0
 
@@ -64,38 +77,6 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
                 game_session.updated_at = datetime.now()
                 db.commit()
                 logger.info(f"✅ [DB] Game session updated: {session_key}")
-
-                # ✅ [작업 2] Redis에도 저장 (비동기 처리 최소화)
-                try:
-                    from core.redis_client import get_redis_client
-                    import asyncio
-                    import threading
-
-                    def async_redis_save():
-                        try:
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            # get_redis_client를 비동기로 호출
-                            client = loop.run_until_complete(get_redis_client())
-                            if client.is_connected:
-                                cache_data = {
-                                    'player_state': state,
-                                    'world_state': world_state_data,
-                                    'current_scene_id': current_scene_id,
-                                    'turn_count': turn_count,
-                                    'scenario_id': scenario_id
-                                }
-                                loop.run_until_complete(client.set(f"session:{session_key}", cache_data, expire=3600))
-                                logger.info(f"✅ [REDIS] Session cached: {session_key}")
-                            loop.close()
-                        except Exception as e:
-                            logger.warning(f"⚠️ [REDIS] Async save failed: {e}")
-
-                    # 별도 스레드에서 실행 (메인 로직 블로킹 방지)
-                    thread = threading.Thread(target=async_redis_save, daemon=True)
-                    thread.start()
-                except Exception as redis_err:
-                    logger.warning(f"⚠️ [REDIS] Cache setup failed (continuing): {redis_err}")
 
                 return session_key
             else:
@@ -118,28 +99,6 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
         db.add(game_session)
         db.commit()
         logger.info(f"✅ [DB] New game session created: {new_session_key}")
-
-        # ✅ [작업 2] Redis에도 저장
-        try:
-            from core.redis_client import get_redis_client
-            import asyncio
-
-            async def save_to_redis():
-                redis_client = await get_redis_client()
-                if redis_client.is_connected:
-                    cache_data = {
-                        'player_state': state,
-                        'world_state': world_state_data,
-                        'current_scene_id': current_scene_id,
-                        'turn_count': turn_count,
-                        'scenario_id': scenario_id
-                    }
-                    await redis_client.set(f"session:{new_session_key}", cache_data, expire=3600)
-                    logger.info(f"✅ [REDIS] New session cached: {new_session_key}")
-
-            asyncio.run(save_to_redis())
-        except Exception as redis_err:
-            logger.warning(f"⚠️ [REDIS] Cache save failed (continuing): {redis_err}")
 
         return new_session_key
 
@@ -192,6 +151,7 @@ async def game_act():
 @game_router.post('/act_stream')
 async def game_act_stream(
         request: Request,
+        background_tasks: BackgroundTasks,
         user: CurrentUser = Depends(get_current_user_optional),
         db: Session = Depends(get_db)
 ):
@@ -337,14 +297,19 @@ async def game_act_stream(
                 current_state['system_message'] = 'Game Started'
                 current_state['is_game_start'] = True
 
-                # [FIX] 게임 시작 시에도 location을 start_scene_id로 설정
+                # ✅ [작업 4] 게임 시작 시에도 location을 start_scene_id로 강제 설정
                 wsm.location = start_scene_id
+                logger.info(f"🔧 [GAME START] Forced wsm.location = {start_scene_id}")
             else:
                 # 일반 턴: LangGraph 실행
                 logger.info(f"🎮 Action: {action_text}")
                 current_state['is_game_start'] = False
                 processed_state = game_state.game_graph.invoke(current_state)
                 game_state.state = processed_state
+
+            # ✅ [작업 4] WorldState를 player_state에 추가하기 전 location을 current_scene_id로 강제 동기화
+            wsm.location = processed_state.get('current_scene_id', wsm.location)
+            logger.info(f"🔧 [PRE-SAVE] Forced wsm.location = {wsm.location} before to_dict()")
 
             # [경량화] WorldState를 player_state에 임시 추가 (저장용)
             processed_state['world_state'] = wsm.to_dict()
@@ -361,6 +326,16 @@ async def game_act_stream(
                 # ✅ 기존 세션 업데이트 (클라이언트가 보낸 session_id 사용)
                 session_id = save_game_session(db, processed_state, user_id, session_id)
                 logger.info(f"✅ [SESSION UPDATE] Updated existing session: {session_id}")
+
+            # ✅ [작업 1] Redis 저장을 background_tasks로 비동기 처리
+            cache_data = {
+                'player_state': processed_state,
+                'world_state': processed_state.get('world_state'),
+                'current_scene_id': processed_state.get('current_scene_id'),
+                'turn_count': processed_state.get('world_state', {}).get('turn_count', 0) if isinstance(processed_state.get('world_state'), dict) else 0,
+                'scenario_id': scenario_id
+            }
+            background_tasks.add_task(save_to_redis_async, session_id, cache_data)
 
             # 결과 추출
             npc_say = processed_state.get('npc_output', '')
