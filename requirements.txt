@@ -15,3 +15,5 @@ sse-starlette
 aiofiles
 redis
 redis[hiredis]
+aioboto3
+botocore

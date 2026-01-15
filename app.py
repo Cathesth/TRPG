@@ -99,6 +99,9 @@ from routes import api_router, game_router, views_router
 # [추가] api.py에 정의한 mypage_router를 직접 가져옵니다.
 from routes.api import mypage_router
 
+# [추가] assets 라우터 등록 (S3 이미지 업로드)
+from routes.assets import router as assets_router
+
 app.include_router(views_router)
 app.include_router(api_router)
 app.include_router(game_router)
@@ -106,6 +109,10 @@ app.include_router(game_router)
 
 # [중요] 마이페이지 라우터를 명시적으로 등록하여 404 에러 해결
 app.include_router(mypage_router)
+
+
+# [S3] Assets 라우터 등록
+app.include_router(assets_router)
 
 
 # Health check 엔드포인트 (Railway 모니터링용)
