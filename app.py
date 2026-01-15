@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from config import LOG_FORMAT, LOG_DATE_FORMAT
 from models import create_tables
 
+
 # 환경 변수 로드
 load_dotenv()
 
@@ -73,6 +74,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# [수정] 정적 파일 마운트 (이 부분만 남기고 아래 중복 코드는 제거했습니다)
+# static/avatars 폴더가 없으면 생성하고, /static 경로로 접근 가능하게 설정
+os.makedirs("static/avatars", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 # HTTPS 프록시 미들웨어 (Railway 등 프록시 환경 대응)
 class HTTPSMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -112,22 +118,32 @@ async def add_no_cache_header(request: Request, call_next):
     return response
 
 
-# 정적 파일 서빙 (static 폴더가 있는 경우)
-if os.path.exists(os.path.join(os.path.dirname(__file__), 'static')):
-    app.mount("/static", StaticFiles(directory="static"), name="static")
-
 # 템플릿 설정
 templates = Jinja2Templates(directory="templates")
 
+# =================================================================
+# [수정 시작] 라우터 등록 (Import 방식 변경)
+# routes/__init__.py를 거치지 않고, 각 파일에서 직접 가져와 에러를 방지합니다.
+# =================================================================
+
 # 라우터 등록
-from routes import api_router, game_router, views_router
-
-
+#from routes import api_router, game_router, views_router
 # [추가] api.py에 정의한 mypage_router를 직접 가져옵니다.
-from routes.api import mypage_router
+#from routes.api import mypage_router
 
-# [추가] assets 라우터 등록 (S3 이미지 업로드)
-from routes.assets import router as assets_router
+# [새 코드] 각 파일에서 직접 Import
+from routes.views import views_router
+from routes.game import game_router
+from routes.api import api_router, mypage_router
+
+
+# [추가] assets 라우터 등록 (S3 이미지 업로드용 - 해당 파일이 있어야 함)
+# 만약 routes/assets.py 파일이 없다면 이 줄은 에러가 납니다. 확인해주세요.
+try:
+    from routes.assets import router as assets_router
+    app.include_router(assets_router) # [S3] Assets 라우터 등록
+except ImportError:
+    logger.warning("routes.assets module not found. Assets router skipped.")
 
 # [추가] Vector DB 라우터 등록
 from routes.vector_api import router as vector_router
@@ -135,6 +151,7 @@ from routes.vector_api import router as vector_router
 app.include_router(views_router)
 app.include_router(api_router)
 app.include_router(game_router)
+
 
 
 # [중요] 마이페이지 라우터를 명시적으로 등록하여 404 에러 해결

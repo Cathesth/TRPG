@@ -4,8 +4,16 @@ import logging
 import time
 import threading
 import glob  # <--- 이 줄을 추가해주세요!
+import shutil
+import uuid
+from core.state import WorldState
+from routes.game import save_game_session
+from pathlib import Path
+from passlib.context import CryptContext
+# [추가] 11번 계정(scrypt) 지원을 위한 라이브러리
+from werkzeug.security import check_password_hash
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, APIRouter, Request, Depends, Form, HTTPException, Query
+from fastapi import FastAPI, APIRouter, Request, Depends, Form, HTTPException, Query, File, UploadFile
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -30,7 +38,13 @@ from services.mermaid_service import MermaidService
 
 # 인증 및 모델
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
-from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike
+from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike, User
+
+# 변경: schemes=["bcrypt", "sha256_crypt", "pbkdf2_sha256"] -> 예전 형식도 인식 가능
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto"
+)
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -89,9 +103,56 @@ class AuditRequest(BaseModel):
 # [View 라우트] 마이페이지
 # ==========================================
 @mypage_router.get('/mypage', response_class=HTMLResponse)
-async def mypage_view(request: Request, user: CurrentUser = Depends(get_current_user_optional)):
+async def mypage_view(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
+):
+    # 로그인 상태라면 DB에서 최신 정보를 가져와 덮어씌움
+    if user.is_authenticated:
+        db_user = db.query(User).filter(User.id == user.id).first()
+        if db_user:
+            user = db_user  # 템플릿에 전달할 user 객체를 DB 객체로 교체
+
     return templates.TemplateResponse("mypage.html", {"request": request, "user": user})
 
+
+# [추가] 메인화면 헤더 프로필 로드용 (HTMX)
+@api_router.get('/views/header-profile', response_class=HTMLResponse)
+def header_profile_view(
+        request: Request,
+        user: CurrentUser = Depends(get_current_user_optional),
+        db: Session = Depends(get_db)
+):
+    """메인 헤더 우측 상단 프로필/로그인 버튼 영역을 렌더링"""
+
+    # 1. 로그인 상태: DB에서 최신 정보 조회 후 프로필 표시
+    if user.is_authenticated:
+        db_user = db.query(User).filter(User.id == user.id).first()
+        avatar_url = db_user.avatar_url if db_user else None
+
+        if avatar_url:
+            inner_html = f'<img src="{avatar_url}" class="w-full h-full object-cover">'
+        else:
+            inner_html = '<i data-lucide="user" class="w-6 h-6"></i>'
+
+        return f"""
+        <div class="flex items-center gap-3 cursor-pointer group" onclick="location.href='/views/mypage'" title="마이페이지">
+            <button class="text-gray-400 group-hover:text-white transition-colors p-0.5 rounded-full bg-rpg-800 border border-rpg-700 group-hover:border-rpg-accent shadow-md overflow-hidden w-10 h-10 flex items-center justify-center">
+                {inner_html}
+            </button>
+        </div>
+        <script>lucide.createIcons();</script>
+        """
+
+    # 2. 비로그인 상태: 로그인 버튼 표시
+    else:
+        return """
+        <button onclick="openModal('login-modal')" class="flex items-center gap-2 px-5 py-2.5 bg-rpg-accent hover:bg-white text-black font-bold rounded shadow-lg shadow-rpg-accent/20 transition-all">
+            <i data-lucide="log-in" class="w-4 h-4"></i> LOGIN
+        </button>
+        <script>lucide.createIcons();</script>
+        """
 
 # ==========================================
 # [추가] 마이페이지 서브 뷰 (회원정보, 결제, 시나리오 래퍼)
@@ -129,9 +190,25 @@ def get_mypage_scenarios_view():
 
 
 @api_router.get('/views/mypage/profile', response_class=HTMLResponse)
-def get_profile_view(user: CurrentUser = Depends(get_current_user)):
+def get_profile_view(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     """마이페이지: 회원 정보 수정 폼 반환"""
-    username = user.id if user.is_authenticated else "Guest"
+    if not user.is_authenticated:
+        return "<div>로그인이 필요합니다.</div>"
+
+    # DB에서 최신 유저 정보 조회 (CurrentUser에는 email/avatar_url이 없을 수 있음)
+    db_user = db.query(User).filter(User.id == user.id).first()
+    if not db_user:
+        return "<div>회원 정보를 찾을 수 없습니다.</div>"
+
+    username = user.id
+
+    # [수정] user.email 대신 db_user.email을 사용해야 에러가 나지 않습니다.
+    email = db_user.email or ""
+
+    # 프로필 사진이 없으면 기본 이니셜 표시, 있으면 이미지 표시
+    avatar_html = f'<span class="text-3xl font-bold text-gray-500 group-hover:text-white transition-colors">{username[:2].upper()}</span>'
+    if db_user.avatar_url:
+        avatar_html = f'<img src="{db_user.avatar_url}" class="w-full h-full object-cover" alt="Profile">'
 
     return f"""
     <div class="fade-in max-w-2xl mx-auto">
@@ -139,16 +216,21 @@ def get_profile_view(user: CurrentUser = Depends(get_current_user)):
             <i data-lucide="user-cog" class="w-6 h-6 text-rpg-accent"></i> Edit Profile
         </h2>
 
-        <form class="space-y-6">
+        <form onsubmit="handleProfileUpdate(event)" class="space-y-6" enctype="multipart/form-data">
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="col-span-full flex flex-col items-center justify-center p-6 bg-rpg-800 rounded-xl border border-rpg-700 border-dashed hover:border-rpg-accent transition-colors cursor-pointer group">
-                    <div class="w-24 h-24 rounded-full bg-rpg-900 flex items-center justify-center mb-3 relative overflow-hidden">
-                        <span class="text-3xl font-bold text-gray-500 group-hover:text-white transition-colors">{username[:2].upper()}</span>
+                <div class="col-span-full flex flex-col items-center justify-center p-6 bg-rpg-800 rounded-xl border border-rpg-700 border-dashed hover:border-rpg-accent transition-colors cursor-pointer group"
+                     onclick="document.getElementById('avatar-upload').click()">
+                    <div class="w-24 h-24 rounded-full bg-rpg-900 flex items-center justify-center mb-3 relative overflow-hidden border border-rpg-700">
+                        <div id="avatar-preview" class="w-full h-full flex items-center justify-center">
+                            {avatar_html}
+                        </div>
                         <div class="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                             <i data-lucide="camera" class="w-6 h-6 text-white"></i>
                         </div>
                     </div>
                     <p class="text-sm text-gray-400 group-hover:text-rpg-accent">Change Avatar</p>
+                    <input type="file" id="avatar-upload" name="avatar" class="hidden" accept="image/*" onchange="previewImage(this)">
                 </div>
 
                 <div class="space-y-2">
@@ -159,28 +241,86 @@ def get_profile_view(user: CurrentUser = Depends(get_current_user)):
 
                 <div class="space-y-2">
                     <label class="text-xs font-bold text-gray-400 uppercase">Email Address</label>
-                    <input type="email" placeholder="email@example.com" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
+                    <input type="email" name="email" value="{email}" placeholder="email@example.com" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
                 </div>
 
                 <div class="space-y-2">
                     <label class="text-xs font-bold text-gray-400 uppercase">New Password</label>
-                    <input type="password" placeholder="••••••••" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
+                    <input type="password" name="password" placeholder="••••••••" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
                 </div>
 
                 <div class="space-y-2">
                     <label class="text-xs font-bold text-gray-400 uppercase">Confirm Password</label>
-                    <input type="password" placeholder="••••••••" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
+                    <input type="password" name="confirm_password" placeholder="••••••••" class="w-full bg-rpg-900 border border-rpg-700 rounded-lg p-3 text-white focus:border-rpg-accent focus:outline-none transition-colors">
                 </div>
             </div>
 
             <div class="flex justify-end gap-3 pt-6 border-t border-rpg-700">
                 <button type="button" class="px-6 py-2.5 rounded-lg border border-rpg-700 text-gray-400 hover:text-white hover:bg-rpg-800 transition-colors">Cancel</button>
-                <button type="submit" onclick="alert('준비 중인 기능입니다.')" class="px-6 py-2.5 rounded-lg bg-rpg-accent text-black font-bold hover:bg-white transition-colors shadow-lg shadow-rpg-accent/20">Save Changes</button>
+                <button type="submit" class="px-6 py-2.5 rounded-lg bg-rpg-accent text-black font-bold hover:bg-white transition-colors shadow-lg shadow-rpg-accent/20">Save Changes</button>
             </div>
         </form>
     </div>
     <script>lucide.createIcons();</script>
     """
+
+
+# [3. 프로필 업데이트 API 추가]
+@api_router.post('/auth/profile/update')
+async def update_profile(
+        email: str = Form(None),
+        password: str = Form(None),
+        confirm_password: str = Form(None),
+        avatar: UploadFile = File(None),
+        user: CurrentUser = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "로그인이 필요합니다."}, status_code=401)
+
+    # DB에서 실제 유저 객체 조회
+    db_user = db.query(User).filter(User.id == user.id).first()
+    if not db_user:
+        return JSONResponse({"success": False, "error": "사용자를 찾을 수 없습니다."}, status_code=404)
+
+    # 1. 비밀번호 변경 (값이 있고, 빈 문자열이 아닐 때만 실행)
+    if password and password.strip():
+        if len(password) > 72:
+            return JSONResponse({"success": False, "error": "비밀번호는 72자 이내여야 합니다."}, status_code=400)
+
+        if password != confirm_password:
+            return JSONResponse({"success": False, "error": "비밀번호가 일치하지 않습니다."}, status_code=400)
+
+        try:
+            db_user.password_hash = pwd_context.hash(password)
+        except Exception as e:
+            return JSONResponse({"success": False, "error": f"비밀번호 처리 중 오류: {str(e)}"}, status_code=500)
+
+    # 2. 이메일 업데이트
+    if email is not None:
+        db_user.email = email
+
+    # 3. 프로필 사진 업로드 처리
+    if avatar and avatar.filename:
+        try:
+            file_ext = Path(avatar.filename).suffix
+            new_filename = f"{user.id}_{uuid.uuid4()}{file_ext}"
+            save_path = f"static/avatars/{new_filename}"
+
+            with open(save_path, "wb") as buffer:
+                shutil.copyfileobj(avatar.file, buffer)
+
+            db_user.avatar_url = f"/{save_path}"
+        except Exception as e:
+            return JSONResponse({"success": False, "error": f"이미지 업로드 실패: {str(e)}"}, status_code=500)
+
+    try:
+        db.commit()
+        db.refresh(db_user)
+        return {"success": True, "message": "회원 정보가 수정되었습니다."}
+    except Exception as e:
+        db.rollback()
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 @api_router.get('/views/mypage/billing', response_class=HTMLResponse)
@@ -192,6 +332,8 @@ def get_billing_view():
             <i data-lucide="credit-card" class="w-6 h-6 text-rpg-accent"></i> Plans & Billing
         </h2>
         <p class="text-gray-400 mb-8">모험의 규모에 맞는 플랜을 선택하세요.</p>
+         <div class="bg-rpg-800 border border-rpg-700 rounded-2xl p-6 text-center text-gray-400">
+            플랜 정보를 로드하는 중...
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div class="bg-rpg-800 border border-rpg-700 rounded-2xl p-6 flex flex-col relative overflow-hidden">
@@ -245,27 +387,79 @@ def get_billing_view():
 
 
 # ==========================================
-# [API 라우트] 인증 (Auth)
+# [API 라우트] 인증 (Auth) - 직접 구현으로 변경
 # ==========================================
+# [수정] routes/api.py -> register 함수 교체
 @api_router.post('/auth/register')
-async def register(data: AuthRequest):
+async def register(data: AuthRequest, db: Session = Depends(get_db)):
     if not data.username or not data.password:
         return JSONResponse({"success": False, "error": "입력값 부족"}, status_code=400)
-    if UserService.create_user(data.username, data.password, data.email):
-        return {"success": True}
-    return JSONResponse({"success": False, "error": "이미 존재하는 아이디"}, status_code=400)
 
+    # 1. 중복 아이디 확인
+    existing_user = db.query(User).filter(User.id == data.username).first()
+
+    if existing_user:
+        return JSONResponse({"success": False, "error": "이미 존재하는 아이디"}, status_code=400)
+
+    # 2. 신규 회원가입 처리
+    try:
+        # 비밀번호 해싱 (설정된 암호화 방식 사용)
+        hashed_password = pwd_context.hash(data.password)
+
+        new_user = User(
+            id=data.username,
+            password_hash=hashed_password,
+            email=data.email
+        )
+        db.add(new_user)
+        db.commit()
+        return {"success": True}
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Register Error: {e}")
+        return JSONResponse({"success": False, "error": "회원가입 처리 중 오류가 발생했습니다."}, status_code=500)
 
 @api_router.post('/auth/login')
-async def login(request: Request, data: AuthRequest):
+async def login(request: Request, data: AuthRequest, db: Session = Depends(get_db)):
     if not data.username or not data.password:
         return JSONResponse({"success": False, "error": "입력값 부족"}, status_code=400)
 
-    user = UserService.verify_user(data.username, data.password)
-    if user:
-        login_user(request, user)
-        return {"success": True}
-    return JSONResponse({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}, status_code=401)
+    # 1. 사용자 조회 (UserService 대신 직접 DB 조회)
+    user = db.query(User).filter(User.id == data.username).first()
+
+    if not user or not user.password_hash:
+        return JSONResponse({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}, status_code=401)
+
+        # 2. 비밀번호 검증 (이중 체크: Passlib -> Werkzeug)
+    verified = False
+
+    # (A) Passlib 시도 (bcrypt 등 표준 해시)
+
+    try:
+        if pwd_context.verify(data.password, user.password_hash):
+            verified = True
+    except (ValueError, TypeError):
+        # Passlib이 식별 못한 경우 (예: unknown hash format)
+        pass
+
+    # (B) Passlib 실패 시, Werkzeug 시도 (11번 계정 scrypt 해시)
+    if not verified:
+        try:
+            # werkzeug의 scrypt 형식을 직접 검증
+            if check_password_hash(user.password_hash, data.password):
+                verified = True
+        except Exception as e:
+            logger.error(f"Werkzeug check failed: {e}")
+            pass
+
+    if not verified:
+        logger.warning(f"Login failed for user: {data.username}")
+        return JSONResponse({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}, status_code=401)
+
+    # 3. 세션 로그인 처리
+    login_user(request, user)
+    return {"success": True}
 
 
 @api_router.post('/auth/logout')
