@@ -1,5 +1,29 @@
 // debug_module.js - 디버그 사이드바 제어
 
+// ✅ [FIX 5] 빈 상태를 표시하는 함수 추가
+function showEmptyDebugState() {
+    const worldStateArea = document.getElementById('world-state-area');
+    const npcStatusArea = document.getElementById('npc-status-area');
+
+    if (worldStateArea) {
+        worldStateArea.innerHTML = `
+            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                World State 데이터 없음
+            </div>
+        `;
+    }
+
+    if (npcStatusArea) {
+        npcStatusArea.innerHTML = `
+            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                NPC 데이터 없음
+            </div>
+        `;
+    }
+
+    console.log('ℹ️ [Debug] Empty state displayed');
+}
+
 // 디버그 정보 토글 함수
 function toggleDebugInfo() {
     const debugInfoArea = document.getElementById('debug-info-area');
@@ -9,16 +33,16 @@ function toggleDebugInfo() {
     const isDebugActive = localStorage.getItem(DEBUG_MODE_KEY) === 'true';
 
     if (isDebugActive) {
-        // 디버그 모드 끄기 - UI만 숨기고 상태는 유지
+        // ✅ [FIX 5] 디버그 모드 끄기 - UI만 숨기고 sessionStorage는 절대 지우지 않음
         debugInfoArea.classList.add('hidden');
         localStorage.setItem(DEBUG_MODE_KEY, 'false');
         if (debugIcon) {
             debugIcon.classList.remove('text-indigo-400');
             debugIcon.classList.add('text-gray-500');
         }
-        console.log('🔍 [Debug Toggle OFF] UI hidden, state preserved');
+        console.log('🔍 [Debug Toggle OFF] UI hidden, sessionStorage preserved');
     } else {
-        // 디버그 모드 켜기 - 서버 최신 데이터 조회
+        // ✅ [FIX 5] 디버그 모드 켜기 - 서버 최신 데이터 조회
         debugInfoArea.classList.remove('hidden');
         localStorage.setItem(DEBUG_MODE_KEY, 'true');
         if (debugIcon) {
@@ -43,7 +67,7 @@ function toggleDebugInfo() {
     lucide.createIcons();
 }
 
-// ✅ [NEW] 서버에서 최신 세션 상태를 조회하는 함수
+// ✅ [FIX 1] 서버에서 최신 세션 상태를 조회하는 함수
 async function fetchLatestSessionState() {
     if (!currentSessionId) {
         console.warn('⚠️ [FETCH] No session ID available');
@@ -64,7 +88,7 @@ async function fetchLatestSessionState() {
         if (data.success) {
             console.log('✅ [FETCH] Session state received from server:', data);
 
-            // 세션 ID와 시나리오 ID 갱신
+            // ✅ [FIX 1] 세션 ID와 시나리오 ID 갱신
             if (data.session_id) {
                 currentSessionId = data.session_id;
                 sessionStorage.setItem(CURRENT_SESSION_ID_KEY, data.session_id);
@@ -76,8 +100,14 @@ async function fetchLatestSessionState() {
                 sessionStorage.setItem(CURRENT_SCENARIO_ID_KEY, data.scenario_id);
             }
 
-            // UI 업데이트 (서버 최신 데이터 기준)
+            // ✅ [FIX 1] UI 업데이트 (서버 최신 데이터 기준)
             if (data.world_state) {
+                // ✅ turn_count가 world_state에 있으면 최상위로 복사
+                if (data.world_state.turn_count !== undefined) {
+                    data.world_state.turn_count = data.world_state.turn_count;
+                } else if (data.turn_count !== undefined) {
+                    data.world_state.turn_count = data.turn_count;
+                }
                 updateWorldState(data.world_state);
             }
 
@@ -117,7 +147,7 @@ function openDebugScenesView() {
         return;
     }
 
-    // ✅ [FIX 3] 세션 ID와 시나리오 ID를 확실히 저장
+    // ✅ [FIX 2&4] 세션 ID와 시나리오 ID를 확실히 저장
     if (currentSessionId) {
         sessionStorage.setItem(CURRENT_SESSION_ID_KEY, currentSessionId);
         sessionStorage.setItem('trpg_session_key', currentSessionId);
@@ -129,7 +159,7 @@ function openDebugScenesView() {
         console.log('💾 [Navigation] Saved scenario ID:', currentScenarioId);
     }
 
-    // 내부 네비게이션 플래그 설정
+    // ✅ [FIX 2] 내부 네비게이션 플래그 설정
     isInternalNavigation = true;
     sessionStorage.setItem(NAVIGATION_FLAG_KEY, 'true');
 
@@ -272,7 +302,7 @@ function updateWorldState(worldStateData) {
     const stuckCount = worldState.stuck_count || 0;
     const globalFlags = worldState.global_flags || {};
 
-    // ✅ 작업 2: 위치 정보 처리 강화 - 실제 데이터가 있을 때만 표시
+    // ✅ [FIX 1] 위치 정보 처리 강화 - 실제 데이터가 있을 때만 표시
     let locationDisplay = null;
 
     // worldState.location을 최우선으로 사용 (백엔드에서 동기화된 데이터)
@@ -392,3 +422,5 @@ window.toggleDebugInfo = toggleDebugInfo;
 window.openDebugScenesView = openDebugScenesView;
 window.updateNPCStatus = updateNPCStatus;
 window.updateWorldState = updateWorldState;
+window.fetchLatestSessionState = fetchLatestSessionState;
+window.showEmptyDebugState = showEmptyDebugState;

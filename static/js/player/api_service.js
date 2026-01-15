@@ -522,7 +522,10 @@ async function submitWithStreaming(actionText) {
             // 디버그 모드가 활성화되어 있으면 최신 상태 조회
             const isDebugActive = localStorage.getItem(DEBUG_MODE_KEY) === 'true';
             if (isDebugActive) {
-                fetchLatestSessionState();
+                // ✅ [FIX 1] 약간의 지연 후 조회 (DB 저장 완료 대기)
+                setTimeout(() => {
+                    fetchLatestSessionState();
+                }, 500);
             }
         }
 
