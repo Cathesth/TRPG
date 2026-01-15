@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from core.state import GameState, WorldState as WorldStateManager
-from game_engine import scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message, \
+from game_engine import create_game_graph, scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message, \
     get_scenario_by_id
 from routes.auth import get_current_user_optional, CurrentUser
 from models import GameSession, get_db
@@ -59,15 +59,16 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
         state_for_db = copy.deepcopy(state)
         state_for_db.pop('world_state', None)
 
-        # WorldState 인스턴스에서 직접 가져오기
+        # ✅ [B-2] world_state가 없어도 빈 인스턴스를 만들지 않음 (데이터 손실 방지)
         if not world_state_data:
-            from core.state import WorldState as WorldStateManager
-            wsm = WorldStateManager()
-            world_state_data = wsm.to_dict()
+            # 빈 dict로 유지하고 새 인스턴스 생성 금지
+            world_state_data = {}
+            logger.warning(f"⚠️ [DB SAVE] world_state is empty - saving empty dict (no new instance created)")
 
-        # ✅ [작업 4] world_state.location을 current_scene_id로 강제 동기화
-        world_state_data['location'] = current_scene_id
-        logger.info(f"🔧 [DB SAVE] Forced world_state.location = {current_scene_id}")
+        # ✅ [B-2] location 동기화는 dict 부분 수정만 허용 (world_state_data가 있을 때만)
+        if isinstance(world_state_data, dict) and current_scene_id:
+            world_state_data['location'] = current_scene_id
+            logger.info(f"🔧 [DB SAVE] Synced world_state.location = {current_scene_id}")
 
         turn_count = world_state_data.get('turn_count', 0) if isinstance(world_state_data, dict) else 0
 

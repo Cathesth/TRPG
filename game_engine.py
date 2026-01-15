@@ -338,8 +338,12 @@ def intent_parser_node(state: PlayerState):
     logger.info("🧹 [CLEANUP] Output fields cleared for new turn")
 
     # 🔍 [SESSION ISOLATION] WorldState 로컬 인스턴스 생성
+    # ✅ [C] from_dict_new 제거 - 존재하지 않는 메서드 호출 방지
     session_id = state.get('scenario_id', 'unknown')
-    wsm = WorldState.from_dict_new(state.get('world_state', {}))
+    wsm = WorldState()
+    ws_dict = state.get('world_state') or {}
+    if ws_dict:
+        wsm.from_dict(ws_dict)
     logger.info(f"🔍 [SESSION ISOLATION] Created local WorldState instance for session: {session_id}")
 
     # ✅ 작업 2: PlayerState의 current_scene_id를 절대적 진실(Source of Truth)로 믿고, world_state.location을 동기화
