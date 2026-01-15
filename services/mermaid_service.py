@@ -249,8 +249,48 @@ class MermaidService:
     def _escape(text: str) -> str:
         """Mermaid 문법 파괴 방지를 위한 이스케이프"""
         if not text: return ""
-        # 괄호, 따옴표 등 특수문자 제거 또는 치환
-        return str(text).replace('(', '（').replace(')', '）')\
-                        .replace('[', '【').replace(']', '】')\
-                        .replace('"', "'").replace('\n', ' ')\
-                        .replace('#', '')
+        return text.replace('"', "'").replace('\n', ' ').replace('\r', '')
+
+    @staticmethod
+    def generate_mermaid_from_scenario(scenario_data: dict) -> str:
+        """
+        ✅ [FIX 2-A] generate_chart 래퍼 메서드 - 호환성 유지
+
+        routes/views.py의 view_debug_scenes에서 호출하는 메서드
+        generate_chart를 호출하고 mermaid_code만 추출하여 반환
+
+        Args:
+            scenario_data: 시나리오 데이터 딕셔너리
+
+        Returns:
+            Mermaid 코드 문자열
+        """
+        try:
+            # scenario_data 구조 확인 및 unwrap
+            if isinstance(scenario_data, dict):
+                # 'data' 필드로 감싸진 경우 unwrap
+                if 'data' in scenario_data and isinstance(scenario_data['data'], dict):
+                    unwrapped = scenario_data['data']
+                    # 'scenario' 필드가 있으면 한번 더 unwrap
+                    if 'scenario' in unwrapped and isinstance(unwrapped['scenario'], dict):
+                        scenario_data = unwrapped['scenario']
+                    else:
+                        scenario_data = unwrapped
+                # 'scenario' 필드로 감싸진 경우 unwrap
+                elif 'scenario' in scenario_data and isinstance(scenario_data['scenario'], dict):
+                    scenario_data = scenario_data['scenario']
+
+            # generate_chart 호출
+            result = MermaidService.generate_chart(scenario_data)
+
+            # mermaid_code 추출
+            if isinstance(result, dict) and 'mermaid_code' in result:
+                logger.info(f"✅ [MERMAID] Successfully generated chart from scenario")
+                return result['mermaid_code']
+            else:
+                logger.warning(f"⚠️ [MERMAID] generate_chart returned unexpected format")
+                return "graph TD\n    A[차트 생성 실패]"
+
+        except Exception as e:
+            logger.error(f"❌ [MERMAID] generate_mermaid_from_scenario failed: {e}", exc_info=True)
+            return "graph TD\n    Error[차트 생성 중 오류 발생]"

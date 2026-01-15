@@ -20,6 +20,60 @@ game_router = APIRouter(prefix="/game", tags=["game"])
 MAX_RETRIES = 2
 
 
+def enrich_world_state(world_state: dict, player_state: dict, scenario: dict = None, db_session: GameSession = None) -> dict:
+    """
+    World State를 완전하게 보강하는 공통 함수
+
+    Args:
+        world_state: 원본 world_state 딕셔너리
+        player_state: player_state 딕셔너리 (stuck_count 등 미러링용)
+        scenario: 시나리오 데이터 (씬 타이틀 조회용)
+        db_session: DB 세션 레코드 (current_scene_id, turn_count 조회용)
+
+    Returns:
+        보강된 world_state 딕셔너리
+    """
+    enriched = world_state.copy() if world_state else {}
+
+    # 1. location 및 current_scene_id 동기화
+    location = enriched.get('location') or player_state.get('current_scene_id') or (db_session.current_scene_id if db_session else '')
+    enriched['location'] = location
+    enriched['current_scene_id'] = location
+
+    # 2. stuck_count 미러링 (player_state → world_state)
+    stuck_count = enriched.get('stuck_count')
+    if stuck_count is None:
+        stuck_count = player_state.get('stuck_count', 0)
+        enriched['stuck_count'] = stuck_count
+
+    # 3. turn_count 보강 (world_state → db_session → 0)
+    if 'turn_count' not in enriched or enriched['turn_count'] is None:
+        if db_session and db_session.turn_count is not None:
+            enriched['turn_count'] = db_session.turn_count
+        else:
+            enriched['turn_count'] = 0
+
+    # 4. current_scene_title 주입 (시나리오에서 조회)
+    if location and scenario:
+        scenes = scenario.get('scenes', [])
+        for scene in scenes:
+            if scene.get('scene_id') == location:
+                enriched['current_scene_title'] = scene.get('title') or scene.get('name', '')
+                break
+
+    # 5. current_scene_title이 여전히 없으면 빈 문자열
+    if 'current_scene_title' not in enriched:
+        enriched['current_scene_title'] = ''
+
+    logger.info(
+        f"[SESSION_STATE] Enriched world_state: location={enriched.get('location')}, "
+        f"title={enriched.get('current_scene_title')}, stuck_count={enriched.get('stuck_count')}, "
+        f"turn_count={enriched.get('turn_count')}"
+    )
+
+    return enriched
+
+
 @game_router.get('/session_state')
 async def get_session_state(
     session_id: str = Query(..., description="세션 ID"),
@@ -29,6 +83,7 @@ async def get_session_state(
     """
     프론트엔드가 서버의 최신 세션 상태를 조회하는 API
     디버그 패널 및 씬 보기 기능에서 사용
+    ✅ [FIX 1-A] world_state를 enrich하여 항상 완전한 데이터 반환
     """
     try:
         game_session = db.query(GameSession).filter_by(session_key=session_id).first()
@@ -42,13 +97,26 @@ async def get_session_state(
                 }
             )
 
+        # ✅ [FIX 1-A] 시나리오 데이터 로드 (씬 타이틀 조회용)
+        scenario = None
+        if game_session.scenario_id:
+            scenario = game_engine.get_scenario_by_id(game_session.scenario_id)
+
+        # ✅ [FIX 1-A] world_state 보강
+        enriched_world_state = enrich_world_state(
+            world_state=game_session.world_state or {},
+            player_state=game_session.player_state or {},
+            scenario=scenario,
+            db_session=game_session
+        )
+
         # player_state와 world_state를 함께 반환
         return JSONResponse(content={
             "success": True,
             "session_id": game_session.session_key,
             "scenario_id": game_session.scenario_id,
             "player_state": game_session.player_state,
-            "world_state": game_session.world_state,
+            "world_state": enriched_world_state,  # ✅ 보강된 world_state
             "turn_count": game_session.turn_count,
             "current_scene_id": game_session.current_scene_id,
             "last_played_at": game_session.last_played_at.isoformat() if game_session.last_played_at else None
@@ -113,6 +181,12 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
         if isinstance(world_state_data, dict) and current_scene_id:
             world_state_data['location'] = current_scene_id
             logger.info(f"🔧 [DB SAVE] Synced world_state.location = {current_scene_id}")
+
+        # ✅ [FIX 1-B] stuck_count를 world_state에 미러링 (player_state → world_state)
+        if isinstance(world_state_data, dict):
+            stuck_count_from_state = state.get('stuck_count', 0)
+            world_state_data['stuck_count'] = stuck_count_from_state
+            logger.info(f"🔧 [DB SAVE] Mirrored stuck_count to world_state: {stuck_count_from_state}")
 
         turn_count = world_state_data.get('turn_count', 0) if isinstance(world_state_data, dict) else 0
 
