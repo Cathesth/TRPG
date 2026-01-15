@@ -152,6 +152,11 @@ def load_game_session(db: Session, session_key: str):
         player_state['current_scene_id'] = verified_scene_id
         wsm.location = verified_scene_id
 
+        # ✅ [FIX] world_state를 player_state에 포함시켜 game_engine이 초기화하지 않도록 함
+        if game_session.world_state:
+            player_state['world_state'] = game_session.world_state
+            logger.info(f"🌍 [DB LOAD] world_state included in player_state (location: {verified_scene_id})")
+
         logger.info(
             f"✅ [DB] Game session loaded: {session_key} "
             f"(Turn: {game_session.turn_count}, Scene: {verified_scene_id})"
