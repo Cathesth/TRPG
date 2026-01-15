@@ -107,9 +107,13 @@
         <div class="flex items-center gap-5">
 
             <div class="hidden md:flex items-center bg-rpg-800 border border-rpg-700 rounded-full px-4 py-1.5 focus-within:border-rpg-accent transition-colors group shadow-inner">
-                <input type="text" placeholder="Search scenarios..."
-                       class="bg-transparent border-none text-sm text-gray-300 focus:outline-none w-48 placeholder-gray-600 transition-all focus:w-64">
-                <button class="ml-2 text-gray-500 group-hover:text-white transition-colors" title="검색">
+                <input type="text"
+                       id="search-input"
+                       name="search"
+                       onkeyup="if(event.key === 'Enter') performSearch()"
+                       placeholder="Search scenarios..."
+                       class="bg-transparent border-none text-sm text-gray-300 focus:outline-none w-48 placeholder-gray-600 transition-all focus:w-64 focus:bg-rpg-800 focus:text-white">
+                <button onclick="performSearch()" class="ml-2 text-gray-500 group-hover:text-white transition-colors" title="검색">
                     <i data-lucide="search" class="w-4 h-4"></i>
                 </button>
             </div>
@@ -206,7 +210,8 @@
                 <div id="realtime-grid"
                      class="horizontal-scroll-container flex no-scrollbar"
                      hx-get="/api/scenarios?sort=newest&limit=10&filter=all"
-                     hx-trigger="load">
+                     hx-include="#search-input"
+                     hx-trigger="load, new_search from:body">
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                 </div>
@@ -221,7 +226,8 @@
                 <div id="popular-grid"
                      class="horizontal-scroll-container flex no-scrollbar"
                      hx-get="/api/scenarios?sort=popular&limit=10&filter=all"
-                     hx-trigger="load">
+                     hx-include="#search-input"
+                     hx-trigger="load, new_search from:body">
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
@@ -235,7 +241,8 @@
                 <div id="steady-grid"
                      class="horizontal-scroll-container flex no-scrollbar"
                      hx-get="/api/scenarios?sort=steady&limit=10&filter=all"
-                     hx-trigger="load">
+                     hx-include="#search-input"
+                     hx-trigger="load, new_search from:body">
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
@@ -494,6 +501,34 @@
         function filterGenre(genre) {
             alert("장르 필터: " + genre + " (기능 준비중)");
         }
+
+        // ▼ [추가] 검색 기능 스크립트
+    function performSearch() {
+        //const query = document.getElementById('search-input').value;
+        //// 검색 결과를 반영할 목록들 (실시간, 인기, 스테디셀러)
+        //const targetGrids = ['realtime-grid', 'popular-grid', 'steady-grid'];
+
+        //targetGrids.forEach(gridId => {
+            //const element = document.getElementById(gridId);
+            //if (element) {
+                //// 기존 API URL을 가져와서 검색어 파라미터만 추가/갱신
+                //let currentUrl = element.getAttribute('hx-get');
+                //if (currentUrl.includes('&search=')) {
+                //    currentUrl = currentUrl.split('&search=')[0];
+                //}
+
+               //let newUrl = currentUrl;
+                //if (query.trim() !== "") {
+                //    newUrl += `&search=${encodeURIComponent(query)}`;
+                //}
+
+                //// hx-get 속성 업데이트 후 리로드 트리거
+                //element.setAttribute('hx-get', newUrl);
+                //htmx.trigger(element, 'refresh_list');
+            //}
+        //});
+        document.body.dispatchEvent(new Event('new_search'));
+    }
     </script>
 </body>
 </html>
