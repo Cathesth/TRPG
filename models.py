@@ -271,7 +271,7 @@ class ScenarioLike(Base):
     __tablename__ = "scenario_likes"
     user_id = Column(String, ForeignKey("users.id"), primary_key=True)
     scenario_id = Column(Integer, ForeignKey("scenarios.id"), primary_key=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
 
 # 테이블 생성 함수
