@@ -1,12 +1,16 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+import logging
 
 from config import get_full_version
 from routes.auth import get_current_user_optional, get_current_user
-from models import SessionLocal, Scenario
+from models import get_db, Scenario
 from services.mermaid_service import MermaidService
 from services.scenario_service import ScenarioService
+
+logger = logging.getLogger(__name__)
 
 views_router = APIRouter(tags=["views"])
 templates = Jinja2Templates(directory="templates")
@@ -66,21 +70,143 @@ async def view_scenes(request: Request, user=Depends(get_current_user_optional))
 
 
 @views_router.get("/views/debug_scenes", response_class=HTMLResponse)
-async def view_debug_scenes(request: Request, user=Depends(get_current_user_optional)):
-    """디버그 모드 전체 씬 보기 (플레이어 모드에서 접근)"""
-    # 전역 game_state 제거 - 클라이언트가 시나리오 ID를 URL 파라미터로 전달해야 함
-    return templates.TemplateResponse("debug_scenes_view.html", {
-        "request": request,
-        "title": "Debug Scene Map",
-        "scenario": {"endings": [], "prologue_text": ""},
-        "scenes": [],
-        "current_scene_id": None,
-        "mermaid_code": "graph TD\n    A[시나리오를 먼저 로드하세요]",
-        "scene_display_ids": {},
-        "ending_display_ids": {},
-        "version": get_full_version(),
-        "user": user
-    })
+async def view_debug_scenes(
+    request: Request,
+    scenario_id: str = Query(None, description="시나리오 ID"),
+    user=Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
+):
+    """
+    디버그 모드 전체 씬 보기 (플레이어 모드에서 접근)
+    ✅ [FIX 3] scenario_id를 쿼리 파라미터로 받거나 sessionStorage에서 복원
+    """
+
+    # ✅ scenario_id가 없으면 기본 페이지 반환 (프론트엔드에서 sessionStorage 복원 시도)
+    if not scenario_id:
+        return templates.TemplateResponse("debug_scenes_view.html", {
+            "request": request,
+            "title": "Debug Scene Map",
+            "scenario": {"endings": [], "prologue_text": ""},
+            "scenes": [],
+            "current_scene_id": None,
+            "mermaid_code": "graph TD\n    A[시나리오 로드 중...]",
+            "scene_display_ids": {},
+            "ending_display_ids": {},
+            "scene_names": {},
+            "ending_names": {},
+            "incoming_conditions": {},
+            "ending_incoming_conditions": {},
+            "version": get_full_version(),
+            "user": user,
+            "scenario_id": None
+        })
+
+    # ✅ scenario_id가 있으면 DB에서 시나리오 로드
+    try:
+        from services.scenario_service import ScenarioService
+        from services.mermaid_service import MermaidService
+
+        # 시나리오 조회
+        result, error = ScenarioService.get_scenario_for_view(int(scenario_id), user.id if user else None, db)
+
+        if error or not result:
+            return templates.TemplateResponse("debug_scenes_view.html", {
+                "request": request,
+                "title": "시나리오를 찾을 수 없음",
+                "scenario": {"endings": [], "prologue_text": ""},
+                "scenes": [],
+                "current_scene_id": None,
+                "mermaid_code": "graph TD\n    A[시나리오를 찾을 수 없습니다]",
+                "scene_display_ids": {},
+                "ending_display_ids": {},
+                "scene_names": {},
+                "ending_names": {},
+                "incoming_conditions": {},
+                "ending_incoming_conditions": {},
+                "version": get_full_version(),
+                "user": user,
+                "scenario_id": scenario_id
+            })
+
+        scenario_data = result
+
+        # Mermaid 그래프 생성
+        mermaid_code = MermaidService.generate_mermaid_from_scenario(scenario_data)
+
+        # 현재 진행 중인 씬 정보 (옵션)
+        current_scene_id = None
+
+        # Scene ID 매핑
+        scene_display_ids = {s.get('scene_id'): s.get('scene_id') for s in scenario_data.get('scenes', [])}
+        ending_display_ids = {e.get('ending_id'): e.get('ending_id') for e in scenario_data.get('endings', [])}
+
+        # Scene/Ending 이름 매핑
+        scene_names = {s.get('scene_id'): s.get('title', s.get('name', s.get('scene_id'))) for s in scenario_data.get('scenes', [])}
+        ending_names = {e.get('ending_id'): e.get('title', e.get('ending_id')) for e in scenario_data.get('endings', [])}
+
+        # Incoming conditions 계산
+        incoming_conditions = {}
+        for scene in scenario_data.get('scenes', []):
+            for trans in scene.get('transitions', []):
+                target_id = trans.get('target_scene_id')
+                if target_id:
+                    if target_id not in incoming_conditions:
+                        incoming_conditions[target_id] = []
+                    incoming_conditions[target_id].append({
+                        'from_title': scene.get('title', scene.get('name', scene.get('scene_id'))),
+                        'condition': trans.get('trigger', trans.get('condition', '자유 행동'))
+                    })
+
+        ending_incoming_conditions = {}
+        for scene in scenario_data.get('scenes', []):
+            for trans in scene.get('transitions', []):
+                target_id = trans.get('target_scene_id')
+                if target_id and target_id in ending_names:
+                    if target_id not in ending_incoming_conditions:
+                        ending_incoming_conditions[target_id] = []
+                    ending_incoming_conditions[target_id].append({
+                        'from_title': scene.get('title', scene.get('name', scene.get('scene_id'))),
+                        'condition': trans.get('trigger', trans.get('condition', '자유 행동'))
+                    })
+
+        return templates.TemplateResponse("debug_scenes_view.html", {
+            "request": request,
+            "title": scenario_data.get('title', 'Unknown Scenario'),
+            "scenario": scenario_data,
+            "scenes": scenario_data.get('scenes', []),
+            "current_scene_id": current_scene_id,
+            "mermaid_code": mermaid_code,
+            "scene_display_ids": scene_display_ids,
+            "ending_display_ids": ending_display_ids,
+            "scene_names": scene_names,
+            "ending_names": ending_names,
+            "incoming_conditions": incoming_conditions,
+            "ending_incoming_conditions": ending_incoming_conditions,
+            "version": get_full_version(),
+            "user": user,
+            "scenario_id": scenario_id
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Failed to load debug scenes: {e}")
+        return templates.TemplateResponse("debug_scenes_view.html", {
+            "request": request,
+            "title": "오류 발생",
+            "scenario": {"endings": [], "prologue_text": ""},
+            "scenes": [],
+            "current_scene_id": None,
+            "mermaid_code": f"graph TD\n    A[오류: {str(e)}]",
+            "scene_display_ids": {},
+            "ending_display_ids": {},
+            "scene_names": {},
+            "ending_names": {},
+            "incoming_conditions": {},
+            "ending_incoming_conditions": {},
+            "version": get_full_version(),
+            "user": user,
+            "scenario_id": scenario_id
+        })
+
 
 
 @views_router.get("/views/scenes/edit/{scenario_id}", response_class=HTMLResponse)

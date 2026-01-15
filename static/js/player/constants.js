@@ -21,6 +21,7 @@ const CHAT_LOG_KEY = 'trpg_chat_log';
 const SCENARIO_LOADED_KEY = 'trpg_scenario_loaded';
 const CURRENT_SCENARIO_KEY = 'trpg_current_scenario';
 const CURRENT_SCENARIO_ID_KEY = 'trpg_scenario_id';
+const CURRENT_SESSION_ID_KEY = 'current_session_id';  // ✅ 추가: 표준 키 상수
 const SESSION_KEY_STORAGE = 'trpg_session_key';
 const MODEL_PROVIDER_KEY = 'trpg_model_provider';
 const MODEL_VERSION_KEY = 'trpg_model_version';
@@ -57,9 +58,9 @@ function clearAllGameState() {
     sessionStorage.removeItem(CHAT_LOG_KEY);
     sessionStorage.removeItem(SCENARIO_LOADED_KEY);
     sessionStorage.removeItem(CURRENT_SCENARIO_KEY);
-    sessionStorage.removeItem(CURRENT_SCENARIO_ID_KEY);  // ✅ 추가
+    sessionStorage.removeItem(CURRENT_SCENARIO_ID_KEY);
     sessionStorage.removeItem('trpg_session_key');
-    sessionStorage.removeItem('current_session_id');  // ✅ 추가
+    sessionStorage.removeItem('current_session_id');
     sessionStorage.removeItem(GAME_ENDED_KEY);
     sessionStorage.removeItem('trpg_world_state');
     sessionStorage.removeItem('trpg_player_stats');
@@ -68,7 +69,7 @@ function clearAllGameState() {
     // 메모리 변수도 초기화
     currentSessionId = null;
     currentSessionKey = '';
-    currentScenarioId = null;  // ✅ 추가
+    currentScenarioId = null;
 
     console.log('🧹 All game state cleared (including session ID)');
 }
@@ -79,29 +80,36 @@ window.clearAllGameState = clearAllGameState;
 // 페이지 로드 시 상태 복원 또는 초기화
 (function() {
     // 🔍 새로고침(F5) vs 내부 네비게이션 구분
-    const isPageRefresh = performance.navigation.type === 1 ||
-                         (performance.getEntriesByType('navigation')[0]?.type === 'reload');
-
-    // ✅ [FIX 3-1] 뒤로가기/앞으로가기 탐지 추가 (브라우저 네비게이션)
-    const isBackForward = performance.navigation.type === 2 ||
-                         (performance.getEntriesByType('navigation')[0]?.type === 'back_forward');
+    const nav = performance.getEntriesByType('navigation')[0];
+    const isPageRefresh = nav && nav.type === 'reload';
+    const isBackForward = nav && nav.type === 'back_forward';
 
     // 내부 네비게이션으로 돌아온 경우 (전체 씬 보기 -> 플레이어 모드)
     const isReturningFromNavigation = sessionStorage.getItem(NAVIGATION_FLAG_KEY) === 'true';
-    sessionStorage.removeItem(NAVIGATION_FLAG_KEY);  // 플래그 제거
+
+    // ✅ [FIX 2] 현재 URL과 세션 존재 여부 체크
+    const isPlayerPage = window.location.pathname.includes('/views/player');
+    const hasSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY) || sessionStorage.getItem('trpg_session_key');
+
+    // ✅ [FIX 2] 절대 초기화하지 않아야 하는 경우들
+    const shouldNotClear = (
+        isBackForward ||  // 브라우저 뒤로/앞으로
+        isReturningFromNavigation ||  // 내부 페이지 복귀
+        (isPlayerPage && hasSessionId)  // 플레이어 페이지이고 세션이 있는 경우
+    );
+
+    if (shouldNotClear) {
+        console.log('✅ [INIT] 상태 유지 모드 - 세션 초기화 안 함');
+        // 플래그 제거 (1회만 사용)
+        sessionStorage.removeItem(NAVIGATION_FLAG_KEY);
+        return;
+    }
 
     // 🔄 새로고침이면 무조건 초기화
     if (isPageRefresh) {
         console.log('🔄 새로고침 감지 - 게임 상태 초기화');
         clearAllGameState();
-        // initializeEmptyGameUI는 DOMContentLoaded에서 호출됨
         return;
-    }
-
-    // ✅ [FIX 3-1] 뒤로가기/앞으로가기 또는 내부 네비게이션 복귀인 경우 상태 유지
-    if (isBackForward || isReturningFromNavigation) {
-        console.log('⬅️ 브라우저 네비게이션 또는 내부 페이지 복귀 감지 - 게임 상태 유지');
-        return;  // 상태 초기화하지 않음
     }
 
     // 저장된 게임 상태가 있는지 확인

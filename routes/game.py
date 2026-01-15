@@ -2,7 +2,7 @@ import logging
 import json
 import traceback
 from datetime import datetime
-from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks
+from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,51 @@ game_router = APIRouter(prefix="/game", tags=["game"])
 
 # 최대 재시도 횟수
 MAX_RETRIES = 2
+
+
+@game_router.get('/session_state')
+async def get_session_state(
+    session_id: str = Query(..., description="세션 ID"),
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user_optional)
+):
+    """
+    프론트엔드가 서버의 최신 세션 상태를 조회하는 API
+    디버그 패널 및 씬 보기 기능에서 사용
+    """
+    try:
+        game_session = db.query(GameSession).filter_by(session_key=session_id).first()
+
+        if not game_session:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "success": False,
+                    "error": "세션을 찾을 수 없습니다."
+                }
+            )
+
+        # player_state와 world_state를 함께 반환
+        return JSONResponse(content={
+            "success": True,
+            "session_id": game_session.session_key,
+            "scenario_id": game_session.scenario_id,
+            "player_state": game_session.player_state,
+            "world_state": game_session.world_state,
+            "turn_count": game_session.turn_count,
+            "current_scene_id": game_session.current_scene_id,
+            "last_played_at": game_session.last_played_at.isoformat() if game_session.last_played_at else None
+        })
+
+    except Exception as e:
+        logger.error(f"❌ [API] Failed to get session state: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
 
 
 async def save_to_redis_async(session_key: str, cache_data: dict):
