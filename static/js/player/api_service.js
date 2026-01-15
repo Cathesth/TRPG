@@ -185,12 +185,10 @@ async function fetchGameDataFromDB() {
         if (data.success) {
             console.log('✅ Data fetched from Railway DB:', data);
 
-            // ✅ [작업 3] DB 데이터로 클라이언트 상태 완전히 덮어쓰기
-            // 1단계: 위치 데이터 강제 동기화 (player_state가 절대 진리)
-            if (data.world_state && data.player_state) {
+            // ✅ [작업 2] 프론트엔드 데이터 수신 시 강제 매핑 - player_state가 절대 진리
+            if (data.player_state && data.world_state) {
                 data.world_state.location = data.player_state.current_scene_id;
-                data.world_state.stuck_count = data.player_state.stuck_count || 0;
-                console.log('🔄 [SYNC] Forced location sync: world_state.location =', data.world_state.location, 'stuck_count =', data.world_state.stuck_count);
+                console.log('🔄 [SYNC] Forced location sync: world_state.location =', data.world_state.location);
             }
 
             // 2단계: 세션 ID 갱신 및 화면 즉시 반영
