@@ -579,7 +579,8 @@ class WorldState:
             "turn_count": self.turn_count,
             "npcs": self.npcs,
             "history": self.history,
-            "narrative_history": self.narrative_history
+            "narrative_history": self.narrative_history,
+            "player": self.player  # player 데이터도 직렬화
         }
 
     def from_dict(self, data: Dict[str, Any]):

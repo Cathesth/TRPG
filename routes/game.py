@@ -196,6 +196,10 @@ async def game_act_stream(
     # ✅ [중요] 세션 ID와 시나리오 ID 검증 로직
     should_create_new_session = False
 
+    # 🔍 [SESSION ISOLATION] 세션별 독립적인 GameState 인스턴스 생성
+    game_state = GameState()
+    logger.info(f"🔍 [SESSION ISOLATION] Created local GameState instance for session: {session_id or 'new'}")
+
     if session_id:
         logger.info(f"🔍 [SESSION] Client provided session_id: {session_id}, scenario_id: {scenario_id}")
 
@@ -218,8 +222,11 @@ async def game_act_stream(
                 restored_state = load_game_session(db, session_id)
 
                 if restored_state:
-                    # ✅ DB에서 복구한 세션으로 game_state 완전히 교체
+                    # ✅ DB에서 복구한 세션으로 로컬 game_state에 설정
                     game_state.state = restored_state
+
+                    # game_graph도 생성
+                    game_state.game_graph = create_game_graph()
 
                     # WorldState도 복구
                     wsm = WorldStateManager()
