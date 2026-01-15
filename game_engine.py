@@ -336,42 +336,37 @@ def intent_parser_node(state: PlayerState):
     state['system_message'] = ''
     logger.info("🧹 [CLEANUP] Output fields cleared for new turn")
 
-    # ✅ 작업 2: 턴 시작 시 WorldState 위치 검증 및 복구
+    # ✅ 작업 1 & 2: PlayerState의 current_scene_id를 절대적 진실로 믿고, world_state.location을 동기화
     world_state = WorldState()
     if 'world_state' in state and state['world_state']:
         world_state.from_dict(state['world_state'])
 
-    # ✅ [작업 2] world_state.location을 절대적 진실로 믿고 current_scene_id 복구
+    # current_scene_id를 먼저 캡처 (이것이 진실!)
     curr_scene_id_from_state = state.get('current_scene_id', '')
     ws_location = world_state.location
 
-    # world_state.location이 있고 current_scene_id와 다르면 강제 동기화
-    if ws_location and ws_location != curr_scene_id_from_state:
+    # ✅ 작업 2: 위치가 다를 경우, 현재(state['current_scene_id'])를 기준으로 world_state.location 업데이트
+    if curr_scene_id_from_state and ws_location != curr_scene_id_from_state:
         logger.warning(
             f"⚠️ [INTENT_PARSER] Scene ID mismatch detected! "
             f"state.current_scene_id: '{curr_scene_id_from_state}' vs world_state.location: '{ws_location}'"
         )
-        logger.info(f"🔧 [INTENT_PARSER] Forcing state.current_scene_id = '{ws_location}' (world_state is truth)")
-        state['current_scene_id'] = ws_location
+        logger.info(f"🔧 [LOCATION SYNC] Updating world_state.location = '{curr_scene_id_from_state}' (state.current_scene_id is truth)")
+        world_state.location = curr_scene_id_from_state
     elif not curr_scene_id_from_state and ws_location:
         # current_scene_id가 비어있으면 world_state.location으로 복원
         logger.info(f"🔄 [INTENT_PARSER] Restored scene from world_state.location: {ws_location}")
         state['current_scene_id'] = ws_location
+        curr_scene_id_from_state = ws_location
 
-    # previous_scene_id 할당 시 world_state.location 값이 이전 턴의 위치를 정확히 반영하도록 검수
-    if 'current_scene_id' in state:
-        state['previous_scene_id'] = state['current_scene_id']
-    elif ws_location:
-        # current_scene_id가 없지만 world_state.location이 있으면 복원
-        state['previous_scene_id'] = ws_location
-        state['current_scene_id'] = ws_location
-        logger.info(f"🔄 [INTENT_PARSER] Restored scene from world_state.location: {ws_location}")
+    # previous_scene_id 설정
+    if curr_scene_id_from_state:
+        state['previous_scene_id'] = curr_scene_id_from_state
 
     user_input = state.get('last_user_input', '').strip()
 
-    # ✅ [작업 2] 파싱 기준이 되는 scene_id를 명확하게 로그
-    curr_scene_id = state.get('current_scene_id', '')
-    logger.info(f"🟢 [INTENT_PARSER START] USER INPUT: '{user_input}' | Parsing based on scene: '{curr_scene_id}'")
+    # ✅ 작업 3: 턴 시작 시 정합성 로그 - 실제 DB의 current_scene_id 확인
+    logger.info(f"🟢 [INTENT_PARSER START] USER INPUT: '{user_input}' | Scene: '{curr_scene_id_from_state}' (from state.current_scene_id)")
 
     if not user_input:
         state['parsed_intent'] = 'chat'
@@ -894,11 +889,14 @@ def rule_node(state: PlayerState):
             state['narrator_output'] = ''
             logger.info("🧹 [TRANSITION CLEANUP] Cleared output fields after scene transition")
 
-            # ✅ [작업 1-2] 장면 전환 성공 시 서사 이벤트 기록 (actual_current_location을 from_scene으로 사용)
-            world_state.add_narrative_event(
-                f"유저가 '{trigger_used}'을(를) 통해 [{from_scene}]에서 [{next_id}]로 이동함"
-            )
-            logger.info(f"📖 [NARRATIVE] Recorded transition: [{from_scene}] -> [{next_id}] via '{trigger_used}'")
+            # ✅ [작업 4] 실제 이동이 일어난 경우에만 내러티브 기록 (from_scene != next_id)
+            if from_scene != next_id:
+                world_state.add_narrative_event(
+                    f"유저가 '{trigger_used}'을(를) 통해 [{from_scene}]에서 [{next_id}]로 이동함"
+                )
+                logger.info(f"📖 [NARRATIVE] Recorded transition: [{from_scene}] -> [{next_id}] via '{trigger_used}'")
+            else:
+                logger.info(f"📖 [NARRATIVE] Skipped recording - same scene: [{from_scene}] == [{next_id}]")
 
             # ✅ 작업 2: 장면 전환 성공 시 stuck_count 초기화
             old_stuck_count = state.get('stuck_count', 0)
@@ -1810,45 +1808,3 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             </div>
             """
 
-# --- Graph Construction ---
-
-def create_game_graph():
-    """
-    LangGraph 워크플로우 생성
-    intent_parser -> (rule_engine | npc_actor) -> narrator -> END
-    """
-    workflow = StateGraph(PlayerState)
-
-    # 노드 추가
-    workflow.add_node("intent_parser", intent_parser_node)
-    workflow.add_node("rule_engine", rule_node)
-    workflow.add_node("npc_actor", npc_node)
-    workflow.add_node("narrator", narrator_node)
-
-    # 시작점 설정
-    workflow.set_entry_point("intent_parser")
-
-    # 라우팅 함수: 의도에 따라 rule_engine 또는 npc_actor로 분기
-    def route_action(state):
-        intent = state.get('parsed_intent')
-        if intent in ['transition', 'ending', 'investigate']:
-            return "rule_engine"
-        else:
-            return "npc_actor"
-
-    # 조건부 엣지 추가
-    workflow.add_conditional_edges(
-        "intent_parser",
-        route_action,
-        {
-            "rule_engine": "rule_engine",
-            "npc_actor": "npc_actor"
-        }
-    )
-
-    # 순차 엣지 추가
-    workflow.add_edge("rule_engine", "narrator")
-    workflow.add_edge("npc_actor", "narrator")
-    workflow.add_edge("narrator", END)
-
-    return workflow.compile()
