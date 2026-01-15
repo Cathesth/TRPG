@@ -302,3 +302,11 @@ def cleanup_old_sessions(days=7):
     except Exception as e:
         logger.error(f"❌ Failed to cleanup sessions: {e}")
         return 0
+
+
+    # models.py 파일 내 적절한 위치에 추가 (Base 클래스 정의 이후)
+    class ScenarioLike(Base):
+        __tablename__ = "scenario_likes"
+        user_id = Column(String, ForeignKey("users.id"), primary_key=True)
+        scenario_id = Column(Integer, ForeignKey("scenarios.id"), primary_key=True)
+        created_at = Column(DateTime, default=datetime.utcnow)

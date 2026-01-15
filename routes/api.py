@@ -30,7 +30,7 @@ from services.mermaid_service import MermaidService
 
 # 인증 및 모델
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
-from models import get_db, Preset, CustomNPC, Scenario
+from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -365,6 +365,12 @@ def list_scenarios(
     elif filter == 'public':
         query = query.filter(Scenario.is_public == True)
     # filter='all'은 전체 조회
+    elif filter == 'liked':  # [추가] 찜한 목록 필터
+        if not user.is_authenticated:
+            return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
+        # ScenarioLike 테이블과 조인하여 내가 찜한 것만 가져옴
+        query = query.join(ScenarioLike, Scenario.id == ScenarioLike.scenario_id) \
+            .filter(ScenarioLike.user_id == user.id)
 
     # 3. 정렬
     if sort == 'oldest':
@@ -404,19 +410,23 @@ def list_scenarios(
         scenarios = filtered_scenarios
 
     if not scenarios:
-        # [수정] 검색 결과가 없을 때의 메시지 처리 추가
-        if search:
-            msg = "검색 결과가 없습니다."
-        else:
-            msg = "등록된 시나리오가 없습니다." if filter != 'my' else "아직 생성한 시나리오가 없습니다."
-        return HTMLResponse(
-            f'<div class="col-span-full text-center text-gray-500 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
+        if filter == 'liked': msg = "찜한 시나리오가 없습니다."
+        elif search: msg = "검색 결과가 없습니다."
+        elif filter == 'my': msg = "아직 생성한 시나리오가 없습니다."
+        else: msg = "등록된 시나리오가 없습니다."
+        return HTMLResponse(f'<div class="col-span-full text-center text-gray-500 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
 
     # 5. HTML 생성
     from datetime import datetime
     import time as time_module
     current_ts = time_module.time()
     NEW_THRESHOLD = 30 * 60
+
+    # [추가] 현재 유저가 찜한 시나리오 ID 목록 미리 조회 (성능 최적화)
+    liked_scenario_ids = set()
+    if user.is_authenticated:
+        likes = db.query(ScenarioLike.scenario_id).filter(ScenarioLike.user_id == user.id).all()
+        liked_scenario_ids = {l[0] for l in likes}
 
     html = ""
     for s in scenarios:
@@ -457,6 +467,19 @@ def list_scenarios(
             card_style = "w-96 h-[26rem] flex-shrink-0 snap-center"
             img_height = "h-52"
             content_padding = "p-5"
+
+        # [추가] 하트 아이콘 상태 결정
+        is_liked = s.id in liked_scenario_ids
+        # 찜 상태면 빨간색 채움(fill-red-500), 아니면 흰색 테두리(text-white/70)
+        heart_class = "fill-red-500 text-red-500" if is_liked else "text-white/70 hover:text-red-500"
+
+        # [추가] 하트 버튼 HTML (이미지 우측 상단에 배치)
+        like_btn = f"""
+        <button onclick="toggleLike({s.id}, this); event.stopPropagation();" 
+                class="absolute top-2 right-2 p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all z-10 {heart_class}">
+            <i data-lucide="heart" class="w-5 h-5 transition-transform active:scale-90"></i>
+        </button>
+        """
 
         # [버튼 구성]
         if is_owner:
@@ -513,6 +536,36 @@ def list_scenarios(
 
     html += '<script>lucide.createIcons();</script>'
     return HTMLResponse(content=html)
+
+
+# =========================================================================
+# 찜목록 함수
+# =========================================================================
+@api_router.post('/scenarios/{scenario_id}/like')
+def toggle_like(
+        scenario_id: int,
+        user: CurrentUser = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "로그인이 필요합니다."}, status_code=401)
+
+    # 이미 찜했는지 확인
+    existing_like = db.query(ScenarioLike).filter(
+        ScenarioLike.user_id == user.id,
+        ScenarioLike.scenario_id == scenario_id
+    ).first()
+
+    if existing_like:
+        db.delete(existing_like)  # 이미 있으면 삭제 (찜 취소)
+        liked = False
+    else:
+        new_like = ScenarioLike(user_id=user.id, scenario_id=scenario_id)
+        db.add(new_like)  # 없으면 추가 (찜 하기)
+        liked = True
+
+    db.commit()
+    return {"success": True, "liked": liked}
 
 @api_router.get('/scenarios/data')
 async def get_scenarios_data(
