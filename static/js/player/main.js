@@ -4,6 +4,28 @@ document.addEventListener('DOMContentLoaded', function() {
     // 아이콘 초기화
     lucide.createIcons();
 
+    // 새로고침으로 인한 초기화가 필요한 경우 UI 초기화
+    const isPageRefresh = performance.navigation.type === 1 ||
+                         (performance.getEntriesByType('navigation')[0]?.type === 'reload');
+    if (isPageRefresh) {
+        initializeEmptyGameUI();
+    }
+
+    // 세션 ID 복원 (sessionStorage에서)
+    if (!currentSessionId) {
+        currentSessionId = sessionStorage.getItem("current_session_id");
+        if (currentSessionId) {
+            console.log('🔄 [INIT] Session ID restored from sessionStorage:', currentSessionId);
+            // 세션 ID 표시 업데이트
+            const sessionIdDisplay = document.getElementById('session-id-display');
+            if (sessionIdDisplay) {
+                sessionIdDisplay.textContent = currentSessionId;
+                sessionIdDisplay.classList.remove('text-gray-300');
+                sessionIdDisplay.classList.add('text-green-400');
+            }
+        }
+    }
+
     // 모델 버전 초기화 (가장 먼저 실행)
     const providerSelect = document.getElementById('provider-select');
     const modelVersionSelect = document.getElementById('model-version-select');
@@ -121,4 +143,3 @@ lucide.createIcons();
     });
     sidebar.addEventListener('mouseleave', () => sidebar.classList.remove('expanded'));
 })();
-
