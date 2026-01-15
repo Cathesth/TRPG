@@ -377,8 +377,8 @@ function editScenario(filename) {
 function openScenesView() {
     if (isScenarioLoaded) {
         isInternalNavigation = true;
-        // ✅ [FIX] 내부 네비게이션 플래그를 sessionStorage에 저장
-        sessionStorage.setItem('trpg_navigation_flag', 'true');
+        // ✅ [FIX 3-2] 내부 네비게이션 플래그를 sessionStorage에 저장
+        sessionStorage.setItem(NAVIGATION_FLAG_KEY, 'true');
         window.location.href = '/views/scenes';
     }
 }

@@ -647,9 +647,10 @@ async def load_scenario(
     return {
         "success": True,
         "session_key": new_session_key,
-        "scenario_id": scenario_id,  # ✅ [FIX] scenario_id 추가
+        "scenario_id": scenario_id,  # ✅ [FIX 1-3] scenario_id 추가
         "game_state": game_state_data,
-        "message": "New game session initialized. Will be saved on first action."
+        "player_vars": result['player_vars'],
+        "start_scene_id": start_id
     }
 
 

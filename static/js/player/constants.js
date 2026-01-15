@@ -82,7 +82,7 @@ window.clearAllGameState = clearAllGameState;
     const isPageRefresh = performance.navigation.type === 1 ||
                          (performance.getEntriesByType('navigation')[0]?.type === 'reload');
 
-    // ✅ [FIX] 뒤로가기/앞으로가기 탐지 추가 (브라우저 네비게이션)
+    // ✅ [FIX 3-1] 뒤로가기/앞으로가기 탐지 추가 (브라우저 네비게이션)
     const isBackForward = performance.navigation.type === 2 ||
                          (performance.getEntriesByType('navigation')[0]?.type === 'back_forward');
 
@@ -98,18 +98,19 @@ window.clearAllGameState = clearAllGameState;
         return;
     }
 
-    // 저장된 게임 상태가 있는지 확인
-    const hasSavedGame = sessionStorage.getItem(CHAT_LOG_KEY) || sessionStorage.getItem(SCENARIO_LOADED_KEY);
-
-    // ✅ [FIX] 뒤로가기나 내부 네비게이션으로 돌아왔거나 저장된 게임이 있으면 복원
-    if ((isReturningFromNavigation || isBackForward) && hasSavedGame) {
-        console.log('🔄 내부 네비게이션 복귀 - 게임 상태 복원 중...');
-        // 복원은 DOMContentLoaded에서 restoreChatLog()가 처리
-        return;
+    // ✅ [FIX 3-1] 뒤로가기/앞으로가기 또는 내부 네비게이션 복귀인 경우 상태 유지
+    if (isBackForward || isReturningFromNavigation) {
+        console.log('⬅️ 브라우저 네비게이션 또는 내부 페이지 복귀 감지 - 게임 상태 유지');
+        return;  // 상태 초기화하지 않음
     }
 
-    // 완전히 새로운 시작 (첫 방문)
-    console.log('🆕 새로운 게임 세션 시작');
-    clearAllGameState();
-    // initializeEmptyGameUI는 DOMContentLoaded에서 호출됨
+    // 저장된 게임 상태가 있는지 확인
+    const hasSavedState = sessionStorage.getItem(SCENARIO_LOADED_KEY) === 'true' ||
+                          sessionStorage.getItem(CHAT_LOG_KEY);
+
+    if (!hasSavedState) {
+        console.log('💾 저장된 게임 상태 없음 - 초기 상태 유지');
+    } else {
+        console.log('✅ 저장된 게임 상태 발견 - 복원 준비');
+    }
 })();
