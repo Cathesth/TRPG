@@ -13,3 +13,5 @@ jinja2
 itsdangerous
 sse-starlette
 aiofiles
+redis
+redis[hiredis]
