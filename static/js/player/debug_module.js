@@ -275,6 +275,28 @@ function updateWorldState(worldStateData) {
     const worldStateArea = document.getElementById('world-state-area');
     if (!worldStateArea) return;
 
+    // ✅ [FIX 2] 잘못된 입력 방지 가드 - statsData가 아닌 실제 world_state인지 검증
+    // world_state 고유 속성이 하나라도 있는지 확인
+    const worldStateKeys = ['turn_count', 'time', 'time_period', 'location', 'current_scene_id',
+                           'identity_count', 'hint_level', 'stuck_count', 'global_flags', 'npcs'];
+
+    let hasWorldStateKey = false;
+
+    // worldStateData가 world_state를 포함하는 경우
+    if (worldStateData && worldStateData.world_state) {
+        const ws = worldStateData.world_state;
+        hasWorldStateKey = worldStateKeys.some(key => ws.hasOwnProperty(key));
+    } else if (worldStateData) {
+        // worldStateData가 직접 world_state인 경우
+        hasWorldStateKey = worldStateKeys.some(key => worldStateData.hasOwnProperty(key));
+    }
+
+    // ✅ world_state로 보이지 않으면 업데이트하지 않음 (statsData 방어)
+    if (!hasWorldStateKey) {
+        console.warn('⚠️ [World State] Invalid data detected (not a world_state), skipping update');
+        return;
+    }
+
     // worldStateData가 직접 world_state인 경우와 statsData에서 추출한 경우 모두 처리
     let worldState = {};
 
