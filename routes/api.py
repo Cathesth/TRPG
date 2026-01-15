@@ -126,7 +126,7 @@ def header_profile_view(
 ):
     """메인 헤더 우측 상단 프로필/로그인 버튼 영역을 렌더링"""
 
-    # 1. 로그인 상태인 경우: DB에서 최신 아바타 확인 후 프로필 표시
+    # 1. 로그인 상태: DB에서 최신 정보 조회 후 프로필 표시
     if user.is_authenticated:
         db_user = db.query(User).filter(User.id == user.id).first()
         avatar_url = db_user.avatar_url if db_user else None
@@ -145,7 +145,7 @@ def header_profile_view(
         <script>lucide.createIcons();</script>
         """
 
-    # 2. 비로그인 상태인 경우: 로그인 버튼 표시
+    # 2. 비로그인 상태: 로그인 버튼 표시
     else:
         return """
         <button onclick="openModal('login-modal')" class="flex items-center gap-2 px-5 py-2.5 bg-rpg-accent hover:bg-white text-black font-bold rounded shadow-lg shadow-rpg-accent/20 transition-all">
