@@ -8,7 +8,7 @@ import asyncio
 from typing import Optional, List, Dict, Any
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
-import google.generativeai as genai
+from google import genai
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -20,20 +20,30 @@ class VectorDBClient:
     def __init__(self):
         qdrant_url_raw = os.getenv("QDRANT_URL")
 
-        # ✅ [작업 3] HTTPS를 HTTP로 강제 치환 (내부망 SSL 문제 해결)
-        if qdrant_url_raw and qdrant_url_raw.startswith("https://"):
-            self.qdrant_url = qdrant_url_raw.replace("https://", "http://")
-            logger.info(f"🔧 [Qdrant] URL converted from HTTPS to HTTP: {self.qdrant_url}")
+        # ✅ [작업 2] HTTPS를 HTTP로 강제 치환 및 포트 보정 (내부망 SSL 문제 해결)
+        if qdrant_url_raw:
+            # HTTPS를 HTTP로 변환
+            if qdrant_url_raw.startswith("https://"):
+                self.qdrant_url = qdrant_url_raw.replace("https://", "http://")
+            else:
+                self.qdrant_url = qdrant_url_raw
+
+            # 포트 번호가 없으면 :6333 추가
+            if ":6333" not in self.qdrant_url and not self.qdrant_url.endswith(":6333"):
+                # URL 끝에 슬래시가 있으면 제거 후 포트 추가
+                self.qdrant_url = self.qdrant_url.rstrip("/") + ":6333"
+
+            logger.info(f"🔧 [Qdrant] Endpoint URL configured: {self.qdrant_url}")
         else:
-            self.qdrant_url = qdrant_url_raw
+            self.qdrant_url = None
 
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY")
         self.collection_name = os.getenv("QDRANT_COLLECTION", "npc_memories")
         self.vector_size = 768  # Google Gemini text-embedding-004 차원
 
-        # Google Gemini 임베딩 클라이언트
+        # ✅ [작업 1] Google GenAI 최신 라이브러리 클라이언트
         self.google_api_key = os.getenv("GOOGLE_API_KEY")
-        self.gemini_configured = False
+        self.genai_client = None
 
         # 로컬 환경 배려: Qdrant URL이 없으면 비활성화
         self._is_configured = bool(self.qdrant_url)
@@ -44,7 +54,7 @@ class VectorDBClient:
             self.client = None
         else:
             try:
-                # ✅ [작업 3] prefer_grpc=False 설정 추가 (REST 통신 안정성)
+                # ✅ [작업 2] prefer_grpc=False 설정 추가 (REST 통신 안정성)
                 self.client = AsyncQdrantClient(
                     url=self.qdrant_url,
                     api_key=self.qdrant_api_key,
@@ -57,15 +67,14 @@ class VectorDBClient:
                 self.client = None
                 self._is_configured = False
 
-        # Google Gemini 임베딩 클라이언트 초기화
+        # ✅ [작업 1] Google GenAI 클라이언트 초기화
         if self.google_api_key:
             try:
-                genai.configure(api_key=self.google_api_key)
-                self.gemini_configured = True
-                logger.info("✅ [Qdrant] Google Gemini 임베딩 클라이언트 초기화 완료 (text-embedding-004)")
+                self.genai_client = genai.Client(api_key=self.google_api_key)
+                logger.info("✅ [Qdrant] Google GenAI 클라이언트 초기화 완료 (text-embedding-004)")
             except Exception as e:
-                logger.error(f"❌ [Qdrant] Google Gemini 초기화 실패: {e}")
-                self.gemini_configured = False
+                logger.error(f"❌ [Qdrant] Google GenAI 초기화 실패: {e}")
+                self.genai_client = None
         else:
             logger.warning("⚠️ [Qdrant] GOOGLE_API_KEY가 없어 임베딩 생성이 제한됩니다.")
 
@@ -122,7 +131,7 @@ class VectorDBClient:
 
     async def get_gemini_embedding(self, text: str) -> Optional[List[float]]:
         """
-        Google Gemini를 사용하여 텍스트를 벡터로 변환 (비동기)
+        ✅ [작업 1] Google GenAI 최신 SDK를 사용하여 텍스트를 벡터로 변환 (비동기)
 
         Args:
             text: 임베딩할 텍스트
@@ -130,30 +139,26 @@ class VectorDBClient:
         Returns:
             임베딩 벡터 (768차원) 또는 None
         """
-        if not self.gemini_configured:
-            logger.warning("⚠️ [Qdrant] Google Gemini가 초기화되지 않았습니다. 임베딩 생성을 건너뜁니다.")
+        if not self.genai_client:
+            logger.warning("⚠️ [Qdrant] Google GenAI 클라이언트가 초기화되지 않았습니다. 임베딩 생성을 건너뜁니다.")
             return None
 
-        if not self.google_api_key:
-            logger.warning("⚠️ [Qdrant] GOOGLE_API_KEY가 없어 임베딩 생성을 건너뜁니다.")
-            return None
-
+        # ✅ [작업 4] 예외 처리로 시스템 중단 방지
         try:
             # 동기 함수를 비동기로 래핑 (FastAPI 이벤트 루프 블로킹 방지)
             def _sync_embed():
-                result = genai.embed_content(
-                    model="models/text-embedding-004",
-                    content=text,
-                    task_type="retrieval_document"
+                response = self.genai_client.models.embed_content(
+                    model='text-embedding-004',
+                    contents=text
                 )
-                return result['embedding']
+                return response.embeddings[0].values
 
             # asyncio.to_thread로 블로킹 없이 실행
             embedding = await asyncio.to_thread(_sync_embed)
             return embedding
 
         except Exception as e:
-            logger.error(f"❌ [Qdrant] Gemini 임베딩 생성 실패: {e}")
+            logger.error(f"❌ [Qdrant] Google GenAI 임베딩 생성 실패: {e}")
             return None
 
     async def get_embedding(self, text: str) -> Optional[List[float]]:
@@ -183,7 +188,7 @@ class VectorDBClient:
             logger.warning("⚠️ [Qdrant] Vector DB를 사용할 수 없어 기억 저장을 건너뜁니다.")
             return False
 
-        # ✅ [작업 3] 임베딩 생성 실패 시 시스템이 뻗지 않도록 예외 처리
+        # ✅ [작업 4] 임베딩 생성 실패 시 시스템이 뻗지 않도록 예외 처리
         try:
             # 텍스트를 벡터로 변환 (Gemini 사용)
             vector = await self.get_gemini_embedding(text)
@@ -242,18 +247,10 @@ class VectorDBClient:
             logger.warning("⚠️ [Qdrant] Vector DB를 사용할 수 없어 기억 검색을 건너뜁니다.")
             return []
 
-        # ✅ [작업 3] 임베딩 생성 실패 시 빈 리스트 반환
+        # ✅ [작업 4] 임베딩 생성 실패 시 빈 리스트 반환
         try:
-            # 쿼리를 벡터로 변환 (Gemini 사용, task_type을 retrieval_query로 변경)
-            def _sync_query_embed():
-                result = genai.embed_content(
-                    model="models/text-embedding-004",
-                    content=query,
-                    task_type="retrieval_query"
-                )
-                return result['embedding']
-
-            query_vector = await asyncio.to_thread(_sync_query_embed)
+            # 쿼리를 벡터로 변환 (Gemini 사용)
+            query_vector = await self.get_gemini_embedding(query)
 
             if not query_vector:
                 logger.warning("⚠️ [Qdrant] 쿼리 임베딩 생성 실패 - 빈 결과 반환")

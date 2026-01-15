@@ -11,11 +11,11 @@ psycopg2-binary
 python-multipart
 jinja2
 itsdangerous
-sse-starlette
+sse-starlepy
 aiofiles
 redis
 redis[hiredis]
 aioboto3
 botocore
 qdrant-client
-google-generativeai
+google-genai
