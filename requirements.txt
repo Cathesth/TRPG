@@ -18,3 +18,4 @@ redis[hiredis]
 aioboto3
 botocore
 qdrant-client
+google-generativeai

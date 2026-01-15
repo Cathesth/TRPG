@@ -4,10 +4,11 @@ FastAPI 비동기 환경에 최적화된 NPC 기억 저장 시스템
 """
 import os
 import logging
+import asyncio
 from typing import Optional, List, Dict, Any
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
-from openai import AsyncOpenAI
+import google.generativeai as genai
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -28,11 +29,11 @@ class VectorDBClient:
 
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY")
         self.collection_name = os.getenv("QDRANT_COLLECTION", "npc_memories")
-        self.vector_size = 1536  # OpenAI text-embedding-ada-002 차원
+        self.vector_size = 768  # Google Gemini text-embedding-004 차원
 
-        # OpenAI 임베딩 클라이언트
-        self.openai_api_key = os.getenv("OPENAI_API_KEY")
-        self.openai_client = None
+        # Google Gemini 임베딩 클라이언트
+        self.google_api_key = os.getenv("GOOGLE_API_KEY")
+        self.gemini_configured = False
 
         # 로컬 환경 배려: Qdrant URL이 없으면 비활성화
         self._is_configured = bool(self.qdrant_url)
@@ -56,12 +57,17 @@ class VectorDBClient:
                 self.client = None
                 self._is_configured = False
 
-        # OpenAI 임베딩 클라이언트 초기화
-        if self.openai_api_key:
-            self.openai_client = AsyncOpenAI(api_key=self.openai_api_key)
-            logger.info("✅ [Qdrant] OpenAI 임베딩 클라이언트 초기화 완료")
+        # Google Gemini 임베딩 클라이언트 초기화
+        if self.google_api_key:
+            try:
+                genai.configure(api_key=self.google_api_key)
+                self.gemini_configured = True
+                logger.info("✅ [Qdrant] Google Gemini 임베딩 클라이언트 초기화 완료 (text-embedding-004)")
+            except Exception as e:
+                logger.error(f"❌ [Qdrant] Google Gemini 초기화 실패: {e}")
+                self.gemini_configured = False
         else:
-            logger.warning("⚠️ [Qdrant] OPENAI_API_KEY가 없어 임베딩 생성이 제한됩니다.")
+            logger.warning("⚠️ [Qdrant] GOOGLE_API_KEY가 없어 임베딩 생성이 제한됩니다.")
 
         self._initialized = False
 
@@ -114,26 +120,45 @@ class VectorDBClient:
             logger.error(f"❌ [Qdrant] 컬렉션 초기화 실패: {e}")
             raise
 
-    async def get_embedding(self, text: str) -> Optional[List[float]]:
-        """OpenAI를 사용하여 텍스트를 벡터로 변환"""
-        # ✅ [작업 3] OPENAI_API_KEY 없을 때 예외 처리 강화
-        if not self.openai_client:
-            logger.warning("⚠️ [Qdrant] OpenAI 클라이언트가 초기화되지 않았습니다. 임베딩 생성을 건너뜁니다.")
+    async def get_gemini_embedding(self, text: str) -> Optional[List[float]]:
+        """
+        Google Gemini를 사용하여 텍스트를 벡터로 변환 (비동기)
+
+        Args:
+            text: 임베딩할 텍스트
+
+        Returns:
+            임베딩 벡터 (768차원) 또는 None
+        """
+        if not self.gemini_configured:
+            logger.warning("⚠️ [Qdrant] Google Gemini가 초기화되지 않았습니다. 임베딩 생성을 건너뜁니다.")
             return None
 
-        if not self.openai_api_key:
-            logger.warning("⚠️ [Qdrant] OPENAI_API_KEY가 없어 임베딩 생성을 건너뜁니다.")
+        if not self.google_api_key:
+            logger.warning("⚠️ [Qdrant] GOOGLE_API_KEY가 없어 임베딩 생성을 건너뜁니다.")
             return None
 
         try:
-            response = await self.openai_client.embeddings.create(
-                model="text-embedding-ada-002",
-                input=text
-            )
-            return response.data[0].embedding
+            # 동기 함수를 비동기로 래핑 (FastAPI 이벤트 루프 블로킹 방지)
+            def _sync_embed():
+                result = genai.embed_content(
+                    model="models/text-embedding-004",
+                    content=text,
+                    task_type="retrieval_document"
+                )
+                return result['embedding']
+
+            # asyncio.to_thread로 블로킹 없이 실행
+            embedding = await asyncio.to_thread(_sync_embed)
+            return embedding
+
         except Exception as e:
-            logger.error(f"❌ [Qdrant] 임베딩 생성 실패: {e}")
+            logger.error(f"❌ [Qdrant] Gemini 임베딩 생성 실패: {e}")
             return None
+
+    async def get_embedding(self, text: str) -> Optional[List[float]]:
+        """텍스트를 벡터로 변환 (Gemini 사용)"""
+        return await self.get_gemini_embedding(text)
 
     async def upsert_memory(
         self,
@@ -160,8 +185,8 @@ class VectorDBClient:
 
         # ✅ [작업 3] 임베딩 생성 실패 시 시스템이 뻗지 않도록 예외 처리
         try:
-            # 텍스트를 벡터로 변환
-            vector = await self.get_embedding(text)
+            # 텍스트를 벡터로 변환 (Gemini 사용)
+            vector = await self.get_gemini_embedding(text)
             if not vector:
                 logger.warning("⚠️ [Qdrant] 임베딩 생성 실패 - 기억 저장을 건너뜁니다.")
                 return False
@@ -219,8 +244,17 @@ class VectorDBClient:
 
         # ✅ [작업 3] 임베딩 생성 실패 시 빈 리스트 반환
         try:
-            # 쿼리를 벡터로 변환
-            query_vector = await self.get_embedding(query)
+            # 쿼리를 벡터로 변환 (Gemini 사용, task_type을 retrieval_query로 변경)
+            def _sync_query_embed():
+                result = genai.embed_content(
+                    model="models/text-embedding-004",
+                    content=query,
+                    task_type="retrieval_query"
+                )
+                return result['embedding']
+
+            query_vector = await asyncio.to_thread(_sync_query_embed)
+
             if not query_vector:
                 logger.warning("⚠️ [Qdrant] 쿼리 임베딩 생성 실패 - 빈 결과 반환")
                 return []
