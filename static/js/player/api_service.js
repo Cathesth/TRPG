@@ -183,17 +183,19 @@ async function fetchGameDataFromDB() {
         if (data.success) {
             console.log('✅ Data fetched from Railway DB:', data);
 
-            // 1. Player Stats 업데이트
-            if (data.player_state && data.player_state.player_vars) {
-                updateStats(data.player_state.player_vars);
-            }
-
-            // 2. World State 업데이트 - stuck_count를 player_state에서 world_state로 동기화
+            // ✅ 작업 3: 프론트엔드 위치 데이터 매핑 보정 - player_state.current_scene_id를 world_state.location에 강제 할당
             if (data.world_state && data.player_state) {
+                data.world_state.location = data.player_state.current_scene_id;
                 data.world_state.stuck_count = data.player_state.stuck_count || 0;
+                console.log('🔄 [SYNC] Location forced from player_state to world_state:', data.world_state.location);
                 updateWorldState(data.world_state);
             } else if (data.world_state) {
                 updateWorldState(data.world_state);
+            }
+
+            // 1. Player Stats 업데이트
+            if (data.player_state && data.player_state.player_vars) {
+                updateStats(data.player_state.player_vars);
             }
 
             // 3. NPC Status 업데이트

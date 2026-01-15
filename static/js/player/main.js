@@ -4,6 +4,20 @@ document.addEventListener('DOMContentLoaded', function() {
     // 아이콘 초기화
     lucide.createIcons();
 
+    // ✅ 작업 2: 세션 ID 복원 로직 강화 - DOMContentLoaded 최상단에 명시적 복원
+    if (!currentSessionId) {
+        currentSessionId = sessionStorage.getItem("current_session_id") || sessionStorage.getItem("trpg_session_key");
+        if (currentSessionId) {
+            console.log('🔄 [INIT] Session ID restored from sessionStorage:', currentSessionId);
+        }
+    }
+
+    // 세션 ID가 있으면 즉시 데이터 동기화
+    if (currentSessionId) {
+        console.log('🔄 [INIT] Auto-recovering game state from DB...');
+        window.fetchGameDataFromDB();
+    }
+
     // 새로고침으로 인한 초기화가 필요한 경우 UI 초기화
     const isPageRefresh = performance.navigation.type === 1 ||
                          (performance.getEntriesByType('navigation')[0]?.type === 'reload');

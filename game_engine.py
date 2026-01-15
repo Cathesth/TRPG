@@ -1053,11 +1053,6 @@ NPC ({target_npc_name}): "{response}"
     # WorldState 스냅샷 저장
     state['world_state'] = world_state.to_dict()
 
-    # ✅ [작업 1] 위치 데이터 강제 동기화 - DB 저장 전 player_state와 world_state.location 일치 보장
-    world_state.location = state.get("current_scene_id", world_state.location)
-    state['world_state'] = world_state.to_dict()
-    logger.info(f"🔄 [SYNC] Location synchronized: {world_state.location}")
-
     return state
 
 
