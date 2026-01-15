@@ -330,24 +330,48 @@ def intent_parser_node(state: PlayerState):
     """
 
     # 0. 상태 초기화 (중요: 이전 턴의 찌꺼기 제거)
-    state['near_miss_trigger'] = None
+    state['near_miss_trigger'] = ''  # None 대신 빈 문자열 사용
+    state['npc_output'] = ''
+    state['narrator_output'] = ''
+    state['system_message'] = ''
+    logger.info("🧹 [CLEANUP] Output fields cleared for new turn")
 
-    # ✅ 작업 3: 턴 시작 시 위치 기록 - world_state.location을 우선 참조
+    # ✅ 작업 2: 턴 시작 시 WorldState 위치 검증 및 복구
     world_state = WorldState()
     if 'world_state' in state and state['world_state']:
         world_state.from_dict(state['world_state'])
 
+    # ✅ [작업 2] world_state.location을 절대적 진실로 믿고 current_scene_id 복구
+    curr_scene_id_from_state = state.get('current_scene_id', '')
+    ws_location = world_state.location
+
+    # world_state.location이 있고 current_scene_id와 다르면 강제 동기화
+    if ws_location and ws_location != curr_scene_id_from_state:
+        logger.warning(
+            f"⚠️ [INTENT_PARSER] Scene ID mismatch detected! "
+            f"state.current_scene_id: '{curr_scene_id_from_state}' vs world_state.location: '{ws_location}'"
+        )
+        logger.info(f"🔧 [INTENT_PARSER] Forcing state.current_scene_id = '{ws_location}' (world_state is truth)")
+        state['current_scene_id'] = ws_location
+    elif not curr_scene_id_from_state and ws_location:
+        # current_scene_id가 비어있으면 world_state.location으로 복원
+        logger.info(f"🔄 [INTENT_PARSER] Restored scene from world_state.location: {ws_location}")
+        state['current_scene_id'] = ws_location
+
     # previous_scene_id 할당 시 world_state.location 값이 이전 턴의 위치를 정확히 반영하도록 검수
     if 'current_scene_id' in state:
         state['previous_scene_id'] = state['current_scene_id']
-    elif world_state.location:
+    elif ws_location:
         # current_scene_id가 없지만 world_state.location이 있으면 복원
-        state['previous_scene_id'] = world_state.location
-        state['current_scene_id'] = world_state.location
-        logger.info(f"🔄 [INTENT_PARSER] Restored scene from world_state.location: {world_state.location}")
+        state['previous_scene_id'] = ws_location
+        state['current_scene_id'] = ws_location
+        logger.info(f"🔄 [INTENT_PARSER] Restored scene from world_state.location: {ws_location}")
 
     user_input = state.get('last_user_input', '').strip()
-    logger.info(f"🟢 [USER INPUT]: {user_input}")
+
+    # ✅ [작업 2] 파싱 기준이 되는 scene_id를 명확하게 로그
+    curr_scene_id = state.get('current_scene_id', '')
+    logger.info(f"🟢 [INTENT_PARSER START] USER INPUT: '{user_input}' | Parsing based on scene: '{curr_scene_id}'")
 
     if not user_input:
         state['parsed_intent'] = 'chat'
@@ -500,7 +524,7 @@ def intent_parser_node(state: PlayerState):
 
         # JSON 파싱 시도
         # JSON이 마크다운 코드블록에 싸여있을 수 있으므로 추출
-        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        json_match = re.search(r'\{.*}', response, re.DOTALL)
         if json_match:
             json_str = json_match.group(0)
             intent_result = json.loads(json_str)
@@ -843,6 +867,11 @@ def rule_node(state: PlayerState):
 
             state['current_scene_id'] = next_id
             world_state.location = next_id
+
+            # ✅ 작업 2: 장면 전환 성공 시 이전 씬의 출력 필드 명시적으로 제거
+            state['npc_output'] = ''
+            state['narrator_output'] = ''
+            logger.info("🧹 [TRANSITION CLEANUP] Cleared output fields after scene transition")
 
             # ✅ 작업 3: 장면 전환 성공 시 서사 이벤트 기록 (이동 이유 포함)
             world_state.add_narrative_event(
@@ -1466,6 +1495,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         # [2단계] parsed_intent에 따라 전용 프롬프트 선택
         prompt_template = None
         prompt_key = None
+        narrative_prompt = ""  # 초기화
 
         if parsed_intent == 'investigate':
             # 조사/탐색 행동
@@ -1513,9 +1543,10 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                     player_status=player_status,
                     near_miss_trigger=near_miss
                 )
+                logger.info(f"🎬 [NARRATIVE] Using prompt: near_miss for near miss situation")
 
         # 의도별 프롬프트가 설정되었으면 LLM 스트리밍
-        if prompt_template and 'narrative_prompt' in locals():
+        if prompt_template and 'narrative_prompt' in locals() and narrative_prompt:
             try:
                 api_key = os.getenv("OPENROUTER_API_KEY")
                 model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')

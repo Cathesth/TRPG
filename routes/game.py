@@ -133,7 +133,29 @@ def load_game_session(db: Session, session_key: str):
         # [경량화] PlayerState는 world_state를 포함하지 않음
         player_state = game_session.player_state
 
-        logger.info(f"✅ [DB] Game session loaded: {session_key} (Turn: {game_session.turn_count})")
+        # ✅ [작업 1] DB에서 로드한 current_scene_id가 최신 값인지 검증
+        db_scene_id = game_session.current_scene_id
+        state_scene_id = player_state.get('current_scene_id', '')
+        ws_location = game_session.world_state.get('location', '')
+
+        # 우선순위: DB의 current_scene_id > world_state.location > player_state.current_scene_id
+        verified_scene_id = db_scene_id or ws_location or state_scene_id
+
+        if db_scene_id != state_scene_id or db_scene_id != ws_location:
+            logger.warning(
+                f"⚠️ [DB LOAD] Scene ID mismatch detected! "
+                f"DB: {db_scene_id}, PlayerState: {state_scene_id}, WorldState: {ws_location}"
+            )
+            logger.info(f"🔧 [DB LOAD] Using verified scene_id: {verified_scene_id}")
+
+        # player_state의 current_scene_id를 검증된 값으로 강제 업데이트
+        player_state['current_scene_id'] = verified_scene_id
+        wsm.location = verified_scene_id
+
+        logger.info(
+            f"✅ [DB] Game session loaded: {session_key} "
+            f"(Turn: {game_session.turn_count}, Scene: {verified_scene_id})"
+        )
 
         return player_state
 
