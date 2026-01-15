@@ -73,15 +73,8 @@ class WorldState:
     - Narrative History: LLM 단기 기억을 위한 서사적 이벤트 기록 (슬라이딩 윈도우)
     """
 
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialize()
-        return cls._instance
-
-    def _initialize(self):
+    # ✅ 싱글톤 패턴 완전 제거 - 세션별로 독립적인 인스턴스 사용
+    def __init__(self):
         """초기 상태 설정"""
         # A. World (지역 상태)
         self.time = {"day": 1, "phase": "morning"}  # morning/afternoon/night
@@ -124,7 +117,7 @@ class WorldState:
 
     def reset(self):
         """상태 완전 초기화"""
-        self._initialize()
+        self.__init__()
         logger.info("WorldState has been reset")
 
     def add_narrative_event(self, text: str):
@@ -775,4 +768,3 @@ class WorldState:
 
 # 싱글톤 인스턴스
 game_state = GameState()
-world_state = WorldState()
