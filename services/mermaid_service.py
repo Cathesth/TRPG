@@ -2,12 +2,43 @@
 Mermaid 차트 생성 서비스
 """
 import logging
+import re
 from typing import Dict, Any, List, Union, Tuple
 
 logger = logging.getLogger(__name__)
 
 class MermaidService:
     """시나리오를 Mermaid 다이어그램으로 변환"""
+
+    @staticmethod
+    def _safe_node_id(orig_id: str) -> str:
+        """
+        Mermaid flowchart에서 안전하게 사용할 수 있는 노드 ID로 변환
+        하이픈(-), 공백 등 특수문자를 언더스코어로 치환
+
+        Args:
+            orig_id: 원본 ID (예: "Scene-1", "Ending-2")
+
+        Returns:
+            안전한 ID (예: "Scene_1", "Ending_2")
+        """
+        if not orig_id:
+            return "node_" + str(id(orig_id))
+
+        # 특수문자를 언더스코어로 치환
+        safe_id = re.sub(r'[^0-9A-Za-z_]', '_', str(orig_id))
+
+        # 첫 글자가 숫자면 id_ prefix 추가
+        if safe_id and safe_id[0].isdigit():
+            safe_id = 'id_' + safe_id
+
+        return safe_id
+
+    @staticmethod
+    def _escape(text: str) -> str:
+        """Mermaid 문법 파괴 방지를 위한 이스케이프"""
+        if not text: return ""
+        return text.replace('"', "'").replace('\n', ' ').replace('\r', '')
 
     @staticmethod
     def convert_nodes_to_scenes(nodes: List[Dict], edges: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
@@ -95,10 +126,8 @@ class MermaidService:
         try:
             # 입력 데이터 정규화 (Dict로 변환)
             if hasattr(scenario, 'data') and isinstance(scenario.data, dict):
-                # Scenario 모델 객체인 경우
                 scenario_data = scenario.data.get('scenario', scenario.data)
             elif isinstance(scenario, dict):
-                # 딕셔너리인 경우 (Draft 데이터 등)
                 scenario_data = scenario
             else:
                 return {"mermaid_code": "graph TD\nError[데이터 형식 오류]"}
@@ -111,7 +140,6 @@ class MermaidService:
             # [핵심] scenes가 없지만 nodes가 있는 경우 자동 변환 (Viewer 호환성)
             if (not scenes or len(scenes) == 0) and nodes:
                 scenes, endings = MermaidService.convert_nodes_to_scenes(nodes, edges)
-                # 변환된 데이터를 원본 딕셔너리에도 반영 (참조 변경)
                 scenario_data['scenes'] = scenes
                 scenario_data['endings'] = endings
 
@@ -120,6 +148,19 @@ class MermaidService:
                 s for s in scenes
                 if s.get('scene_id') not in ('start', 'PROLOGUE')
             ]
+
+            # ✅ 안전한 ID 매핑 생성
+            id_map = {}  # 원본 ID -> 안전한 ID
+            id_map['PROLOGUE'] = 'Prologue'  # 프롤로그는 하이픈 없이
+            id_map['prologue'] = 'Prologue'
+
+            for scene in filtered_scenes:
+                orig_id = scene.get('scene_id')
+                id_map[orig_id] = MermaidService._safe_node_id(orig_id)
+
+            for ending in endings:
+                orig_id = ending.get('ending_id')
+                id_map[orig_id] = MermaidService._safe_node_id(orig_id)
 
             mermaid_lines = ["graph TD"]
             prologue_text = scenario_data.get('prologue', scenario_data.get('prologue_text', ''))
@@ -192,37 +233,40 @@ class MermaidService:
                             incoming_conditions[target_id] = []
                         incoming_conditions[target_id].append(condition_info)
 
-            # Mermaid 코드 생성
+            # ✅ Mermaid 코드 생성 - 안전한 ID 사용
             if prologue_text:
-                # 프롤로그는 기본 스타일만 적용 (JavaScript에서 하이라이트 처리)
-                # 하이라이트 시 class 적용을 위해 ID는 'PROLOGUE'로 고정
-                prologue_class = "active" if current_scene_id and current_scene_id.lower() == "prologue" else "prologueStyle"
-                mermaid_lines.append(f'    PROLOGUE["📖 Prologue"]:::{prologue_class}')
+                safe_current = MermaidService._safe_node_id(current_scene_id) if current_scene_id else None
+                prologue_class = "active" if (current_scene_id and current_scene_id.lower() == "prologue") else "prologueStyle"
+                mermaid_lines.append(f'    Prologue["📖 Prologue"]:::{prologue_class}')
 
             if prologue_text and prologue_connects_to:
                 for target_id in prologue_connects_to:
                     if any(s.get('scene_id') == target_id for s in filtered_scenes):
-                        mermaid_lines.append(f'    PROLOGUE --> {target_id}')
+                        safe_target = id_map.get(target_id, MermaidService._safe_node_id(target_id))
+                        mermaid_lines.append(f'    Prologue --> {safe_target}')
 
             for scene in filtered_scenes:
                 scene_id = scene['scene_id']
-                scene_title = (scene.get('title') or scene.get('name') or scene_id).replace('"', "'")
+                safe_scene_id = id_map.get(scene_id, MermaidService._safe_node_id(scene_id))
+                scene_title = MermaidService._escape(scene.get('title') or scene.get('name') or scene_id)
 
                 node_class = "active" if current_scene_id == scene_id else "sceneStyle"
-                mermaid_lines.append(f'    {scene_id}["{scene_title}"]:::{node_class}')
+                mermaid_lines.append(f'    {safe_scene_id}["{scene_title}"]:::{node_class}')
 
                 for trans in scene.get('transitions', []):
                     next_id = trans.get('target_scene_id')
-                    trigger = (trans.get('trigger') or 'action').replace('"', "'")
                     if next_id and next_id != 'start':
-                        mermaid_lines.append(f'    {scene_id} -->|"{trigger}"| {next_id}')
+                        safe_next_id = id_map.get(next_id, MermaidService._safe_node_id(next_id))
+                        trigger = MermaidService._escape(trans.get('trigger') or 'action')
+                        mermaid_lines.append(f'    {safe_scene_id} -->|"{trigger}"| {safe_next_id}')
 
             for ending in endings:
                 ending_id = ending['ending_id']
-                ending_title = ending.get('title', '엔딩').replace('"', "'")
+                safe_ending_id = id_map.get(ending_id, MermaidService._safe_node_id(ending_id))
+                ending_title = MermaidService._escape(ending.get('title', '엔딩'))
 
                 node_class = "active" if current_scene_id == ending_id else "endingStyle"
-                mermaid_lines.append(f'    {ending_id}["🏁 {ending_title}"]:::{node_class}')
+                mermaid_lines.append(f'    {safe_ending_id}["🏁 {ending_title}"]:::{node_class}')
 
             mermaid_lines.append("    classDef default fill:#1f2937,stroke:#374151,stroke-width:2px,color:#fff")
             mermaid_lines.append("    classDef active fill:#164e63,stroke:#22d3ee,stroke-width:3px,color:#fff")
@@ -230,8 +274,13 @@ class MermaidService:
             mermaid_lines.append("    classDef sceneStyle fill:#312e81,stroke:#6366f1,color:#fff")
             mermaid_lines.append("    classDef endingStyle fill:#831843,stroke:#ec4899,color:#fff")
 
+            mermaid_code = "\n".join(mermaid_lines)
+
+            # ✅ 디버그 로그 추가 - 생성된 코드 앞부분 확인
+            logger.info(f"[MERMAID] Generated code preview:\n{chr(10).join(mermaid_code.splitlines()[:7])}")
+
             return {
-                'mermaid_code': "\n".join(mermaid_lines),
+                'mermaid_code': mermaid_code,
                 'filtered_scenes': filtered_scenes,
                 'incoming_conditions': incoming_conditions,
                 'ending_incoming_conditions': ending_incoming_conditions,
@@ -242,14 +291,8 @@ class MermaidService:
             }
 
         except Exception as e:
-            logger.error(f"Mermaid generation error: {e}")
+            logger.error(f"Mermaid generation error: {e}", exc_info=True)
             return {"mermaid_code": "graph TD\nError[차트 생성 실패]"}
-
-    @staticmethod
-    def _escape(text: str) -> str:
-        """Mermaid 문법 파괴 방지를 위한 이스케이프"""
-        if not text: return ""
-        return text.replace('"', "'").replace('\n', ' ').replace('\r', '')
 
     @staticmethod
     def generate_mermaid_from_scenario(scenario_data: dict) -> str:
