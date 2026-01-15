@@ -817,9 +817,11 @@ def rule_node(state: PlayerState):
 
     state['system_message'] = " | ".join(sys_msg)
 
-    # ✅ [작업 2] 백엔드 위치 데이터 강제 동기화 - DB 저장 전 최신 위치를 world_state.location에 덮어씌움
+    # 멱살 잡고 위치 강제 동기화
     world_state.location = state.get("current_scene_id", world_state.location)
     world_state.stuck_count = state.get("stuck_count", 0)
+
+    logger.info(f"🎬 [DATA_SYNC] Synchronized world_state.location to {world_state.location}")
 
     # ✅ WorldState 스냅샷 저장 (위치 동기화 후 저장)
     state['world_state'] = world_state.to_dict()
@@ -1053,9 +1055,11 @@ NPC ({target_npc_name}): "{response}"
         except Exception:
             state['npc_output'] = ""
 
-    # ✅ [작업 3] 백엔드 위치 데이터 강제 동기화 - DB 저장 전 최신 위치를 world_state에 덮어씌움
+    # ✅ 작업 3: 백엔드 위치 데이터 강제 동기화 - DB 저장 전 최신 위치를 world_state에 덮어씌움
     world_state.location = state.get("current_scene_id", world_state.location)
     world_state.stuck_count = state.get("stuck_count", 0)
+
+    logger.info(f"🎬 [DATA_SYNC] Synchronized world_state.location to {world_state.location}")
 
     # WorldState 스냅샷 저장 (위치 동기화 후 저장)
     state['world_state'] = world_state.to_dict()
@@ -1634,7 +1638,6 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 <div class="text-yellow-400 serif-font">{fallback_msg}</div>
             </div>
             """
-
 
 # --- Graph Construction ---
 
