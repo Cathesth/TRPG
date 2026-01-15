@@ -40,7 +40,7 @@ from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike, User
 
 # 변경: schemes=["bcrypt", "sha256_crypt", "pbkdf2_sha256"] -> 예전 형식도 인식 가능
 pwd_context = CryptContext(
-    schemes=["bcrypt", "sha256_crypt", "pbkdf2_sha256"],
+    schemes=["bcrypt", "sha256_crypt", "pbkdf2_sha256", "md5_crypt", "des_crypt"],
     deprecated="auto"
 )
 
