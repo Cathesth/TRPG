@@ -344,6 +344,7 @@ def list_scenarios(
         sort: str = Query('newest'),
         filter: str = Query('public'),
         limit: int = Query(10),
+        search: Optional[str] = Query(None),
         user: CurrentUser = Depends(get_current_user_optional),
         db: Session = Depends(get_db)
 ):
@@ -379,8 +380,35 @@ def list_scenarios(
 
     scenarios = query.all()
 
+    # =========================================================================
+    # [추가] 검색 로직 시작
+    # DB에서 가져온 목록을 파이썬 레벨에서 검색어로 필터링합니다.
+    # =========================================================================
+    if search:
+        search_term = search.lower().strip()
+        filtered_scenarios = []
+        for s in scenarios:
+            # 데이터 파싱 (검색 대상을 확인하기 위해 미리 추출)
+            s_data = s.data if isinstance(s.data, dict) else {}
+            if 'scenario' in s_data: s_data = s_data['scenario']
+
+            title = s.title or ""
+            # 설명 데이터 추출 (prologue 또는 desc)
+            desc = s_data.get('prologue', s_data.get('desc', ''))
+
+            # 제목이나 설명에 검색어가 포함되어 있는지 확인
+            if search_term in title.lower() or search_term in desc.lower():
+                filtered_scenarios.append(s)
+
+        # 필터링된 결과로 교체
+        scenarios = filtered_scenarios
+
     if not scenarios:
-        msg = "등록된 시나리오가 없습니다." if filter != 'my' else "아직 생성한 시나리오가 없습니다."
+        # [수정] 검색 결과가 없을 때의 메시지 처리 추가
+        if search:
+            msg = "검색 결과가 없습니다."
+        else:
+            msg = "등록된 시나리오가 없습니다." if filter != 'my' else "아직 생성한 시나리오가 없습니다."
         return HTMLResponse(
             f'<div class="col-span-full text-center text-gray-500 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
 
