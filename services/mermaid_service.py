@@ -323,13 +323,32 @@ class MermaidService:
                 elif 'scenario' in scenario_data and isinstance(scenario_data['scenario'], dict):
                     scenario_data = scenario_data['scenario']
 
+            # ✅ [작업 3] 시나리오 데이터 검증
+            scenes = scenario_data.get('scenes', [])
+            endings = scenario_data.get('endings', [])
+
+            logger.info(f"📊 [MERMAID] Input data: scenes={len(scenes)}, endings={len(endings)}")
+
+            # ✅ [작업 3] 최소 노드 보장 - scenes가 비어있으면 경고
+            if not scenes and not endings:
+                logger.warning(f"⚠️ [MERMAID] No scenes or endings found in scenario data")
+                return "graph TD\n    Empty[시나리오에 씬이 없습니다]\n    Empty -->|빌더에서 씬을 추가하세요| Start[시작]"
+
             # generate_chart 호출
             result = MermaidService.generate_chart(scenario_data)
 
             # mermaid_code 추출
             if isinstance(result, dict) and 'mermaid_code' in result:
+                mermaid_code = result['mermaid_code']
+
+                # ✅ 생성된 코드 검증
+                lines = [l for l in mermaid_code.splitlines() if l.strip()]
+                node_lines = [l for l in lines if not l.strip().startswith('classDef') and not l.strip().startswith('graph')]
+
                 logger.info(f"✅ [MERMAID] Successfully generated chart from scenario")
-                return result['mermaid_code']
+                logger.info(f"📊 [MERMAID] Output: total_lines={len(lines)}, node_lines={len(node_lines)}")
+
+                return mermaid_code
             else:
                 logger.warning(f"⚠️ [MERMAID] generate_chart returned unexpected format")
                 return "graph TD\n    A[차트 생성 실패]"

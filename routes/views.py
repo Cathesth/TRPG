@@ -134,7 +134,22 @@ async def view_debug_scenes(
         mermaid_code = "graph TD\n    A[Mermaid 차트 생성 중...]"
         try:
             mermaid_code = MermaidService.generate_mermaid_from_scenario(scenario_data)
+
+            # ✅ [작업 2] Mermaid 코드 검증 로그 강화
+            lines = mermaid_code.splitlines()
+            has_nodes = any(line.strip() and not line.strip().startswith('classDef') and not line.strip().startswith('graph') for line in lines)
+            has_edges = '-->' in mermaid_code or '==>' in mermaid_code
+
             logger.info(f"✅ [DEBUG SCENES] Mermaid chart generated successfully")
+            logger.info(f"📊 [DEBUG SCENES] Mermaid stats: lines={len(lines)}, chars={len(mermaid_code)}")
+            logger.info(f"📊 [DEBUG SCENES] Mermaid content: has_nodes={has_nodes}, has_edges={has_edges}")
+            logger.info(f"📝 [DEBUG SCENES] Mermaid preview (first 20 lines):\n{chr(10).join(lines[:20])}")
+
+            if not has_nodes:
+                logger.warning(f"⚠️ [DEBUG SCENES] Mermaid code has no nodes! Scenario may be empty.")
+            if not has_edges:
+                logger.warning(f"⚠️ [DEBUG SCENES] Mermaid code has no edges! Transitions may be missing.")
+
         except Exception as mermaid_error:
             logger.error(f"❌ [DEBUG SCENES] Mermaid generation failed: {mermaid_error}", exc_info=True)
             mermaid_code = "graph TD\n    Error[Mermaid 차트 생성 실패]\n    Error -->|시나리오 데이터는 정상| Info[아래 씬 목록 참조]"
