@@ -98,9 +98,18 @@ class AuditRequest(BaseModel):
 # [View 라우트] 마이페이지
 # ==========================================
 @mypage_router.get('/mypage', response_class=HTMLResponse)
-async def mypage_view(request: Request, user: CurrentUser = Depends(get_current_user_optional)):
-    return templates.TemplateResponse("mypage.html", {"request": request, "user": user})
+async def mypage_view(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
+):
+    # 로그인 상태라면 DB에서 최신 정보를 가져와 덮어씌움
+    if user.is_authenticated:
+        db_user = db.query(User).filter(User.id == user.id).first()
+        if db_user:
+            user = db_user  # 템플릿에 전달할 user 객체를 DB 객체로 교체
 
+    return templates.TemplateResponse("mypage.html", {"request": request, "user": user})
 
 # ==========================================
 # [추가] 마이페이지 서브 뷰 (회원정보, 결제, 시나리오 래퍼)
@@ -335,6 +344,7 @@ def get_billing_view():
 # ==========================================
 # [API 라우트] 인증 (Auth) - 직접 구현으로 변경
 # ==========================================
+# [수정] routes/api.py -> register 함수 교체
 @api_router.post('/auth/register')
 async def register(data: AuthRequest, db: Session = Depends(get_db)):
     if not data.username or not data.password:
@@ -342,11 +352,29 @@ async def register(data: AuthRequest, db: Session = Depends(get_db)):
 
     # 1. 중복 아이디 확인
     existing_user = db.query(User).filter(User.id == data.username).first()
-    if existing_user:
-        return JSONResponse({"success": False, "error": "이미 존재하는 아이디"}, status_code=400)
 
+    if existing_user:
+        # [추가 로직] 기존 계정의 비밀번호 데이터가 손상된 경우, 재가입을 통해 계정 복구 허용
+        try:
+            # 저장된 해시값이 정상적인지 확인
+            pwd_context.identify(existing_user.password_hash)
+
+            # 정상이면 -> "이미 존재하는 아이디" 에러 리턴 (기존 로직)
+            return JSONResponse({"success": False, "error": "이미 존재하는 아이디"}, status_code=400)
+
+        except (ValueError, TypeError):
+            # 해시가 깨져있거나 식별 불가능한 경우 -> 비밀번호 덮어쓰기 (계정 복구)
+            logger.warning(f"⚠️ Corrupted hash found for user '{data.username}'. Overwriting with new password.")
+
+            existing_user.password_hash = pwd_context.hash(data.password)
+            if data.email:
+                existing_user.email = data.email
+
+            db.commit()
+            return {"success": True, "message": "손상된 계정이 복구되었습니다. 다시 로그인해주세요."}
+
+    # 2. 신규 회원가입 (기존 로직 유지)
     try:
-        # 2. 비밀번호 해싱 및 사용자 생성
         hashed_password = pwd_context.hash(data.password)
         new_user = User(
             id=data.username,
