@@ -10,6 +10,8 @@ from core.state import WorldState
 from routes.game import save_game_session
 from pathlib import Path
 from passlib.context import CryptContext
+# [추가] 11번 계정(scrypt) 지원을 위한 라이브러리
+from werkzeug.security import check_password_hash
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, APIRouter, Request, Depends, Form, HTTPException, Query, File, UploadFile
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
@@ -40,7 +42,7 @@ from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike, User
 
 # 변경: schemes=["bcrypt", "sha256_crypt", "pbkdf2_sha256"] -> 예전 형식도 인식 가능
 pwd_context = CryptContext(
-    schemes=["bcrypt", "sha256_crypt", "pbkdf2_sha256", "md5_crypt", "des_crypt"],
+    schemes=["bcrypt"],
     deprecated="auto"
 )
 
@@ -292,6 +294,8 @@ def get_billing_view():
             <i data-lucide="credit-card" class="w-6 h-6 text-rpg-accent"></i> Plans & Billing
         </h2>
         <p class="text-gray-400 mb-8">모험의 규모에 맞는 플랜을 선택하세요.</p>
+         <div class="bg-rpg-800 border border-rpg-700 rounded-2xl p-6 text-center text-gray-400">
+            플랜 정보를 로드하는 중...
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div class="bg-rpg-800 border border-rpg-700 rounded-2xl p-6 flex flex-col relative overflow-hidden">
@@ -389,13 +393,30 @@ async def login(request: Request, data: AuthRequest, db: Session = Depends(get_d
     if not user or not user.password_hash:
         return JSONResponse({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}, status_code=401)
 
-    # 2. 비밀번호 검증 (직접 검증하여 'Invalid hash method' 에러 방지)
+        # 2. 비밀번호 검증 (이중 체크: Passlib -> Werkzeug)
+    verified = False
+
+    # (A) Passlib 시도 (bcrypt 등 표준 해시)
+
     try:
-        if not pwd_context.verify(data.password, user.password_hash):
-            return JSONResponse({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}, status_code=401)
-    except Exception as e:
-        logger.error(f"Login Verify Error: {e}")
-        # 해시값이 깨져있거나 비어있는 경우 로그인 실패 처리
+        if pwd_context.verify(data.password, user.password_hash):
+            verified = True
+    except (ValueError, TypeError):
+        # Passlib이 식별 못한 경우 (예: unknown hash format)
+        pass
+
+    # (B) Passlib 실패 시, Werkzeug 시도 (11번 계정 scrypt 해시)
+    if not verified:
+        try:
+            # werkzeug의 scrypt 형식을 직접 검증
+            if check_password_hash(user.password_hash, data.password):
+                verified = True
+        except Exception as e:
+            logger.error(f"Werkzeug check failed: {e}")
+            pass
+
+    if not verified:
+        logger.warning(f"Login failed for user: {data.username}")
         return JSONResponse({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}, status_code=401)
 
     # 3. 세션 로그인 처리
