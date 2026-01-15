@@ -209,7 +209,7 @@
                 <div id="realtime-grid"
                      class="horizontal-scroll-container flex no-scrollbar"
                      hx-get="/api/scenarios?sort=newest&limit=10&filter=all"
-                     hx-trigger="load">
+                     hx-trigger="load, refresh_list">
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                 </div>
@@ -224,7 +224,7 @@
                 <div id="popular-grid"
                      class="horizontal-scroll-container flex no-scrollbar"
                      hx-get="/api/scenarios?sort=popular&limit=10&filter=all"
-                     hx-trigger="load">
+                     hx-trigger="load, refresh_list">
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
@@ -238,7 +238,7 @@
                 <div id="steady-grid"
                      class="horizontal-scroll-container flex no-scrollbar"
                      hx-get="/api/scenarios?sort=steady&limit=10&filter=all"
-                     hx-trigger="load">
+                     hx-trigger="load, refresh_list">
                      <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                 </div>
             </section>
@@ -520,7 +520,7 @@
 
                 // hx-get 속성 업데이트 후 리로드 트리거
                 element.setAttribute('hx-get', newUrl);
-                htmx.trigger(element, 'load');
+                htmx.trigger(element, 'refresh_list');
             }
         });
     }
