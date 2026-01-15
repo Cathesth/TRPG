@@ -51,11 +51,17 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
         scenario_id = state.get('scenario_id', 0)
         current_scene_id = state.get('current_scene_id', '')
 
-        # [경량화] world_state는 별도 추출 (player_state에서 제거)
-        world_state_data = state.pop('world_state', {})
+        # ✅ [FIX 1-1] 원본 state를 mutate하지 않도록 deepcopy 사용
+        import copy
+        world_state_data = copy.deepcopy(state.get('world_state', {}))
+
+        # 저장용 state는 world_state 제외 (deepcopy로 원본 보호)
+        state_for_db = copy.deepcopy(state)
+        state_for_db.pop('world_state', None)
 
         # WorldState 인스턴스에서 직접 가져오기
         if not world_state_data:
+            from core.state import WorldState as WorldStateManager
             wsm = WorldStateManager()
             world_state_data = wsm.to_dict()
 
@@ -69,7 +75,7 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
             # 기존 세션 업데이트
             game_session = db.query(GameSession).filter_by(session_key=session_key).first()
             if game_session:
-                game_session.player_state = state  # world_state 제외된 경량화된 상태
+                game_session.player_state = state_for_db  # world_state 제외된 경량화된 상태
                 game_session.world_state = world_state_data  # 별도 컬럼에 저장
                 game_session.current_scene_id = current_scene_id
                 game_session.turn_count = turn_count
@@ -90,7 +96,7 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
             user_id=user_id,
             session_key=new_session_key,
             scenario_id=scenario_id,
-            player_state=state,  # world_state 제외된 경량화된 상태
+            player_state=state_for_db,  # world_state 제외된 경량화된 상태
             world_state=world_state_data,  # 별도 컬럼에 저장
             current_scene_id=current_scene_id,
             turn_count=turn_count
@@ -233,10 +239,15 @@ async def game_act_stream(
                     # game_graph도 생성
                     game_state.game_graph = create_game_graph()
 
-                    # WorldState도 복구
+                    # ✅ [FIX 2-2] 로컬 WorldState 인스턴스 생성 및 복구
+                    from core.state import WorldState as WorldStateManager
                     wsm = WorldStateManager()
                     if 'world_state' in restored_state:
                         wsm.from_dict(restored_state['world_state'])
+                        turn_count = restored_state.get('world_state', {}).get('turn_count', 0)
+                        logger.info(f"🔍 [SESSION ISOLATION] Using local WorldState instance for session: {session_id}, turn: {turn_count}")
+                    else:
+                        logger.warning(f"⚠️ [WORLD INIT] world_state missing in state; initializing from scenario (should be rare)")
 
                     logger.info(f"✅ [SESSION RESTORE] Session restored from DB: {session_id}")
                 else:
