@@ -646,31 +646,17 @@ async def load_scenario(
     }
     game_state.game_graph = create_game_graph()
 
-    # ============================================
-    # 💾 DB에 새로운 세션 저장 (완전히 새로운 세션으로 강제)
-    # ============================================
-    db = next(get_db())
-    try:
-        saved_session_key = save_game_session(
-            db=db,
-            state=game_state.state.copy(),
-            user_id=user_id,
-            session_key=new_session_key  # 새로운 세션 키 강제 사용
-        )
-        logger.info(f"✅ [LOAD_SCENARIO] New session saved to DB: {saved_session_key}")
-    except Exception as e:
-        logger.error(f"❌ [LOAD_SCENARIO] Failed to save session: {e}")
-        saved_session_key = new_session_key
-    finally:
-        db.close()
+    # ✅ 작업 4: DB 저장 제거 - 첫 턴(act_stream)에서 저장하도록 변경
+    # 시나리오 로드 시에는 state 객체만 초기화하고 DB에 저장하지 않음
+    logger.info(f"✅ [LOAD_SCENARIO] State initialized (not saved to DB yet, will be saved on first turn)")
 
     # ============================================
-    # 🎯 클라이언트에 새로운 세션 ID 반환 (이후 요청에서 사용)
+    # 🎯 클라이언트에 새로운 세션 ID 반환 (첫 턴에서 저장될 예정)
     # ============================================
     return {
         "success": True,
-        "session_key": saved_session_key,
-        "message": "New game session created. Previous session data cleared."
+        "session_key": new_session_key,
+        "message": "New game session initialized. Will be saved on first action."
     }
 
 

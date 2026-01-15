@@ -329,14 +329,15 @@ def intent_parser_node(state: PlayerState):
     3. Fast-Track 폴백
     """
 
-    # 0. 상태 초기화 (중요: 이전 턴의 찌꺼기 제거)
-    state['near_miss_trigger'] = ''  # None 대신 빈 문자열 사용
+    # ✅ 작업 1: 상태 초기화 (중요: 이전 턴의 출력 필드를 무조건 제거)
+    state['near_miss_trigger'] = ''
     state['npc_output'] = ''
     state['narrator_output'] = ''
     state['system_message'] = ''
+    state['critic_feedback'] = ''
     logger.info("🧹 [CLEANUP] Output fields cleared for new turn")
 
-    # ✅ 작업 1 & 2: PlayerState의 current_scene_id를 절대적 진실로 믿고, world_state.location을 동기화
+    # ✅ 작업 2: PlayerState의 current_scene_id를 절대적 진실(Source of Truth)로 믿고, world_state.location을 동기화
     world_state = WorldState()
     if 'world_state' in state and state['world_state']:
         world_state.from_dict(state['world_state'])
@@ -345,19 +346,25 @@ def intent_parser_node(state: PlayerState):
     curr_scene_id_from_state = state.get('current_scene_id', '')
     ws_location = world_state.location
 
-    # ✅ 작업 2: 위치가 다를 경우, 현재(state['current_scene_id'])를 기준으로 world_state.location 업데이트
+    # ✅ 작업 2: 위치가 다를 경우, state['current_scene_id']를 기준으로 world_state.location 강제 업데이트
     if curr_scene_id_from_state and ws_location != curr_scene_id_from_state:
         logger.warning(
-            f"⚠️ [INTENT_PARSER] Scene ID mismatch detected! "
-            f"state.current_scene_id: '{curr_scene_id_from_state}' vs world_state.location: '{ws_location}'"
+            f"⚠️ [INTENT_PARSER] Location regression detected! "
+            f"state.current_scene_id: '{curr_scene_id_from_state}' (TRUTH) vs world_state.location: '{ws_location}' (OUTDATED)"
         )
-        logger.info(f"🔧 [LOCATION SYNC] Updating world_state.location = '{curr_scene_id_from_state}' (state.current_scene_id is truth)")
+        logger.info(f"🔧 [LOCATION SYNC] Forcing world_state.location = '{curr_scene_id_from_state}' (state.current_scene_id is Source of Truth)")
         world_state.location = curr_scene_id_from_state
     elif not curr_scene_id_from_state and ws_location:
         # current_scene_id가 비어있으면 world_state.location으로 복원
         logger.info(f"🔄 [INTENT_PARSER] Restored scene from world_state.location: {ws_location}")
         state['current_scene_id'] = ws_location
         curr_scene_id_from_state = ws_location
+    elif not curr_scene_id_from_state and not ws_location:
+        # ✅ 작업 2: 둘 다 비어있을 때만 기본값 설정 (Scene-1 회귀 방지)
+        logger.warning("⚠️ [INTENT_PARSER] Both current_scene_id and world_state.location are empty, using 'prologue' as default")
+        curr_scene_id_from_state = 'prologue'
+        state['current_scene_id'] = curr_scene_id_from_state
+        world_state.location = curr_scene_id_from_state
 
     # previous_scene_id 설정
     if curr_scene_id_from_state:
@@ -365,8 +372,8 @@ def intent_parser_node(state: PlayerState):
 
     user_input = state.get('last_user_input', '').strip()
 
-    # ✅ 작업 3: 턴 시작 시 정합성 로그 - 실제 DB의 current_scene_id 확인
-    logger.info(f"🟢 [INTENT_PARSER START] USER INPUT: '{user_input}' | Scene: '{curr_scene_id_from_state}' (from state.current_scene_id)")
+    # ✅ 정합성 로그
+    logger.info(f"🟢 [INTENT_PARSER START] USER INPUT: '{user_input}' | Scene: '{curr_scene_id_from_state}' (from state.current_scene_id - SOURCE OF TRUTH)")
 
     if not user_input:
         state['parsed_intent'] = 'chat'

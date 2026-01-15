@@ -256,10 +256,14 @@ async def game_act_stream(
     action_text = action
     current_state = game_state.state
 
-    # 선택한 모델을 상태에 저장
+    # ✅ 작업 4: 클라이언트가 보낸 model 값이 우선순위를 가짐 (시나리오 기본 모델보다 우선)
     if model:
         current_state['model'] = model
-        logger.info(f"🤖 Using model: {model}")
+        logger.info(f"🤖 [MODEL OVERRIDE] Using client-specified model: {model}")
+    elif 'model' not in current_state or not current_state.get('model'):
+        # 클라이언트가 model을 지정하지 않았고 state에도 없으면 기본값 사용
+        current_state['model'] = 'openai/tngtech/deepseek-r1t2-chimera:free'
+        logger.info(f"🤖 [MODEL DEFAULT] Using default model")
 
     # 1. 사용자 입력 저장
     current_state['last_user_input'] = action_text
@@ -319,7 +323,7 @@ async def game_act_stream(
                 current_state['system_message'] = 'Game Started'
                 current_state['is_game_start'] = True
 
-                # ✅ [작업 4] 게임 시작 시에도 location을 start_scene_id로 강제 설정
+                # ✅ [작업 2] 게임 시작 시에도 location을 start_scene_id로 강제 설정
                 wsm.location = start_scene_id
                 logger.info(f"🔧 [GAME START] Forced wsm.location = {start_scene_id}")
             else:
@@ -329,25 +333,34 @@ async def game_act_stream(
                 processed_state = game_state.game_graph.invoke(current_state)
                 game_state.state = processed_state
 
-            # ✅ [작업 4] WorldState를 player_state에 추가하기 전 location을 current_scene_id로 강제 동기화
+            # ✅ [작업 2] WorldState를 player_state에 추가하기 전 location을 current_scene_id로 강제 동기화
             wsm.location = processed_state.get('current_scene_id', wsm.location)
             logger.info(f"🔧 [PRE-SAVE] Forced wsm.location = {wsm.location} before to_dict()")
 
             # [경량화] WorldState를 player_state에 임시 추가 (저장용)
             processed_state['world_state'] = wsm.to_dict()
 
-            # 🛠️ WorldState DB 저장 (매 턴마다)
+            # 🛠️ WorldState DB 저장
             user_id = user.id if user else None
 
-            # ✅ [중요] 세션 ID 유지 - 클라이언트가 보낸 세션 ID로 계속 저장
+            # ✅ 작업 4: 첫 턴(세션이 DB에 없을 때)에만 최초 저장, 이후 매 턴마다 업데이트
             if not session_id:
-                # 새 세션 생성
+                # ✅ 첫 턴: DB에 세션이 없으므로 새로 생성
                 session_id = save_game_session(db, processed_state, user_id, None)
-                logger.info(f"✅ [NEW SESSION] Created: {session_id}")
+                logger.info(f"✅ [FIRST TURN] Created new session in DB: {session_id}")
             else:
-                # ✅ 기존 세션 업데이트 (클라이언트가 보낸 session_id 사용)
-                session_id = save_game_session(db, processed_state, user_id, session_id)
-                logger.info(f"✅ [SESSION UPDATE] Updated existing session: {session_id}")
+                # ✅ DB에서 세션 존재 여부 확인
+                existing_session = db.query(GameSession).filter_by(session_key=session_id).first()
+
+                if not existing_session:
+                    # ✅ 클라이언트가 session_id를 보냈지만 DB에 없는 경우 (load_scenario 직후)
+                    # 이 경우에만 최초 저장 수행
+                    session_id = save_game_session(db, processed_state, user_id, session_id)
+                    logger.info(f"✅ [FIRST TURN AFTER LOAD] Created session in DB with provided key: {session_id}")
+                else:
+                    # ✅ 일반 턴: 기존 세션 업데이트
+                    session_id = save_game_session(db, processed_state, user_id, session_id)
+                    logger.info(f"✅ [SESSION UPDATE] Updated existing session: {session_id}")
 
             # ✅ [작업 1] Redis 저장을 background_tasks로 비동기 처리
             cache_data = {
