@@ -304,17 +304,6 @@ function updateStats(statsData) {
 
     statsArea.innerHTML = html;
     lucide.createIcons();
-
-    // 디버그 모드가 활성화되어 있으면 디버그 정보도 업데이트
-    const isDebugActive = localStorage.getItem(DEBUG_MODE_KEY) === 'true';
-    if (isDebugActive) {
-        updateDebugInfo(statsData);
-    }
-}
-
-function updateDebugInfo(statsData) {
-    updateNPCStatus(statsData);
-    updateWorldState(statsData);
 }
 
 function openLoadModal() {
@@ -377,6 +366,8 @@ function editScenario(filename) {
 function openScenesView() {
     if (isScenarioLoaded) {
         isInternalNavigation = true;
+        // ✅ [FIX 3-2] 내부 네비게이션 플래그를 sessionStorage에 저장
+        sessionStorage.setItem(NAVIGATION_FLAG_KEY, 'true');
         window.location.href = '/views/scenes';
     }
 }
@@ -485,7 +476,6 @@ window.showEmptyDebugState = showEmptyDebugState;
 window.restoreChatLog = restoreChatLog;
 window.resetGameUI = resetGameUI;
 window.updateStats = updateStats;
-window.updateDebugInfo = updateDebugInfo;
 window.openLoadModal = openLoadModal;
 window.closeLoadModal = closeLoadModal;
 window.reloadScenarioList = reloadScenarioList;

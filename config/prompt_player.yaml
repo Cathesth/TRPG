@@ -41,6 +41,17 @@ intent_classifier: |
   - 등장 NPC: {npc_list}
   - 등장 적: {enemy_list}
   
+  **🔍 [작업 2] 장면 상호작용 가능 요소 분석:**
+  주변에 <mark> 태그로 강조된 상호작용 가능한 요소들이 있는지 확인하세요.
+  - 'investigate'와 'transition'의 경계가 모호할 때:
+    * 유저가 특정 오브젝트를 "조사한다"/"살펴본다" → investigate
+    * 유저가 그 오브젝트를 "사용한다"/"이동한다" → transition
+  - 예시:
+    * "문을 자세히 살펴본다" → investigate (조사)
+    * "문을 열고 나간다" → transition (이동)
+    * "상자를 뒤진다" → investigate (탐색)
+    * "상자를 연다" → transition (상자 열기가 transitions에 있다면)
+  
   **가능한 행동 (transitions):**
   {transitions_list}
   
@@ -57,6 +68,7 @@ intent_classifier: |
      - 반드시 가장 유사한 transition의 인덱스를 함께 반환
      - ⚠️ 단, 아이템 사용이 필요한 transition인 경우 인벤토리에 해당 아이템이 있는지 확인
      - ⚠️ 주의: NPC와의 대화/협박/설득은 transition이 아니라 chat입니다
+     - 🎯 [우선순위] <mark> 태그 요소를 "사용"/"이동"하는 경우 transition 우선
   
   2. **chat** - NPC와 대화하거나 일반적인 상호작용
      - NPC가 있고, 대화/질문/요청/협박/설득을 하는 경우
@@ -65,8 +77,10 @@ intent_classifier: |
      - 따옴표가 포함된 대사
   
   3. **investigate** - 주변 조사/탐색
-     - "살펴본다", "찾는다", "조사한다" 등
+     - "살펴본다", "찾는다", "조사한다", "뒤진다", "확인한다" 등
      - 전투 중 약점 찾기 시도
+     - 🎯 [우선순위] <mark> 태그 요소를 "조사"하는 경우 investigate 우선
+     - ⚠️ 단순히 "본다"는 것과 "사용한다"는 구분하세요
   
   4. **attack** - 전투 행동 (공격)
      - 전투 장면에서 공격 시도
@@ -75,6 +89,14 @@ intent_classifier: |
   5. **defend** - 전투 행동 (방어)
      - 전투 장면에서 방어/회피
      - "막는다", "피한다", "숨는다" 등
+  
+  **🔍 [작업 2] investigate vs transition 판별 기준:**
+  - "문을 살펴본다" / "문 주변을 조사한다" → investigate
+  - "문을 연다" / "문으로 나간다" → transition
+  - "상자를 뒤진다" / "상자 안을 확인한다" → investigate
+  - "상자를 연다" → transition (상자 열기가 transitions에 있을 경우)
+  - "계단을 확인한다" → investigate
+  - "계단을 오른다" → transition
   
   **중요: 의미적 유사도를 우선하세요**
   - "문을 연다" ≈ "문을 밀어본다", "문을 열어본다", "문을 통과한다"
@@ -95,6 +117,7 @@ intent_classifier: |
   - 반드시 유효한 JSON만 반환하세요
   - 인벤토리에 없는 아이템 사용 시도는 반드시 reasoning에 명시하세요
   - NPC와의 대화/협박/설득은 반드시 'chat'으로 분류하세요
+  - investigate와 transition을 혼동하지 마세요 (조사 vs 사용/이동)
 
 # =============================================================================
 # [1단계] 씬 진입 시 - 장면 묘사 및 등장 처리

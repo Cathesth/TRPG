@@ -61,6 +61,18 @@ async function playScenario(filename, btn) {
             // UI 초기화
             resetGameUI();
             showToast(data.message || '시나리오가 로드되었습니다!', 'success');
+
+            // ✅ [FIX 4] 디버그 모드가 활성화되어 있다면 즉시 서버 최신 상태 동기화
+            const isDebugActive = localStorage.getItem(DEBUG_MODE_KEY) === 'true';
+            if (isDebugActive && currentSessionId) {
+                console.log('🔍 [Load] Debug mode active, fetching latest session state...');
+                // 약간의 지연 후 실행 (UI 초기화 완료 대기)
+                setTimeout(() => {
+                    if (typeof fetchLatestSessionState === 'function') {
+                        fetchLatestSessionState();
+                    }
+                }, 300);
+            }
         } else {
             const text = await res.text();
             showToast('로드 실패: ' + text, 'error');
@@ -513,6 +525,20 @@ async function submitWithStreaming(actionText) {
         if (scenesBtn && isScenarioLoaded) {
             scenesBtn.disabled = false;
             scenesBtn.title = "";
+        }
+
+        // ✅ [FIX 1] act_stream 완료 후 서버 최신 상태를 조회해서 디버그 패널 갱신
+        if (currentSessionId) {
+            console.log('🔄 [ACT COMPLETE] Refreshing debug panel from server...');
+
+            // 디버그 모드가 활성화되어 있으면 최신 상태 조회
+            const isDebugActive = localStorage.getItem(DEBUG_MODE_KEY) === 'true';
+            if (isDebugActive) {
+                // ✅ [FIX 1] 약간의 지연 후 조회 (DB 저장 완료 대기)
+                setTimeout(() => {
+                    fetchLatestSessionState();
+                }, 500);
+            }
         }
 
         lucide.createIcons();

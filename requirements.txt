@@ -19,3 +19,5 @@ aioboto3
 botocore
 passlib
 bcrypt==4.0.1
+qdrant-client
+google-genai

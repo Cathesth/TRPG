@@ -2,13 +2,12 @@ import logging
 import json
 import traceback
 from datetime import datetime
-from fastapi import APIRouter, Request, Form, Depends
+from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 
-from core.state import game_state, WorldState as WorldStateManager
-from game_engine import scene_stream_generator, prologue_stream_generator, get_narrative_fallback_message, \
-    get_scenario_by_id
+from core.state import GameState, WorldState as WorldStateManager
+import game_engine
 from routes.auth import get_current_user_optional, CurrentUser
 from models import GameSession, get_db
 from schemas import GameAction
@@ -19,6 +18,131 @@ game_router = APIRouter(prefix="/game", tags=["game"])
 
 # 최대 재시도 횟수
 MAX_RETRIES = 2
+
+
+def enrich_world_state(world_state: dict, player_state: dict, scenario: dict = None, db_session: GameSession = None) -> dict:
+    """
+    World State를 완전하게 보강하는 공통 함수
+
+    Args:
+        world_state: 원본 world_state 딕셔너리
+        player_state: player_state 딕셔너리 (stuck_count 등 미러링용)
+        scenario: 시나리오 데이터 (씬 타이틀 조회용)
+        db_session: DB 세션 레코드 (current_scene_id, turn_count 조회용)
+
+    Returns:
+        보강된 world_state 딕셔너리
+    """
+    enriched = world_state.copy() if world_state else {}
+
+    # 1. location 및 current_scene_id 동기화
+    location = enriched.get('location') or player_state.get('current_scene_id') or (db_session.current_scene_id if db_session else '')
+    enriched['location'] = location
+    enriched['current_scene_id'] = location
+
+    # 2. stuck_count 미러링 (player_state → world_state)
+    stuck_count = enriched.get('stuck_count')
+    if stuck_count is None:
+        stuck_count = player_state.get('stuck_count', 0)
+        enriched['stuck_count'] = stuck_count
+
+    # 3. turn_count 보강 (world_state → db_session → 0)
+    if 'turn_count' not in enriched or enriched['turn_count'] is None:
+        if db_session and db_session.turn_count is not None:
+            enriched['turn_count'] = db_session.turn_count
+        else:
+            enriched['turn_count'] = 0
+
+    # 4. current_scene_title 주입 (시나리오에서 조회)
+    if location and scenario:
+        scenes = scenario.get('scenes', [])
+        for scene in scenes:
+            if scene.get('scene_id') == location:
+                enriched['current_scene_title'] = scene.get('title') or scene.get('name', '')
+                break
+
+    # 5. current_scene_title이 여전히 없으면 빈 문자열
+    if 'current_scene_title' not in enriched:
+        enriched['current_scene_title'] = ''
+
+    logger.info(
+        f"[SESSION_STATE] Enriched world_state: location={enriched.get('location')}, "
+        f"title={enriched.get('current_scene_title')}, stuck_count={enriched.get('stuck_count')}, "
+        f"turn_count={enriched.get('turn_count')}"
+    )
+
+    return enriched
+
+
+@game_router.get('/session_state')
+async def get_session_state(
+    session_id: str = Query(..., description="세션 ID"),
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user_optional)
+):
+    """
+    프론트엔드가 서버의 최신 세션 상태를 조회하는 API
+    디버그 패널 및 씬 보기 기능에서 사용
+    ✅ [FIX 1-A] world_state를 enrich하여 항상 완전한 데이터 반환
+    """
+    try:
+        game_session = db.query(GameSession).filter_by(session_key=session_id).first()
+
+        if not game_session:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "success": False,
+                    "error": "세션을 찾을 수 없습니다."
+                }
+            )
+
+        # ✅ [FIX 1-A] 시나리오 데이터 로드 (씬 타이틀 조회용)
+        scenario = None
+        if game_session.scenario_id:
+            scenario = game_engine.get_scenario_by_id(game_session.scenario_id)
+
+        # ✅ [FIX 1-A] world_state 보강
+        enriched_world_state = enrich_world_state(
+            world_state=game_session.world_state or {},
+            player_state=game_session.player_state or {},
+            scenario=scenario,
+            db_session=game_session
+        )
+
+        # player_state와 world_state를 함께 반환
+        return JSONResponse(content={
+            "success": True,
+            "session_id": game_session.session_key,
+            "scenario_id": game_session.scenario_id,
+            "player_state": game_session.player_state,
+            "world_state": enriched_world_state,  # ✅ 보강된 world_state
+            "turn_count": game_session.turn_count,
+            "current_scene_id": game_session.current_scene_id,
+            "last_played_at": game_session.last_played_at.isoformat() if game_session.last_played_at else None
+        })
+
+    except Exception as e:
+        logger.error(f"❌ [API] Failed to get session state: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+
+async def save_to_redis_async(session_key: str, cache_data: dict):
+    """Redis에 비동기로 저장하는 헬퍼 함수"""
+    try:
+        from core.redis_client import get_redis_client
+        redis_client = await get_redis_client()
+        if redis_client.is_connected:
+            await redis_client.set(f"session:{session_key}", cache_data, expire=3600)
+            logger.info(f"✅ [REDIS] Session cached: {session_key}")
+    except Exception as e:
+        logger.warning(f"⚠️ [REDIS] Cache save failed: {e}")
 
 
 def save_game_session(db: Session, state: dict, user_id: str = None, session_key: str = None):
@@ -34,21 +158,35 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
     Returns:
         session_key: 세션 키
     """
-    # ✅ [작업 2] redis_client 변수를 최상단에서 초기화 (referenced before assignment 방지)
-    redis_client = None
-
     try:
         # [경량화] scenario 전체가 아닌 scenario_id만 사용
         scenario_id = state.get('scenario_id', 0)
         current_scene_id = state.get('current_scene_id', '')
 
-        # [경량화] world_state는 별도 추출 (player_state에서 제거)
-        world_state_data = state.pop('world_state', {})
+        # ✅ [FIX 1-1] 원본 state를 mutate하지 않도록 deepcopy 사용
+        import copy
+        world_state_data = copy.deepcopy(state.get('world_state', {}))
 
-        # WorldState 인스턴스에서 직접 가져오기
+        # 저장용 state는 world_state 제외 (deepcopy로 원본 보호)
+        state_for_db = copy.deepcopy(state)
+        state_for_db.pop('world_state', None)
+
+        # ✅ [B-2] world_state가 없어도 빈 인스턴스를 만들지 않음 (데이터 손실 방지)
         if not world_state_data:
-            wsm = WorldStateManager()
-            world_state_data = wsm.to_dict()
+            # 빈 dict로 유지하고 새 인스턴스 생성 금지
+            world_state_data = {}
+            logger.warning(f"⚠️ [DB SAVE] world_state is empty - saving empty dict (no new instance created)")
+
+        # ✅ [B-2] location 동기화는 dict 부분 수정만 허용 (world_state_data가 있을 때만)
+        if isinstance(world_state_data, dict) and current_scene_id:
+            world_state_data['location'] = current_scene_id
+            logger.info(f"🔧 [DB SAVE] Synced world_state.location = {current_scene_id}")
+
+        # ✅ [FIX 1-B] stuck_count를 world_state에 미러링 (player_state → world_state)
+        if isinstance(world_state_data, dict):
+            stuck_count_from_state = state.get('stuck_count', 0)
+            world_state_data['stuck_count'] = stuck_count_from_state
+            logger.info(f"🔧 [DB SAVE] Mirrored stuck_count to world_state: {stuck_count_from_state}")
 
         turn_count = world_state_data.get('turn_count', 0) if isinstance(world_state_data, dict) else 0
 
@@ -56,7 +194,7 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
             # 기존 세션 업데이트
             game_session = db.query(GameSession).filter_by(session_key=session_key).first()
             if game_session:
-                game_session.player_state = state  # world_state 제외된 경량화된 상태
+                game_session.player_state = state_for_db  # world_state 제외된 경량화된 상태
                 game_session.world_state = world_state_data  # 별도 컬럼에 저장
                 game_session.current_scene_id = current_scene_id
                 game_session.turn_count = turn_count
@@ -64,38 +202,6 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
                 game_session.updated_at = datetime.now()
                 db.commit()
                 logger.info(f"✅ [DB] Game session updated: {session_key}")
-
-                # ✅ [작업 2] Redis에도 저장 (비동기 처리 최소화)
-                try:
-                    from core.redis_client import get_redis_client
-                    import asyncio
-                    import threading
-
-                    def async_redis_save():
-                        try:
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            # get_redis_client를 비동기로 호출
-                            client = loop.run_until_complete(get_redis_client())
-                            if client.is_connected:
-                                cache_data = {
-                                    'player_state': state,
-                                    'world_state': world_state_data,
-                                    'current_scene_id': current_scene_id,
-                                    'turn_count': turn_count,
-                                    'scenario_id': scenario_id
-                                }
-                                loop.run_until_complete(client.set(f"session:{session_key}", cache_data, expire=3600))
-                                logger.info(f"✅ [REDIS] Session cached: {session_key}")
-                            loop.close()
-                        except Exception as e:
-                            logger.warning(f"⚠️ [REDIS] Async save failed: {e}")
-
-                    # 별도 스레드에서 실행 (메인 로직 블로킹 방지)
-                    thread = threading.Thread(target=async_redis_save, daemon=True)
-                    thread.start()
-                except Exception as redis_err:
-                    logger.warning(f"⚠️ [REDIS] Cache setup failed (continuing): {redis_err}")
 
                 return session_key
             else:
@@ -109,7 +215,7 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
             user_id=user_id,
             session_key=new_session_key,
             scenario_id=scenario_id,
-            player_state=state,  # world_state 제외된 경량화된 상태
+            player_state=state_for_db,  # world_state 제외된 경량화된 상태
             world_state=world_state_data,  # 별도 컬럼에 저장
             current_scene_id=current_scene_id,
             turn_count=turn_count
@@ -118,28 +224,6 @@ def save_game_session(db: Session, state: dict, user_id: str = None, session_key
         db.add(game_session)
         db.commit()
         logger.info(f"✅ [DB] New game session created: {new_session_key}")
-
-        # ✅ [작업 2] Redis에도 저장
-        try:
-            from core.redis_client import get_redis_client
-            import asyncio
-
-            async def save_to_redis():
-                redis_client = await get_redis_client()
-                if redis_client.is_connected:
-                    cache_data = {
-                        'player_state': state,
-                        'world_state': world_state_data,
-                        'current_scene_id': current_scene_id,
-                        'turn_count': turn_count,
-                        'scenario_id': scenario_id
-                    }
-                    await redis_client.set(f"session:{new_session_key}", cache_data, expire=3600)
-                    logger.info(f"✅ [REDIS] New session cached: {new_session_key}")
-
-            asyncio.run(save_to_redis())
-        except Exception as redis_err:
-            logger.warning(f"⚠️ [REDIS] Cache save failed (continuing): {redis_err}")
 
         return new_session_key
 
@@ -174,7 +258,34 @@ def load_game_session(db: Session, session_key: str):
         # [경량화] PlayerState는 world_state를 포함하지 않음
         player_state = game_session.player_state
 
-        logger.info(f"✅ [DB] Game session loaded: {session_key} (Turn: {game_session.turn_count})")
+        # ✅ [작업 1] DB에서 로드한 current_scene_id가 최신 값인지 검증
+        db_scene_id = game_session.current_scene_id
+        state_scene_id = player_state.get('current_scene_id', '')
+        ws_location = game_session.world_state.get('location', '')
+
+        # 우선순위: DB의 current_scene_id > world_state.location > player_state.current_scene_id
+        verified_scene_id = db_scene_id or ws_location or state_scene_id
+
+        if db_scene_id != state_scene_id or db_scene_id != ws_location:
+            logger.warning(
+                f"⚠️ [DB LOAD] Scene ID mismatch detected! "
+                f"DB: {db_scene_id}, PlayerState: {state_scene_id}, WorldState: {ws_location}"
+            )
+            logger.info(f"🔧 [DB LOAD] Using verified scene_id: {verified_scene_id}")
+
+        # player_state의 current_scene_id를 검증된 값으로 강제 업데이트
+        player_state['current_scene_id'] = verified_scene_id
+        wsm.location = verified_scene_id
+
+        # ✅ [FIX] world_state를 player_state에 포함시켜 game_engine이 초기화하지 않도록 함
+        if game_session.world_state:
+            player_state['world_state'] = game_session.world_state
+            logger.info(f"🌍 [DB LOAD] world_state included in player_state (location: {verified_scene_id})")
+
+        logger.info(
+            f"✅ [DB] Game session loaded: {session_key} "
+            f"(Turn: {game_session.turn_count}, Scene: {verified_scene_id})"
+        )
 
         return player_state
 
@@ -192,6 +303,7 @@ async def game_act():
 @game_router.post('/act_stream')
 async def game_act_stream(
         request: Request,
+        background_tasks: BackgroundTasks,
         user: CurrentUser = Depends(get_current_user_optional),
         db: Session = Depends(get_db)
 ):
@@ -213,6 +325,10 @@ async def game_act_stream(
 
     # ✅ [중요] 세션 ID와 시나리오 ID 검증 로직
     should_create_new_session = False
+
+    # 🔍 [SESSION ISOLATION] 세션별 독립적인 GameState 인스턴스 생성
+    game_state = GameState()
+    logger.info(f"🔍 [SESSION ISOLATION] Created local GameState instance for session: {session_id or 'new'}")
 
     if session_id:
         logger.info(f"🔍 [SESSION] Client provided session_id: {session_id}, scenario_id: {scenario_id}")
@@ -236,13 +352,20 @@ async def game_act_stream(
                 restored_state = load_game_session(db, session_id)
 
                 if restored_state:
-                    # ✅ DB에서 복구한 세션으로 game_state 완전히 교체
+                    # ✅ DB에서 복구한 세션으로 로컬 game_state에 설정
                     game_state.state = restored_state
 
-                    # WorldState도 복구
+                    # game_graph도 생성 - game_engine 모듈 사용
+                    game_state.game_graph = game_engine.create_game_graph()
+
+                    # ✅ [수정 1] 로컬 WorldState 인스턴스는 복원만 하고 덮어쓰지 않음
                     wsm = WorldStateManager()
                     if 'world_state' in restored_state:
                         wsm.from_dict(restored_state['world_state'])
+                        turn_count = restored_state.get('world_state', {}).get('turn_count', 0)
+                        logger.info(f"🔍 [SESSION ISOLATION] Restored WorldState for session: {session_id}, turn: {turn_count}")
+                    else:
+                        logger.warning(f"⚠️ [WORLD INIT] world_state missing in restored_state")
 
                     logger.info(f"✅ [SESSION RESTORE] Session restored from DB: {session_id}")
                 else:
@@ -274,10 +397,14 @@ async def game_act_stream(
     action_text = action
     current_state = game_state.state
 
-    # 선택한 모델을 상태에 저장
+    # ✅ 작업 4: 클라이언트가 보낸 model 값이 우선순위를 가짐 (시나리오 기본 모델보다 우선)
     if model:
         current_state['model'] = model
-        logger.info(f"🤖 Using model: {model}")
+        logger.info(f"🤖 [MODEL OVERRIDE] Using client-specified model: {model}")
+    elif 'model' not in current_state or not current_state.get('model'):
+        # 클라이언트가 model을 지정하지 않았고 state에도 없으면 기본값 사용
+        current_state['model'] = 'openai/tngtech/deepseek-r1t2-chimera:free'
+        logger.info(f"🤖 [MODEL DEFAULT] Using default model")
 
     # 1. 사용자 입력 저장
     current_state['last_user_input'] = action_text
@@ -301,22 +428,27 @@ async def game_act_stream(
                 yield f"data: {json.dumps({'type': 'error', 'content': '시나리오 ID가 없습니다.'})}\n\n"
                 return
 
-            scenario = get_scenario_by_id(scenario_id)
+            scenario = game_engine.get_scenario_by_id(scenario_id)
             if not scenario:
                 yield f"data: {json.dumps({'type': 'error', 'content': '시나리오를 찾을 수 없습니다.'})}\n\n"
                 return
 
-            # [FIX] WorldState 싱글톤 인스턴스 사용 - 변수명 wsm으로 통일
-            wsm = WorldStateManager()
-
             if is_game_start:
-                # 게임 시작 시: 세션이 있으면 유지, 없으면 새로 생성
+                # ✅ [수정 2] 게임 시작 시에만 WorldState 초기화
                 if not session_id:
+                    # 새 게임: WorldState 초기화
+                    wsm = WorldStateManager()
                     wsm.reset()
                     wsm.initialize_from_scenario(scenario)
-                    logger.info(f"🎮 [GAME START] New game session created")
+                    logger.info(f"🎮 [GAME START] New game - WorldState initialized")
+
+                    # 초기화된 world_state를 processed_state에 설정
+                    processed_state['world_state'] = wsm.to_dict()
                 else:
+                    # 기존 세션 재개: world_state가 이미 processed_state에 있으면 그대로 사용
                     logger.info(f"🎮 [GAME START] Resuming existing session: {session_id}")
+                    if 'world_state' not in processed_state:
+                        logger.warning(f"⚠️ [GAME START] world_state missing in resumed session")
 
                 start_scene_id = current_state.get('start_scene_id') or current_state.get('current_scene_id')
 
@@ -337,30 +469,66 @@ async def game_act_stream(
                 current_state['system_message'] = 'Game Started'
                 current_state['is_game_start'] = True
 
-                # [FIX] 게임 시작 시에도 location을 start_scene_id로 설정
-                wsm.location = start_scene_id
+                # location 동기화 (world_state가 있는 경우에만)
+                if 'world_state' in processed_state and isinstance(processed_state['world_state'], dict):
+                    processed_state['world_state']['location'] = start_scene_id
+                    logger.info(f"🔧 [GAME START] Synced world_state.location = {start_scene_id}")
             else:
-                # 일반 턴: LangGraph 실행
+                # ✅ [수정 2-핵심] 일반 턴: LangGraph가 world_state를 생성/갱신
                 logger.info(f"🎮 Action: {action_text}")
                 current_state['is_game_start'] = False
+
+                # LangGraph invoke - 이미 world_state를 포함하고 있음
                 processed_state = game_state.game_graph.invoke(current_state)
                 game_state.state = processed_state
 
-            # [경량화] WorldState를 player_state에 임시 추가 (저장용)
-            processed_state['world_state'] = wsm.to_dict()
+                # ✅ [치명적 버그 수정] LangGraph가 생성한 world_state를 절대 덮어쓰지 않음
+                # processed_state에 이미 world_state가 있으면 그대로 사용
+                if 'world_state' in processed_state:
+                    logger.info(f"✅ [WORLD STATE] Using LangGraph-generated world_state (turn: {processed_state.get('world_state', {}).get('turn_count', 'N/A')})")
+                else:
+                    logger.warning(f"⚠️ [WORLD STATE] LangGraph did not return world_state!")
 
-            # 🛠️ WorldState DB 저장 (매 턴마다)
+            # ✅ [수정 3] 검증이 필요한 경우에만 복원해서 읽기만 함 (덮어쓰지 않음)
+            if 'world_state' in processed_state and isinstance(processed_state['world_state'], dict):
+                # 검증용 로그
+                ws_turn = processed_state['world_state'].get('turn_count', 0)
+                ws_location = processed_state['world_state'].get('location', 'unknown')
+                logger.info(f"🌍 [WORLD STATE VERIFY] turn_count={ws_turn}, location={ws_location}")
+            else:
+                logger.error(f"❌ [WORLD STATE] Missing or invalid world_state in processed_state!")
+
+            # 🛠️ WorldState DB 저장
             user_id = user.id if user else None
 
-            # ✅ [중요] 세션 ID 유지 - 클라이언트가 보낸 세션 ID로 계속 저장
+            # ✅ 작업 4: 첫 턴(세션이 DB에 없을 때)에만 최초 저장, 이후 매 턴마다 업데이트
             if not session_id:
-                # 새 세션 생성
+                # ✅ 첫 턴: DB에 세션이 없으므로 새로 생성
                 session_id = save_game_session(db, processed_state, user_id, None)
-                logger.info(f"✅ [NEW SESSION] Created: {session_id}")
+                logger.info(f"✅ [FIRST TURN] Created new session in DB: {session_id}")
             else:
-                # ✅ 기존 세션 업데이트 (클라이언트가 보낸 session_id 사용)
-                session_id = save_game_session(db, processed_state, user_id, session_id)
-                logger.info(f"✅ [SESSION UPDATE] Updated existing session: {session_id}")
+                # ✅ DB에서 세션 존재 여부 확인
+                existing_session = db.query(GameSession).filter_by(session_key=session_id).first()
+
+                if not existing_session:
+                    # ✅ 클라이언트가 session_id를 보냈지만 DB에 없는 경우 (load_scenario 직후)
+                    # 이 경우에만 최초 저장 수행
+                    session_id = save_game_session(db, processed_state, user_id, session_id)
+                    logger.info(f"✅ [FIRST TURN AFTER LOAD] Created session in DB with provided key: {session_id}")
+                else:
+                    # ✅ 일반 턴: 기존 세션 업데이트
+                    session_id = save_game_session(db, processed_state, user_id, session_id)
+                    logger.info(f"✅ [SESSION UPDATE] Updated existing session: {session_id}")
+
+            # ✅ [작업 1] Redis 저장을 background_tasks로 비동기 처리
+            cache_data = {
+                'player_state': processed_state,
+                'world_state': processed_state.get('world_state'),
+                'current_scene_id': processed_state.get('current_scene_id'),
+                'turn_count': processed_state.get('world_state', {}).get('turn_count', 0) if isinstance(processed_state.get('world_state'), dict) else 0,
+                'scenario_id': scenario_id
+            }
+            background_tasks.add_task(save_to_redis_async, session_id, cache_data)
 
             # 결과 추출
             npc_say = processed_state.get('npc_output', '')
@@ -407,7 +575,7 @@ async def game_act_stream(
                     prologue_html = '<div class="mb-6 p-4 bg-indigo-900/20 rounded-xl border border-indigo-500/30"><div class="text-indigo-400 font-bold text-sm mb-3 uppercase tracking-wider">[ Prologue ]</div><div class="text-gray-200 leading-relaxed serif-font text-lg">'
                     yield f"data: {json.dumps({'type': 'prefix', 'content': prologue_html})}\n\n"
 
-                    for chunk in prologue_stream_generator(processed_state):
+                    for chunk in game_engine.prologue_stream_generator(processed_state):
                         yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
 
                     yield f"data: {json.dumps({'type': 'section_end', 'content': '</div></div>'})}\n\n"
@@ -445,8 +613,8 @@ async def game_act_stream(
             stats_data = processed_state.get('player_vars', {})
             yield f"data: {json.dumps({'type': 'stats', 'content': stats_data})}\n\n"
 
-            # [경량화] World State는 싱글톤 인스턴스에서 직접 가져옴 (디버그 모드용)
-            world_state_data = wsm.to_dict()
+            # ✅ [수정 3] World State 전송 시 processed_state의 world_state를 그대로 사용
+            world_state_data = processed_state.get('world_state', {})
             if world_state_data:
                 # World State에 씬 정보 추가
                 world_state_with_scene = world_state_data.copy()
@@ -585,7 +753,7 @@ def stream_scene_with_retry(state):
         buffer = ""
         need_retry = False
 
-        for chunk in scene_stream_generator(state, retry_count=retry_count, max_retries=MAX_RETRIES):
+        for chunk in game_engine.scene_stream_generator(state, retry_count=retry_count, max_retries=MAX_RETRIES):
             # 재시도 신호 감지
             if "__RETRY_SIGNAL__" in chunk:
                 need_retry = True
@@ -601,7 +769,7 @@ def stream_scene_with_retry(state):
                 yield f"data: {json.dumps({'type': 'retry', 'attempt': retry_count, 'max': MAX_RETRIES})}\n\n"
             else:
                 logger.warning(f"⚠️ [FALLBACK] Max retries exceeded")
-                fallback_msg = get_narrative_fallback_message(state.get('scenario', {}))
+                fallback_msg = game_engine.get_narrative_fallback_message(state.get('scenario', {}))
                 fallback_html = f"""
                 <div class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4 my-2">
                     <div class="text-yellow-400 serif-font">{fallback_msg}</div>
@@ -633,7 +801,7 @@ async def get_game_session_data(
             }, status_code=404)
 
         # 시나리오 정보 조회 (NPC 전체 정보 필요)
-        scenario = get_scenario_by_id(game_session.scenario_id)
+        scenario = game_engine.get_scenario_by_id(game_session.scenario_id)
 
         # 시나리오의 모든 NPC 정보를 딕셔너리로 구성
         all_scenario_npcs = {}

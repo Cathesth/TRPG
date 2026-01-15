@@ -236,7 +236,7 @@
                 <!-- 그래프 컨테이너 -->
                 <div id="graph-container" class="flex-1 w-full h-full cursor-grab active:cursor-grabbing overflow-hidden flex items-center justify-center bg-[#111827]">
                     <div id="graph-inner" class="transition-transform duration-75 origin-center">
-                        <pre class="mermaid opacity-0 transition-opacity duration-500" id="mermaid-graph">
+                        <pre class="mermaid transition-opacity duration-500" id="mermaid-graph">
                             {{ mermaid_code | safe }}
                         </pre>
                     </div>
@@ -397,23 +397,51 @@
 
     async function renderGraph() {
         const element = document.querySelector('#mermaid-graph');
-        if (element) {
-            try {
-                await mermaid.run({ nodes: [element] });
-                element.classList.remove('opacity-0');
+        if (!element) {
+            console.error('❌ Mermaid element not found');
+            return;
+        }
 
-                const svg = element.querySelector('svg');
-                if (svg) {
-                    svg.style.maxWidth = 'none';
-                    svg.style.height = 'auto';
-                }
+        // 원본 코드 백업
+        const graphDef = element.textContent.trim();
+        console.log('🔍 [Mermaid] Attempting to render chart...');
+        console.log('📝 [Mermaid] First 3 lines:', graphDef.split('\n').slice(0, 3).join('\n'));
 
-                highlightCurrentScene();
-            } catch (err) {
-                console.error("Mermaid Render Failed:", err);
-                element.innerHTML = `<div class='text-red-500'>그래프 렌더링 실패<br><small>${err}</small></div>`;
-                element.classList.remove('opacity-0');
+        try {
+            // ✅ 단일 렌더링 방식 사용 (mermaid.render)
+            const { svg } = await mermaid.render('mermaidGraph_' + Date.now(), graphDef);
+            element.innerHTML = svg;
+            element.classList.add('opacity-100');
+            console.log('✅ [Mermaid] Chart rendered successfully');
+
+            const svgElement = element.querySelector('svg');
+            if (svgElement) {
+                svgElement.style.maxWidth = 'none';
+                svgElement.style.height = 'auto';
             }
+
+            highlightCurrentScene();
+        } catch (err) {
+            console.error('❌ [Mermaid] Rendering failed:', err);
+
+            // ✅ 실패해도 오류 메시지 + raw 코드 표시
+            element.innerHTML = `
+                <div class="text-red-400 p-6 bg-red-900/20 rounded-lg border border-red-500/30">
+                    <div class="font-bold text-lg mb-2 flex items-center gap-2">
+                        <span>⚠️</span> Mermaid 차트 렌더링 실패
+                    </div>
+                    <div class="text-sm text-red-300 mb-4">
+                        ${err.message || err.toString()}
+                    </div>
+                    <details class="text-xs">
+                        <summary class="cursor-pointer text-gray-400 hover:text-white mb-2">
+                            📄 원본 Mermaid 코드 보기
+                        </summary>
+                        <pre class="bg-gray-900 p-4 rounded border border-gray-700 overflow-auto max-h-96 text-gray-300">${graphDef}</pre>
+                    </details>
+                </div>
+            `;
+            element.classList.add('opacity-100');
         }
     }
 
@@ -428,23 +456,33 @@
 
         allNodes.forEach(node => {
             const nodeId = node.getAttribute('id') || '';
+
+            // ✅ 안전한 ID 형태로 변환된 것을 고려한 매칭 로직
+            // Mermaid가 생성한 ID: flowchart-Scene_1-123 형태
             let extractedId = '';
-            const lastDashIndex = nodeId.lastIndexOf('-');
+
+            // flowchart- prefix 제거
+            let cleaned = nodeId.replace(/^flowchart-/, '');
+
+            // 마지막 숫자 suffix 제거 (-123)
+            const lastDashIndex = cleaned.lastIndexOf('-');
             if (lastDashIndex > 0) {
-                const afterLastDash = nodeId.substring(lastDashIndex + 1);
+                const afterLastDash = cleaned.substring(lastDashIndex + 1);
                 if (/^\d+$/.test(afterLastDash)) {
-                    extractedId = nodeId.substring(0, lastDashIndex).replace(/^flowchart-/, '');
+                    extractedId = cleaned.substring(0, lastDashIndex);
+                } else {
+                    extractedId = cleaned;
                 }
+            } else {
+                extractedId = cleaned;
             }
 
-            if (!extractedId) {
-                const match = nodeId.match(/flowchart-(.+)-\d+$/);
-                extractedId = match ? match[1] : '';
-            }
+            // 언더스코어를 하이픈으로 복원하여 원본 ID와 비교
+            const restoredId = extractedId.replace(/_/g, '-');
 
             const isPrologueNode = extractedId.toUpperCase() === 'PROLOGUE';
             const isCurrentPrologue = currentSceneId.toLowerCase() === 'prologue' && isPrologueNode;
-            const isCurrentScene = extractedId === currentSceneId;
+            const isCurrentScene = restoredId === currentSceneId || extractedId === currentSceneId;
 
             if (isCurrentPrologue || isCurrentScene) {
                 const rect = node.querySelector('rect') || node.querySelector('polygon');
@@ -515,11 +553,56 @@
     renderGraph();
 </script>
 
+<!-- ✅ [FIX 3] 시나리오 ID 복원 및 에러 처리 로직 추가 -->
 <script>
-    lucide.createIcons();
-</script>
+    // ✅ [FIX 3] 시나리오 ID를 다양한 소스에서 확보
+    (function() {
+        // 1. URL 쿼리 파라미터에서 시도
+        const urlParams = new URLSearchParams(window.location.search);
+        let scenarioId = urlParams.get('scenario_id');
 
-<div class="version-badge">v{{ version }}</div>
+        // 2. sessionStorage에서 시도 (키 이름 통일)
+        if (!scenarioId) {
+            scenarioId = sessionStorage.getItem('trpg_scenario_id') ||
+                        sessionStorage.getItem('current_scenario_id') ||
+                        sessionStorage.getItem('scenario_id');
+        }
+
+        // 3. 현재 세션에서 서버 조회 시도
+        if (!scenarioId) {
+            const sessionId = sessionStorage.getItem('current_session_id') ||
+                            sessionStorage.getItem('trpg_session_key');
+
+            if (sessionId) {
+                console.log('🔍 [Scenes View] Fetching scenario_id from session:', sessionId);
+                fetch(`/game/session_state?session_id=${sessionId}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success && data.scenario_id) {
+                            console.log('✅ [Scenes View] Scenario ID restored from server:', data.scenario_id);
+                            sessionStorage.setItem('trpg_scenario_id', data.scenario_id);
+
+                            // 시나리오 ID가 없는 상태로 렌더링되었다면 새로고침
+                            if (!window.location.search.includes('scenario_id')) {
+                                window.location.href = `/views/debug_scenes?scenario_id=${data.scenario_id}`;
+                            }
+                        } else {
+                            console.warn('⚠️ [Scenes View] Failed to restore scenario_id from server');
+                        }
+                    })
+                    .catch(err => {
+                        console.error('❌ [Scenes View] Error fetching session state:', err);
+                    });
+            }
+        }
+
+        // ✅ [FIX 3] 복원된 시나리오 ID를 sessionStorage에 저장
+        if(scenarioId) {
+            sessionStorage.setItem('trpg_scenario_id', scenarioId);
+            console.log('✅ [FIX 3] Scenario ID restored:', scenarioId);
+        }
+    })();
+</script>
 
 </body>
 </html>

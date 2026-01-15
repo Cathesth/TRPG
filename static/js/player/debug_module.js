@@ -1,5 +1,29 @@
 // debug_module.js - 디버그 사이드바 제어
 
+// ✅ [FIX 5] 빈 상태를 표시하는 함수 추가
+function showEmptyDebugState() {
+    const worldStateArea = document.getElementById('world-state-area');
+    const npcStatusArea = document.getElementById('npc-status-area');
+
+    if (worldStateArea) {
+        worldStateArea.innerHTML = `
+            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                World State 데이터 없음
+            </div>
+        `;
+    }
+
+    if (npcStatusArea) {
+        npcStatusArea.innerHTML = `
+            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                NPC 데이터 없음
+            </div>
+        `;
+    }
+
+    console.log('ℹ️ [Debug] Empty state displayed');
+}
+
 // 디버그 정보 토글 함수
 function toggleDebugInfo() {
     const debugInfoArea = document.getElementById('debug-info-area');
@@ -9,15 +33,16 @@ function toggleDebugInfo() {
     const isDebugActive = localStorage.getItem(DEBUG_MODE_KEY) === 'true';
 
     if (isDebugActive) {
-        // 디버그 모드 끄기
+        // ✅ [FIX 5] 디버그 모드 끄기 - UI만 숨기고 sessionStorage는 절대 지우지 않음
         debugInfoArea.classList.add('hidden');
         localStorage.setItem(DEBUG_MODE_KEY, 'false');
         if (debugIcon) {
             debugIcon.classList.remove('text-indigo-400');
             debugIcon.classList.add('text-gray-500');
         }
+        console.log('🔍 [Debug Toggle OFF] UI hidden, sessionStorage preserved');
     } else {
-        // 디버그 모드 켜기
+        // ✅ [FIX 5] 디버그 모드 켜기 - 서버 최신 데이터 조회
         debugInfoArea.classList.remove('hidden');
         localStorage.setItem(DEBUG_MODE_KEY, 'true');
         if (debugIcon) {
@@ -25,32 +50,121 @@ function toggleDebugInfo() {
             debugIcon.classList.add('text-indigo-400');
         }
 
-        // 무조건 DB에서 최신 데이터 불러오기
-        console.log('🔍 [Debug Toggle ON] Fetching from Railway DB...');
-        fetchGameDataFromDB();
+        // ✅ [FIX 5] 세션 ID 복원 후 서버 최신 상태 조회
+        if (!currentSessionId) {
+            currentSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY) || sessionStorage.getItem('trpg_session_key');
+        }
+
+        if (currentSessionId) {
+            console.log('🔍 [Debug Toggle ON] Fetching latest state from server...');
+            fetchLatestSessionState();
+        } else {
+            console.log('⚠️ [Debug Toggle ON] No session ID, showing empty state');
+            showEmptyDebugState();
+        }
     }
 
     lucide.createIcons();
 }
 
-// 디버그 모드에서 전체 씬 보기 함수
-function openDebugScenesView() {
-    if (isScenarioLoaded) {
-        // ✅ FIX: 세션 ID를 확실히 저장
-        if (currentSessionId) {
-            sessionStorage.setItem('current_session_id', currentSessionId);
-            sessionStorage.setItem('trpg_session_key', currentSessionId);
-            console.log('💾 [Navigation] Saved session ID before navigation:', currentSessionId);
+// ✅ [FIX 1] 서버에서 최신 세션 상태를 조회하는 함수
+async function fetchLatestSessionState() {
+    if (!currentSessionId) {
+        console.warn('⚠️ [FETCH] No session ID available');
+        showEmptyDebugState();
+        return;
+    }
+
+    try {
+        console.log(`📡 [FETCH] Requesting session state: ${currentSessionId}`);
+        const response = await fetch(`/game/session_state?session_id=${currentSessionId}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        // 내부 네비게이션 플래그 설정
-        isInternalNavigation = true;
-        sessionStorage.setItem(NAVIGATION_FLAG_KEY, 'true');
+        const data = await response.json();
 
-        window.location.href = '/views/debug_scenes';
-    } else {
-        showToast('시나리오를 먼저 불러와주세요.', 'error');
+        if (data.success) {
+            console.log('✅ [FETCH] Session state received from server:', data);
+
+            // ✅ [FIX 1] 세션 ID와 시나리오 ID 갱신
+            if (data.session_id) {
+                currentSessionId = data.session_id;
+                sessionStorage.setItem(CURRENT_SESSION_ID_KEY, data.session_id);
+                sessionStorage.setItem('trpg_session_key', data.session_id);
+            }
+
+            if (data.scenario_id) {
+                currentScenarioId = data.scenario_id;
+                sessionStorage.setItem(CURRENT_SCENARIO_ID_KEY, data.scenario_id);
+            }
+
+            // ✅ [FIX 1] UI 업데이트 (서버 최신 데이터 기준)
+            if (data.world_state) {
+                // ✅ turn_count가 world_state에 있으면 최상위로 복사
+                if (data.world_state.turn_count !== undefined) {
+                    data.world_state.turn_count = data.world_state.turn_count;
+                } else if (data.turn_count !== undefined) {
+                    data.world_state.turn_count = data.turn_count;
+                }
+                updateWorldState(data.world_state);
+            }
+
+            if (data.player_state && data.player_state.player_vars) {
+                updateStats(data.player_state.player_vars);
+            }
+
+            // NPC 상태는 world_state에서 추출
+            if (data.world_state && data.world_state.npcs) {
+                updateNPCStatus({ npcs: data.world_state.npcs });
+            }
+
+            lucide.createIcons();
+        } else {
+            console.error('❌ [FETCH] Failed to fetch session state:', data.error);
+            showEmptyDebugState();
+        }
+    } catch (err) {
+        console.error('❌ [FETCH] Error:', err);
+        showEmptyDebugState();
     }
+}
+
+// 디버그 모드에서 전체 씬 보기 함수
+function openDebugScenesView() {
+    // ✅ [FIX 3] 시나리오 ID와 세션 ID를 모두 확인
+    if (!currentScenarioId) {
+        currentScenarioId = sessionStorage.getItem(CURRENT_SCENARIO_ID_KEY);
+    }
+
+    if (!currentSessionId) {
+        currentSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY) || sessionStorage.getItem('trpg_session_key');
+    }
+
+    if (!currentScenarioId) {
+        showToast('시나리오를 먼저 불러와주세요.', 'error');
+        return;
+    }
+
+    // ✅ [FIX 2&4] 세션 ID와 시나리오 ID를 확실히 저장
+    if (currentSessionId) {
+        sessionStorage.setItem(CURRENT_SESSION_ID_KEY, currentSessionId);
+        sessionStorage.setItem('trpg_session_key', currentSessionId);
+        console.log('💾 [Navigation] Saved session ID:', currentSessionId);
+    }
+
+    if (currentScenarioId) {
+        sessionStorage.setItem(CURRENT_SCENARIO_ID_KEY, currentScenarioId);
+        console.log('💾 [Navigation] Saved scenario ID:', currentScenarioId);
+    }
+
+    // ✅ [FIX 2] 내부 네비게이션 플래그 설정
+    isInternalNavigation = true;
+    sessionStorage.setItem(NAVIGATION_FLAG_KEY, 'true');
+
+    // 시나리오 ID를 쿼리 파라미터로 전달
+    window.location.href = `/views/debug_scenes?scenario_id=${currentScenarioId}`;
 }
 
 // NPC 상태 업데이트 함수
@@ -161,6 +275,28 @@ function updateWorldState(worldStateData) {
     const worldStateArea = document.getElementById('world-state-area');
     if (!worldStateArea) return;
 
+    // ✅ [FIX 2] 잘못된 입력 방지 가드 - statsData가 아닌 실제 world_state인지 검증
+    // world_state 고유 속성이 하나라도 있는지 확인
+    const worldStateKeys = ['turn_count', 'time', 'time_period', 'location', 'current_scene_id',
+                           'identity_count', 'hint_level', 'stuck_count', 'global_flags', 'npcs'];
+
+    let hasWorldStateKey = false;
+
+    // worldStateData가 world_state를 포함하는 경우
+    if (worldStateData && worldStateData.world_state) {
+        const ws = worldStateData.world_state;
+        hasWorldStateKey = worldStateKeys.some(key => ws.hasOwnProperty(key));
+    } else if (worldStateData) {
+        // worldStateData가 직접 world_state인 경우
+        hasWorldStateKey = worldStateKeys.some(key => worldStateData.hasOwnProperty(key));
+    }
+
+    // ✅ world_state로 보이지 않으면 업데이트하지 않음 (statsData 방어)
+    if (!hasWorldStateKey) {
+        console.warn('⚠️ [World State] Invalid data detected (not a world_state), skipping update');
+        return;
+    }
+
     // worldStateData가 직접 world_state인 경우와 statsData에서 추출한 경우 모두 처리
     let worldState = {};
 
@@ -185,21 +321,26 @@ function updateWorldState(worldStateData) {
     const day = time.day || 1;
     const phase = time.phase || 'morning';
     const turnCount = worldState.turn_count || 0;
-    const stuckCount = worldState.stuck_count || 0;
+
+    // ✅ [FIX 1-C] stuck_count를 더 robust하게 읽기 (world_state → player_state fallback)
+    const stuckCount = worldState.stuck_count ?? (worldStateData.player_state?.stuck_count ?? 0);
+
     const globalFlags = worldState.global_flags || {};
 
-    // ✅ 작업 2: 위치 정보 처리 강화 - 실제 데이터가 있을 때만 표시
-    let locationDisplay = null;
+    // ✅ [FIX 1-C] 위치 정보 처리 강화 - current_scene_title 우선, 없으면 sceneNameMap, 그래도 없으면 scene_id만
+    let locationDisplay = '위치 정보 없음';
 
-    // worldState.location을 최우선으로 사용 (백엔드에서 동기화된 데이터)
-    const sceneId = worldState.location || worldState.current_scene_id;
+    // 1. worldState.location을 최우선으로 사용 (백엔드에서 동기화된 데이터)
+    const sceneId = worldState.current_scene_id || worldState.location;
     const sceneTitle = worldState.current_scene_title;
 
-    // 실제 데이터가 존재하는지 엄격히 체크
     if (sceneId && sceneId !== '?' && sceneId !== 'Unknown' && sceneId !== '') {
         if (sceneTitle && sceneTitle !== '?' && sceneTitle !== 'Unknown' && sceneTitle !== '') {
             // Scene ID와 제목 모두 유효한 경우
-            locationDisplay = `${sceneId} (${sceneTitle})`;
+            locationDisplay = `${sceneId} ('${sceneTitle}')`;
+        } else if (window.sceneNameMap && window.sceneNameMap[sceneId]) {
+            // sceneNameMap에서 타이틀 찾기 (전체 씬 보기에서 로드한 데이터)
+            locationDisplay = `${sceneId} ('${window.sceneNameMap[sceneId]}')`;
         } else {
             // ID만 유효한 경우
             locationDisplay = sceneId;
@@ -308,3 +449,5 @@ window.toggleDebugInfo = toggleDebugInfo;
 window.openDebugScenesView = openDebugScenesView;
 window.updateNPCStatus = updateNPCStatus;
 window.updateWorldState = updateWorldState;
+window.fetchLatestSessionState = fetchLatestSessionState;
+window.showEmptyDebugState = showEmptyDebugState;

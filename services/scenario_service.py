@@ -3,6 +3,7 @@ import time
 import logging
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
+from sqlalchemy.orm import Session
 
 from config import DEFAULT_PLAYER_VARS
 from models import SessionLocal, Scenario, ScenarioHistory, TempScenario
@@ -339,3 +340,49 @@ class ScenarioService:
         if timestamp <= 0: return ""
         dt = datetime.fromtimestamp(timestamp)
         return dt.strftime('%Y-%m-%d %H:%M')
+
+    @staticmethod
+    def get_scenario_for_view(scenario_id: int, user_id: str = None, db: Session = None) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """
+        뷰(view) 전용 시나리오 로드 - debug_scenes_view에서 사용
+        편집 권한 체크 없이 읽기 전용으로 시나리오 데이터만 반환
+        """
+        should_close_db = False
+        if db is None:
+            db = SessionLocal()
+            should_close_db = True
+
+        try:
+            scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
+
+            if not scenario:
+                return None, "시나리오를 찾을 수 없습니다."
+
+            # 접근 권한 체크 (공개 시나리오이거나 작성자 본인이면 허용)
+            is_accessible = False
+            if scenario.is_public:
+                is_accessible = True
+            elif scenario.author_id is None:
+                is_accessible = True
+            elif user_id and scenario.author_id == user_id:
+                is_accessible = True
+            elif user_id:
+                # 로그인한 사용자는 공개되지 않은 시나리오도 읽기 가능 (디버그 모드)
+                is_accessible = True
+
+            if not is_accessible:
+                return None, "비공개 시나리오입니다. (접근 권한 없음)"
+
+            # 시나리오 데이터 추출
+            full_data = scenario.data
+            s_content = full_data.get('scenario', full_data)
+
+            # 시나리오 데이터만 반환 (player_vars 제외)
+            return s_content, None
+
+        except Exception as e:
+            logger.error(f"Get Scenario for View Error: {e}", exc_info=True)
+            return None, str(e)
+        finally:
+            if should_close_db:
+                db.close()

@@ -116,6 +116,8 @@ class PlayerState(TypedDict):
     model: str  # [추가] 사용 중인 LLM 모델
     stuck_count: int  # [추가] 정체 상태 카운터 (장면 전환 실패 횟수)
     _internal_flags: Dict[str, Any]  # [추가] 내부 플래그 (UI에 노출 안 됨)
+    world_state: Dict[str, Any]  # [추가] WorldState 스냅샷
+    is_game_start: bool  # [추가] 게임 시작 여부 플래그
 
 
 def normalize_text(text: str) -> str:
@@ -320,31 +322,65 @@ def check_victory_condition(user_input: str, scenario: Dict[str, Any], curr_scen
 
 def intent_parser_node(state: PlayerState):
     """
-    [2단계 API 호출 구조로 변경됨]
-    1단계: LLM을 통한 의도 분류 (intent_classifier)
-    - transitions 목록을 참고하여 유저 입력의 의도를 파악
-    - transition/chat/investigate/attack/defend 등으로 분류
+    [계층형 파서로 업그레이드]
+    우선순위:
+    1. 하드코딩 필터 (따옴표, 완전 일치, 인벤토리 검증)
+    2. LLM 의도 분류 (intent_classifier)
+    3. Fast-Track 폴백
     """
 
-    # 0. 상태 초기화 (중요: 이전 턴의 찌꺼기 제거)
-    state['near_miss_trigger'] = None
+    # ✅ 작업 1: 상태 초기화 (중요: 이전 턴의 출력 필드를 무조건 제거)
+    state['near_miss_trigger'] = ''
+    state['npc_output'] = ''
+    state['narrator_output'] = ''
+    state['system_message'] = ''
+    state['critic_feedback'] = ''
+    logger.info("🧹 [CLEANUP] Output fields cleared for new turn")
 
-    # ✅ 작업 3: 턴 시작 시 위치 기록 - world_state.location을 우선 참조
-    world_state = WorldState()
-    if 'world_state' in state and state['world_state']:
-        world_state.from_dict(state['world_state'])
+    # 🔍 [SESSION ISOLATION] WorldState 로컬 인스턴스 생성
+    # ✅ [C] from_dict_new 제거 - 존재하지 않는 메서드 호출 방지
+    session_id = state.get('scenario_id', 'unknown')
+    wsm = WorldState()
+    ws_dict = state.get('world_state') or {}
+    if ws_dict:
+        wsm.from_dict(ws_dict)
+    logger.info(f"🔍 [SESSION ISOLATION] Created local WorldState instance for session: {session_id}")
 
-    # previous_scene_id 할당 시 world_state.location 값이 이전 턴의 위치를 정확히 반영하도록 검수
-    if 'current_scene_id' in state:
-        state['previous_scene_id'] = state['current_scene_id']
-    elif world_state.location:
-        # current_scene_id가 없지만 world_state.location이 있으면 복원
-        state['previous_scene_id'] = world_state.location
-        state['current_scene_id'] = world_state.location
-        logger.info(f"🔄 [INTENT_PARSER] Restored scene from world_state.location: {world_state.location}")
+    # ✅ 작업 2: PlayerState의 current_scene_id를 절대적 진실(Source of Truth)로 믿고, world_state.location을 동기화
+    curr_scene_id_from_state = state.get('current_scene_id', '')
+    ws_location = wsm.location
+
+    # ✅ 작업 2: 위치가 다를 경우, state['current_scene_id']를 기준으로 world_state.location 강제 업데이트
+    if curr_scene_id_from_state and ws_location != curr_scene_id_from_state:
+        logger.warning(
+            f"⚠️ [INTENT_PARSER] Location regression detected! "
+            f"state.current_scene_id: '{curr_scene_id_from_state}' (TRUTH) vs world_state.location: '{ws_location}' (OUTDATED)"
+        )
+        logger.info(f"🔧 [LOCATION SYNC] Forcing world_state.location = '{curr_scene_id_from_state}' (state.current_scene_id is Source of Truth)")
+        wsm.location = curr_scene_id_from_state
+    elif not curr_scene_id_from_state and ws_location:
+        # current_scene_id가 비어있으면 world_state.location으로 복원
+        logger.info(f"🔄 [INTENT_PARSER] Restored scene from world_state.location: {ws_location}")
+        state['current_scene_id'] = ws_location
+        curr_scene_id_from_state = ws_location
+    elif not curr_scene_id_from_state and not ws_location:
+        # ✅ 작업 2: 둘 다 비어있을 때만 기본값 설정 (Scene-1 회귀 방지)
+        logger.warning("⚠️ [INTENT_PARSER] Both current_scene_id and world_state.location are empty, using 'prologue' as default")
+        curr_scene_id_from_state = 'prologue'
+        state['current_scene_id'] = curr_scene_id_from_state
+        wsm.location = curr_scene_id_from_state
+
+    # previous_scene_id 설정
+    if curr_scene_id_from_state:
+        state['previous_scene_id'] = curr_scene_id_from_state
 
     user_input = state.get('last_user_input', '').strip()
-    logger.info(f"🟢 [USER INPUT]: {user_input}")
+
+    # ✅ 정합성 로그
+    logger.info(f"🟢 [INTENT_PARSER START] USER INPUT: '{user_input}' | Scene: '{curr_scene_id_from_state}' (from state.current_scene_id - SOURCE OF TRUTH)")
+
+    # ✅ 노드 종료 전 world_state 저장
+    state['world_state'] = wsm.to_dict()
 
     if not user_input:
         state['parsed_intent'] = 'chat'
@@ -378,7 +414,82 @@ def intent_parser_node(state: PlayerState):
     enemy_names = curr_scene.get('enemies', [])
 
     # =============================================================================
-    # [1단계 API 호출] LLM을 통한 의도 분류
+    # [작업 1] 하드코딩 기반 고우선순위 필터링
+    # =============================================================================
+
+    # ✅ [작업 2] 하드코드 필터 시작 시 대상 장면 ID 로그 출력
+    logger.info(f"🎯 [HARDCODE FILTER START] Filtering based on scene: '{curr_scene_id}' | Total transitions: {len(transitions)}")
+
+    # 1-1. 따옴표 감지 -> 무조건 'chat' (대사/대화)
+    if '"' in user_input or "'" in user_input or '"' in user_input or '"' in user_input or ''' in user_input or ''' in user_input:
+        logger.info(f"🎤 [HARDCODE FILTER] 따옴표 감지 -> 'chat' 강제 분류 (scene: '{curr_scene_id}')")
+        state['parsed_intent'] = 'chat'
+        return state
+
+    # 1-2. transitions와 100% 완전 일치 -> 즉시 'transition'
+    norm_input = normalize_text(user_input)
+    for idx, trans in enumerate(transitions):
+        trigger = trans.get('trigger', '').strip()
+        if not trigger:
+            continue
+        norm_trigger = normalize_text(trigger)
+
+        if norm_input == norm_trigger:
+            logger.info(f"🎯 [HARDCODE FILTER] 100% 일치 감지 -> '{trigger}' (idx={idx}, scene: '{curr_scene_id}')")
+            state['last_user_choice_idx'] = idx
+            state['parsed_intent'] = 'transition'
+            return state
+
+    # 1-3. 아이템 사용 키워드 감지 + 인벤토리 검증
+    item_use_keywords = ['사용', '쓰', '뿌리', '던지', '먹', '마시', '착용', '장착']
+    if any(kw in user_input for kw in item_use_keywords):
+        # 인벤토리 확인
+        player_vars = state.get('player_vars', {})
+        inventory = player_vars.get('inventory', [])
+
+        # 유저 입력에서 아이템 이름 추출 시도 (간단한 휴리스틱)
+        has_item_in_inventory = False
+        extracted_item = None
+
+        # 인벤토리에 있는 아이템이 입력에 포함되어 있는지 확인
+        for item in inventory:
+            if str(item) in user_input:
+                has_item_in_inventory = True
+                extracted_item = item
+                break
+
+        # transitions에 아이템 사용이 필요한 경우 확인
+        for trans in transitions:
+            trigger = trans.get('trigger', '').strip().lower()
+            # trigger에 아이템 이름이 있는지 확인
+            for item in inventory:
+                if str(item).lower() in trigger:
+                    has_item_in_inventory = True
+                    break
+
+        # 아이템 사용 시도인데 인벤토리에 없으면 chat으로 거부
+        if not has_item_in_inventory and inventory != None:  # 인벤토리가 비어있지 않은 경우에만
+            # transitions에서 필요한 아이템 추출 시도
+            required_items = []
+            for trans in transitions:
+                trigger_text = trans.get('trigger', '')
+                # 간단한 패턴으로 아이템 추출 (개선 가능)
+                for word in trigger_text.split():
+                    if word and word not in ['을', '를', '사용', '던지', '뿌리']:
+                        if word not in [str(i) for i in inventory]:
+                            required_items.append(word)
+
+            if required_items:
+                logger.info(f"🚫 [HARDCODE FILTER] 인벤토리에 없는 아이템 사용 시도 -> 'chat' 강제 분류 (scene: '{curr_scene_id}')")
+                state['parsed_intent'] = 'chat'
+                state['system_message'] = f"⚠️ 인벤토리에 필요한 아이템이 없습니다."
+                return state
+
+    # ✅ [작업 2] 하드코드 필터 종료 로그
+    logger.info(f"🎯 [HARDCODE FILTER END] No hardcode match found in scene '{curr_scene_id}', proceeding to LLM classifier")
+
+    # =============================================================================
+    # [작업 2] LLM을 통한 의도 분류 (2단계 API 호출)
     # =============================================================================
 
     try:
@@ -402,7 +513,7 @@ def intent_parser_node(state: PlayerState):
         if not intent_classifier_template:
             # 프롬프트 로드 실패 시 기존 Fast-Track 방식 사용
             logger.warning("⚠️ intent_classifier prompt not found, falling back to fast-track")
-            return _fast_track_intent_parser(state, user_input, curr_scene, scenario, endings)
+            return _fast_track_intent_parser(state, user_input, curr_scene, get_scenario_by_id(scenario_id), endings)
 
         # 프롬프트 생성
         scenario = get_scenario_by_id(scenario_id)
@@ -428,7 +539,7 @@ def intent_parser_node(state: PlayerState):
 
         # JSON 파싱 시도
         # JSON이 마크다운 코드블록에 싸여있을 수 있으므로 추출
-        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        json_match = re.search(r'\{.*}', response, re.DOTALL)
         if json_match:
             json_str = json_match.group(0)
             intent_result = json.loads(json_str)
@@ -490,11 +601,14 @@ def intent_parser_node(state: PlayerState):
 
     except Exception as e:
         logger.error(f"❌ [INTENT CLASSIFIER] Error: {e}, falling back to fast-track")
-        return _fast_track_intent_parser(state, user_input, curr_scene, scenario, endings)
+        return _fast_track_intent_parser(state, user_input, curr_scene, get_scenario_by_id(scenario_id), endings)
 
 
 def _fast_track_intent_parser(state: PlayerState, user_input: str, curr_scene: Dict, scenario: Dict, endings: Dict):
-    """기존 Fast-Track 의도 파서 (폴백용)"""
+    """
+    기존 Fast-Track 의도 파서 (폴백용)
+    ✅ [작업 3] Near Miss 로직 강화 - 0.4~0.6 구간에서 trigger 전체 문구 저장
+    """
     norm_input = normalize_text(user_input)
     transitions = curr_scene.get('transitions', [])
     scene_type = curr_scene.get('type', 'normal')
@@ -570,11 +684,13 @@ def _fast_track_intent_parser(state: PlayerState, user_input: str, curr_scene: D
         state['parsed_intent'] = 'transition'
         return state
 
-    # 0.4 ~ 0.59: Near Miss
+    # ✅ [작업 3] 0.4 ~ 0.59: Near Miss - 가장 가까운 트리거 전체 문구 저장
     elif highest_ratio >= 0.4:
-        logger.info(f"⚡ [FAST-TRACK] Near Miss ({highest_ratio:.2f}): '{user_input}' vs '{best_trigger_text}'")
+        logger.info(f"⚠️ [NEAR MISS] Similarity: {highest_ratio:.2f} | User: '{user_input}' vs Trigger: '{best_trigger_text}'")
+        # 트리거 전체 문구를 저장하여 나레이션 노드에서 힌트 제공
         state['near_miss_trigger'] = best_trigger_text
         state['parsed_intent'] = 'chat'
+        logger.info(f"💡 [HINT] near_miss_trigger set to: '{best_trigger_text}' (나레이션에서 힌트 제공 예정)")
         return state
 
     # 매칭 실패 -> 일반 채팅/힌트
@@ -607,6 +723,22 @@ def rule_node(state: PlayerState):
         scenario = get_scenario_by_id(scenario_id)
         world_state.initialize_from_scenario(scenario)
 
+    # ✅ [작업 1-1] 턴 시작 시점에 실제 현재 위치를 명시적으로 캡처 (이것이 진실!)
+    actual_current_location = world_state.location
+    logger.info(f"📍 [RULE_NODE START] Captured actual_current_location: '{actual_current_location}' (from world_state.location)")
+
+    # ✅ [작업 1-3] 턴 시작 시 위치 정보 검증 - world_state.location과 state['current_scene_id'] 일치 확인
+    if state['current_scene_id'] != actual_current_location:
+        logger.warning(
+            f"⚠️ [LOCATION MISMATCH] state['current_scene_id']: '{state['current_scene_id']}' "
+            f"!= world_state.location: '{actual_current_location}'"
+        )
+        logger.info(f"🔧 [LOCATION FIX] Forcing state['current_scene_id'] = '{actual_current_location}'")
+        state['current_scene_id'] = actual_current_location
+        curr_scene_id = actual_current_location
+        curr_scene = all_scenes.get(curr_scene_id)
+        transitions = curr_scene.get('transitions', []) if curr_scene else []
+
     # ✅ [작업 1] 턴 카운트 증가 로직을 함수 시작 부분으로 이동
     # 게임 시작이 아닐 때만 턴 증가 (Game Started는 Turn 1을 가져감)
     is_game_start = state.get('is_game_start', False)
@@ -621,10 +753,8 @@ def rule_node(state: PlayerState):
         state['stuck_count'] = 0
         logger.info(f"🔧 [STUCK_COUNT] Initialized to 0")
 
-    # 🔴 장면 전환 시도 전 현재 씬을 정확히 캡처 (world_state.location 우선)
-    scene_before_transition = world_state.location or state.get('current_scene_id', '')
     user_action = state.get('last_user_input', '').strip()
-    logger.info(f"🎬 [APPLY_EFFECTS] Scene before transition: {scene_before_transition}, Intent: {state['parsed_intent']}, Transition index: {idx}")
+    logger.info(f"🎬 [APPLY_EFFECTS] Scene before transition: {actual_current_location}, Intent: {state['parsed_intent']}, Transition index: {idx}")
 
     # ✅ 작업 2: investigate 의도 처리 - Scene Rule에서 스탯 변동 패싱 및 적용
     if state['parsed_intent'] == 'investigate':
@@ -761,16 +891,26 @@ def rule_node(state: PlayerState):
 
         # 씬 이동
         if next_id:
-            # 🔴 이동 전 현재 위치를 scene_before_transition에서 가져오기
-            from_scene = scene_before_transition
+            # ✅ [작업 1-2] 장면 전환 성공 시 내러티브 기록의 from_scene은 반드시 actual_current_location 사용
+            from_scene = actual_current_location
+            logger.info(f"🔄 [TRANSITION] Using actual_current_location '{from_scene}' as from_scene for narrative")
 
             state['current_scene_id'] = next_id
             world_state.location = next_id
 
-            # ✅ 작업 3: 장면 전환 성공 시 서사 이벤트 기록 (이동 이유 포함)
-            world_state.add_narrative_event(
-                f"유저가 '{trigger_used}'을(를) 통해 [{from_scene}]에서 [{next_id}]로 이동함"
-            )
+            # ✅ 작업 2: 장면 전환 성공 시 이전 씬의 출력 필드 명시적으로 제거
+            state['npc_output'] = ''
+            state['narrator_output'] = ''
+            logger.info("🧹 [TRANSITION CLEANUP] Cleared output fields after scene transition")
+
+            # ✅ [작업 4] 실제 이동이 일어난 경우에만 내러티브 기록 (from_scene != next_id)
+            if from_scene != next_id:
+                world_state.add_narrative_event(
+                    f"유저가 '{trigger_used}'을(를) 통해 [{from_scene}]에서 [{next_id}]로 이동함"
+                )
+                logger.info(f"📖 [NARRATIVE] Recorded transition: [{from_scene}] -> [{next_id}] via '{trigger_used}'")
+            else:
+                logger.info(f"📖 [NARRATIVE] Skipped recording - same scene: [{from_scene}] == [{next_id}]")
 
             # ✅ 작업 2: 장면 전환 성공 시 stuck_count 초기화
             old_stuck_count = state.get('stuck_count', 0)
@@ -791,7 +931,7 @@ def rule_node(state: PlayerState):
         if user_action:
             old_stuck_count = state.get('stuck_count', 0)
             state['stuck_count'] = old_stuck_count + 1
-            logger.info(f"🔄 [STUCK] Player stuck in scene '{scene_before_transition}' | Intent: {state['parsed_intent']} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+            logger.info(f"🔄 [STUCK] Player stuck in scene '{actual_current_location}' | Intent: {state['parsed_intent']} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
 
             # 서사 이벤트 기록
             world_state.add_narrative_event(
@@ -823,9 +963,29 @@ def rule_node(state: PlayerState):
 
     logger.info(f"🎬 [DATA_SYNC] Synchronized world_state.location to {world_state.location}")
 
+    # ✅ [작업 3] 최종 세이브 포인트 - 노드 끝나기 직전에 위치 일치 검증 및 강제
+    final_scene_id = state.get('current_scene_id', '')
+    final_ws_location = world_state.location
+
+    if final_scene_id != final_ws_location:
+        logger.error(
+            f"❌ [FINAL SYNC ERROR] Mismatch detected before save! "
+            f"state['current_scene_id']: '{final_scene_id}' vs world_state.location: '{final_ws_location}'"
+        )
+        # 강제로 world_state.location을 current_scene_id로 동기화 (state를 진실로 간주)
+        world_state.location = final_scene_id
+        logger.info(f"🔧 [FINAL SYNC FIX] Forced world_state.location = '{final_scene_id}'")
+
+    # Assert: 최종 일치 확인
+    assert state['current_scene_id'] == world_state.location, (
+        f"[CRITICAL] Final location mismatch! "
+        f"state: {state['current_scene_id']}, world_state: {world_state.location}"
+    )
+    logger.info(f"✅ [FINAL ASSERT] Location verified: state['current_scene_id'] == world_state.location == '{world_state.location}'")
+
     # ✅ WorldState 스냅샷 저장 (위치 동기화 후 저장)
     state['world_state'] = world_state.to_dict()
-    logger.info(f"🔄 [SYNC] Location synchronized: world_state.location = {world_state.location}, state['current_scene_id'] = {state.get('current_scene_id')}")
+    logger.info(f"💾 [DB SNAPSHOT] Saved final state to DB with location: {world_state.location}")
 
     return state
 
@@ -1061,9 +1221,30 @@ NPC ({target_npc_name}): "{response}"
 
     logger.info(f"🎬 [DATA_SYNC] Synchronized world_state.location to {world_state.location}")
 
+    # ✅ [작업 3] 최종 세이브 포인트 - 노드 끝나기 직전에 위치 일치 검증 및 강제
+    final_scene_id = state.get('current_scene_id', '')
+    final_ws_location = world_state.location
+
+    if final_scene_id != final_ws_location:
+        logger.error(
+            f"❌ [NPC_NODE FINAL SYNC ERROR] Mismatch detected before save! "
+            f"state['current_scene_id']: '{final_scene_id}' vs world_state.location: '{final_ws_location}'"
+        )
+        # 강제로 world_state.location을 current_scene_id로 동기화 (state를 진실로 간주)
+        world_state.location = final_scene_id
+        logger.info(f"🔧 [NPC_NODE FINAL SYNC FIX] Forced world_state.location = '{final_scene_id}'")
+
+    # Assert: 최종 일치 확인
+    assert state['current_scene_id'] == world_state.location, (
+        f"[CRITICAL] NPC_NODE final location mismatch! "
+        f"state: {state['current_scene_id']}, world_state: {world_state.location}"
+    )
+    logger.info(f"✅ [NPC_NODE FINAL ASSERT] Location verified: state['current_scene_id'] == world_state.location == '{world_state.location}'")
+
     # WorldState 스냅샷 저장 (위치 동기화 후 저장)
     state['world_state'] = world_state.to_dict()
     logger.info(f"🔄 [SYNC] Location synchronized in npc_node: world_state.location = {world_state.location}, stuck_count = {world_state.stuck_count}")
+    logger.info(f"💾 [DB SNAPSHOT] Saved final state to DB with location: {world_state.location}")
 
     return state
 
@@ -1389,6 +1570,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         # [2단계] parsed_intent에 따라 전용 프롬프트 선택
         prompt_template = None
         prompt_key = None
+        narrative_prompt = ""  # 초기화
 
         if parsed_intent == 'investigate':
             # 조사/탐색 행동
@@ -1436,9 +1618,10 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                     player_status=player_status,
                     near_miss_trigger=near_miss
                 )
+                logger.info(f"🎬 [NARRATIVE] Using prompt: near_miss for near miss situation")
 
         # 의도별 프롬프트가 설정되었으면 LLM 스트리밍
-        if prompt_template and 'narrative_prompt' in locals():
+        if prompt_template and 'narrative_prompt' in locals() and narrative_prompt:
             try:
                 api_key = os.getenv("OPENROUTER_API_KEY")
                 model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')

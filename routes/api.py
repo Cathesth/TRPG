@@ -23,7 +23,7 @@ from starlette.concurrency import run_in_threadpool
 
 # 빌더 에이전트 및 코어 유틸리티
 from builder_agent import generate_scenario_from_graph, set_progress_callback, generate_single_npc
-from core.state import game_state
+from core.state import GameState
 from core.utils import parse_request_data, pick_start_scene_id, validate_scenario_graph, can_publish_scenario
 from game_engine import create_game_graph
 
@@ -778,9 +778,11 @@ async def get_scenarios_data(
 @api_router.post('/load_scenario')
 async def load_scenario(
         filename: str = Form(...),
-        user: CurrentUser = Depends(get_current_user_optional)
+        user: CurrentUser = Depends(get_current_user_optional),
+        db: Session = Depends(get_db)  # ✅ DB 의존성 추가
 ):
-
+    import uuid
+    from core.state import WorldState
 
     user_id = user.id if user.is_authenticated else None
     result, error = ScenarioService.load_scenario(filename, user_id)
@@ -790,39 +792,29 @@ async def load_scenario(
     scenario = result['scenario']
     start_id = pick_start_scene_id(scenario)
 
-    # ============================================
-    # 🔥 새로운 세션 ID 생성 (기존 세션 완전히 무시)
-    # ============================================
+    # ✅ 세션별 독립 인스턴스: 새로운 세션 ID 생성
     new_session_key = str(uuid.uuid4())
     logger.info(f"🆕 [LOAD_SCENARIO] Creating new session: {new_session_key}")
 
-    # ============================================
-    # 🔄 GameState 완전 초기화
-    # ============================================
-    game_state.clear()  # 싱글톤 인스턴스 초기화
-    game_state.config['title'] = scenario.get('title', 'Loaded')
+    # ✅ WorldState 초기화 (세션별 독립 인스턴스)
+    world_state_instance = WorldState()
+    world_state_instance.reset()
+    world_state_instance.initialize_from_scenario(scenario)
+    logger.info(f"🌍 [LOAD_SCENARIO] WorldState reset and initialized")
+
+    # ✅ GameState 초기화 (세션별 독립 인스턴스)
+    game_state_instance = GameState()
+    game_state_instance.config['title'] = scenario.get('title', 'Loaded')
 
     # [경량화] scenario 전체 대신 scenario_id만 저장
     scenario_id = scenario.get('id', 0)
 
-    # ============================================
-    # 🔄 WorldState 완전 초기화 (싱글톤 인스턴스 리셋)
-    # ============================================
-    world_state_instance = WorldState()
-    world_state_instance.reset()  # 기존 데이터 완전 삭제
-    world_state_instance.initialize_from_scenario(scenario)
-    logger.info(f"🌍 [LOAD_SCENARIO] WorldState reset and initialized")
-
-    # ============================================
-    # 📝 새로운 player_state 생성
-    # ============================================
-    game_state.state = {
-        "scenario_id": scenario_id,  # [경량화] ID만 저장
+    # ✅ player_state 생성 (세션 데이터로 반환)
+    player_state = {
+        "scenario_id": scenario_id,
         "current_scene_id": "prologue",
         "start_scene_id": start_id,
         "player_vars": result['player_vars'],
-        # [경량화] world_state 제거 - WorldState 싱글톤 인스턴스에서 관리
-        # [경량화] history 제거 - WorldState에서 관리
         "last_user_choice_idx": -1,
         "last_user_input": "",
         "parsed_intent": "",
@@ -834,35 +826,38 @@ async def load_scenario(
         "chat_log_html": "",
         "near_miss_trigger": None,
         "model": "openai/tngtech/deepseek-r1t2-chimera:free",
-        "_internal_flags": {}
+        "_internal_flags": {},
+        "stuck_count": 0,
+        "world_state": world_state_instance.to_dict()  # ✅ world_state 포함
     }
-    game_state.game_graph = create_game_graph()
 
-    # ============================================
-    # 💾 DB에 새로운 세션 저장 (완전히 새로운 세션으로 강제)
-    # ============================================
-    db = next(get_db())
+    # ✅ GameState 직렬화 데이터 포함
+    game_state_data = {
+        "config": game_state_instance.config,
+        "state": player_state
+    }
+
+    # ✅ [핵심 수정] DB에 세션 저장 (순환 import 방지를 위해 지역 import)
+    from routes.game import save_game_session
+
     try:
-        saved_session_key = save_game_session(
-            db=db,
-            state=game_state.state.copy(),
-            user_id=user_id,
-            session_key=new_session_key  # 새로운 세션 키 강제 사용
-        )
-        logger.info(f"✅ [LOAD_SCENARIO] New session saved to DB: {saved_session_key}")
+        saved_key = save_game_session(db, player_state, user_id=user_id, session_key=new_session_key)
+        logger.info(f"✅ [LOAD_SCENARIO] Session persisted to DB: {saved_key} (scenario_id={scenario_id})")
     except Exception as e:
-        logger.error(f"❌ [LOAD_SCENARIO] Failed to save session: {e}")
-        saved_session_key = new_session_key
-    finally:
-        db.close()
+        logger.error(f"❌ [LOAD_SCENARIO] Failed to save session to DB: {e}")
+        # DB 저장 실패해도 클라이언트에는 세션 키 반환 (첫 턴에서 재시도)
+        saved_key = new_session_key
 
-    # ============================================
-    # 🎯 클라이언트에 새로운 세션 ID 반환 (이후 요청에서 사용)
-    # ============================================
+    logger.info(f"✅ [LOAD_SCENARIO] State initialized (session-independent)")
+
+    # ✅ 클라이언트에 세션 데이터 반환
     return {
         "success": True,
-        "session_key": saved_session_key,
-        "message": "New game session created. Previous session data cleared."
+        "session_key": saved_key,  # ✅ DB에 저장된 키 반환
+        "scenario_id": scenario_id,
+        "game_state": game_state_data,
+        "player_vars": result['player_vars'],
+        "start_scene_id": start_id
     }
 
 
@@ -897,6 +892,9 @@ async def update_scenario(scenario_id: str, request: Request, user: CurrentUser 
 
 @api_router.post('/init_game')
 async def init_game(request: Request, user: CurrentUser = Depends(get_current_user_optional)):
+    import uuid
+    from core.state import WorldState, GameState
+
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         return JSONResponse({"error": "API Key 없음"}, status_code=400)
@@ -922,26 +920,26 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
             update_build_progress(status="error", detail=f"저장 오류: {error}")
             return JSONResponse({"error": error}, status_code=500)
 
-        game_state.config['title'] = scenario_json.get('title')
+        # ✅ 세션별 독립 인스턴스 생성
+        new_session_key = str(uuid.uuid4())
+        game_state_instance = GameState()
+        game_state_instance.config['title'] = scenario_json.get('title')
 
         # [경량화] scenario 전체 대신 scenario_id만 저장
         scenario_id = scenario_json.get('id', 0)
         start_scene_id = pick_start_scene_id(scenario_json)
 
-        # [FIX] WorldState 초기화
-        from core.state import WorldState
+        # WorldState 초기화
         world_state_instance = WorldState()
         world_state_instance.reset()
         world_state_instance.initialize_from_scenario(scenario_json)
 
-        # [경량화] player_state에는 world_state와 history를 포함하지 않음
-        game_state.state = {
-            "scenario_id": scenario_id,  # [경량화] ID만 저장
+        # player_state 생성
+        player_state = {
+            "scenario_id": scenario_id,
             "current_scene_id": start_scene_id,
             "start_scene_id": start_scene_id,
             "player_vars": {},
-            # [경량화] world_state 제거 - WorldState 싱글톤 인스턴스에서 관리
-            # [경량화] history 제거 - WorldState에서 관리
             "last_user_choice_idx": -1,
             "last_user_input": "",
             "parsed_intent": "",
@@ -953,12 +951,24 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
             "chat_log_html": "",
             "near_miss_trigger": None,
             "model": selected_model,
-            "_internal_flags": {}
+            "_internal_flags": {},
+            "stuck_count": 0
         }
-        game_state.game_graph = create_game_graph()
+
+        # GameState 직렬화 데이터
+        game_state_data = {
+            "config": game_state_instance.config,
+            "state": player_state
+        }
 
         update_build_progress(status="completed", step="완료", detail="생성 완료!", progress=100)
-        return {"status": "success", "filename": fid, **scenario_json}
+        return {
+            "status": "success",
+            "filename": fid,
+            "session_key": new_session_key,
+            "game_state": game_state_data,
+            **scenario_json
+        }
 
     except Exception as e:
         logger.error(f"Init Error: {e}")
@@ -1091,10 +1101,11 @@ async def delete_preset(request: Request, user: CurrentUser = Depends(get_curren
 
 @api_router.post('/load_preset')
 async def load_preset_old(filename: str = Form(...), db: Session = Depends(get_db)):
+    """레거시 프리셋 로드 API (사용 빈도 낮음 - 단순 메시지 반환)"""
     try:
         preset = db.query(Preset).filter(Preset.filename == filename).first()
         if not preset: return HTMLResponse('<div class="error">로드 실패</div>')
-        game_state.config['title'] = preset.name
+        # 전역 game_state 제거 - 단순 성공 메시지만 반환
         return HTMLResponse(
             f'<div class="success">프리셋 로드 완료! "{preset.name}"</div><script>lucide.createIcons();</script>')
     except Exception as e:
