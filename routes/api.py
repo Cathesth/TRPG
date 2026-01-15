@@ -333,27 +333,58 @@ def get_billing_view():
 
 
 # ==========================================
-# [API 라우트] 인증 (Auth)
+# [API 라우트] 인증 (Auth) - 직접 구현으로 변경
 # ==========================================
 @api_router.post('/auth/register')
-async def register(data: AuthRequest):
+async def register(data: AuthRequest, db: Session = Depends(get_db)):
     if not data.username or not data.password:
         return JSONResponse({"success": False, "error": "입력값 부족"}, status_code=400)
-    if UserService.create_user(data.username, data.password, data.email):
+
+    # 1. 중복 아이디 확인
+    existing_user = db.query(User).filter(User.id == data.username).first()
+    if existing_user:
+        return JSONResponse({"success": False, "error": "이미 존재하는 아이디"}, status_code=400)
+
+    try:
+        # 2. 비밀번호 해싱 및 사용자 생성
+        hashed_password = pwd_context.hash(data.password)
+        new_user = User(
+            id=data.username,
+            password_hash=hashed_password,
+            email=data.email
+        )
+        db.add(new_user)
+        db.commit()
         return {"success": True}
-    return JSONResponse({"success": False, "error": "이미 존재하는 아이디"}, status_code=400)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Register Error: {e}")
+        return JSONResponse({"success": False, "error": "회원가입 처리 중 오류가 발생했습니다."}, status_code=500)
 
 
 @api_router.post('/auth/login')
-async def login(request: Request, data: AuthRequest):
+async def login(request: Request, data: AuthRequest, db: Session = Depends(get_db)):
     if not data.username or not data.password:
         return JSONResponse({"success": False, "error": "입력값 부족"}, status_code=400)
 
-    user = UserService.verify_user(data.username, data.password)
-    if user:
-        login_user(request, user)
-        return {"success": True}
-    return JSONResponse({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}, status_code=401)
+    # 1. 사용자 조회 (UserService 대신 직접 DB 조회)
+    user = db.query(User).filter(User.id == data.username).first()
+
+    if not user or not user.password_hash:
+        return JSONResponse({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}, status_code=401)
+
+    # 2. 비밀번호 검증 (직접 검증하여 'Invalid hash method' 에러 방지)
+    try:
+        if not pwd_context.verify(data.password, user.password_hash):
+            return JSONResponse({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}, status_code=401)
+    except Exception as e:
+        logger.error(f"Login Verify Error: {e}")
+        # 해시값이 깨져있거나 비어있는 경우 로그인 실패 처리
+        return JSONResponse({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}, status_code=401)
+
+    # 3. 세션 로그인 처리
+    login_user(request, user)
+    return {"success": True}
 
 
 @api_router.post('/auth/logout')
