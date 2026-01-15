@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, create_engine
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, create_engine, text
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import JSON
@@ -282,6 +282,18 @@ def create_tables():
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("✅ All database tables created successfully")
+
+        # 2. [추가] users 테이블에 avatar_url 컬럼이 없으면 추가 (Auto Migration)
+        with engine.connect() as conn:
+            try:
+                # PostgreSQL 쿼리로 컬럼 추가 시도
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(255)"))
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(120)"))
+                conn.commit()
+                logger.info("✅ Checked/Added 'avatar_url' and 'email' columns to 'users' table.")
+            except Exception as ex:
+                logger.warning(f"⚠️ Column migration warning (SQLite or already exists): {ex}")
+
     except Exception as e:
         logger.error(f"❌ Failed to create tables: {e}")
         raise
