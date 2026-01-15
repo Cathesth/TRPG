@@ -56,7 +56,9 @@ function clearAllGameState() {
     sessionStorage.removeItem(CHAT_LOG_KEY);
     sessionStorage.removeItem(SCENARIO_LOADED_KEY);
     sessionStorage.removeItem(CURRENT_SCENARIO_KEY);
+    sessionStorage.removeItem(CURRENT_SCENARIO_ID_KEY);  // ✅ 추가
     sessionStorage.removeItem('trpg_session_key');
+    sessionStorage.removeItem('current_session_id');  // ✅ 추가
     sessionStorage.removeItem(GAME_ENDED_KEY);
     sessionStorage.removeItem('trpg_world_state');
     sessionStorage.removeItem('trpg_player_stats');
@@ -65,6 +67,7 @@ function clearAllGameState() {
     // 메모리 변수도 초기화
     currentSessionId = null;
     currentSessionKey = '';
+    currentScenarioId = null;  // ✅ 추가
 
     console.log('🧹 All game state cleared (including session ID)');
 }
