@@ -49,8 +49,8 @@ class RedisClient:
             return
 
         try:
-            # 연결 풀 생성 (성능 최적화)
-            self.pool = aioredis.ConnectionPool.from_url(
+            # ✅ [작업 1] aioredis.from_url 직접 호출 방식으로 수정
+            self.client = await aioredis.from_url(
                 self.redis_url,
                 encoding="utf-8",
                 decode_responses=True,
@@ -59,17 +59,13 @@ class RedisClient:
                 socket_timeout=5
             )
 
-            # 연결 풀을 사용하는 클라이언트 생성
-            self.client = aioredis.Redis(connection_pool=self.pool)
-
             # 연결 테스트
             await self.client.ping()
             self.is_connected = True
-            logger.info("✅ [REDIS] Connected successfully with connection pool")
+            logger.info("✅ [REDIS] Connected successfully with aioredis.from_url")
         except Exception as e:
             logger.error(f"❌ [REDIS] Connection failed: {e}")
             self.client = None
-            self.pool = None
             self.is_connected = False
 
     async def disconnect(self):
@@ -82,15 +78,6 @@ class RedisClient:
                 logger.error(f"❌ [REDIS] Client disconnect error: {e}")
             finally:
                 self.client = None
-
-        if self.pool:
-            try:
-                await self.pool.disconnect()
-                logger.info("🔌 [REDIS] Connection pool closed")
-            except Exception as e:
-                logger.error(f"❌ [REDIS] Pool disconnect error: {e}")
-            finally:
-                self.pool = None
 
         self.is_connected = False
 
@@ -190,3 +177,16 @@ class RedisClient:
 
 # 전역 인스턴스 (FastAPI 앱에서 사용)
 redis_client = RedisClient()
+
+
+# ✅ [작업 1] 엔진에서 호출할 수 있는 비동기 함수 추가
+async def get_redis_client() -> RedisClient:
+    """
+    Redis 클라이언트를 반환하는 비동기 함수
+    호출 시 자동으로 연결을 시도함
+
+    Returns:
+        RedisClient 인스턴스
+    """
+    await redis_client.connect()
+    return redis_client
