@@ -591,13 +591,43 @@ def intent_parser_node(state: PlayerState):
                     state['target_npc'] = target_npc
                     logger.info(f"🎯 [ATTACK] Target NPC saved: '{target_npc}'")
                 else:
+                    # ========================================
+                    # 💡 작업 4: target_npc 추출 보강 - 자동 타겟팅
+                    # ========================================
                     # target_npc가 없으면 현재 씬의 NPC/적 목록에서 추출 시도
                     npc_list = npc_names + enemy_names
+
+                    # 1차: user_input에서 NPC 이름 직접 매칭
                     for npc_name in npc_list:
                         if npc_name in user_input or npc_name.replace(' ', '').lower() in user_input.lower().replace(' ', ''):
                             state['target_npc'] = npc_name
                             logger.info(f"🎯 [ATTACK] Target extracted from input: '{npc_name}'")
                             break
+
+                    # 2차: WorldState.find_npc_key 활용 (퍼지 매칭)
+                    if not state.get('target_npc'):
+                        wsm = WorldState()
+                        if state.get('world_state'):
+                            wsm.from_dict(state['world_state'])
+
+                        for word in user_input.split():
+                            potential_target = wsm.find_npc_key(word)
+                            if potential_target and potential_target in npc_list:
+                                state['target_npc'] = potential_target
+                                logger.info(f"🎯 [ATTACK] Target found via find_npc_key: '{potential_target}'")
+                                break
+
+                    # 3차: 자동 타겟팅 - 현재 씬의 첫 번째 NPC/적 선택
+                    if not state.get('target_npc') and npc_list:
+                        # 우선순위: enemies > npcs
+                        if enemy_names:
+                            state['target_npc'] = enemy_names[0]
+                            logger.info(f"🎯 [ATTACK] Auto-targeting first enemy: '{enemy_names[0]}'")
+                        elif npc_names:
+                            state['target_npc'] = npc_names[0]
+                            logger.info(f"🎯 [ATTACK] Auto-targeting first NPC: '{npc_names[0]}'")
+
+                    # 4차: 여전히 못찾으면 경고
                     if not state.get('target_npc'):
                         state['target_npc'] = ''
                         logger.warning(f"⚠️ [ATTACK] No target found in input: '{user_input}'")
@@ -1086,6 +1116,23 @@ def npc_node(state: PlayerState):
     if 'world_state' in state and state['world_state']:
         world_state.from_dict(state['world_state'])
 
+    # ========================================
+    # 💀 작업 1: 죽은 NPC 대사 차단
+    # ========================================
+    target_npc = state.get('target_npc', '')
+
+    # target_npc가 설정된 경우 NPC 상태 체크
+    if target_npc:
+        npc_state = world_state.get_npc_state(target_npc)
+        if npc_state and npc_state.get('status') == 'dead':
+            logger.info(f"💀 [NPC_NODE] {target_npc} is dead, blocking dialogue generation")
+            state['npc_output'] = f"[{target_npc}] (차갑게 식어버린 시체입니다. 더 이상 아무 말도 하지 않습니다.)"
+
+            # world_state 저장
+            world_state.location = state.get("current_scene_id", world_state.location)
+            state['world_state'] = world_state.to_dict()
+            return state
+
     # ✅ [작업 1] 턴 카운트 증가 로직을 함수 시작 부분으로 이동
     # 게임 시작이 아닐 때만 턴 증가 (Game Started는 Turn 1을 가져감)
     is_game_start = state.get('is_game_start', False)
@@ -1237,7 +1284,7 @@ def npc_node(state: PlayerState):
         world_state.stuck_count = state.get("stuck_count", 0)
         state['world_state'] = world_state.to_dict()
         logger.info(f"🔄 [SYNC] Location synchronized in npc_node (early return): world_state.location = {world_state.location}, stuck_count = {world_state.stuck_count}")
-        return state
+        return
 
     # 기존 NPC 대화 로직
     curr_id = state['current_scene_id']

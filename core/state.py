@@ -763,6 +763,8 @@ class WorldState:
         Returns:
             전투 결과 텍스트 (예: "노인 J에게 4 피해! (HP 10 -> 6)")
         """
+        import random
+
         # NPC 키 찾기
         npc_key = self.find_npc_key(npc_name)
 
@@ -815,6 +817,29 @@ class WorldState:
             result_text += f"\n💀 {npc_key}는 쓰러져 죽었습니다."
             logger.info(f"🪦 [COMBAT] {npc_key} has been killed. HP: {old_hp} -> 0")
         else:
+            # ========================================
+            # 💥 작업 2: NPC 반격 로직 (살아있을 때만)
+            # ========================================
+            # 70% 확률로 반격
+            if random.random() < 0.7:
+                counter_damage = random.randint(5, 15)
+
+                # 플레이어 HP 감소
+                player_hp = self.player.get("hp", 100)
+                new_player_hp = max(0, player_hp - counter_damage)
+                self.player["hp"] = new_player_hp
+
+                result_text += f"\n⚔️ {npc_key}의 반격! 플레이어가 {counter_damage} 피해를 입었습니다! (HP {player_hp} -> {new_player_hp})"
+                logger.info(f"💥 [COUNTER ATTACK] {npc_key} counter-attacked player: {counter_damage} damage (Player HP: {player_hp} -> {new_player_hp})")
+
+                # 플레이어 사망 체크
+                if new_player_hp <= 0:
+                    result_text += "\n💀 당신은 치명상을 입고 쓰러졌습니다..."
+                    logger.critical(f"💀 [PLAYER DEATH] Player HP reached 0")
+
+                    # 서사 이벤트 기록
+                    self.add_narrative_event(f"{npc_key}의 반격으로 플레이어 사망")
+
             # 살아있다면 적대 상태로 전환
             if not npc.get("is_hostile"):
                 npc["is_hostile"] = True
