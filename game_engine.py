@@ -731,7 +731,7 @@ def _fast_track_intent_parser(state: PlayerState, user_input: str, curr_scene: D
         logger.info(f"⚡ [FAST-TRACK] Fuzzy Match ({highest_ratio:.2f}): '{user_input}' -> '{best_trigger_text}'")
         state['last_user_choice_idx'] = best_idx
         state['parsed_intent'] = 'transition'
-        return state
+        return
 
     # ✅ [작업 3] 0.4 ~ 0.59: Near Miss - 가장 가까운 트리거 전체 문구 저장
     elif highest_ratio >= 0.4:
@@ -1135,7 +1135,7 @@ def npc_node(state: PlayerState):
         world_state.from_dict(state['world_state'])
 
     # ========================================
-    # 💀 작업 1: 죽은 NPC 대사 차단
+    # 💀 작업 1: 죽은 NPC 대사 차단 → GM 나레이션으로 전환
     # ========================================
     target_npc = state.get('target_npc', '')
 
@@ -1143,12 +1143,22 @@ def npc_node(state: PlayerState):
     if target_npc:
         npc_state = world_state.get_npc_state(target_npc)
         if npc_state and npc_state.get('status') == 'dead':
-            logger.info(f"💀 [NPC_NODE] {target_npc} is dead, blocking dialogue generation")
-            state['npc_output'] = f"[{target_npc}] (차갑게 식어버린 시체입니다. 더 이상 아무 말도 하지 않습니다.)"
+            logger.info(f"💀 [NPC_NODE] Dead NPC '{target_npc}' detected. Redirecting output to Narrator.")
 
-            # world_state 저장
+            # ✅ 작업 1: NPC 대사 차단, GM 나레이션으로 전환
+            narrator_message = f"\n\n[GM]: 당신의 눈앞에는 차갑게 식어버린 {target_npc}의 시체만이 놓여 있습니다. 그는 더 이상 아무 말도 할 수 없습니다."
+            state['narrator_output'] = narrator_message
+            state['npc_output'] = ""  # NPC 이름표 제거
+
+            # ✅ 작업 2: 내러티브 기록 보강
+            world_state.add_narrative_event(f"유저가 죽은 {target_npc}에게 대화를 시도했지만 아무 응답도 없었음.")
+            logger.info(f"📖 [NARRATIVE] Dead NPC interaction recorded: {target_npc}")
+
+            # ✅ 작업 3: 데이터 동기화 유지
             world_state.location = state.get("current_scene_id", world_state.location)
             state['world_state'] = world_state.to_dict()
+            logger.info(f"💾 [SYNC] World state saved after dead NPC interaction")
+
             return state
 
     # ✅ [작업 1] 턴 카운트 증가 로직을 함수 시작 부분으로 이동
