@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import logging
+import json
 
 from config import get_full_version
 from routes.auth import get_current_user_optional, get_current_user
@@ -110,6 +111,7 @@ async def view_debug_scenes(
         result, error = ScenarioService.get_scenario_for_view(int(scenario_id), user.id if user else None, db)
 
         if error or not result:
+            logger.error(f"❌ [DEBUG SCENES] Failed to load scenario: scenario_id={scenario_id}, error={error}")
             return templates.TemplateResponse("debug_scenes_view.html", {
                 "request": request,
                 "title": "시나리오를 찾을 수 없음",
@@ -130,9 +132,55 @@ async def view_debug_scenes(
 
         scenario_data = result
 
+        # ✅ [작업 0] 시나리오 데이터 타입 및 구조 확인
+        logger.info(f"✅ [DEBUG SCENES] Scenario loaded: id={scenario_id}")
+        logger.info(f"🔍 [DEBUG SCENES] scenario_data type: {type(scenario_data).__name__}")
+        logger.info(f"🔑 [DEBUG SCENES] scenario_data top keys: {list(scenario_data.keys())[:20] if isinstance(scenario_data, dict) else 'NOT_A_DICT'}")
+
+        # ✅ [작업 0] scenes/endings 존재 여부 및 타입 확인
+        scenes_info = "None"
+        endings_info = "None"
+
+        if isinstance(scenario_data, dict):
+            if 'scenes' in scenario_data:
+                scenes_type = type(scenario_data['scenes']).__name__
+                scenes_count = len(scenario_data['scenes']) if isinstance(scenario_data['scenes'], (list, dict)) else 0
+                scenes_info = f"type={scenes_type}, count={scenes_count}"
+
+                # scenes 샘플 5개 출력
+                if isinstance(scenario_data['scenes'], list) and scenes_count > 0:
+                    scene_ids_sample = [s.get('scene_id', 'NO_ID') for s in scenario_data['scenes'][:5]]
+                    logger.info(f"📊 [DEBUG SCENES] scenes sample IDs: {scene_ids_sample}")
+                elif isinstance(scenario_data['scenes'], dict):
+                    scene_keys_sample = list(scenario_data['scenes'].keys())[:5]
+                    logger.info(f"📊 [DEBUG SCENES] scenes dict keys sample: {scene_keys_sample}")
+
+            if 'endings' in scenario_data:
+                endings_type = type(scenario_data['endings']).__name__
+                endings_count = len(scenario_data['endings']) if isinstance(scenario_data['endings'], (list, dict)) else 0
+                endings_info = f"type={endings_type}, count={endings_count}"
+
+            logger.info(f"📊 [DEBUG SCENES] scenes: {scenes_info}")
+            logger.info(f"📊 [DEBUG SCENES] endings: {endings_info}")
+
+            # ✅ [작업 0] scenes/endings가 0인 경우 추가 디버깅 - 후보 경로 탐색
+            if not scenario_data.get('scenes') and not scenario_data.get('endings'):
+                logger.warning(f"⚠️ [DEBUG SCENES] No scenes/endings found at top level!")
+                logger.warning(f"🔍 [DEBUG SCENES] Checking nested structures...")
+
+                for wrapper_key in ['scenario', 'graph', 'data', 'nodes', 'scene_map', 'ending_map']:
+                    if wrapper_key in scenario_data:
+                        wrapper_type = type(scenario_data[wrapper_key]).__name__
+                        logger.warning(f"🔍 [DEBUG SCENES] Found '{wrapper_key}': type={wrapper_type}")
+
+                        if isinstance(scenario_data[wrapper_key], dict):
+                            nested_keys = list(scenario_data[wrapper_key].keys())[:10]
+                            logger.warning(f"🔍 [DEBUG SCENES] '{wrapper_key}' keys: {nested_keys}")
+
         # ✅ [FIX 2-B] Mermaid 그래프 생성 - 실패해도 나머지 데이터는 정상 렌더링
         mermaid_code = "graph TD\n    A[Mermaid 차트 생성 중...]"
         try:
+            logger.info(f"🎨 [DEBUG SCENES] Calling MermaidService.generate_mermaid_from_scenario...")
             mermaid_code = MermaidService.generate_mermaid_from_scenario(scenario_data)
 
             # ✅ [작업 2] Mermaid 코드 검증 로그 강화

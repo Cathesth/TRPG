@@ -11,6 +11,137 @@ class MermaidService:
     """시나리오를 Mermaid 다이어그램으로 변환"""
 
     @staticmethod
+    def normalize_scenario_graph(data: dict) -> Tuple[List[Dict], List[Dict]]:
+        """
+        ✅ [작업 1] 다양한 시나리오 JSON 스키마를 정규화하여 scenes/endings 추출
+
+        지원하는 구조:
+        1) data["scenes"], data["endings"] (직접)
+        2) data["scenario"]["scenes"], data["scenario"]["endings"] (한 단계 래핑)
+        3) data["graph"]["scenes"], data["graph"]["endings"]
+        4) data["nodes"], data["edges"] (React Flow 형식)
+        5) scenes가 dict인 경우: { "Scene-1": {...}, "Scene-2": {...} }
+
+        Returns:
+            (scenes: List[Dict], endings: List[Dict])
+        """
+        scenes = []
+        endings = []
+
+        # ✅ [작업 1] 입력 데이터 구조 검사 로그
+        logger.info(f"🔍 [MERMAID] normalize_scenario_graph called with data type: {type(data).__name__}")
+        if isinstance(data, dict):
+            logger.info(f"🔑 [MERMAID] Input data keys: {list(data.keys())[:20]}")
+
+        # ✅ [작업 1-2] 문자열인 경우 json.loads 시도 (방어 코드)
+        if isinstance(data, str):
+            logger.warning(f"⚠️ [MERMAID] Input data is string, attempting json.loads...")
+            try:
+                import json
+                data = json.loads(data)
+                logger.info(f"✅ [MERMAID] Successfully parsed JSON string")
+            except Exception as e:
+                logger.error(f"❌ [MERMAID] Failed to parse JSON string: {e}")
+                return [], []
+
+        if not isinstance(data, dict):
+            logger.error(f"❌ [MERMAID] Input data is not a dict: {type(data).__name__}")
+            return [], []
+
+        # ✅ [작업 1-3] "scenario" 키가 있고 값이 dict면 unwrap
+        if 'scenario' in data and isinstance(data['scenario'], dict):
+            logger.info(f"📦 [MERMAID] Unwrapping 'scenario' wrapper...")
+            data = data['scenario']
+            logger.info(f"🔑 [MERMAID] After unwrap, keys: {list(data.keys())[:20]}")
+
+        # ✅ [작업 1-4] scenes 후보 경로 탐색
+        scenes_candidates = [
+            ('scenes', lambda d: d.get('scenes')),
+            ('scene_map', lambda d: d.get('scene_map')),
+            ('nodes', lambda d: d.get('nodes')),
+            ('graph.scenes', lambda d: d.get('graph', {}).get('scenes') if isinstance(d.get('graph'), dict) else None),
+            ('scenario.scenes', lambda d: d.get('scenario', {}).get('scenes') if isinstance(d.get('scenario'), dict) else None),
+        ]
+
+        for candidate_name, getter in scenes_candidates:
+            scenes_raw = getter(data)
+            if scenes_raw:
+                if isinstance(scenes_raw, list):
+                    scenes = scenes_raw
+                    logger.info(f"✅ [MERMAID] Found scenes at '{candidate_name}': list with {len(scenes)} items")
+                    break
+                elif isinstance(scenes_raw, dict):
+                    # dict 형태: { "Scene-1": {...}, ... } -> list로 변환
+                    scenes = [
+                        {**scene_data, 'scene_id': scene_id} if isinstance(scene_data, dict) else {'scene_id': scene_id}
+                        for scene_id, scene_data in scenes_raw.items()
+                    ]
+                    logger.info(f"✅ [MERMAID] Found scenes at '{candidate_name}': dict converted to list with {len(scenes)} items")
+                    break
+
+        # ✅ [작업 1-5] endings 후보 경로 탐색
+        endings_candidates = [
+            ('endings', lambda d: d.get('endings')),
+            ('ending_map', lambda d: d.get('ending_map')),
+            ('graph.endings', lambda d: d.get('graph', {}).get('endings') if isinstance(d.get('graph'), dict) else None),
+            ('scenario.endings', lambda d: d.get('scenario', {}).get('endings') if isinstance(d.get('scenario'), dict) else None),
+        ]
+
+        for candidate_name, getter in endings_candidates:
+            endings_raw = getter(data)
+            if endings_raw:
+                if isinstance(endings_raw, list):
+                    endings = endings_raw
+                    logger.info(f"✅ [MERMAID] Found endings at '{candidate_name}': list with {len(endings)} items")
+                    break
+                elif isinstance(endings_raw, dict):
+                    endings = [
+                        {**ending_data, 'ending_id': ending_id} if isinstance(ending_data, dict) else {'ending_id': ending_id}
+                        for ending_id, ending_data in endings_raw.items()
+                    ]
+                    logger.info(f"✅ [MERMAID] Found endings at '{candidate_name}': dict converted to list with {len(endings)} items")
+                    break
+
+        # ✅ [작업 1-6] nodes/edges 구조인 경우 (React Flow) - scenes가 아직 없는 경우에만
+        if not scenes and 'nodes' in data and 'edges' in data:
+            logger.info(f"📦 [MERMAID] Detected nodes/edges structure, converting...")
+            scenes, endings = MermaidService.convert_nodes_to_scenes(data['nodes'], data['edges'])
+
+        # ✅ 정규화 결과 로그
+        logger.info(f"✅ [MERMAID] Normalized: scenes={len(scenes)}, endings={len(endings)}")
+
+        if scenes:
+            scene_ids_sample = [s.get('scene_id', 'NO_ID') for s in scenes[:5]]
+            logger.info(f"📊 [MERMAID] Scene IDs sample (first 5): {scene_ids_sample}")
+
+        if endings:
+            ending_ids_sample = [e.get('ending_id', 'NO_ID') for e in endings[:3]]
+            logger.info(f"📊 [MERMAID] Ending IDs sample (first 3): {ending_ids_sample}")
+
+        # ✅ [작업 1-7] 0일 때 디버그 정보 상세화
+        if not scenes and not endings:
+            top_keys = list(data.keys())[:20] if isinstance(data, dict) else []
+            logger.warning(f"⚠️ [MERMAID] No scenes/endings found after normalization")
+            logger.warning(f"🔑 [MERMAID] DEBUG: data top_keys={top_keys}")
+
+            # scenes/endings 후보 키 존재 여부 확인
+            for key in ['scenes', 'scene_map', 'nodes', 'endings', 'ending_map']:
+                if key in data:
+                    value_type = type(data[key]).__name__
+                    value_preview = str(data[key])[:200] if data[key] else 'None'
+                    logger.warning(f"🔍 [MERMAID] DEBUG: data['{key}'] exists - type={value_type}, preview={value_preview}")
+                else:
+                    logger.warning(f"🔍 [MERMAID] DEBUG: data['{key}'] not found")
+
+            # 중첩 구조 확인
+            for wrapper_key in ['scenario', 'graph', 'data']:
+                if wrapper_key in data and isinstance(data[wrapper_key], dict):
+                    nested_keys = list(data[wrapper_key].keys())[:10]
+                    logger.warning(f"🔍 [MERMAID] DEBUG: data['{wrapper_key}'] keys={nested_keys}")
+
+        return scenes, endings
+
+    @staticmethod
     def _safe_node_id(orig_id: str) -> str:
         """
         Mermaid flowchart에서 안전하게 사용할 수 있는 노드 ID로 변환
@@ -309,33 +440,26 @@ class MermaidService:
             Mermaid 코드 문자열
         """
         try:
-            # scenario_data 구조 확인 및 unwrap
-            if isinstance(scenario_data, dict):
-                # 'data' 필드로 감싸진 경우 unwrap
-                if 'data' in scenario_data and isinstance(scenario_data['data'], dict):
-                    unwrapped = scenario_data['data']
-                    # 'scenario' 필드가 있으면 한번 더 unwrap
-                    if 'scenario' in unwrapped and isinstance(unwrapped['scenario'], dict):
-                        scenario_data = unwrapped['scenario']
-                    else:
-                        scenario_data = unwrapped
-                # 'scenario' 필드로 감싸진 경우 unwrap
-                elif 'scenario' in scenario_data and isinstance(scenario_data['scenario'], dict):
-                    scenario_data = scenario_data['scenario']
+            # ✅ [작업 2] 스키마 정규화 적용
+            logger.info(f"📊 [MERMAID] Input data keys: {list(scenario_data.keys())[:20]}")
 
-            # ✅ [작업 3] 시나리오 데이터 검증
-            scenes = scenario_data.get('scenes', [])
-            endings = scenario_data.get('endings', [])
+            # 정규화로 scenes/endings 추출
+            scenes, endings = MermaidService.normalize_scenario_graph(scenario_data)
 
-            logger.info(f"📊 [MERMAID] Input data: scenes={len(scenes)}, endings={len(endings)}")
+            logger.info(f"📊 [MERMAID] After normalization: scenes={len(scenes)}, endings={len(endings)}")
 
             # ✅ [작업 3] 최소 노드 보장 - scenes가 비어있으면 경고
             if not scenes and not endings:
                 logger.warning(f"⚠️ [MERMAID] No scenes or endings found in scenario data")
                 return "graph TD\n    Empty[시나리오에 씬이 없습니다]\n    Empty -->|빌더에서 씬을 추가하세요| Start[시작]"
 
+            # 정규화된 데이터를 scenario_data에 반영
+            normalized_data = scenario_data.copy()
+            normalized_data['scenes'] = scenes
+            normalized_data['endings'] = endings
+
             # generate_chart 호출
-            result = MermaidService.generate_chart(scenario_data)
+            result = MermaidService.generate_chart(normalized_data)
 
             # mermaid_code 추출
             if isinstance(result, dict) and 'mermaid_code' in result:
