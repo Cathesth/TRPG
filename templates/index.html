@@ -548,7 +548,7 @@
         document.body.dispatchEvent(new Event('new_search'));
     }
 
-    // [수정 완료] 찜 토글 함수 (커스텀 이벤트 방식)
+    // [수정] 찜 토글 함수
     async function toggleLike(scenarioId, btn) {
         try {
             const res = await fetch(`/api/scenarios/${scenarioId}/like`, {
@@ -558,15 +558,20 @@
             const data = await res.json();
 
             if (data.success) {
-                // 1. 버튼 스타일 토글
-                if (data.liked) {
-                    btn.classList.add('text-red-500', 'fill-red-500');
-                    btn.classList.remove('text-white/70');
-                } else {
-                    btn.classList.remove('text-red-500', 'fill-red-500');
-                    btn.classList.add('text-white/70');
+                // [핵심 수정] 버튼(btn)이 아니라 내부의 아이콘(svg 또는 i)을 찾습니다.
+                const icon = btn.querySelector('svg') || btn.querySelector('i');
 
-                    // 모달 안에서 하트를 끈 경우, 카드를 화면에서 바로 제거
+                // 1. 아이콘 스타일 토글
+                if (data.liked) {
+                    // 찜 켜기: 빨강 채움, 빨강 선
+                    icon.classList.add('text-red-500', 'fill-red-500');
+                    icon.classList.remove('text-white/70', 'hover:text-red-500');
+                } else {
+                    // 찜 끄기: 투명 채움, 흰색 선, 호버 효과 복구
+                    icon.classList.remove('text-red-500', 'fill-red-500');
+                    icon.classList.add('text-white/70', 'hover:text-red-500');
+
+                    // 모달 안에서 하트를 끈 경우 카드 제거 (기존 로직)
                     const modalGrid = btn.closest('#liked-grid');
                     if (modalGrid) {
                        const card = btn.closest('.scenario-card-base');
@@ -576,11 +581,9 @@
                     }
                 }
 
-                // 2. [핵심 수정] 찜 목록(#liked-grid)을 백그라운드에서 즉시 새로고침
-                // 'refresh_likes' 이벤트를 body에 쏘면, 위에서 설정한 hx-trigger가 반응합니다.
+                // 2. 이벤트 발생 및 아이콘 갱신
                 document.body.dispatchEvent(new Event('refresh_likes'));
-
-                lucide.createIcons();
+                // lucide.createIcons(); // 이미 svg로 변환된 상태면 굳이 호출 안 해도 됨
             } else {
                 alert(data.error || '오류가 발생했습니다.');
             }
