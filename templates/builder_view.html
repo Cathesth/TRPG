@@ -328,7 +328,7 @@
             const generateNewScenario = async () => {
                 if (nodes.length < 2) return showToast("최소 2개의 노드가 필요합니다.", "error");
 
-                // [수정] 로딩 시작
+                // [로딩 시작]
                 setIsGenerating(true);
                 showToast("생성 시작... (시간이 조금 걸립니다)", "info");
 
@@ -343,15 +343,12 @@
                         body: JSON.stringify(payload)
                     });
                     const json = await res.json();
-
                     if (json.filename) {
                         window.location.href = `/views/scenes/edit/${json.filename}`;
-                    } else {
-                        throw new Error(json.error);
-                    }
+                    } else throw new Error(json.error);
                 } catch (e) {
                     showToast(e.message, "error");
-                    setIsGenerating(false); // 실패 시 로딩 해제
+                    setIsGenerating(false); // 에러 발생 시 로딩 종료
                 }
             };
 
@@ -412,13 +409,21 @@
 
             // --- 렌더링 ---
             return (
-                <div className="flex h-screen ...">
-                    {/* [추가] 전체 화면 로딩 오버레이 */}
+                <div className="flex h-screen overflow-hidden text-sm font-sans" onMouseUp={handleMouseUp} onMouseMove={handleMouseMove}>
+
+                    {/* [로딩 오버레이] */}
                     {isGenerating && (
                         <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-fade-in">
                             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
                             <div className="text-xl font-bold">AI가 시나리오를 생성 중입니다...</div>
                             <div className="text-sm text-gray-400 mt-2">최대 1분 정도 소요될 수 있습니다.</div>
+                        </div>
+                    )}
+
+                    {/* 토스트 */}
+                    {toast.show && (
+                        <div className={`fixed top-5 left-1/2 -translate-x-1/2 z-[100] px-4 py-2 rounded shadow-lg font-bold animate-fade-in ${toast.type==='error'?'bg-red-600':toast.type==='success'?'bg-green-600':'bg-blue-600'}`}>
+                            {toast.msg}
                         </div>
                     )}
 
