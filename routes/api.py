@@ -100,8 +100,8 @@ class AuditRequest(BaseModel):
 
 # [추가] 빌더에서 그래프 데이터(Nodes/Edges)를 직접 보내 검수 요청할 때 사용하는 모델
 class BuilderAuditRequest(BaseModel):
-    scenario: Dict[str, Any]  # { "nodes": [...], "edges": [...] }
-    scene_id: str
+    scenario: Dict[str, Any]
+    scene_id: Optional[str] = None  # None이면 전체 검수
     model: Optional[str] = None
 
 # ==========================================
@@ -1284,22 +1284,50 @@ async def audit_builder_scene(data: BuilderAuditRequest):
         # 1. 그래프 데이터를 시나리오 구조로 변환
         scenes, endings = MermaidService.convert_nodes_to_scenes(nodes, edges)
 
-        # 2. 임시 시나리오 객체 생성
         temp_scenario = {
             "title": "Draft Audit",
             "scenes": scenes,
             "endings": endings
         }
 
-        # 3. AI 검수 실행
-        result = await run_in_threadpool(
-            AIAuditService.full_audit,
-            temp_scenario,
-            data.scene_id,
-            data.model
-        )
+        results = []
 
-        return {"success": True, "result": result}
+        # 2-A. 단일 씬 검수
+        if data.scene_id:
+            audit_res = await run_in_threadpool(
+                AIAuditService.full_audit,
+                temp_scenario,
+                data.scene_id,
+                data.model
+            )
+            # 프론트엔드 통일성을 위해 리스트 형태 또는 단일 객체로 반환 (여기선 단일 객체 구조 유지하되 issue 취합)
+            return {"success": True, "result": audit_res, "mode": "single"}
+
+        # 2-B. 전체 시나리오 검수
+        else:
+            # 모든 씬에 대해 반복 수행
+            # (실제 서비스에서는 비동기 병렬 처리가 좋으나, 여기선 순차 처리로 안전하게 구현)
+            combined_issues = {"coherence": {"issues": []}, "trigger": {"issues": []}}
+
+            for scene in scenes:
+                res = await run_in_threadpool(
+                    AIAuditService.full_audit,
+                    temp_scenario,
+                    scene['scene_id'],
+                    data.model
+                )
+                if res.get('coherence', {}).get('issues'):
+                    combined_issues['coherence']['issues'].extend(res['coherence']['issues'])
+                if res.get('trigger', {}).get('issues'):
+                    combined_issues['trigger']['issues'].extend(res['trigger']['issues'])
+
+            return {
+                "success": True,
+                "result": combined_issues,
+                "mode": "full",
+                "summary": f"전체 {len(scenes)}개 씬 검수 완료"
+            }
+
     except Exception as e:
         logger.error(f"Builder Audit Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
