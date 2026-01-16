@@ -560,9 +560,11 @@
             if (data.success) {
                 // 1. 버튼 스타일 토글
                 if (data.liked) {
+                    // [핵심 수정] 찜 설정 시: 테두리(text)와 채움(fill) 모두 빨간색으로 변경
                     btn.classList.add('text-red-500', 'fill-red-500');
                     btn.classList.remove('text-white/70');
                 } else {
+                    // [핵심 수정] 찜 해제 시: 빨간색 클래스 제거
                     btn.classList.remove('text-red-500', 'fill-red-500');
                     btn.classList.add('text-white/70');
 
@@ -576,8 +578,7 @@
                     }
                 }
 
-                // 2. [핵심 수정] 찜 목록(#liked-grid)을 백그라운드에서 즉시 새로고침
-                // 'refresh_likes' 이벤트를 body에 쏘면, 위에서 설정한 hx-trigger가 반응합니다.
+                // 2. 찜 목록(#liked-grid)을 백그라운드에서 즉시 새로고침
                 document.body.dispatchEvent(new Event('refresh_likes'));
 
                 lucide.createIcons();

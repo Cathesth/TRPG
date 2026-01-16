@@ -667,13 +667,13 @@ def list_scenarios(
         # 찜 상태면 빨간색 채움(fill-red-500), 아니면 흰색 테두리(text-white/70)
         heart_class = "fill-red-500 text-red-500" if is_liked else "text-white/70 hover:text-red-500"
 
-        # [추가] 하트 버튼 HTML (이미지 우측 상단에 배치)
+        # [추가] 하트 버튼 HTML
         like_btn = f"""
-        <button onclick="toggleLike({s.id}, this); event.stopPropagation();" 
-                class="absolute top-2 right-2 p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all z-10 {heart_class}">
-            <i data-lucide="heart" class="w-5 h-5 transition-transform active:scale-90"></i>
-        </button>
-        """
+            <button onclick="toggleLike({s.id}, this); event.stopPropagation();" 
+                    class="absolute top-2 right-2 p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all z-10 {heart_class}">
+                <i data-lucide="heart" class="w-5 h-5 transition-transform active:scale-90"></i>
+            </button>
+            """
 
         # [버튼 구성]
         if is_owner:
