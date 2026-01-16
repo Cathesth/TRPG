@@ -118,6 +118,7 @@ class PlayerState(TypedDict):
     _internal_flags: Dict[str, Any]  # [추가] 내부 플래그 (UI에 노출 안 됨)
     world_state: Dict[str, Any]  # [추가] WorldState 스냅샷
     is_game_start: bool  # [추가] 게임 시작 여부 플래그
+    target_npc: str  # [추가] 공격 대상 NPC 이름
 
 
 def normalize_text(text: str) -> str:
@@ -548,8 +549,16 @@ def intent_parser_node(state: PlayerState):
             transition_index = intent_result.get('transition_index', -1)
             confidence = intent_result.get('confidence', 0.0)
             reasoning = intent_result.get('reasoning', '')
+            target_npc = intent_result.get('target_npc', None)
 
             logger.info(f"🎯 [INTENT] Type: {intent_type}, Confidence: {confidence:.2f}, Reasoning: {reasoning}")
+
+            # target_npc 저장
+            if target_npc:
+                state['target_npc'] = target_npc
+                logger.info(f"🎯 [TARGET] Target NPC extracted: '{target_npc}'")
+            else:
+                state['target_npc'] = ''
 
             # 의도에 따른 처리
             if intent_type == 'transition' and 0 <= transition_index < len(transitions):
@@ -755,6 +764,69 @@ def rule_node(state: PlayerState):
 
     user_action = state.get('last_user_input', '').strip()
     logger.info(f"🎬 [APPLY_EFFECTS] Scene before transition: {actual_current_location}, Intent: {state['parsed_intent']}, Transition index: {idx}")
+
+    # ========================================
+    # ⚔️ 작업 3: attack 의도 처리 (전투 로직 주입)
+    # ========================================
+    if state['parsed_intent'] == 'attack':
+        logger.info(f"⚔️ [RULE_NODE COMBAT] Attack intent detected in rule_node")
+
+        # (a) target_npc 추출
+        target_npc = state.get('target_npc', '')
+
+        # target_npc가 없으면 현재 씬의 NPC/적 목록에서 추출 시도
+        if not target_npc:
+            npc_list = curr_scene.get('npcs', []) + curr_scene.get('enemies', []) if curr_scene else []
+
+            # user_input에서 NPC 이름 매칭 시도
+            for npc_name in npc_list:
+                if npc_name in user_action or npc_name.replace(' ', '').lower() in user_action.lower().replace(' ', ''):
+                    target_npc = npc_name
+                    logger.info(f"🎯 [COMBAT] Target extracted from input in rule_node: '{target_npc}'")
+                    break
+
+            # 그래도 못찾으면 world_state.find_npc_key 사용
+            if not target_npc and npc_list:
+                for word in user_action.split():
+                    potential_target = world_state.find_npc_key(word)
+                    if potential_target:
+                        target_npc = potential_target
+                        logger.info(f"🎯 [COMBAT] Target found via find_npc_key in rule_node: '{target_npc}'")
+                        break
+
+        # (b) target_npc가 확정되지 않으면 에러 처리
+        if not target_npc:
+            logger.warning(f"⚠️ [COMBAT] Attack target unclear in rule_node. User input: '{user_action}'")
+            sys_msg.append("⚠️ 공격 대상이 불명확합니다.")
+            state['system_message'] = " | ".join(sys_msg)
+            state['world_state'] = world_state.to_dict()
+            return state
+
+        # (c) 데미지 산정 (random 10~20)
+        damage = random.randint(10, 20)
+        logger.info(f"🎲 [COMBAT] Damage roll: {damage}")
+
+        # (d) world_state.damage_npc 호출
+        combat_result = world_state.damage_npc(target_npc, damage)
+        logger.info(f"⚔️ [COMBAT] Result: {combat_result}")
+
+        # (e) system_message에 결과 저장
+        sys_msg.append(combat_result)
+
+        # (f) narrative_history에 기록
+        world_state.record_combat_event(f"플레이어가 {target_npc}을(를) 공격: {combat_result}")
+
+        # (g) stuck_count 증가 (전투는 장면 전환 없음)
+        old_stuck_count = state.get('stuck_count', 0)
+        state['stuck_count'] = old_stuck_count + 1
+        logger.info(f"🔄 [COMBAT] stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+
+        # (h) world_state 저장 후 리턴
+        state['system_message'] = " | ".join(sys_msg)
+        world_state.location = state.get("current_scene_id", world_state.location)
+        state['world_state'] = world_state.to_dict()
+        logger.info(f"✅ [COMBAT] Attack processing complete in rule_node. Damage: {damage}, Target: {target_npc}")
+        return state
 
     # ✅ 작업 2: investigate 의도 처리 - Scene Rule에서 스탯 변동 패싱 및 적용
     if state['parsed_intent'] == 'investigate':
@@ -1090,7 +1162,6 @@ def npc_node(state: PlayerState):
             return state
 
         # (d) 데미지 산정 (random 2~6, 재현성을 위해 seed 옵션)
-        import random
         import hashlib
 
         # 재현 가능한 난수 생성 (session_id + turn_count 기반)
