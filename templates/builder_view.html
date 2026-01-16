@@ -36,35 +36,33 @@
     <script type="text/babel">
         const { useState, useRef, useEffect, useCallback } = React;
 
-        // --- [수정됨] 아이콘 컴포넌트 ---
-        // 기존의 lucide.createIcons()는 React DOM을 파괴하므로 사용하지 않습니다.
-        // 대신 lucide.icons에서 SVG를 가져와 안전하게 주입합니다.
+        // --- [수정 완료] 아이콘 컴포넌트 ---
+        // CDN 환경에서 안전하게 작동하도록 수정됨.
+        // React가 관리하는 span 내부를 비우고, Lucide API를 사용해 SVG를 주입합니다.
         const Icon = ({ name, size = 18, className = "" }) => {
             const ref = useRef(null);
 
             useEffect(() => {
-                if (!window.lucide || !window.lucide.icons) return;
+                if (!window.lucide || !ref.current) return;
 
-                // kebab-case (예: arrow-right)를 PascalCase (예: ArrowRight)로 변환
-                const iconName = name
-                    .split('-')
-                    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-                    .join('');
+                // 1. 기존 내용 초기화
+                ref.current.innerHTML = '';
 
-                // 숫자 처리 (예: undo-2 -> Undo2)
-                const iconNode = window.lucide.icons[iconName];
+                // 2. 임시 태그 생성 (Lucide가 이걸 찾아서 SVG로 교체함)
+                const i = document.createElement('i');
+                i.setAttribute('data-lucide', name);
+                ref.current.appendChild(i);
 
-                if (iconNode) {
-                    const svg = iconNode.toSvg({
+                // 3. 렌더링 실행 (이 요소 내부만 타겟팅)
+                window.lucide.createIcons({
+                    root: ref.current,
+                    nameAttr: 'data-lucide',
+                    attrs: {
                         width: size,
                         height: size,
                         class: className
-                    });
-                    if (ref.current) ref.current.innerHTML = svg;
-                } else {
-                    // 아이콘을 못 찾을 경우 대비 (기본 원)
-                    if (ref.current) ref.current.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>`;
-                }
+                    }
+                });
             }, [name, size, className]);
 
             return <span ref={ref} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}></span>;
