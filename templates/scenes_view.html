@@ -156,17 +156,18 @@
         if(code) el.textContent = code;
 
         el.removeAttribute('data-processed');
+        el.classList.add('opacity-0'); // 렌더링 전 숨김
 
         try {
             await mermaid.run({ nodes: [el] });
-            el.classList.remove('opacity-0');
             setupNodeClicks();
         } catch(e) {
-            console.error(e);
-            // Fallback: 에러 발생 시 초기화 시도
-            el.innerHTML = 'graph TD\nStart[시나리오를 불러오세요]';
-            el.removeAttribute('data-processed');
-            try { await mermaid.run({ nodes: [el] }); el.classList.remove('opacity-0'); } catch(e2){}
+            console.error("Mermaid Render Error:", e);
+            // 에러 발생 시 텍스트라도 보이게 하거나, 기본 노드 띄우기
+            if (!code) el.textContent = 'graph TD\nError[데이터 로드 실패 또는 렌더링 오류]';
+        } finally {
+            // [중요] 성공하든 실패하든 투명도 제거해서 화면에 표시
+            el.classList.remove('opacity-0');
         }
     }
 
@@ -206,7 +207,6 @@
         const content = document.getElementById('editPanelContent');
         const titleEl = document.getElementById('editPanelTitle');
 
-        // 데이터 찾기
         let nodeData = null;
         let type = 'scene';
         if (id === 'PROLOGUE' || id === 'start') {
@@ -217,13 +217,11 @@
             if (scenarioData.endings?.find(e => e.ending_id === id)) type = 'ending';
         }
 
-        if (!nodeData) {
-            // 데이터가 없으면 기본값으로라도 보여줌 (오류 방지)
-            nodeData = { title: id, description: '' };
-        }
+        if (!nodeData) nodeData = { title: id, description: '' };
 
         titleEl.textContent = `${nodeData.title || id} 편집`;
 
+        // HTML 생성
         let html = `
             <div class="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
                 <div>
@@ -238,6 +236,21 @@
                     <label class="block text-xs font-bold text-gray-400 mb-1 uppercase">Description</label>
                     <textarea id="editDesc" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white h-48 focus:border-amber-500 focus:outline-none resize-none">${nodeData.description || nodeData.prologue || ''}</textarea>
                 </div>
+        `;
+
+        // [추가됨] Scene 타입일 경우 Trigger 입력창 표시
+        if (type === 'scene') {
+            html += `
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1 uppercase text-amber-500">Trigger (진입 조건)</label>
+                    <input id="editTrigger" class="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white focus:border-amber-500 focus:outline-none"
+                           placeholder="예: 문을 연다, 열쇠를 사용한다"
+                           value="${nodeData.trigger || ''}">
+                </div>
+            `;
+        }
+
+        html += `
                 <div class="pt-4 border-t border-white/10 flex gap-2">
                     <button onclick="saveNodeData('${id}', '${type}')" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-2 rounded font-bold transition">적용</button>
         `;
@@ -265,12 +278,19 @@
     window.saveNodeData = async (id, type) => {
         const title = document.getElementById('editTitle').value;
         const desc = document.getElementById('editDesc').value;
+        // 트리거 값 가져오기 (없으면 null)
+        const triggerEl = document.getElementById('editTrigger');
+        const trigger = triggerEl ? triggerEl.value : null;
 
         if (type === 'prologue') {
             scenarioData.prologue = desc;
         } else if (type === 'scene') {
             const s = scenarioData.scenes.find(x => x.scene_id === id);
-            if(s) { s.title = title; s.description = desc; }
+            if(s) {
+                s.title = title;
+                s.description = desc;
+                if(trigger !== null) s.trigger = trigger; // 트리거 업데이트
+            }
         } else if (type === 'ending') {
             const e = scenarioData.endings.find(x => x.ending_id === id);
             if(e) { e.title = title; e.description = desc; }

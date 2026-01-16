@@ -154,6 +154,7 @@
             const [isEditMode, setIsEditMode] = useState(false);
             const [scenarioId, setScenarioId] = useState(null);
             const [isDraft, setIsDraft] = useState(false);
+            const [isGenerating, setIsGenerating] = useState(false);
 
             // [State] 캔버스 조작
             const [pan, setPan] = useState({ x: 0, y: 0, zoom: 1 });
@@ -326,21 +327,32 @@
 
             const generateNewScenario = async () => {
                 if (nodes.length < 2) return showToast("최소 2개의 노드가 필요합니다.", "error");
+
+                // [수정] 로딩 시작
+                setIsGenerating(true);
+                showToast("생성 시작... (시간이 조금 걸립니다)", "info");
+
                 try {
                     const payload = {
                         nodes, edges, npcs: [...globalNpcs, ...globalEnemies], model: selectedModel,
                         title: nodes[0].data.label
                     };
-                    showToast("생성 시작...", "info");
+
                     const res = await fetch('/api/init_game', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify(payload)
                     });
                     const json = await res.json();
+
                     if (json.filename) {
                         window.location.href = `/views/scenes/edit/${json.filename}`;
-                    } else throw new Error(json.error);
-                } catch (e) { showToast(e.message, "error"); }
+                    } else {
+                        throw new Error(json.error);
+                    }
+                } catch (e) {
+                    showToast(e.message, "error");
+                    setIsGenerating(false); // 실패 시 로딩 해제
+                }
             };
 
             // --- AI Audit ---
@@ -400,11 +412,13 @@
 
             // --- 렌더링 ---
             return (
-                <div className="flex h-screen overflow-hidden text-sm font-sans" onMouseUp={handleMouseUp} onMouseMove={handleMouseMove}>
-                    {/* 토스트 */}
-                    {toast.show && (
-                        <div className={`fixed top-5 left-1/2 -translate-x-1/2 z-[100] px-4 py-2 rounded shadow-lg font-bold animate-fade-in ${toast.type==='error'?'bg-red-600':toast.type==='success'?'bg-green-600':'bg-blue-600'}`}>
-                            {toast.msg}
+                <div className="flex h-screen ...">
+                    {/* [추가] 전체 화면 로딩 오버레이 */}
+                    {isGenerating && (
+                        <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-fade-in">
+                            <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                            <div className="text-xl font-bold">AI가 시나리오를 생성 중입니다...</div>
+                            <div className="text-sm text-gray-400 mt-2">최대 1분 정도 소요될 수 있습니다.</div>
                         </div>
                     )}
 
