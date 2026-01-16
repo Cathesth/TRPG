@@ -594,6 +594,13 @@ class WorldState:
         self.history = data.get("history", [])
         self.narrative_history = data.get("narrative_history", [])
 
+        # ✅ 작업 1: player 데이터 병합 - 기존 데이터 유지하며 업데이트
+        if "player" in data:
+            saved_player = data["player"]
+            # 기존 self.player의 구조를 유지하면서 저장된 값으로 업데이트
+            self.player.update(saved_player)
+            logger.info(f"🔄 [PLAYER RESTORE] Player data merged from saved state (HP: {self.player.get('hp', 'N/A')})")
+
         logger.info(f"WorldState restored from saved data (Turn: {self.turn_count})")
 
     def _get_snapshot(self) -> Dict[str, Any]:
@@ -862,6 +869,28 @@ class WorldState:
         """
         self.add_narrative_event(text)
         logger.info(f"⚔️ [COMBAT EVENT] {text}")
+
+    # ✅ 작업 3: 플레이어 HP 반격 로직을 위한 메서드 추가
+    def apply_player_damage(self, amount: int):
+        """
+        플레이어에게 직접 데미지를 가함 (반격용)
+
+        Args:
+            amount: 데미지 양 (양수)
+        """
+        try:
+            amount = int(amount)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid damage amount: {amount}, using 0")
+            amount = 0
+
+        old_hp = self.player.get("hp", 100)
+        new_hp = max(0, old_hp - amount)
+        self.player["hp"] = new_hp
+
+        logger.info(f"💥 [PLAYER DAMAGE] Player HP: {old_hp} -> {new_hp}")
+
+        return new_hp
 
     # ========================================
     # 6. LLM 컨텍스트 생성 (get_llm_context)

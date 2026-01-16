@@ -848,39 +848,42 @@ def rule_node(state: PlayerState):
 
         # (d) world_state.damage_npc 호출
         combat_result = world_state.damage_npc(target_npc, damage)
+
         logger.info(f"⚔️ [COMBAT] Result: {combat_result}")
 
         # ========================================
         # 💥 작업 2: 플레이어 HP 동기화 - WorldState의 HP를 player_vars에 강제 동기화
         # ========================================
-        # world_state.player["hp"]가 반격으로 인해 변경되었으므로 이를 player_vars에 반영
         world_state_hp = world_state.player.get("hp", 100)
         state['player_vars']['hp'] = world_state_hp
-        logger.info(f"[SYNC CHECK] Player HP synced: {world_state_hp} (world_state.player['hp'] -> state['player_vars']['hp'])")
+        logger.info(f"💾 [HP SYNC] Player HP synced to player_vars: {world_state_hp} (world_state.player['hp'] -> state['player_vars']['hp'])")
 
-        # (e) system_message에 결과 저장
-        sys_msg.append(combat_result)
+        # (f) system_message에 결과 저장
+        state['system_message'] = combat_result
 
-        # (f) narrative_history에 기록
+        # (g) narrative_history에 기록
         world_state.record_combat_event(f"플레이어가 {target_npc}을(를) 공격: {combat_result}")
 
-        # (g) stuck_count 증가 (전투는 장면 전환 없음)
-        old_stuck_count = state.get('stuck_count', 0)
-        state['stuck_count'] = old_stuck_count + 1
-        logger.info(f"🔄 [COMBAT] stuck_count: {old_stuck_count} -> {state['stuck_count']}")
-
-        # (h) world_state 저장 후 리턴
-        state['system_message'] = " | ".join(sys_msg)
-        world_state.location = state.get("current_scene_id", world_state.location)
-
         # ========================================
-        # 💥 작업 3: 노드 종료 직전 최종 HP 동기화 강제
+        # 💥 작업 2 & 4: 노드 종료 직전 최종 HP 동기화 강제 + 검증 로그
         # ========================================
         state['player_vars']['hp'] = world_state.player["hp"]
-        logger.info(f"[SYNC CHECK] Final Player HP sync before save: {world_state.player['hp']}")
+        logger.info(f"💾 [FINAL HP SYNC] Final Player HP sync before save: {world_state.player['hp']}")
+        logger.info(f"💾 [DB PRE-SAVE] Final Player HP in state (npc_node): {state['player_vars']['hp']}")
 
+        # (h) world_state 갱신
         state['world_state'] = world_state.to_dict()
-        logger.info(f"✅ [COMBAT] Attack processing complete in rule_node. Damage: {damage}, Target: {target_npc}")
+
+        # NPC 대사는 생성하지 않음 (공격 결과만 표시)
+        state['npc_output'] = ""
+
+        # (i) 죽은 NPC 확인 및 대사 차단
+        npc_state = world_state.get_npc_state(target_npc)
+        if npc_state and npc_state.get('status') == 'dead':
+            logger.info(f"💀 [COMBAT] {target_npc} is dead, blocking NPC dialogue")
+
+        logger.info(f"✅ [COMBAT] Attack processing complete. Damage: {damage}, Target: {target_npc}")
+
         return state
 
     # ✅ 작업 2: investigate 의도 처리 - Scene Rule에서 스탯 변동 패싱 및 적용
@@ -1249,11 +1252,25 @@ def npc_node(state: PlayerState):
 
         logger.info(f"⚔️ [COMBAT] Result: {combat_result}")
 
+        # ========================================
+        # 💥 작업 2: 플레이어 HP 동기화 - WorldState의 HP를 player_vars에 강제 동기화
+        # ========================================
+        world_state_hp = world_state.player.get("hp", 100)
+        state['player_vars']['hp'] = world_state_hp
+        logger.info(f"💾 [HP SYNC] Player HP synced to player_vars: {world_state_hp} (world_state.player['hp'] -> state['player_vars']['hp'])")
+
         # (f) system_message에 결과 저장
         state['system_message'] = combat_result
 
         # (g) narrative_history에 기록
         world_state.record_combat_event(f"플레이어가 {target_npc}을(를) 공격: {combat_result}")
+
+        # ========================================
+        # 💥 작업 2 & 4: 노드 종료 직전 최종 HP 동기화 강제 + 검증 로그
+        # ========================================
+        state['player_vars']['hp'] = world_state.player["hp"]
+        logger.info(f"💾 [FINAL HP SYNC] Final Player HP sync before save: {world_state.player['hp']}")
+        logger.info(f"💾 [DB PRE-SAVE] Final Player HP in state (npc_node): {state['player_vars']['hp']}")
 
         # (h) world_state 갱신
         state['world_state'] = world_state.to_dict()
