@@ -6,6 +6,7 @@ from config import DEFAULT_CONFIG
 import copy
 import re
 import logging
+import difflib
 
 logger = logging.getLogger(__name__)
 
@@ -700,22 +701,143 @@ class WorldState:
         """턴 카운트 증가"""
         self.turn_count += 1
 
-    def validate_inventory_action(self, item_name: str) -> bool:
+    # ========================================
+    # 5. 전투 시스템 (Combat System)
+    # ========================================
+
+    def find_npc_key(self, query_name: str) -> Optional[str]:
         """
-        인벤토리 아이템 사용 가능 여부 검증
+        부분 명칭으로 NPC 키를 찾는 유틸리티
+
+        Args:
+            query_name: 유저가 입력한 NPC 명칭 (예: "노인", "마인")
 
         Returns:
-            True: 사용 가능, False: 사용 불가
+            매칭된 NPC 키 (예: "노인 J") 또는 None
         """
-        return item_name in self.player["inventory"]
+        if not query_name:
+            return None
 
-    def get_stat(self, stat_name: str) -> Optional[Union[int, float]]:
-        """스탯 값 조회 (플레이어 또는 커스텀 스탯)"""
-        if stat_name in self.player:
-            return self.player.get(stat_name)
-        elif stat_name in self.player.get("custom_stats", {}):
-            return self.player["custom_stats"].get(stat_name)
+        query_lower = query_name.lower().replace(" ", "")
+
+        # 1. 정확한 일치 확인
+        for npc_key in self.npcs.keys():
+            if npc_key.lower().replace(" ", "") == query_lower:
+                logger.info(f"🎯 [NPC MATCH] Exact match: '{query_name}' -> '{npc_key}'")
+                return npc_key
+
+        # 2. 부분 일치 확인 (query가 npc_key에 포함)
+        for npc_key in self.npcs.keys():
+            npc_key_normalized = npc_key.lower().replace(" ", "")
+            if query_lower in npc_key_normalized or npc_key_normalized in query_lower:
+                logger.info(f"🎯 [NPC MATCH] Partial match: '{query_name}' -> '{npc_key}'")
+                return npc_key
+
+        # 3. 유사도 기반 매칭 (difflib)
+        best_match = None
+        best_ratio = 0.0
+
+        for npc_key in self.npcs.keys():
+            npc_key_normalized = npc_key.lower().replace(" ", "")
+            ratio = difflib.SequenceMatcher(None, query_lower, npc_key_normalized).ratio()
+
+            if ratio > best_ratio and ratio >= 0.6:  # 60% 이상 유사도
+                best_ratio = ratio
+                best_match = npc_key
+
+        if best_match:
+            logger.info(f"🎯 [NPC MATCH] Fuzzy match ({best_ratio:.2f}): '{query_name}' -> '{best_match}'")
+            return best_match
+
+        logger.warning(f"❌ [NPC MATCH] No match found for: '{query_name}'")
         return None
+
+    def damage_npc(self, npc_name: str, amount: int) -> str:
+        """
+        NPC에게 데미지를 가하고 HP를 차감하며, 사망 처리를 수행
+
+        Args:
+            npc_name: NPC 명칭 (부분 명칭 가능, find_npc_key로 자동 매칭)
+            amount: 데미지 양 (양수)
+
+        Returns:
+            전투 결과 텍스트 (예: "노인 J에게 4 피해! (HP 10 -> 6)")
+        """
+        # NPC 키 찾기
+        npc_key = self.find_npc_key(npc_name)
+
+        if not npc_key:
+            error_msg = f"⚠️ 공격 대상 '{npc_name}'을(를) 찾을 수 없습니다."
+            logger.warning(f"[COMBAT] {error_msg}")
+            return error_msg
+
+        # NPC 데이터 방어적 초기화
+        if npc_key not in self.npcs:
+            self.npcs[npc_key] = {
+                "status": "alive",
+                "hp": 10,
+                "max_hp": 10,
+                "emotion": "neutral",
+                "relationship": 50,
+                "is_hostile": False,
+                "flags": {}
+            }
+
+        npc = self.npcs[npc_key]
+
+        # HP 필드 방어
+        if "hp" not in npc:
+            npc["hp"] = 10
+        if "max_hp" not in npc:
+            npc["max_hp"] = npc["hp"]
+        if "status" not in npc:
+            npc["status"] = "alive"
+        if "is_hostile" not in npc:
+            npc["is_hostile"] = False
+
+        # 이미 죽은 NPC는 공격 불가
+        if npc.get("status") == "dead":
+            dead_msg = f"{npc_key}는 이미 쓰러져 차갑게 식었습니다."
+            logger.info(f"[COMBAT] {dead_msg}")
+            return dead_msg
+
+        # 데미지 적용
+        old_hp = int(npc["hp"])
+        new_hp = max(0, old_hp - amount)
+        npc["hp"] = new_hp
+
+        result_text = f"{npc_key}에게 {amount} 피해! (HP {old_hp} -> {new_hp})"
+
+        # 사망 판정
+        if new_hp <= 0:
+            npc["status"] = "dead"
+            npc["hp"] = 0
+            result_text += f"\n💀 {npc_key}는 쓰러져 죽었습니다."
+            logger.info(f"🪦 [COMBAT] {npc_key} has been killed. HP: {old_hp} -> 0")
+        else:
+            # 살아있다면 적대 상태로 전환
+            if not npc.get("is_hostile"):
+                npc["is_hostile"] = True
+                result_text += f"\n⚔️ {npc_key}가 적대적으로 변했습니다!"
+                logger.info(f"⚔️ [COMBAT] {npc_key} became hostile")
+
+        logger.info(f"[COMBAT] {npc_key} damaged: {old_hp} -> {new_hp}, status={npc['status']}")
+
+        return result_text
+
+    def record_combat_event(self, text: str):
+        """
+        전투 이벤트를 narrative_history에 기록
+
+        Args:
+            text: 전투 이벤트 설명
+        """
+        self.add_narrative_event(text)
+        logger.info(f"⚔️ [COMBAT EVENT] {text}")
+
+    # ========================================
+    # 6. LLM 컨텍스트 생성 (get_llm_context)
+    # ========================================
 
     def get_llm_context(self) -> str:
         """
