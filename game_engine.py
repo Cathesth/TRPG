@@ -1019,6 +1019,118 @@ def npc_node(state: PlayerState):
     user_input = state.get('last_user_input', '').strip()
     parsed_intent = state.get('parsed_intent', 'chat')
 
+    # ========================================
+    # ⚔️ 공격 의도 처리 (attack intent handling)
+    # ========================================
+
+    # 룰 기반 안전망: LLM이 chat으로 분류했어도 공격 동사가 있으면 attack으로 override
+    attack_keywords = ['때리', '공격', '찌르', '베', '쏘', '죽이', '패', '가격', '해치', '치',
+                      '무찌르', '처치', '타격', '구타', '폭행', '살해', '제거', '제압',
+                      'attack', 'hit', 'strike', 'kill', 'murder', 'beat', 'punch', 'kick',
+                      'stab', 'slash', 'shoot', 'harm', 'hurt', 'damage', 'destroy']
+
+    has_attack_keyword = any(kw in user_input.lower() for kw in attack_keywords)
+
+    if has_attack_keyword and parsed_intent == 'chat':
+        logger.warning(f"⚔️ [SAFETY NET] Attack keyword detected in chat intent, overriding to 'attack'")
+        parsed_intent = 'attack'
+        state['parsed_intent'] = 'attack'
+
+    # attack 의도 처리
+    if parsed_intent == 'attack':
+        logger.info(f"⚔️ [COMBAT] Attack intent detected. User input: '{user_input}'")
+
+        # (a) 턴 증가는 이미 위에서 처리됨
+
+        # (b) target_npc 추출
+        target_npc = None
+
+        # parsed_intent가 dict 형태로 저장되어 있을 수 있음 (JSON 파싱 결과)
+        parsed_intent_data = state.get('_internal_flags', {}).get('parsed_intent_data', {})
+        if isinstance(parsed_intent_data, dict):
+            target_npc = parsed_intent_data.get('target_npc')
+
+        # target_npc가 없으면 user_input에서 추출 시도
+        if not target_npc:
+            # 현재 씬의 NPC/적 목록
+            all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
+            curr_scene = all_scenes.get(curr_scene_id)
+
+            if curr_scene:
+                npc_list = curr_scene.get('npcs', []) + curr_scene.get('enemies', [])
+
+                # user_input에서 NPC 이름 매칭 시도
+                for npc_name in npc_list:
+                    # 부분 매칭 (예: "노인" -> "노인 J")
+                    if npc_name in user_input or npc_name.replace(' ', '').lower() in user_input.lower().replace(' ', ''):
+                        target_npc = npc_name
+                        logger.info(f"🎯 [COMBAT] Target extracted from input: '{target_npc}'")
+                        break
+
+                # 그래도 못찾으면 world_state.find_npc_key 사용
+                if not target_npc and npc_list:
+                    # user_input에서 명사 추출 (간단한 휴리스틱)
+                    for word in user_input.split():
+                        potential_target = world_state.find_npc_key(word)
+                        if potential_target:
+                            target_npc = potential_target
+                            logger.info(f"🎯 [COMBAT] Target found via find_npc_key: '{target_npc}'")
+                            break
+
+        # (c) target_npc가 확정되지 않으면 에러 처리
+        if not target_npc:
+            logger.warning(f"⚠️ [COMBAT] Attack target unclear. User input: '{user_input}'")
+            state['system_message'] = "⚠️ 공격 대상이 불명확합니다. 누구를 공격하려는 건가요?"
+            state['npc_output'] = ""
+
+            # world_state 저장
+            world_state.location = state.get("current_scene_id", world_state.location)
+            state['world_state'] = world_state.to_dict()
+
+            return state
+
+        # (d) 데미지 산정 (random 2~6, 재현성을 위해 seed 옵션)
+        import random
+        import hashlib
+
+        # 재현 가능한 난수 생성 (session_id + turn_count 기반)
+        seed_string = f"{scenario_id}_{world_state.turn_count}_{target_npc}"
+        seed_value = int(hashlib.md5(seed_string.encode()).hexdigest()[:8], 16)
+        rng = random.Random(seed_value)
+        damage = rng.randint(2, 6)
+
+        logger.info(f"🎲 [COMBAT] Damage roll: {damage} (seed: {seed_string})")
+
+        # (e) world_state.damage_npc 호출
+        combat_result = world_state.damage_npc(target_npc, damage)
+
+        logger.info(f"⚔️ [COMBAT] Result: {combat_result}")
+
+        # (f) system_message에 결과 저장
+        state['system_message'] = combat_result
+
+        # (g) narrative_history에 기록
+        world_state.record_combat_event(f"플레이어가 {target_npc}을(를) 공격: {combat_result}")
+
+        # (h) world_state 갱신
+        state['world_state'] = world_state.to_dict()
+
+        # NPC 대사는 생성하지 않음 (공격 결과만 표시)
+        state['npc_output'] = ""
+
+        # (i) 죽은 NPC 확인 및 대사 차단
+        npc_state = world_state.get_npc_state(target_npc)
+        if npc_state and npc_state.get('status') == 'dead':
+            logger.info(f"💀 [COMBAT] {target_npc} is dead, blocking NPC dialogue")
+
+        logger.info(f"✅ [COMBAT] Attack processing complete. Damage: {damage}, Target: {target_npc}")
+
+        return state
+
+    # ========================================
+    # 기존 로직 (chat/investigate/defend 등)
+    # ========================================
+
     # ✅ 작업 1: stuck_count 증가 로직을 조기 리턴 전에 이동
     if user_input:
         old_stuck_count = state.get('stuck_count', 0)
@@ -1030,8 +1142,8 @@ def npc_node(state: PlayerState):
             world_state.add_narrative_event(
                 f"유저가 주변을 조사하며 '{user_input[:30]}...'을(를) 확인함"
             )
-        # 다른 의도일 때도 기록 (attack, defend 등)
-        elif parsed_intent in ['attack', 'defend']:
+        # 다른 의도일 때도 기록 (defend 등)
+        elif parsed_intent in ['defend']:
             world_state.add_narrative_event(
                 f"유저가 '{user_input[:30]}...'을(를) 시도함"
             )
