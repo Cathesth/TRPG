@@ -36,10 +36,38 @@
     <script type="text/babel">
         const { useState, useRef, useEffect, useCallback } = React;
 
-        // --- 아이콘 컴포넌트 ---
+        // --- [수정됨] 아이콘 컴포넌트 ---
+        // 기존의 lucide.createIcons()는 React DOM을 파괴하므로 사용하지 않습니다.
+        // 대신 lucide.icons에서 SVG를 가져와 안전하게 주입합니다.
         const Icon = ({ name, size = 18, className = "" }) => {
-            useEffect(() => { lucide.createIcons(); }, [name]);
-            return <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i>;
+            const ref = useRef(null);
+
+            useEffect(() => {
+                if (!window.lucide || !window.lucide.icons) return;
+
+                // kebab-case (예: arrow-right)를 PascalCase (예: ArrowRight)로 변환
+                const iconName = name
+                    .split('-')
+                    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+                    .join('');
+
+                // 숫자 처리 (예: undo-2 -> Undo2)
+                const iconNode = window.lucide.icons[iconName];
+
+                if (iconNode) {
+                    const svg = iconNode.toSvg({
+                        width: size,
+                        height: size,
+                        class: className
+                    });
+                    if (ref.current) ref.current.innerHTML = svg;
+                } else {
+                    // 아이콘을 못 찾을 경우 대비 (기본 원)
+                    if (ref.current) ref.current.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>`;
+                }
+            }, [name, size, className]);
+
+            return <span ref={ref} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}></span>;
         };
 
         // --- 공용 모달 ---
@@ -77,8 +105,6 @@
                 }
             });
 
-            const sceneMap = {}; // id -> node
-
             // 2. Scenes
             (scenData.scenes || []).forEach((s, idx) => {
                 const node = {
@@ -96,7 +122,6 @@
                     }
                 };
                 nodes.push(node);
-                sceneMap[s.scene_id] = node;
             });
 
             // 3. Endings
@@ -114,16 +139,13 @@
                     }
                 };
                 nodes.push(node);
-                sceneMap[e.ending_id] = node;
             });
 
             // 4. Connections
-            // Prologue -> First Scenes
             (scenData.prologue_connects_to || []).forEach(targetId => {
                 edges.push({ id: `e-start-${targetId}`, source: 'start', target: targetId });
             });
 
-            // Scene Transitions
             (scenData.scenes || []).forEach(s => {
                 (s.transitions || []).forEach((t, i) => {
                     if (t.target_scene_id) {
@@ -167,7 +189,7 @@
 
             // [State] 모달 관리
             const [modals, setModals] = useState({
-                npcGen: false, npcList: false, presetLoad: false, scenarioList: false, result: false
+                npcGen: false, npcList: false, presetLoad: false, scenarioList: false
             });
             const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
 
@@ -226,14 +248,12 @@
 
             const loadScenarioData = async (sid) => {
                 try {
-                    // Draft 우선 조회
                     let res = await fetch(`/api/draft/${sid}`);
                     let data = await res.json();
 
                     if (!data.success || !data.scenario) {
                         res = await fetch(`/api/scenario/${sid}/edit`);
                         data = await res.json();
-                        // API 응답 구조 맞추기
                         if(data.data) data = { success: true, scenario: data.data.scenario };
                     } else {
                         setIsDraft(data.is_draft);
@@ -244,9 +264,7 @@
                         let loadedNodes = scen.nodes;
                         let loadedEdges = scen.edges;
 
-                        // [자동 변환] nodes가 없고 scenes만 있는 경우 (Legacy 데이터)
                         if ((!loadedNodes || loadedNodes.length === 0) && scen.scenes) {
-                            console.log("Legacy data detected. Converting scenes to nodes...");
                             const converted = convertScenesToNodes(scen);
                             loadedNodes = converted.nodes;
                             loadedEdges = converted.edges;
@@ -260,7 +278,6 @@
                         showToast("시나리오 로드 완료", "success");
                     }
                 } catch (e) {
-                    console.error(e);
                     showToast("로드 실패: " + e.message, "error");
                 }
             };
@@ -278,13 +295,10 @@
 
             const deleteNode = (id) => {
                 if (id === 'start') return showToast("시작 노드는 삭제 불가", "error");
-
-                // 참조 무결성 검사
                 const connected = edges.filter(e => e.source === id || e.target === id);
                 if (connected.length > 0) {
-                    if (!confirm(`이 씬과 연결된 ${connected.length}개의 연결선이 있습니다.\n삭제 시 연결도 함께 제거됩니다. 계속하시겠습니까?`)) return;
+                    if (!confirm(`연결된 ${connected.length}개의 선이 함께 삭제됩니다. 계속하시겠습니까?`)) return;
                 }
-
                 pushHistory();
                 setNodes(prev => prev.filter(n => n.id !== id));
                 setEdges(prev => prev.filter(e => e.source !== id && e.target !== id));
@@ -292,11 +306,10 @@
             };
 
             const updateNodeData = (id, key, value) => {
-                // 실시간 입력은 History 안 쌓음 (성능 이슈). onBlur에서 쌓거나 저장 시점에 처리 권장.
                 setNodes(prev => prev.map(n => n.id === id ? { ...n, data: { ...n.data, [key]: value } } : n));
             };
 
-            // --- 저장 및 발행 ---
+            // --- 저장 및 생성 ---
             const saveDraft = async () => {
                 if (!scenarioId) return;
                 try {
@@ -314,13 +327,13 @@
             };
 
             const publishScenario = async () => {
-                if (!confirm("현재 Draft 내용을 실제 플레이어에게 반영하시겠습니까?")) return;
+                if (!confirm("반영하시겠습니까?")) return;
                 try {
                     const res = await fetch(`/api/draft/${scenarioId}/publish`, { method: 'POST' });
                     const json = await res.json();
                     if (json.success) {
                         setIsDraft(false);
-                        showToast("최종 반영 완료!", "success");
+                        showToast("반영 완료!", "success");
                     } else throw new Error(json.error);
                 } catch (e) { showToast(e.message, "error"); }
             };
@@ -328,9 +341,7 @@
             const generateNewScenario = async () => {
                 if (nodes.length < 2) return showToast("최소 2개의 노드가 필요합니다.", "error");
 
-                // [로딩 시작]
-                setIsGenerating(true);
-                showToast("생성 시작... (시간이 조금 걸립니다)", "info");
+                setIsGenerating(true); // 로딩 시작
 
                 try {
                     const payload = {
@@ -348,14 +359,13 @@
                     } else throw new Error(json.error);
                 } catch (e) {
                     showToast(e.message, "error");
-                    setIsGenerating(false); // 에러 발생 시 로딩 종료
+                    setIsGenerating(false); // 에러 시 로딩 종료
                 }
             };
 
-            // --- AI Audit ---
             const runAiAudit = async (node) => {
                 if (!node) return;
-                showToast(`AI가 "${node.data.title}" 검수 중...`, "info");
+                showToast(`검수 중...`, "info");
                 try {
                     const res = await fetch('/api/audit/scene', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -363,9 +373,9 @@
                     });
                     const json = await res.json();
                     if (json.success) {
-                        alert(`[AI 검수 결과]\n\n판정: ${json.result.pass ? 'PASS' : 'FAIL'}\n이유: ${json.result.reason}\n제안: ${json.result.suggestion}`);
+                        alert(`[AI 검수]\n판정: ${json.result.pass ? 'PASS' : 'FAIL'}\n이유: ${json.result.reason}\n제안: ${json.result.suggestion}`);
                     }
-                } catch (e) { showToast("AI 검수 실패", "error"); }
+                } catch (e) { showToast("검수 실패", "error"); }
             };
 
             // --- 캔버스 핸들러 ---
@@ -386,7 +396,7 @@
                 }
             };
             const handleMouseUp = () => {
-                if (dragNode) pushHistory(); // 드래그 종료 시 히스토리 저장
+                if (dragNode) pushHistory();
                 setIsPanning(false); setDragNode(null); setConnectSource(null);
             };
             const handleNodeDragStart = (e, id) => {
@@ -407,11 +417,10 @@
                 setTimeout(() => setToast({ show: false, msg: '', type: 'info' }), 3000);
             };
 
-            // --- 렌더링 ---
             return (
                 <div className="flex h-screen overflow-hidden text-sm font-sans" onMouseUp={handleMouseUp} onMouseMove={handleMouseMove}>
 
-                    {/* [로딩 오버레이] */}
+                    {/* 로딩 오버레이 */}
                     {isGenerating && (
                         <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-fade-in">
                             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
@@ -420,14 +429,13 @@
                         </div>
                     )}
 
-                    {/* 토스트 */}
                     {toast.show && (
                         <div className={`fixed top-5 left-1/2 -translate-x-1/2 z-[100] px-4 py-2 rounded shadow-lg font-bold animate-fade-in ${toast.type==='error'?'bg-red-600':toast.type==='success'?'bg-green-600':'bg-blue-600'}`}>
                             {toast.msg}
                         </div>
                     )}
 
-                    {/* 좌측 사이드바 (Builder Tools) */}
+                    {/* 좌측 툴바 */}
                     <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col z-20 shadow-2xl">
                         <div className="p-4 border-b border-gray-800 flex items-center justify-between">
                             <span className="font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">Builder</span>
@@ -450,7 +458,7 @@
                                 <Icon name="user-plus"/> NPC 생성
                             </button>
                             <button onClick={async () => {
-                                try { const res = await fetch('/api/npc/list'); const data = await res.json(); setDbNpcList(data); setModals(m=>({...m, npcList:true})); } catch(e){ showToast("목록 로드 실패","error"); }
+                                try { const res = await fetch('/api/npc/list'); const data = await res.json(); setDbNpcList(data); setModals(m=>({...m, npcList:true})); } catch(e){ showToast("로드 실패","error"); }
                             }} className="w-full py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-teal-300 flex items-center justify-center gap-2">
                                 <Icon name="users"/> NPC 불러오기
                             </button>
@@ -505,13 +513,12 @@
                         </div>
                     </div>
 
-                    {/* 캔버스 영역 */}
+                    {/* 캔버스 */}
                     <div ref={canvasRef} className="flex-1 relative bg-[#0a0a0a] bg-dots-pattern cursor-crosshair overflow-hidden"
                          onMouseDown={handleMouseDown}
                          onWheel={(e) => setPan(p => ({ ...p, zoom: Math.min(Math.max(0.2, p.zoom - e.deltaY * 0.001), 3) }))}>
 
                         <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${pan.zoom})`, transformOrigin: '0 0', width: '100%', height: '100%' }}>
-                            {/* Edges */}
                             <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                                 {edges.map(e => {
                                     const s = nodes.find(n => n.id === e.source), t = nodes.find(n => n.id === e.target);
@@ -524,7 +531,6 @@
                                 })()}
                             </svg>
 
-                            {/* Nodes */}
                             {nodes.map(node => (
                                 <div key={node.id} style={{ left: node.x, top: node.y }}
                                      onMouseDown={(e) => handleNodeDragStart(e, node.id)}
@@ -550,14 +556,12 @@
                             ))}
                         </div>
 
-                        {/* 줌 컨트롤 */}
                         <div className="absolute top-4 right-4 bg-gray-900 border border-gray-700 rounded-lg p-2 flex flex-col gap-2 shadow-lg z-30">
                              <button onClick={() => setPan(p=>({...p, zoom: p.zoom+0.1}))} className="hover:text-blue-400"><Icon name="plus"/></button>
                              <button onClick={() => setPan({x:0, y:0, zoom:1})} className="text-xs font-mono">{Math.round(pan.zoom*100)}%</button>
                              <button onClick={() => setPan(p=>({...p, zoom: p.zoom-0.1}))} className="hover:text-blue-400"><Icon name="minus"/></button>
                         </div>
 
-                        {/* 편집 모드 뱃지 */}
                         {isEditMode && (
                             <div className="absolute top-4 left-4 bg-black/60 backdrop-blur border border-gray-700 rounded-full px-4 py-1.5 flex items-center gap-2 z-30">
                                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
@@ -567,7 +571,7 @@
                         )}
                     </div>
 
-                    {/* 우측 속성 패널 */}
+                    {/* 속성 패널 */}
                     <div className="w-80 bg-gray-900 border-l border-gray-800 p-4 overflow-y-auto custom-scrollbar z-20 shadow-xl">
                         {selectedNodeId ? (() => {
                             const node = nodes.find(n => n.id === selectedNodeId);
@@ -626,7 +630,6 @@
                         )}
                     </div>
 
-                    {/* NPC 목록 모달 */}
                     <Modal isOpen={modals.npcList} title="NPC 목록" onClose={() => setModals(m=>({...m, npcList:false}))}>
                         <div className="space-y-2">
                             {dbNpcList.map((npc, i) => (
@@ -646,7 +649,6 @@
                         </div>
                     </Modal>
 
-                    {/* 시나리오 목록 모달 */}
                     <Modal isOpen={modals.scenarioList} title="내 시나리오" onClose={() => setModals(m=>({...m, scenarioList:false}))}>
                          <div className="space-y-2">
                             {userScenarios.map(s => (
@@ -659,7 +661,6 @@
                          </div>
                     </Modal>
 
-                    {/* NPC Generator Iframe Modal */}
                     {modals.npcGen && (
                         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur p-4">
                             <div className="bg-gray-900 w-full max-w-2xl h-[80vh] rounded-xl border border-gray-700 flex flex-col relative overflow-hidden">
