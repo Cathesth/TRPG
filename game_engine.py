@@ -850,6 +850,14 @@ def rule_node(state: PlayerState):
         combat_result = world_state.damage_npc(target_npc, damage)
         logger.info(f"⚔️ [COMBAT] Result: {combat_result}")
 
+        # ========================================
+        # 💥 작업 2: 플레이어 HP 동기화 - WorldState의 HP를 player_vars에 강제 동기화
+        # ========================================
+        # world_state.player["hp"]가 반격으로 인해 변경되었으므로 이를 player_vars에 반영
+        world_state_hp = world_state.player.get("hp", 100)
+        state['player_vars']['hp'] = world_state_hp
+        logger.info(f"[SYNC CHECK] Player HP synced: {world_state_hp} (world_state.player['hp'] -> state['player_vars']['hp'])")
+
         # (e) system_message에 결과 저장
         sys_msg.append(combat_result)
 
@@ -864,6 +872,13 @@ def rule_node(state: PlayerState):
         # (h) world_state 저장 후 리턴
         state['system_message'] = " | ".join(sys_msg)
         world_state.location = state.get("current_scene_id", world_state.location)
+
+        # ========================================
+        # 💥 작업 3: 노드 종료 직전 최종 HP 동기화 강제
+        # ========================================
+        state['player_vars']['hp'] = world_state.player["hp"]
+        logger.info(f"[SYNC CHECK] Final Player HP sync before save: {world_state.player['hp']}")
+
         state['world_state'] = world_state.to_dict()
         logger.info(f"✅ [COMBAT] Attack processing complete in rule_node. Damage: {damage}, Target: {target_npc}")
         return state

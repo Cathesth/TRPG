@@ -803,6 +803,14 @@ class WorldState:
             logger.info(f"[COMBAT] {dead_msg}")
             return dead_msg
 
+        # ========================================
+        # 💥 작업 1: 공격받은 NPC의 감정/관계 즉시 변경
+        # ========================================
+        npc["relationship"] = 0  # 관계도 0으로 고정
+        npc["emotion"] = "hostile"  # 감정 hostile로 변경
+        npc["is_hostile"] = True  # 적대 상태로 전환
+        logger.info(f"💢 [COMBAT] {npc_key} is now hostile (relationship=0, emotion=hostile)")
+
         # 데미지 적용
         old_hp = int(npc["hp"])
         new_hp = max(0, old_hp - amount)
@@ -829,8 +837,9 @@ class WorldState:
                 new_player_hp = max(0, player_hp - counter_damage)
                 self.player["hp"] = new_player_hp
 
-                result_text += f"\n⚔️ {npc_key}의 반격! 플레이어가 {counter_damage} 피해를 입었습니다! (HP {player_hp} -> {new_player_hp})"
+                result_text += f"\n⚔️ {npc_key}의 반격! 플레이어가 {counter_damage} 피해를 입었습니다! (남은 HP: {new_player_hp})"
                 logger.info(f"💥 [COUNTER ATTACK] {npc_key} counter-attacked player: {counter_damage} damage (Player HP: {player_hp} -> {new_player_hp})")
+                logger.info(f"[SYNC CHECK] Player HP synced: {new_player_hp}")
 
                 # 플레이어 사망 체크
                 if new_player_hp <= 0:
@@ -839,12 +848,6 @@ class WorldState:
 
                     # 서사 이벤트 기록
                     self.add_narrative_event(f"{npc_key}의 반격으로 플레이어 사망")
-
-            # 살아있다면 적대 상태로 전환
-            if not npc.get("is_hostile"):
-                npc["is_hostile"] = True
-                result_text += f"\n⚔️ {npc_key}가 적대적으로 변했습니다!"
-                logger.info(f"⚔️ [COMBAT] {npc_key} became hostile")
 
         logger.info(f"[COMBAT] {npc_key} damaged: {old_hp} -> {new_hp}, status={npc['status']}")
 
