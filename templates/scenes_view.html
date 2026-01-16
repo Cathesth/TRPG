@@ -48,7 +48,6 @@
 </head>
 <body class="bg-dark-900 text-gray-200 h-screen flex overflow-hidden">
 
-<!-- 사이드바 (축약형) -->
 <div class="w-16 bg-dark-800 border-r border-white/5 flex flex-col items-center py-4 z-20">
     <a href="/" class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center text-white mb-6 shadow-lg">
         <i data-lucide="dice-5" class="w-5 h-5"></i>
@@ -59,10 +58,8 @@
     </div>
 </div>
 
-<!-- 메인 콘텐츠 -->
 <div class="flex-1 flex flex-col h-full overflow-hidden relative">
 
-    <!-- 헤더 -->
     <header class="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-dark-900/80 backdrop-blur-md sticky top-0 z-20">
         <div class="flex items-center gap-4">
             <h2 class="text-xl font-bold text-white flex items-center gap-2">
@@ -71,14 +68,12 @@
             </h2>
         </div>
         <div class="flex items-center gap-2">
-            <!-- 편집 도구 -->
             <div class="flex items-center gap-1 mr-2 bg-gray-800 rounded-lg p-1 border border-gray-700">
                 <button id="undoBtn" onclick="performUndo()" disabled class="p-2 text-gray-400 hover:text-white disabled:opacity-30" title="실행 취소"><i data-lucide="undo-2" class="w-4 h-4"></i></button>
                 <button id="redoBtn" onclick="performRedo()" disabled class="p-2 text-gray-400 hover:text-white disabled:opacity-30" title="다시 실행"><i data-lucide="redo-2" class="w-4 h-4"></i></button>
                 <button onclick="toggleHistorySidebar()" class="p-2 text-gray-400 hover:text-white" title="히스토리"><i data-lucide="history" class="w-4 h-4"></i></button>
             </div>
 
-            <!-- [수정] 불러오기 버튼 -->
             <button onclick="showScenarioListModal()" class="bg-gray-800 hover:bg-gray-700 text-purple-300 px-3 py-2 rounded-lg border border-purple-700/50 flex items-center gap-2 text-sm font-bold transition-all">
                 <i data-lucide="folder-open" class="w-4 h-4"></i>
                 <span class="hidden sm:inline">불러오기</span>
@@ -104,14 +99,12 @@
     </header>
 
     <div class="flex-1 flex overflow-hidden relative bg-[#111827]">
-        <!-- Mermaid Graph -->
         <div id="graph-container" class="flex-1 h-full cursor-grab active:cursor-grabbing flex items-center justify-center">
             <div id="graph-inner" class="transition-transform duration-75 origin-center">
                 <pre class="mermaid opacity-0 transition-opacity duration-500" id="mermaid-graph">{{ mermaid_code | safe }}</pre>
             </div>
         </div>
 
-        <!-- Zoom Controls -->
         <div class="absolute bottom-6 left-6 flex flex-col gap-2 z-10">
             <button onclick="zoomGraph(0.1)" class="p-2 bg-gray-800 text-white rounded border border-gray-600 shadow-lg hover:bg-gray-700"><i data-lucide="plus"></i></button>
             <button onclick="resetZoom()" class="p-2 bg-gray-800 text-white rounded border border-gray-600 shadow-lg hover:bg-gray-700"><i data-lucide="maximize"></i></button>
@@ -119,7 +112,6 @@
         </div>
     </div>
 
-    <!-- 우측 편집 사이드바 -->
     <div id="editSidebar" class="edit-sidebar absolute right-0 top-0 bottom-0 bg-dark-800 border-l border-white/5 flex flex-col z-30 shadow-2xl">
         <div class="p-4 border-b border-white/5 flex justify-between items-center">
             <h3 class="font-bold text-white flex items-center gap-2"><i data-lucide="settings-2" class="text-amber-400"></i> <span id="editPanelTitle">편집</span></h3>
@@ -128,7 +120,6 @@
         <div id="editPanelContent" class="flex-1 overflow-y-auto p-4 space-y-4"></div>
     </div>
 
-    <!-- 좌측 History 사이드바 -->
     <div id="historySidebar" class="history-sidebar absolute left-16 top-0 bottom-0 bg-dark-800 border-r border-white/5 flex flex-col z-20 shadow-2xl">
         <div class="p-4 border-b border-white/5 flex justify-between items-center">
             <h3 class="font-bold text-white flex items-center gap-2"><i data-lucide="history" class="text-blue-400"></i> 이력</h3>
@@ -278,7 +269,6 @@
     window.saveNodeData = async (id, type) => {
         const title = document.getElementById('editTitle').value;
         const desc = document.getElementById('editDesc').value;
-        // 트리거 값 가져오기 (없으면 null)
         const triggerEl = document.getElementById('editTrigger');
         const trigger = triggerEl ? triggerEl.value : null;
 
@@ -289,7 +279,7 @@
             if(s) {
                 s.title = title;
                 s.description = desc;
-                if(trigger !== null) s.trigger = trigger; // 트리거 업데이트
+                if(trigger !== null) s.trigger = trigger;
             }
         } else if (type === 'ending') {
             const e = scenarioData.endings.find(x => x.ending_id === id);
@@ -312,7 +302,7 @@
         const json = await res.json();
         if(json.success) {
             alert('삭제되었습니다.');
-            loadScenario(SCENARIO_ID); // 전체 리로드 대신 데이터 갱신
+            loadScenario(SCENARIO_ID);
         } else {
             alert(json.error);
         }
@@ -406,7 +396,6 @@
         }
     };
 
-    // [New] 시나리오 전환 (페이지 이동 없이 데이터 교체)
     window.switchScenario = (newId) => {
         document.getElementById('scenarioListModal').remove();
         history.pushState(null, '', `/views/scenes/edit/${newId}`); // URL 변경
@@ -467,9 +456,8 @@
         loadScenario(SCENARIO_ID);
     };
 
-    // [New] 데이터 로드 함수 분리 (재사용을 위해)
+    // --- Load Logic ---
     async function loadScenario(id) {
-        // UI 초기화
         document.getElementById('mermaid-graph').innerHTML = '';
         document.getElementById('draftIndicator').classList.add('hidden');
         document.getElementById('saveDraftBtn').disabled = true;
@@ -481,7 +469,6 @@
 
             if(d.success) {
                 scenarioData = d.scenario;
-                // 타이틀 업데이트
                 const title = scenarioData.title || scenarioData.label || 'Untitled';
                 document.getElementById('scenarioTitle').textContent = title;
 
@@ -497,7 +484,6 @@
                     renderGraph();
                 }
 
-                // 히스토리 상태 확인
                 fetch(`/api/draft/${id}/history/status`).then(r=>r.json()).then(s => {
                     if(s.success) {
                         document.getElementById('undoBtn').disabled = !s.undo_redo_status.can_undo;
@@ -513,9 +499,8 @@
         }
     }
 
-    // Init Logic
     lucide.createIcons();
-    loadScenario(SCENARIO_ID); // 초기 로드 실행
+    loadScenario(SCENARIO_ID);
 </script>
 </body>
 </html>
