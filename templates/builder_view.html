@@ -169,6 +169,12 @@
             const [edges, setEdges] = useState([]);
             const [globalNpcs, setGlobalNpcs] = useState([]);
             const [globalEnemies, setGlobalEnemies] = useState([]);
+            const [auditState, setAuditState] = useState({
+                isOpen: false,
+                isLoading: false,
+                results: null, // { issues: [], mode: 'single'|'full' }
+                targetNodeId: null
+            });
 
             // [State] UI & 모드
             const [isEditMode, setIsEditMode] = useState(false);
@@ -361,41 +367,66 @@
                 }
             };
 
-            const runAiAudit = async (node) => {
-                if (!node) return;
-                showToast(`AI가 "${node.data.title}" 검수 중...`, "info");
+            const runAiAudit = async (nodeId = null) => {
+                const mode = nodeId ? 'single' : 'full';
+                const targetName = nodeId ? nodes.find(n => n.id === nodeId)?.data.title : "전체 시나리오";
+
+                setAuditState({ isOpen: true, isLoading: true, results: null, targetNodeId: nodeId });
+                showToast(`${targetName} 검수 중...`, "info");
+
                 try {
                     const res = await fetch('/api/audit/scene', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ scenario: { nodes, edges }, scene_id: node.id })
+                        body: JSON.stringify({
+                            scenario: { nodes, edges },
+                            scene_id: nodeId, // null이면 전체 검수
+                            model: selectedModel
+                        })
                     });
                     const json = await res.json();
 
                     if (json.success && json.result) {
                         const r = json.result;
-                        // 개연성(coherence) 이슈와 트리거(trigger) 이슈를 합침
+                        // 이슈 병합
                         const issues = [
                             ...(r.coherence?.issues || []),
                             ...(r.trigger?.issues || [])
                         ];
-
-                        if (issues.length === 0) {
-                            alert(`[AI 검수 결과: PASS]\n\n완벽합니다! 서사적 오류나 연결 문제가 발견되지 않았습니다.`);
-                        } else {
-                            // 이슈 내용을 보기 좋게 텍스트로 변환
-                            const report = issues.map((issue, idx) =>
-                                `${idx+1}. [${issue.issue_type || '알림'}] ${issue.message}\n   💡 제안: ${issue.suggestion}`
-                            ).join('\n\n');
-
-                            alert(`[AI 검수 결과: ${issues.length}건의 개선점 발견]\n\n${report}`);
-                        }
+                        setAuditState(prev => ({
+                            ...prev,
+                            isLoading: false,
+                            results: { issues, mode, summary: json.summary }
+                        }));
                     } else {
-                        throw new Error(json.error || "검수 결과 데이터를 분석할 수 없습니다.");
+                        throw new Error(json.error || "결과 분석 실패");
                     }
                 } catch (e) {
-                    console.error(e);
-                    showToast("AI 검수 실패: " + e.message, "error");
+                    showToast("검수 실패: " + e.message, "error");
+                    setAuditState({ isOpen: false, isLoading: false, results: null, targetNodeId: null });
                 }
+            };
+            const applySuggestion = (issue) => {
+                if (!issue.scene_id) return;
+
+                // 해당 씬 찾기
+                const targetId = issue.scene_id;
+                const suggestionText = `\n\n[AI 제안 반영]\n문제: ${issue.message}\n제안: ${issue.suggestion}`;
+
+                setNodes(prev => prev.map(n => {
+                    // Mermaid 변환 과정에서 ID가 바뀔 수 있으므로 제목이나 ID로 매칭 시도
+                    if (n.id === targetId || n.data.title === targetId) {
+                        return {
+                            ...n,
+                            data: {
+                                ...n.data,
+                                description: (n.data.description || "") + suggestionText
+                            }
+                        };
+                    }
+                    return n;
+                }));
+
+                showToast(`"${targetId}" 씬에 수정 제안이 메모되었습니다.`, "success");
             };
 
             // --- 캔버스 핸들러 ---
@@ -440,7 +471,7 @@
             return (
                 <div className="flex h-screen overflow-hidden text-sm font-sans" onMouseUp={handleMouseUp} onMouseMove={handleMouseMove}>
 
-                    {/* 로딩 오버레이 */}
+                    {/* [로딩 오버레이] 시나리오 생성 중 */}
                     {isGenerating && (
                         <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-fade-in">
                             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
@@ -449,13 +480,93 @@
                         </div>
                     )}
 
+                    {/* [추가] AI Audit 결과 모달 */}
+                    {auditState.isOpen && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4">
+                            <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+                                <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800 rounded-t-xl">
+                                    <h3 className="font-bold text-white flex items-center gap-2">
+                                        <Icon name="brain-circuit"/> AI 검수 리포트
+                                    </h3>
+                                    <button onClick={() => setAuditState(p => ({...p, isOpen: false}))} className="text-gray-400 hover:text-white"><Icon name="x"/></button>
+                                </div>
+
+                                <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+                                    {auditState.isLoading ? (
+                                        <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                                            <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                                            <p>AI가 시나리오의 논리적 허점을 분석하고 있습니다...</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {/* PASS: 이슈가 없는 경우 */}
+                                            {auditState.results?.issues.length === 0 ? (
+                                                <div className="flex flex-col items-center justify-center py-12 text-center">
+                                                    <div className="w-20 h-20 bg-green-900/30 rounded-full flex items-center justify-center mb-4">
+                                                        <Icon name="check" size={40} className="text-green-500"/>
+                                                    </div>
+                                                    <h4 className="text-xl font-bold text-white mb-2">이야기가 자연스럽습니다!</h4>
+                                                    <p className="text-gray-400">발견된 서사적 오류나 개연성 문제가 없습니다.</p>
+                                                    {auditState.results?.summary && (
+                                                        <div className="mt-4 p-3 bg-gray-800 rounded text-sm text-gray-400 max-w-lg">
+                                                            {auditState.results.summary}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                /* FAIL: 이슈가 있는 경우 */
+                                                <div className="space-y-4">
+                                                    <div className="bg-red-900/20 border border-red-900/50 p-3 rounded text-red-200 text-sm font-bold flex items-center gap-2">
+                                                        <Icon name="alert-triangle" size={16}/>
+                                                        총 {auditState.results?.issues.length}개의 개선점이 발견되었습니다.
+                                                    </div>
+
+                                                    {auditState.results?.issues.map((issue, idx) => (
+                                                        <div key={idx} className="bg-gray-800 border border-gray-700 rounded-lg p-4">
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <span className="bg-gray-700 text-xs px-2 py-1 rounded text-gray-300 font-mono flex items-center gap-1">
+                                                                    <Icon name="map-pin" size={12}/> {issue.scene_id || 'Unknown Scene'}
+                                                                </span>
+                                                                <span className={`text-xs font-bold px-2 py-1 rounded uppercase ${issue.severity === 'error' ? 'bg-red-500 text-white' : 'bg-yellow-500 text-black'}`}>
+                                                                    {issue.severity || 'Warning'}
+                                                                </span>
+                                                            </div>
+
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                                                                <div className="p-3 bg-red-900/10 border border-red-900/30 rounded">
+                                                                    <div className="text-xs text-red-400 font-bold mb-1 flex items-center gap-1"><Icon name="x-circle" size={12}/> PROBLEM</div>
+                                                                    <p className="text-sm text-gray-300 whitespace-pre-wrap">{issue.message}</p>
+                                                                </div>
+                                                                <div className="p-3 bg-green-900/10 border border-green-900/30 rounded">
+                                                                    <div className="text-xs text-green-400 font-bold mb-1 flex items-center gap-1"><Icon name="lightbulb" size={12}/> SUGGESTION</div>
+                                                                    <p className="text-sm text-gray-300 whitespace-pre-wrap">{issue.suggestion}</p>
+                                                                </div>
+                                                            </div>
+
+                                                            <button
+                                                                onClick={() => applySuggestion(issue)}
+                                                                className="mt-3 w-full py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 border border-blue-600/30 rounded text-sm font-bold flex items-center justify-center gap-2 transition-colors">
+                                                                <Icon name="pen-tool" size={14}/> 수정 내역 반영 (내용에 메모 추가)
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 토스트 알림 */}
                     {toast.show && (
                         <div className={`fixed top-5 left-1/2 -translate-x-1/2 z-[100] px-4 py-2 rounded shadow-lg font-bold animate-fade-in ${toast.type==='error'?'bg-red-600':toast.type==='success'?'bg-green-600':'bg-blue-600'}`}>
                             {toast.msg}
                         </div>
                     )}
 
-                    {/* 좌측 툴바 */}
+                    {/* 좌측 사이드바 (Builder Tools) */}
                     <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col z-20 shadow-2xl">
                         <div className="p-4 border-b border-gray-800 flex items-center justify-between">
                             <span className="font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">Builder</span>
@@ -478,7 +589,7 @@
                                 <Icon name="user-plus"/> NPC 생성
                             </button>
                             <button onClick={async () => {
-                                try { const res = await fetch('/api/npc/list'); const data = await res.json(); setDbNpcList(data); setModals(m=>({...m, npcList:true})); } catch(e){ showToast("로드 실패","error"); }
+                                try { const res = await fetch('/api/npc/list'); const data = await res.json(); setDbNpcList(data); setModals(m=>({...m, npcList:true})); } catch(e){ showToast("목록 로드 실패","error"); }
                             }} className="w-full py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-teal-300 flex items-center justify-center gap-2">
                                 <Icon name="users"/> NPC 불러오기
                             </button>
@@ -503,6 +614,12 @@
                         </div>
 
                         <div className="p-4 border-t border-gray-800 bg-gray-900 z-20">
+                            {/* [추가] 전체 스토리 검수 버튼 */}
+                            <button onClick={() => runAiAudit(null)}
+                                    className="w-full mb-3 py-2 bg-violet-900/30 hover:bg-violet-900/50 text-violet-300 border border-violet-700/50 rounded font-bold flex items-center justify-center gap-2 text-xs transition-colors">
+                                <Icon name="brain-circuit"/> 전체 스토리 AI 검수
+                            </button>
+
                             {!isEditMode && (
                                 <div className="mb-3">
                                     <label className="text-xs text-gray-500 block mb-1">AI Model</label>
@@ -533,12 +650,13 @@
                         </div>
                     </div>
 
-                    {/* 캔버스 */}
+                    {/* 캔버스 영역 */}
                     <div ref={canvasRef} className="flex-1 relative bg-[#0a0a0a] bg-dots-pattern cursor-crosshair overflow-hidden"
                          onMouseDown={handleMouseDown}
                          onWheel={(e) => setPan(p => ({ ...p, zoom: Math.min(Math.max(0.2, p.zoom - e.deltaY * 0.001), 3) }))}>
 
                         <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${pan.zoom})`, transformOrigin: '0 0', width: '100%', height: '100%' }}>
+                            {/* Edges */}
                             <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                                 {edges.map(e => {
                                     const s = nodes.find(n => n.id === e.source), t = nodes.find(n => n.id === e.target);
@@ -551,6 +669,7 @@
                                 })()}
                             </svg>
 
+                            {/* Nodes */}
                             {nodes.map(node => (
                                 <div key={node.id} style={{ left: node.x, top: node.y }}
                                      onMouseDown={(e) => handleNodeDragStart(e, node.id)}
@@ -576,12 +695,14 @@
                             ))}
                         </div>
 
+                        {/* 줌 컨트롤 */}
                         <div className="absolute top-4 right-4 bg-gray-900 border border-gray-700 rounded-lg p-2 flex flex-col gap-2 shadow-lg z-30">
                              <button onClick={() => setPan(p=>({...p, zoom: p.zoom+0.1}))} className="hover:text-blue-400"><Icon name="plus"/></button>
                              <button onClick={() => setPan({x:0, y:0, zoom:1})} className="text-xs font-mono">{Math.round(pan.zoom*100)}%</button>
                              <button onClick={() => setPan(p=>({...p, zoom: p.zoom-0.1}))} className="hover:text-blue-400"><Icon name="minus"/></button>
                         </div>
 
+                        {/* 편집 모드 뱃지 */}
                         {isEditMode && (
                             <div className="absolute top-4 left-4 bg-black/60 backdrop-blur border border-gray-700 rounded-full px-4 py-1.5 flex items-center gap-2 z-30">
                                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
@@ -591,7 +712,7 @@
                         )}
                     </div>
 
-                    {/* 속성 패널 */}
+                    {/* 우측 속성 패널 */}
                     <div className="w-80 bg-gray-900 border-l border-gray-800 p-4 overflow-y-auto custom-scrollbar z-20 shadow-xl">
                         {selectedNodeId ? (() => {
                             const node = nodes.find(n => n.id === selectedNodeId);
@@ -630,8 +751,8 @@
                                     )}
 
                                     <div className="pt-4 border-t border-gray-800 grid grid-cols-2 gap-2">
-                                        <button onClick={() => runAiAudit(node)} className="col-span-2 py-2 bg-violet-900/30 text-violet-300 border border-violet-700/50 rounded hover:bg-violet-800/30 flex items-center justify-center gap-2">
-                                            <Icon name="brain-circuit"/> AI 개연성 검수
+                                        <button onClick={() => runAiAudit(node.id)} className="col-span-2 py-2 bg-violet-900/30 text-violet-300 border border-violet-700/50 rounded hover:bg-violet-800/30 flex items-center justify-center gap-2">
+                                            <Icon name="brain-circuit"/> AI 개연성 검수 (현재 씬)
                                         </button>
 
                                         {!isStart && (
@@ -650,6 +771,7 @@
                         )}
                     </div>
 
+                    {/* NPC 목록 모달 */}
                     <Modal isOpen={modals.npcList} title="NPC 목록" onClose={() => setModals(m=>({...m, npcList:false}))}>
                         <div className="space-y-2">
                             {dbNpcList.map((npc, i) => (
@@ -669,6 +791,7 @@
                         </div>
                     </Modal>
 
+                    {/* 시나리오 목록 모달 */}
                     <Modal isOpen={modals.scenarioList} title="내 시나리오" onClose={() => setModals(m=>({...m, scenarioList:false}))}>
                          <div className="space-y-2">
                             {userScenarios.map(s => (
@@ -681,6 +804,7 @@
                          </div>
                     </Modal>
 
+                    {/* NPC Generator Iframe Modal */}
                     {modals.npcGen && (
                         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur p-4">
                             <div className="bg-gray-900 w-full max-w-2xl h-[80vh] rounded-xl border border-gray-700 flex flex-col relative overflow-hidden">
