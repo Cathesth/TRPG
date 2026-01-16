@@ -346,6 +346,8 @@ class ScenarioService:
         """
         뷰(view) 전용 시나리오 로드 - debug_scenes_view에서 사용
         편집 권한 체크 없이 읽기 전용으로 시나리오 데이터만 반환
+
+        ✅ [수정] 실제 씬/엔딩 데이터를 정확히 로드하고 스키마 정규화 지원
         """
         should_close_db = False
         if db is None:
@@ -356,7 +358,10 @@ class ScenarioService:
             scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
 
             if not scenario:
+                logger.error(f"❌ [SCENARIO_VIEW] Scenario not found: id={scenario_id}")
                 return None, "시나리오를 찾을 수 없습니다."
+
+            logger.info(f"✅ [SCENARIO_VIEW] Found scenario id={scenario.id} title='{scenario.title}' filename={scenario.filename}")
 
             # 접근 권한 체크 (공개 시나리오이거나 작성자 본인이면 허용)
             is_accessible = False
@@ -371,17 +376,100 @@ class ScenarioService:
                 is_accessible = True
 
             if not is_accessible:
+                logger.warning(f"⚠️ [SCENARIO_VIEW] Access denied: scenario_id={scenario_id} user_id={user_id}")
                 return None, "비공개 시나리오입니다. (접근 권한 없음)"
 
-            # 시나리오 데이터 추출
-            full_data = scenario.data
-            s_content = full_data.get('scenario', full_data)
+            # ✅ [수정] 시나리오 데이터 추출 - 다양한 필드/구조 지원
+            scenario_json = None
+            data_source = None
+
+            # 우선순위 1: scenario.data 필드 (가장 일반적)
+            if hasattr(scenario, 'data') and scenario.data:
+                if isinstance(scenario.data, dict):
+                    scenario_json = scenario.data
+                    data_source = "db_field=data"
+                elif isinstance(scenario.data, str):
+                    try:
+                        import json
+                        scenario_json = json.loads(scenario.data)
+                        data_source = "db_field=data(parsed)"
+                    except:
+                        pass
+
+            # 우선순위 2: 다른 필드 시도
+            if not scenario_json:
+                for field_name in ['scenario_data', 'content', 'json', 'payload']:
+                    if hasattr(scenario, field_name):
+                        field_value = getattr(scenario, field_name)
+                        if field_value:
+                            if isinstance(field_value, dict):
+                                scenario_json = field_value
+                                data_source = f"db_field={field_name}"
+                                break
+                            elif isinstance(field_value, str):
+                                try:
+                                    import json
+                                    scenario_json = json.loads(field_value)
+                                    data_source = f"db_field={field_name}(parsed)"
+                                    break
+                                except:
+                                    pass
+
+            if not scenario_json:
+                logger.error(f"❌ [SCENARIO_VIEW] Failed to extract JSON from any field: scenario_id={scenario_id}")
+                return None, "시나리오 데이터를 읽을 수 없습니다."
+
+            logger.info(f"✅ [SCENARIO_VIEW] Loaded scenario JSON from: {data_source}")
+
+            # ✅ [수정] 스키마 정규화 - 'scenario' 래퍼 unwrap
+            if 'scenario' in scenario_json and isinstance(scenario_json['scenario'], dict):
+                # scenario_json = { "scenario": { "scenes": [...], ... } } 구조
+                s_content = scenario_json['scenario']
+                logger.info(f"📦 [SCENARIO_VIEW] Unwrapped 'scenario' wrapper")
+            else:
+                s_content = scenario_json
+
+            # ✅ [디버그] 최상위 키 확인
+            top_keys = list(s_content.keys())[:20] if isinstance(s_content, dict) else []
+            logger.info(f"🔑 [SCENARIO_VIEW] scenario_json top keys: {top_keys}")
+
+            # ✅ [디버그] scenes/endings 존재 여부 확인
+            scenes_candidates = []
+            endings_candidates = []
+
+            # 직접 존재하는 경우
+            if 'scenes' in s_content:
+                scenes_candidates.append(f"direct:scenes(type={type(s_content['scenes']).__name__})")
+            if 'endings' in s_content:
+                endings_candidates.append(f"direct:endings(type={type(s_content['endings']).__name__})")
+
+            # 중첩된 경우 확인
+            for wrapper_key in ['scenario', 'graph', 'data']:
+                if wrapper_key in s_content and isinstance(s_content[wrapper_key], dict):
+                    if 'scenes' in s_content[wrapper_key]:
+                        scenes_candidates.append(f"{wrapper_key}.scenes")
+                    if 'endings' in s_content[wrapper_key]:
+                        endings_candidates.append(f"{wrapper_key}.endings")
+
+            logger.info(f"📊 [SCENARIO_VIEW] scenes candidates: {scenes_candidates}")
+            logger.info(f"📊 [SCENARIO_VIEW] endings candidates: {endings_candidates}")
+
+            # scenes/endings 타입 확인
+            if 'scenes' in s_content:
+                scenes_type = type(s_content['scenes']).__name__
+                scenes_count = len(s_content['scenes']) if isinstance(s_content['scenes'], (list, dict)) else 0
+                logger.info(f"📊 [SCENARIO_VIEW] scenes: type={scenes_type}, count={scenes_count}")
+
+            if 'endings' in s_content:
+                endings_type = type(s_content['endings']).__name__
+                endings_count = len(s_content['endings']) if isinstance(s_content['endings'], (list, dict)) else 0
+                logger.info(f"📊 [SCENARIO_VIEW] endings: type={endings_type}, count={endings_count}")
 
             # 시나리오 데이터만 반환 (player_vars 제외)
             return s_content, None
 
         except Exception as e:
-            logger.error(f"Get Scenario for View Error: {e}", exc_info=True)
+            logger.error(f"❌ [SCENARIO_VIEW] Get Scenario for View Error: {e}", exc_info=True)
             return None, str(e)
         finally:
             if should_close_db:
