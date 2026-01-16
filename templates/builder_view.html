@@ -363,17 +363,39 @@
 
             const runAiAudit = async (node) => {
                 if (!node) return;
-                showToast(`검수 중...`, "info");
+                showToast(`AI가 "${node.data.title}" 검수 중...`, "info");
                 try {
                     const res = await fetch('/api/audit/scene', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ scenario: { nodes, edges }, scene_id: node.id })
                     });
                     const json = await res.json();
-                    if (json.success) {
-                        alert(`[AI 검수]\n판정: ${json.result.pass ? 'PASS' : 'FAIL'}\n이유: ${json.result.reason}\n제안: ${json.result.suggestion}`);
+
+                    if (json.success && json.result) {
+                        const r = json.result;
+                        // 개연성(coherence) 이슈와 트리거(trigger) 이슈를 합침
+                        const issues = [
+                            ...(r.coherence?.issues || []),
+                            ...(r.trigger?.issues || [])
+                        ];
+
+                        if (issues.length === 0) {
+                            alert(`[AI 검수 결과: PASS]\n\n완벽합니다! 서사적 오류나 연결 문제가 발견되지 않았습니다.`);
+                        } else {
+                            // 이슈 내용을 보기 좋게 텍스트로 변환
+                            const report = issues.map((issue, idx) =>
+                                `${idx+1}. [${issue.issue_type || '알림'}] ${issue.message}\n   💡 제안: ${issue.suggestion}`
+                            ).join('\n\n');
+
+                            alert(`[AI 검수 결과: ${issues.length}건의 개선점 발견]\n\n${report}`);
+                        }
+                    } else {
+                        throw new Error(json.error || "검수 결과 데이터를 분석할 수 없습니다.");
                     }
-                } catch (e) { showToast("검수 실패", "error"); }
+                } catch (e) {
+                    console.error(e);
+                    showToast("AI 검수 실패: " + e.message, "error");
+                }
             };
 
             // --- 캔버스 핸들러 ---
