@@ -669,11 +669,11 @@ def list_scenarios(
 
         # [추가] 하트 버튼 HTML
         like_btn = f"""
-            <button onclick="toggleLike({s.id}, this); event.stopPropagation();" 
-                    class="absolute top-2 right-2 p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all z-10 {heart_class}">
-                <i data-lucide="heart" class="w-5 h-5 transition-transform active:scale-90"></i>
-            </button>
-            """
+        <button onclick="toggleLike({s.id}, this); event.stopPropagation();" 
+                class="absolute top-2 right-2 p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all z-10">
+             <i data-lucide="heart" class="w-5 h-5 transition-transform active:scale-90 {heart_class}"></i>
+        </button>
+        """
 
         # [버튼 구성]
         if is_owner:
