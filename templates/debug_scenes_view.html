@@ -425,7 +425,15 @@
         const graphDef = element.textContent.trim();
         console.log('🔍 [Mermaid] Attempting to render chart...');
         console.log('📝 [Mermaid] Graph definition length:', graphDef.length);
-        console.log('📝 [Mermaid] First 5 lines:', graphDef.split('\n').slice(0, 5).join('\n'));
+        console.log('📝 [Mermaid] First 10 lines:');
+        graphDef.split('\n').slice(0, 10).forEach((line, idx) => {
+            console.log(`  ${idx + 1}: ${line}`);
+        });
+
+        // ✅ [작업 2] Empty placeholder 체크
+        if (graphDef.includes('Empty[시나리오에 씬이 없습니다]')) {
+            console.warn('⚠️ [Mermaid] Detected empty placeholder - scenario has no scenes');
+        }
 
         try {
             // ✅ [FIX 1-3] 단일 렌더링 방식 사용 (mermaid.render)
@@ -449,23 +457,18 @@
             element.innerHTML = `
                 <div class="text-red-400 p-6 bg-red-900/20 rounded-lg border border-red-500/30 max-w-4xl mx-auto">
                     <div class="font-bold text-lg mb-2 flex items-center gap-2">
-                        <span>⚠️</span> Mermaid 차트 렌더링 실패
+                        <span>⚠️ Mermaid 렌더링 실패</span>
                     </div>
-                    <div class="text-sm text-red-300 mb-4">
-                        ${err.message || err.toString()}
-                    </div>
+                    <div class="text-sm text-red-300 mb-4">차트 문법에 오류가 있을 수 있습니다.</div>
+                    <div class="text-xs text-gray-400 mb-4">Error: ${err.message || err}</div>
                     <details class="text-xs">
-                        <summary class="cursor-pointer text-gray-400 hover:text-white mb-2 select-none">
-                            📄 원본 Mermaid 코드 보기 (디버깅용)
+                        <summary class="cursor-pointer text-gray-400 hover:text-white mb-2">
+                            📄 원본 Mermaid 코드 보기 (${graphDef.length} chars)
                         </summary>
-                        <pre class="bg-gray-900 p-4 rounded border border-gray-700 overflow-auto max-h-96 text-gray-300 whitespace-pre-wrap">${graphDef}</pre>
+                        <pre class="bg-gray-900 p-4 rounded border border-gray-700 overflow-auto max-h-96 text-gray-300">${graphDef}</pre>
                     </details>
-                    <div class="mt-4 text-xs text-gray-400">
-                        💡 팁: 아래 "씬 목록" 섹션에서 시나리오 구조를 확인할 수 있습니다.
-                    </div>
                 </div>
             `;
-            element.classList.add('opacity-100');
         }
     }
 

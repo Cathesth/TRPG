@@ -13,7 +13,7 @@ class MermaidService:
     @staticmethod
     def normalize_scenario_graph(data: dict) -> Tuple[List[Dict], List[Dict]]:
         """
-        ✅ [작업 2] 다양한 시나리오 JSON 스키마를 정규화하여 scenes/endings 추출
+        ✅ [작업 1] 다양한 시나리오 JSON 스키마를 정규화하여 scenes/endings 추출
 
         지원하는 구조:
         1) data["scenes"], data["endings"] (직접)
@@ -28,66 +28,81 @@ class MermaidService:
         scenes = []
         endings = []
 
-        # 1. 직접 scenes/endings가 있는 경우
-        if 'scenes' in data:
-            scenes_raw = data['scenes']
-            if isinstance(scenes_raw, list):
-                scenes = scenes_raw
-            elif isinstance(scenes_raw, dict):
-                # dict 형태: { "Scene-1": {...}, ... } -> list로 변환
-                scenes = [
-                    {**scene_data, 'scene_id': scene_id}
-                    for scene_id, scene_data in scenes_raw.items()
-                ]
-                logger.info(f"📦 [MERMAID] Converted scenes dict to list: {len(scenes)} scenes")
+        # ✅ [작업 1] 입력 데이터 구조 검사 로그
+        logger.info(f"🔍 [MERMAID] normalize_scenario_graph called with data type: {type(data).__name__}")
+        if isinstance(data, dict):
+            logger.info(f"🔑 [MERMAID] Input data keys: {list(data.keys())[:20]}")
 
-        if 'endings' in data:
-            endings_raw = data['endings']
-            if isinstance(endings_raw, list):
-                endings = endings_raw
-            elif isinstance(endings_raw, dict):
-                endings = [
-                    {**ending_data, 'ending_id': ending_id}
-                    for ending_id, ending_data in endings_raw.items()
-                ]
-                logger.info(f"📦 [MERMAID] Converted endings dict to list: {len(endings)} endings")
+        # ✅ [작업 1-2] 문자열인 경우 json.loads 시도 (방어 코드)
+        if isinstance(data, str):
+            logger.warning(f"⚠️ [MERMAID] Input data is string, attempting json.loads...")
+            try:
+                import json
+                data = json.loads(data)
+                logger.info(f"✅ [MERMAID] Successfully parsed JSON string")
+            except Exception as e:
+                logger.error(f"❌ [MERMAID] Failed to parse JSON string: {e}")
+                return [], []
 
-        # 2. 중첩된 구조 확인 (scenes가 아직 없는 경우에만)
-        if not scenes:
-            for wrapper_key in ['scenario', 'graph', 'data']:
-                if wrapper_key in data and isinstance(data[wrapper_key], dict):
-                    wrapper = data[wrapper_key]
+        if not isinstance(data, dict):
+            logger.error(f"❌ [MERMAID] Input data is not a dict: {type(data).__name__}")
+            return [], []
 
-                    if 'scenes' in wrapper:
-                        scenes_raw = wrapper['scenes']
-                        if isinstance(scenes_raw, list):
-                            scenes = scenes_raw
-                        elif isinstance(scenes_raw, dict):
-                            scenes = [
-                                {**scene_data, 'scene_id': scene_id}
-                                for scene_id, scene_data in scenes_raw.items()
-                            ]
-                        logger.info(f"📦 [MERMAID] Found scenes in {wrapper_key}: {len(scenes)} scenes")
-                        break
+        # ✅ [작업 1-3] "scenario" 키가 있고 값이 dict면 unwrap
+        if 'scenario' in data and isinstance(data['scenario'], dict):
+            logger.info(f"📦 [MERMAID] Unwrapping 'scenario' wrapper...")
+            data = data['scenario']
+            logger.info(f"🔑 [MERMAID] After unwrap, keys: {list(data.keys())[:20]}")
 
-        if not endings:
-            for wrapper_key in ['scenario', 'graph', 'data']:
-                if wrapper_key in data and isinstance(data[wrapper_key], dict):
-                    wrapper = data[wrapper_key]
+        # ✅ [작업 1-4] scenes 후보 경로 탐색
+        scenes_candidates = [
+            ('scenes', lambda d: d.get('scenes')),
+            ('scene_map', lambda d: d.get('scene_map')),
+            ('nodes', lambda d: d.get('nodes')),
+            ('graph.scenes', lambda d: d.get('graph', {}).get('scenes') if isinstance(d.get('graph'), dict) else None),
+            ('scenario.scenes', lambda d: d.get('scenario', {}).get('scenes') if isinstance(d.get('scenario'), dict) else None),
+        ]
 
-                    if 'endings' in wrapper:
-                        endings_raw = wrapper['endings']
-                        if isinstance(endings_raw, list):
-                            endings = endings_raw
-                        elif isinstance(endings_raw, dict):
-                            endings = [
-                                {**ending_data, 'ending_id': ending_id}
-                                for ending_id, ending_data in endings_raw.items()
-                            ]
-                        logger.info(f"📦 [MERMAID] Found endings in {wrapper_key}: {len(endings)} endings")
-                        break
+        for candidate_name, getter in scenes_candidates:
+            scenes_raw = getter(data)
+            if scenes_raw:
+                if isinstance(scenes_raw, list):
+                    scenes = scenes_raw
+                    logger.info(f"✅ [MERMAID] Found scenes at '{candidate_name}': list with {len(scenes)} items")
+                    break
+                elif isinstance(scenes_raw, dict):
+                    # dict 형태: { "Scene-1": {...}, ... } -> list로 변환
+                    scenes = [
+                        {**scene_data, 'scene_id': scene_id} if isinstance(scene_data, dict) else {'scene_id': scene_id}
+                        for scene_id, scene_data in scenes_raw.items()
+                    ]
+                    logger.info(f"✅ [MERMAID] Found scenes at '{candidate_name}': dict converted to list with {len(scenes)} items")
+                    break
 
-        # 3. nodes/edges 구조인 경우 (React Flow)
+        # ✅ [작업 1-5] endings 후보 경로 탐색
+        endings_candidates = [
+            ('endings', lambda d: d.get('endings')),
+            ('ending_map', lambda d: d.get('ending_map')),
+            ('graph.endings', lambda d: d.get('graph', {}).get('endings') if isinstance(d.get('graph'), dict) else None),
+            ('scenario.endings', lambda d: d.get('scenario', {}).get('endings') if isinstance(d.get('scenario'), dict) else None),
+        ]
+
+        for candidate_name, getter in endings_candidates:
+            endings_raw = getter(data)
+            if endings_raw:
+                if isinstance(endings_raw, list):
+                    endings = endings_raw
+                    logger.info(f"✅ [MERMAID] Found endings at '{candidate_name}': list with {len(endings)} items")
+                    break
+                elif isinstance(endings_raw, dict):
+                    endings = [
+                        {**ending_data, 'ending_id': ending_id} if isinstance(ending_data, dict) else {'ending_id': ending_id}
+                        for ending_id, ending_data in endings_raw.items()
+                    ]
+                    logger.info(f"✅ [MERMAID] Found endings at '{candidate_name}': dict converted to list with {len(endings)} items")
+                    break
+
+        # ✅ [작업 1-6] nodes/edges 구조인 경우 (React Flow) - scenes가 아직 없는 경우에만
         if not scenes and 'nodes' in data and 'edges' in data:
             logger.info(f"📦 [MERMAID] Detected nodes/edges structure, converting...")
             scenes, endings = MermaidService.convert_nodes_to_scenes(data['nodes'], data['edges'])
@@ -96,23 +111,33 @@ class MermaidService:
         logger.info(f"✅ [MERMAID] Normalized: scenes={len(scenes)}, endings={len(endings)}")
 
         if scenes:
-            scene_ids_sample = [s.get('scene_id', 'NO_ID') for s in scenes[:3]]
-            logger.info(f"📊 [MERMAID] Scene IDs sample: {scene_ids_sample}")
+            scene_ids_sample = [s.get('scene_id', 'NO_ID') for s in scenes[:5]]
+            logger.info(f"📊 [MERMAID] Scene IDs sample (first 5): {scene_ids_sample}")
 
         if endings:
             ending_ids_sample = [e.get('ending_id', 'NO_ID') for e in endings[:3]]
-            logger.info(f"📊 [MERMAID] Ending IDs sample: {ending_ids_sample}")
+            logger.info(f"📊 [MERMAID] Ending IDs sample (first 3): {ending_ids_sample}")
 
-        # ✅ 0일 때 디버그 정보
+        # ✅ [작업 1-7] 0일 때 디버그 정보 상세화
         if not scenes and not endings:
             top_keys = list(data.keys())[:20] if isinstance(data, dict) else []
             logger.warning(f"⚠️ [MERMAID] No scenes/endings found after normalization")
             logger.warning(f"🔑 [MERMAID] DEBUG: data top_keys={top_keys}")
 
-            # scenes/endings 후보 타입 확인
-            for key in ['scenes', 'endings']:
+            # scenes/endings 후보 키 존재 여부 확인
+            for key in ['scenes', 'scene_map', 'nodes', 'endings', 'ending_map']:
                 if key in data:
-                    logger.warning(f"🔍 [MERMAID] DEBUG: data['{key}'] type={type(data[key]).__name__}, value={str(data[key])[:100]}")
+                    value_type = type(data[key]).__name__
+                    value_preview = str(data[key])[:200] if data[key] else 'None'
+                    logger.warning(f"🔍 [MERMAID] DEBUG: data['{key}'] exists - type={value_type}, preview={value_preview}")
+                else:
+                    logger.warning(f"🔍 [MERMAID] DEBUG: data['{key}'] not found")
+
+            # 중첩 구조 확인
+            for wrapper_key in ['scenario', 'graph', 'data']:
+                if wrapper_key in data and isinstance(data[wrapper_key], dict):
+                    nested_keys = list(data[wrapper_key].keys())[:10]
+                    logger.warning(f"🔍 [MERMAID] DEBUG: data['{wrapper_key}'] keys={nested_keys}")
 
         return scenes, endings
 
