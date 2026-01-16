@@ -584,16 +584,26 @@ def intent_parser_node(state: PlayerState):
                 return state
 
             elif intent_type == 'attack':
-                # 승리 조건 확인
-                if scene_type == 'battle' and not check_victory_condition(user_input, scenario, curr_scene):
-                    state['parsed_intent'] = 'attack'
-                    state['_internal_flags'] = state.get('_internal_flags', {})
-                    state['_internal_flags']['battle_attack'] = True
-                    return state
+                # ✅ 작업 1: attack 의도를 무조건 보존 (transition으로 강제 변환 금지)
+                state['parsed_intent'] = 'attack'
+                # ✅ 작업 1: target_npc를 state에 반드시 저장
+                if target_npc:
+                    state['target_npc'] = target_npc
+                    logger.info(f"🎯 [ATTACK] Target NPC saved: '{target_npc}'")
                 else:
-                    # 승리 조건 충족 시 transition으로 처리
-                    state['parsed_intent'] = 'transition'
-                    return state
+                    # target_npc가 없으면 현재 씬의 NPC/적 목록에서 추출 시도
+                    npc_list = npc_names + enemy_names
+                    for npc_name in npc_list:
+                        if npc_name in user_input or npc_name.replace(' ', '').lower() in user_input.lower().replace(' ', ''):
+                            state['target_npc'] = npc_name
+                            logger.info(f"🎯 [ATTACK] Target extracted from input: '{npc_name}'")
+                            break
+                    if not state.get('target_npc'):
+                        state['target_npc'] = ''
+                        logger.warning(f"⚠️ [ATTACK] No target found in input: '{user_input}'")
+
+                logger.info(f"⚔️ [INTENT] Attack intent preserved (scene_type: {scene_type})")
+                return state
 
             elif intent_type == 'defend':
                 state['parsed_intent'] = 'defend'
@@ -2004,7 +2014,6 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 <div class="text-yellow-400 serif-font">{fallback_msg}</div>
             </div>
             """
-
 # --- Graph Construction ---
 
 def create_game_graph():
@@ -2026,7 +2035,8 @@ def create_game_graph():
     # 라우팅 함수: 의도에 따라 rule_engine 또는 npc_actor로 분기
     def route_action(state):
         intent = state.get('parsed_intent')
-        if intent in ['transition', 'ending', 'investigate']:
+        # ✅ 작업 3: attack 의도를 rule_engine으로 라우팅
+        if intent in ['transition', 'ending', 'investigate', 'attack']:
             return "rule_engine"
         else:
             return "npc_actor"
