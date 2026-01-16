@@ -98,6 +98,11 @@ class AuditRequest(BaseModel):
     audit_type: str = 'full'
     model: Optional[str] = None
 
+# [추가] 빌더에서 그래프 데이터(Nodes/Edges)를 직접 보내 검수 요청할 때 사용하는 모델
+class BuilderAuditRequest(BaseModel):
+    scenario: Dict[str, Any]  # { "nodes": [...], "edges": [...] }
+    scene_id: str
+    model: Optional[str] = None
 
 # ==========================================
 # [View 라우트] 마이페이지
@@ -1268,6 +1273,36 @@ async def ai_audit_scene(scenario_id: int, data: AuditRequest, user: CurrentUser
     audit_result = await run_in_threadpool(method, result['scenario'], data.scene_id, data.model)
 
     return {"success": True, "audit_type": data.audit_type, "result": audit_result}
+
+
+@api_router.post('/audit/scene')
+async def audit_builder_scene(data: BuilderAuditRequest):
+    try:
+        nodes = data.scenario.get('nodes', [])
+        edges = data.scenario.get('edges', [])
+
+        # 1. 그래프 데이터를 시나리오 구조로 변환
+        scenes, endings = MermaidService.convert_nodes_to_scenes(nodes, edges)
+
+        # 2. 임시 시나리오 객체 생성
+        temp_scenario = {
+            "title": "Draft Audit",
+            "scenes": scenes,
+            "endings": endings
+        }
+
+        # 3. AI 검수 실행
+        result = await run_in_threadpool(
+            AIAuditService.full_audit,
+            temp_scenario,
+            data.scene_id,
+            data.model
+        )
+
+        return {"success": True, "result": result}
+    except Exception as e:
+        logger.error(f"Builder Audit Error: {e}")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 @api_router.post('/draft/{scenario_id}/audit-recommend')
