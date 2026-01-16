@@ -806,7 +806,7 @@ def rule_node(state: PlayerState):
     logger.info(f"🎬 [APPLY_EFFECTS] Scene before transition: {actual_current_location}, Intent: {state['parsed_intent']}, Transition index: {idx}")
 
     # ========================================
-    # ⚔️ 작업 3: attack 의도 처리 (전투 로직 주입)
+    # ⚔️ 작업 1 & 3: attack 의도 처리 (전투 로직 주입 + 시체 확인)
     # ========================================
     if state['parsed_intent'] == 'attack':
         logger.info(f"⚔️ [RULE_NODE COMBAT] Attack intent detected in rule_node")
@@ -842,6 +842,32 @@ def rule_node(state: PlayerState):
             state['world_state'] = world_state.to_dict()
             return state
 
+        # ========================================
+        # 💀 작업 1: 죽은 NPC 확인 - 최상단에서 체크
+        # ========================================
+        npc_state = world_state.get_npc_state(target_npc)
+        if npc_state and npc_state.get('status') == 'dead':
+            logger.info(f"💀 [COMBAT BLOCKED] {target_npc} is already dead, cannot attack corpse")
+
+            # 시체 공격 시도 메시지
+            state['system_message'] = f"💀 이미 차갑게 식어버린 시체입니다. 공격할 가치도 없습니다."
+
+            # 데미지 계산 및 반격 로직 건너뛰기
+            state['world_state'] = world_state.to_dict()
+            state['npc_output'] = ""
+
+            # ✅ 작업 1: attack 시도이므로 stuck_count 증가 (장면 이동 없음)
+            old_stuck_count = state.get('stuck_count', 0)
+            state['stuck_count'] = old_stuck_count + 1
+            world_state.stuck_count = state['stuck_count']
+            logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (attacked corpse)")
+
+            # ✅ 작업 3: 데이터 정합성 보장
+            state['world_state'] = world_state.to_dict()
+            logger.info(f"💾 [DB SYNC] World state saved with stuck_count: {state['stuck_count']}")
+
+            return state
+
         # (c) 데미지 산정 (random 10~20)
         damage = random.randint(10, 20)
         logger.info(f"🎲 [COMBAT] Damage roll: {damage}")
@@ -869,18 +895,19 @@ def rule_node(state: PlayerState):
         # ========================================
         state['player_vars']['hp'] = world_state.player["hp"]
         logger.info(f"💾 [FINAL HP SYNC] Final Player HP sync before save: {world_state.player['hp']}")
-        logger.info(f"💾 [DB PRE-SAVE] Final Player HP in state (npc_node): {state['player_vars']['hp']}")
+        logger.info(f"💾 [DB PRE-SAVE] Final Player HP in state (rule_node): {state['player_vars']['hp']}")
+
+        # ✅ 작업 1: attack 의도 시 stuck_count 증가 (장면 이동 없음)
+        old_stuck_count = state.get('stuck_count', 0)
+        state['stuck_count'] = old_stuck_count + 1
+        world_state.stuck_count = state['stuck_count']
+        logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (attack intent)")
 
         # (h) world_state 갱신
         state['world_state'] = world_state.to_dict()
 
         # NPC 대사는 생성하지 않음 (공격 결과만 표시)
         state['npc_output'] = ""
-
-        # (i) 죽은 NPC 확인 및 대사 차단
-        npc_state = world_state.get_npc_state(target_npc)
-        if npc_state and npc_state.get('status') == 'dead':
-            logger.info(f"💀 [COMBAT] {target_npc} is dead, blocking NPC dialogue")
 
         logger.info(f"✅ [COMBAT] Attack processing complete. Damage: {damage}, Target: {target_npc}")
 
@@ -1769,78 +1796,41 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     if 'world_state' in state and state['world_state']:
         world_state.from_dict(state['world_state'])
 
-    # [추가] current_scene_id가 'prologue'이거나 존재하지 않는 경우 폴백 처리
-    if curr_id == 'prologue' or curr_id not in all_scenes:
-        logger.warning(f"⚠️ Scene not found or is prologue: {curr_id}")
+    # ========================================
+    # 💀 작업 2: 죽은 NPC 상태 정보 수집 (환각 방지)
+    # ========================================
+    curr_scene = all_scenes.get(curr_id) if curr_id not in all_endings else None
+    npc_status_context = ""
 
-        # start_scene_id로 폴백
-        start_scene_id = scenario.get('start_scene_id')
-        if not start_scene_id or start_scene_id not in all_scenes:
-            # start_scene_id도 없으면 첫 번째 씬 사용
-            scenes_list = scenario.get('scenes', [])
-            if scenes_list:
-                start_scene_id = scenes_list[0].get('scene_id', 'Scene-1')
-            else:
-                start_scene_id = 'Scene-1'
+    if curr_scene:
+        npc_names = curr_scene.get('npcs', [])
+        enemy_names = curr_scene.get('enemies', [])
+        all_npc_names = npc_names + enemy_names
 
-        logger.info(f"🔧 [SCENE FALLBACK] {curr_id} -> {start_scene_id}")
-        state['current_scene_id'] = start_scene_id
-        world_state.location = start_scene_id
-        curr_id = start_scene_id
+        dead_npcs = []
+        for npc_name in all_npc_names:
+            npc_state = world_state.get_npc_state(npc_name)
+            if npc_state and npc_state.get('status') == 'dead':
+                dead_npcs.append(npc_name)
 
-        # [추가] 폴백 후 다시 all_scenes에서 확인
-        if curr_id not in all_scenes:
-            logger.error(f"❌ [CRITICAL] Even after fallback, scene not found: {curr_id}")
-            # 재시도 로직
-            if retry_count < max_retries:
-                yield f"__RETRY_SIGNAL__"
-                return
-            fallback_msg = get_narrative_fallback_message(scenario)
-            yield f"""
-            <div class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4 my-2">
-                <div class="text-yellow-400 serif-font">{fallback_msg}</div>
-            </div>
-            """
-            return
+        if dead_npcs:
+            dead_list = ", ".join(dead_npcs)
+            npc_status_context = f"""
+⚠️ **[CRITICAL INSTRUCTION - NPC STATUS]**
+다음 NPC들은 현재 'dead' 상태입니다: {dead_list}
 
-    if curr_id in all_endings:
-        ending = all_endings[curr_id]
-        yield f"""
-        <div class="ending-scene">
-            <h3>🎉 {ending.get('title', 'ENDING')} 🎉</h3>
-            <p>{ending.get('description', '')}</p>
-        </div>
-        """
-        return
+**절대적 규칙:**
+- 이들은 이미 사망했으므로, 움직이거나 말하거나 행동하는 묘사를 절대 하지 마세요.
+- 시체, 주검, 차갑게 식은 몸 등으로만 표현하세요.
+- 이들이 살아있는 것처럼 묘사하면 중대한 오류입니다.
+"""
+            logger.info(f"💀 [NARRATOR] Dead NPCs in scene: {dead_list}")
 
-    curr_scene = all_scenes.get(curr_id)
-
-    if not curr_scene:
-        logger.warning(f"❌ Scene not found after fallback: {curr_id}")
-        if retry_count < max_retries:
-            yield f"__RETRY_SIGNAL__"
-            return
-        fallback_msg = get_narrative_fallback_message(scenario)
-        yield f"""
-        <div class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4 my-2">
-            <div class="text-yellow-400 serif-font">{fallback_msg}</div>
-        </div>
-        """
-        # 최후의 수단: start_scene_id로 강제 이동
-        start_scene_id = scenario.get('start_scene_id')
-        if start_scene_id and start_scene_id in all_scenes:
-            state['current_scene_id'] = start_scene_id
-            world_state.location = start_scene_id
-        elif scenario.get('scenes'):
-            fallback_scene_id = scenario['scenes'][0].get('scene_id', 'Scene-1')
-            state['current_scene_id'] = fallback_scene_id
-            world_state.location = fallback_scene_id
-        return
-
-    scene_title = curr_scene.get('title', 'Untitled')
-    scene_type = curr_scene.get('type', 'normal')
-    enemy_names = curr_scene.get('enemies', [])
-    npc_names = curr_scene.get('npcs', [])
+    # system_message에 시체 관련 내용이 있으면 최우선 반영
+    system_message = state.get('system_message', '')
+    if "시체" in system_message or "식어버린" in system_message:
+        npc_status_context += f"\n⚠️ **시스템 메시지 최우선 반영:** {system_message}\n"
+        logger.info(f"💀 [NARRATOR] Corpse-related system message detected: {system_message}")
 
     # =============================================================================
     # [MODE 1] 씬 유지됨 -> 의도(parsed_intent)에 따른 전용 서사 프롬프트 선택
@@ -2037,7 +2027,8 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             context_prefix = f"""**최우선 지침: 유저의 마지막 입력("{user_input}")이 이 장면으로의 전환을 일으켰습니다. 그 결과를 먼저 서술하세요.**
 
 """
-            prompt = context_prefix + scene_prompt_template.format(
+            # ✅ 작업 2: 죽은 NPC 상태 컨텍스트 주입
+            prompt = npc_status_context + context_prefix + scene_prompt_template.format(
                 player_status=player_status,
                 scene_title=scene_title,
                 scene_desc=scene_desc,
@@ -2045,7 +2036,8 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 available_transitions=available_transitions
             )
         else:
-            prompt = scene_prompt_template.format(
+            # ✅ 작업 2: 죽은 NPC 상태 컨텍스트 주입
+            prompt = npc_status_context + scene_prompt_template.format(
                 player_status=player_status,
                 scene_title=scene_title,
                 scene_desc=scene_desc,
@@ -2054,7 +2046,8 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             )
     else:
         # 폴백 프롬프트
-        prompt = f"""당신은 텍스트 기반 RPG의 게임 마스터입니다.
+        # ✅ 작업 2: 죽은 NPC 상태 컨텍스트 주입
+        prompt = npc_status_context + f"""당신은 텍스트 기반 RPG의 게임 마스터입니다.
 
 **장면 정보:**
 - 제목: "{scene_title}"
