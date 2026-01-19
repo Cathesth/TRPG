@@ -23,7 +23,7 @@ class ImageService:
         self.api_key = os.getenv("GOOGLE_API_KEY")
 
         # [설정] Google AI Studio의 Imagen 3 모델 사용
-        self.model_name = "imagen-3.0-generate-002"
+        self.model_name = os.getenv("GOOGLE_IMAGE_MODEL", "imagen-3.0-generate-002")
 
         # 이미지 생성 프롬프트 템플릿 (Imagen은 구체적인 지시를 잘 따릅니다)
         self.prompts = {
