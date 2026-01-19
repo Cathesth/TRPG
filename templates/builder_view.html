@@ -55,15 +55,16 @@
              background: linear-gradient(135deg, rgba(26, 26, 46, 0.98) 0%, rgba(37, 37, 66, 0.95) 100%);
              border: 2px solid var(--game-border-light);
              box-shadow: 6px 6px 0px 0px rgba(0,0,0,0.5);
-             transition: all 0.1s;
+             /* transition: all 0.1s; -> 드래그 성능을 위해 transform transition 제거 */
+             transition: box-shadow 0.1s, border-color 0.1s;
              position: absolute;
              z-index: 10;
+             will-change: left, top; /* 성능 최적화 힌트 */
          }
 
          .voxel-ui .node-ui:hover {
              border-color: var(--game-accent-1);
              z-index: 20;
-             transform: translate(-1px, -1px);
              box-shadow: 8px 8px 0px 0px rgba(99, 102, 241, 0.3);
          }
 
@@ -73,7 +74,6 @@
              z-index: 30;
          }
 
-         /* 연결 모드 타겟 후보 스타일 */
          .voxel-ui .node-ui.connecting-target-candidate:hover {
              border-color: var(--game-success);
              box-shadow: 0 0 15px var(--game-success);
@@ -254,12 +254,16 @@
             const [selectedNodeId, setSelectedNodeId] = useState(null);
             const canvasRef = useRef(null);
 
+            // [State] Performance Optimization (뚝뚝 끊김 방지)
+            const rAF = useRef(null); // Animation Frame
+            const dragOffset = useRef({ x: 0, y: 0 }); // Drag Offset
+
             // [State] Modals & AI Model
             const [modals, setModals] = useState({ npcGen: false, npcList: false, presetLoad: false, scenarioList: false });
             const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
             const [auditState, setAuditState] = useState({ isOpen: false, isLoading: false, results: null, targetNodeId: null });
 
-            // [복구됨] 선택된 AI 모델
+            // [AI 모델 선택]
             const [selectedModel, setSelectedModel] = useState('openai/tngtech/deepseek-r1t2-chimera:free');
 
             const [presetList, setPresetList] = useState([]);
@@ -395,7 +399,7 @@
                 } else {
                     if (connectSource === nodeId) {
                         setConnectSource(null);
-                        showToast("연결 대기 취소됨", "info");
+                        showToast("연결 취소", "info");
                     } else {
                         if (!edges.some(eg => eg.source === connectSource && eg.target === nodeId)) {
                             pushHistory();
@@ -409,7 +413,6 @@
                 }
             };
 
-            // 노드 본체 클릭 (타겟 지정용)
             const handleNodeBodyClick = (e, nodeId) => {
                 if (connectSource && connectSource !== nodeId) {
                     e.stopPropagation();
@@ -424,29 +427,57 @@
                 }
             };
 
-            // --- Canvas Interaction ---
+            // --- Canvas Interaction (Optimization Applied) ---
             const handleMouseDown = (e) => {
                 if (e.target.closest('.node-ui')) return;
                 if (e.button === 0 || e.button === 1 || e.button === 2) setIsPanning(true);
             };
+
             const handleMouseMove = (e) => {
+                if (!canvasRef.current) return;
+
+                const movementX = e.movementX;
+                const movementY = e.movementY;
                 const rect = canvasRef.current.getBoundingClientRect();
                 const x = (e.clientX - rect.left - pan.x) / pan.zoom;
                 const y = (e.clientY - rect.top - pan.y) / pan.zoom;
                 setMousePos({ x, y });
 
                 if (isPanning) {
-                    setPan(p => ({ ...p, x: p.x + e.movementX, y: p.y + e.movementY }));
+                    setPan(p => ({ ...p, x: p.x + movementX, y: p.y + movementY }));
                 } else if (dragNode) {
-                    setNodes(prev => prev.map(n => n.id === dragNode ? { ...n, x, y } : n));
+                    // [최적화] requestAnimationFrame 사용
+                    if (rAF.current) cancelAnimationFrame(rAF.current);
+                    rAF.current = requestAnimationFrame(() => {
+                        setNodes(prev => prev.map(n => {
+                            if (n.id === dragNode) {
+                                // 오프셋 적용하여 부드러운 드래그
+                                return { ...n, x: x - dragOffset.current.x, y: y - dragOffset.current.y };
+                            }
+                            return n;
+                        }));
+                    });
                 }
             };
+
             const handleMouseUp = () => {
                 if (dragNode) pushHistory();
                 setIsPanning(false); setDragNode(null);
+                if (rAF.current) cancelAnimationFrame(rAF.current);
             };
+
             const handleNodeDragStart = (e, id) => {
                 if (connectSource) return;
+
+                // [최적화] 드래그 시작 시 오프셋 계산
+                const node = nodes.find(n => n.id === id);
+                if (node && canvasRef.current) {
+                    const rect = canvasRef.current.getBoundingClientRect();
+                    const mx = (e.clientX - rect.left - pan.x) / pan.zoom;
+                    const my = (e.clientY - rect.top - pan.y) / pan.zoom;
+                    dragOffset.current = { x: mx - node.x, y: my - node.y };
+                }
+
                 setDragNode(id); setSelectedNodeId(id);
             };
 
