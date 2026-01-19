@@ -158,8 +158,8 @@
 <!-- 메인 콘텐츠 영역 (전체 너비) -->
 <div class="flex-1 flex pt-20 h-screen overflow-hidden">
     <div class="flex flex-1 overflow-hidden">
-        <!-- 채팅 영역 -->
-        <div class="flex-1 flex flex-col relative bg-rpg-900 overflow-hidden">
+        <!-- 채팅 영역 전체 컨테이너 -->
+        <div class="flex-1 flex flex-col bg-rpg-900">
 
             <!-- 시나리오 로드 모달 -->
             <div id="load-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/90 backdrop-blur-sm">
@@ -192,7 +192,7 @@
                 </div>
             </div>
 
-            <!-- 채팅 로그 영역 (독립 스크롤) -->
+            <!-- 채팅 로그 영역 (독립 스크롤) - flex-1로 남은 공간 모두 차지 -->
             <div id="chat-log" class="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth">
                 <!-- 알림 메시지 영역 -->
                 <div id="init-result" class="mb-4"></div>
@@ -232,8 +232,8 @@
                 </div>
             </div>
 
-            <!-- 입력창 (고정) -->
-            <div class="p-4 bg-rpg-900 border-t border-rpg-700">
+            <!-- 입력창 (고정) - shrink-0으로 축소 방지 -->
+            <div class="shrink-0 p-4 bg-rpg-900 border-t border-rpg-700">
                 <form id="game-form" class="max-w-4xl mx-auto flex gap-2">
                     <input type="text" name="action" autofocus autocomplete="off"
                            class="flex-1 bg-rpg-800 border border-rpg-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-rpg-accent focus:ring-1 focus:ring-rpg-accent placeholder-gray-500"
@@ -246,9 +246,9 @@
         </div>
 
         <!-- 스탯 사이드바 (독립 스크롤) -->
-        <div class="w-80 bg-rpg-800 border-l border-rpg-700 overflow-hidden hidden lg:flex flex-col">
+        <div class="w-80 bg-rpg-800 border-l border-rpg-700 flex flex-col hidden lg:flex">
             <!-- 헤더 (고정) -->
-            <div class="p-4 border-b border-rpg-700 shrink-0">
+            <div class="shrink-0 p-4 border-b border-rpg-700">
                 <div class="flex items-center justify-between">
                     <h3 class="text-gray-400 font-bold flex items-center gap-2">
                         <i data-lucide="user" class="w-4 h-4"></i>
