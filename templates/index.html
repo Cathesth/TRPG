@@ -439,10 +439,25 @@
                 const res = await fetch('/api/load_scenario', { method: 'POST', body: formData });
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.session_key) { sessionStorage.setItem('trpg_session_key', data.session_key); }
-                    if (data.scenario_id) { sessionStorage.setItem('trpg_scenario_id', data.scenario_id); }
+
+                    // ✅ [작업 1] sessionStorage에 세션 정보 저장 (session_key 우선)
+                    const sessionKey = data.session_key || data.session_id;
+                    const scenarioId = data.scenario_id;
+
+                    if (sessionKey) {
+                        sessionStorage.setItem('trpg_session_key', sessionKey);
+                        console.log('✅ Session key saved:', sessionKey);
+                    }
+                    if (scenarioId) {
+                        sessionStorage.setItem('trpg_scenario_id', scenarioId);
+                        console.log('✅ Scenario ID saved:', scenarioId);
+                    }
+
+                    // 채팅 로그 초기화 및 로드 플래그 설정
                     sessionStorage.removeItem('trpg_chat_log');
                     sessionStorage.setItem('trpg_scenario_loaded', 'true');
+
+                    // ✅ 데이터 저장 완료 후 리다이렉트
                     window.location.href = '/views/player';
                 } else {
                     alert('로드 실패: ' + await res.text());
