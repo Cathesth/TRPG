@@ -13,31 +13,31 @@
 
 <style>
          :root {
-             --vx-bg: #070a0f;
-             --vx-panel: #0f172a;
-             --vx-panel-2: #111c33;
-             --vx-border: #22314d;
-             --vx-border-2: #334b74;
-             --vx-text: #e7efff;
-             --vx-muted: #90a4c6;
-             --vx-accent: #57a2ff;
-             --vx-accent-2: #8b5cf6;
-             --vx-good: #22c55e;
-             --vx-warn: #f59e0b;
-             --vx-bad: #ef4444;
-             --vx-tex-a: rgba(255,255,255,0.045);
-             --vx-tex-b: rgba(0,0,0,0.20);
-             --vx-tex-c: rgba(0,0,0,0.35);
+             --vx-bg: #0a0e27;
+             --vx-panel: #1a1f3a;
+             --vx-panel-2: #252b4a;
+             --vx-border: #3d4a7a;
+             --vx-border-2: #5865a8;
+             --vx-text: #f0f4ff;
+             --vx-muted: #a0b0d8;
+             --vx-accent: #00d9ff;
+             --vx-accent-2: #ff6ec7;
+             --vx-good: #00ff88;
+             --vx-warn: #ffaa00;
+             --vx-bad: #ff3366;
+             --px-dither-a: rgba(0, 217, 255, 0.08);
+             --px-dither-b: rgba(255, 110, 199, 0.06);
+             --px-shadow: rgba(10, 14, 39, 0.75);
          }
 
          .voxel-ui {
-             font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+             font-family: ui-monospace, 'Courier New', monospace, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
              color: var(--vx-text);
-             letter-spacing: 0.1px;
-             text-rendering: geometricPrecision;
+             letter-spacing: 0.5px;
+             text-rendering: optimizeLegibility;
              image-rendering: pixelated;
-             -webkit-font-smoothing: none;
-             -moz-osx-font-smoothing: grayscale;
+             -webkit-font-smoothing: antialiased;
+             text-shadow: 0 0 1px rgba(0, 217, 255, 0.3);
          }
 
          .voxel-ui button,
@@ -50,33 +50,46 @@
          .voxel-ui .bg-dots-pattern {
              background-color: var(--vx-bg) !important;
              background-image:
-                 linear-gradient(transparent 0, transparent 11px, rgba(100, 130, 190, 0.10) 12px),
-                 linear-gradient(90deg, transparent 0, transparent 11px, rgba(100, 130, 190, 0.10) 12px),
-                 repeating-linear-gradient(0deg, rgba(255,255,255,0.03) 0 1px, transparent 1px 3px),
-                 repeating-linear-gradient(90deg, rgba(0,0,0,0.10) 0 1px, transparent 1px 4px);
-             background-size: 12px 12px;
+                 radial-gradient(circle at 50% 50%, rgba(0, 217, 255, 0.03) 0%, transparent 70%),
+                 repeating-linear-gradient(0deg, transparent 0 7px, var(--px-dither-a) 7px 8px),
+                 repeating-linear-gradient(90deg, transparent 0 7px, var(--px-dither-b) 7px 8px);
+             background-size: 200% 200%, 8px 8px, 8px 8px;
+             background-position: 50% 50%, 0 0, 0 0;
+             animation: pixelPulse 8s ease-in-out infinite;
              image-rendering: pixelated;
          }
 
+         @keyframes pixelPulse {
+             0%, 100% { background-position: 50% 50%, 0 0, 0 0; }
+             50% { background-position: 30% 70%, 0 0, 0 0; }
+         }
+
          .voxel-ui .node-ui {
-             border-radius: 0 !important;
+             border-radius: 2px !important;
              background-image:
-                 linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.00)),
-                 linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(7, 10, 15, 0.96)),
-                 repeating-linear-gradient(0deg, var(--vx-tex-a) 0 1px, transparent 1px 4px),
-                 repeating-linear-gradient(90deg, rgba(0,0,0,0.14) 0 1px, transparent 1px 5px);
+                 linear-gradient(135deg, rgba(0, 217, 255, 0.12) 0%, transparent 100%),
+                 linear-gradient(180deg, rgba(26, 31, 58, 0.95), rgba(16, 20, 40, 0.98)),
+                 repeating-linear-gradient(45deg, transparent 0 2px, var(--px-dither-a) 2px 3px),
+                 repeating-linear-gradient(-45deg, transparent 0 2px, var(--px-dither-b) 2px 3px);
+             border: 2px solid;
              border-color: var(--vx-border-2) !important;
              box-shadow:
-                 0 0 0 2px rgba(0, 0, 0, 0.25),
-                 4px 4px 0 rgba(0, 0, 0, 0.65),
-                 8px 8px 0 rgba(0, 0, 0, 0.35);
+                 inset 0 1px 0 rgba(0, 217, 255, 0.25),
+                 inset 0 -1px 0 rgba(255, 110, 199, 0.15),
+                 0 0 0 1px var(--px-shadow),
+                 3px 3px 0 var(--px-shadow),
+                 0 0 12px rgba(0, 217, 255, 0.15);
          }
 
          .voxel-ui .node-ui:hover {
              transform: translate(-1px, -1px);
              box-shadow:
-                 0 0 0 2px rgba(0, 0, 0, 0.25),
-                 12px 12px 0 rgba(0, 0, 0, 0.35);
+                 inset 0 1px 0 rgba(0, 217, 255, 0.35),
+                 inset 0 -1px 0 rgba(255, 110, 199, 0.25),
+                 0 0 0 1px var(--px-shadow),
+                 4px 4px 0 var(--px-shadow),
+                 0 0 20px rgba(0, 217, 255, 0.35),
+                 0 0 40px rgba(255, 110, 199, 0.15);
          }
 
          .voxel-ui button,
@@ -85,32 +98,39 @@
          }
 
          .voxel-ui button {
-             border-radius: 0;
-             border: 2px solid rgba(255,255,255,0.14);
+             border-radius: 2px;
+             border: 2px solid rgba(88, 101, 168, 0.6);
              background-image:
-                 linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.00)),
-                 linear-gradient(180deg, rgba(17, 28, 51, 0.96), rgba(11, 18, 34, 0.96)),
-                 repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 3px),
-                 repeating-linear-gradient(90deg, rgba(0,0,0,0.18) 0 1px, transparent 1px 4px);
+                 linear-gradient(180deg, rgba(0, 217, 255, 0.15), transparent),
+                 linear-gradient(180deg, rgba(26, 31, 58, 0.96), rgba(16, 20, 40, 0.98)),
+                 repeating-linear-gradient(90deg, var(--px-dither-a) 0 1px, transparent 1px 4px);
              box-shadow:
-                 inset 0 1px 0 rgba(255,255,255,0.10),
-                 inset 0 -2px 0 rgba(0,0,0,0.40),
-                 0 0 0 2px rgba(0,0,0,0.25),
-                 4px 4px 0 rgba(0,0,0,0.55);
-             transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
+                 inset 0 1px 0 rgba(0, 217, 255, 0.3),
+                 inset 0 -1px 0 rgba(255, 110, 199, 0.2),
+                 0 0 0 1px var(--px-shadow),
+                 2px 2px 0 var(--px-shadow),
+                 0 0 8px rgba(0, 217, 255, 0.2);
+             transition: all 100ms cubic-bezier(0.4, 0, 0.2, 1);
          }
 
          .voxel-ui button:hover {
-             filter: brightness(1.08);
+             filter: brightness(1.15);
+             border-color: rgba(0, 217, 255, 0.8);
+             box-shadow:
+                 inset 0 1px 0 rgba(0, 217, 255, 0.5),
+                 inset 0 -1px 0 rgba(255, 110, 199, 0.3),
+                 0 0 0 1px var(--px-shadow),
+                 2px 2px 0 var(--px-shadow),
+                 0 0 16px rgba(0, 217, 255, 0.5);
          }
 
          .voxel-ui button:active {
              transform: translate(1px, 1px);
              box-shadow:
-                 inset 0 2px 0 rgba(0,0,0,0.35),
-                 inset 0 -1px 0 rgba(255,255,255,0.06),
-                 0 0 0 2px rgba(0,0,0,0.25),
-                 3px 3px 0 rgba(0,0,0,0.55);
+                 inset 0 2px 4px var(--px-shadow),
+                 inset 0 -1px 0 rgba(0, 217, 255, 0.2),
+                 0 0 0 1px var(--px-shadow),
+                 1px 1px 0 var(--px-shadow);
          }
 
          .voxel-ui button:focus-visible,
@@ -125,17 +145,17 @@
          .voxel-ui input,
          .voxel-ui select,
          .voxel-ui textarea {
-             border-radius: 0;
-             border: 2px solid rgba(255,255,255,0.12);
+             border-radius: 2px;
+             border: 2px solid rgba(61, 74, 122, 0.6);
              background-image:
-                 linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.00)),
-                 linear-gradient(180deg, rgba(8, 12, 20, 0.96), rgba(5, 8, 12, 0.96)),
-                 repeating-linear-gradient(0deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 4px),
-                 repeating-linear-gradient(90deg, rgba(0,0,0,0.14) 0 1px, transparent 1px 6px);
+                 linear-gradient(180deg, rgba(0, 217, 255, 0.05), transparent),
+                 linear-gradient(180deg, rgba(10, 14, 39, 0.96), rgba(8, 10, 28, 0.98)),
+                 repeating-linear-gradient(90deg, var(--px-dither-a) 0 1px, transparent 1px 6px);
              box-shadow:
-                 inset 0 2px 0 rgba(0,0,0,0.40),
-                 0 0 0 2px rgba(0,0,0,0.25),
-                 3px 3px 0 rgba(0,0,0,0.45);
+                 inset 0 2px 4px var(--px-shadow),
+                 inset 0 0 0 1px rgba(0, 217, 255, 0.1),
+                 0 0 0 1px var(--px-shadow),
+                 0 0 8px rgba(0, 217, 255, 0.1);
              color: var(--vx-text);
          }
 
@@ -148,19 +168,18 @@
          .voxel-ui .bg-gray-800,
          .voxel-ui .bg-gray-950 {
              background-image:
-                 linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.00)),
-                 linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(7, 10, 15, 0.97)),
-                 repeating-linear-gradient(0deg, var(--vx-tex-a) 0 1px, transparent 1px 4px),
-                 repeating-linear-gradient(90deg, rgba(0,0,0,0.18) 0 1px, transparent 1px 6px) !important;
+                 linear-gradient(135deg, rgba(0, 217, 255, 0.08) 0%, transparent 100%),
+                 linear-gradient(180deg, rgba(26, 31, 58, 0.95), rgba(16, 20, 40, 0.97)),
+                 repeating-linear-gradient(45deg, transparent 0 2px, var(--px-dither-a) 2px 3px) !important;
          }
 
          .voxel-ui .rounded-xl,
          .voxel-ui .rounded-lg {
-             border-radius: 0 !important;
+             border-radius: 3px !important;
          }
 
          .voxel-ui .rounded {
-             border-radius: 0 !important;
+             border-radius: 2px !important;
          }
 
          .voxel-ui .bg-gradient-to-r {
@@ -197,12 +216,15 @@
          }
 
          .voxel-ui .node-ui {
-             border-radius: 0 !important;
+             border-radius: 2px !important;
          }
 
          .voxel-ui .node-ui .cursor-grab {
-             border-top-left-radius: 0;
-             border-top-right-radius: 0;
+             border-top-left-radius: 2px;
+             border-top-right-radius: 2px;
+             background-image:
+                 linear-gradient(90deg, rgba(0, 217, 255, 0.15), rgba(255, 110, 199, 0.1)) !important;
+             border-bottom: 2px solid rgba(0, 217, 255, 0.3);
          }
 
          .voxel-ui .ring-blue-500 {
@@ -210,14 +232,24 @@
          }
 
          .voxel-ui .text-transparent.bg-clip-text.bg-gradient-to-r {
-             filter: drop-shadow(2px 2px 0 rgba(0,0,0,0.6));
+             filter: drop-shadow(0 0 8px rgba(0, 217, 255, 0.6)) drop-shadow(0 0 16px rgba(255, 110, 199, 0.4));
          }
 
          .voxel-ui .fixed.top-5.left-1\/2 {
-             border: 1px solid rgba(255,255,255,0.12);
+             border: 2px solid rgba(0, 217, 255, 0.5);
+             border-radius: 2px;
              box-shadow:
-                 0 0 0 2px rgba(0,0,0,0.25),
-                 8px 8px 0 rgba(0,0,0,0.35);
+                 0 0 0 1px var(--px-shadow),
+                 3px 3px 0 var(--px-shadow),
+                 0 0 16px rgba(0, 217, 255, 0.4),
+                 0 0 32px rgba(255, 110, 199, 0.2);
+         }
+
+         .voxel-ui .custom-scrollbar::-webkit-scrollbar-thumb {
+             background: linear-gradient(180deg, rgba(0, 217, 255, 0.7), rgba(255, 110, 199, 0.6));
+             border: 1px solid rgba(0, 217, 255, 0.4);
+             border-radius: 2px;
+             box-shadow: inset 0 0 4px rgba(0, 217, 255, 0.3);
          }
  </style>
 </head>
