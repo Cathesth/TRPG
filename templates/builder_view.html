@@ -208,6 +208,7 @@
         // --- [최적화] Node Item Component ---
         const NodeItem = React.memo(({ node, isSelected, isConnectSource, isCandidate, onMouseDown, onClick, onLinkClick, onDelete, onAudit, globalNpcs, globalEnemies, addEntityToNode, removeEntityFromNode }) => {
             const handleBodyClick = (e) => {
+                // Only allow node selection, not connection
                 if (onClick) onClick(e, node.id);
             };
 
@@ -231,7 +232,7 @@
                             onMouseDown={(e) => e.stopPropagation()}
                             onClick={(e) => onLinkClick(e, node.id)}
                             className={`p-1 hover:text-[#00FFFF] transition-colors ${isConnectSource ? 'text-[#00FFFF] animate-pulse' : 'text-[#6A6A8A]'}`}
-                            title="연결하기 (Click)">
+                            title="연결 모드 시작 (클릭 후 다른 노드 클릭)">
                             <Icon name="link" size={12}/>
                         </button>
                     </div>
