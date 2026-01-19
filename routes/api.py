@@ -14,7 +14,7 @@ from passlib.context import CryptContext
 from werkzeug.security import check_password_hash
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, APIRouter, Request, Depends, Form, HTTPException, Query, File, UploadFile
-from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -39,6 +39,46 @@ from services.mermaid_service import MermaidService
 # 인증 및 모델
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
 from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike, User
+
+# [api.py 상단 임포트 추가]
+from authlib.integrations.starlette_client import OAuth
+from starlette.config import Config
+from starlette.middleware.sessions import SessionMiddleware
+
+
+# .env 파일을 읽기 위한 설정
+config = Config('.env')
+oauth = OAuth(config)
+
+
+# 1. Google 등록
+oauth.register(
+    name='google',
+    client_id=os.getenv('GOOGLE_CLIENT_ID'),
+    client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'}
+)
+
+oauth.register(
+    name='naver',
+    client_id=os.getenv('NAVER_CLIENT_ID'),
+    client_secret=os.getenv('NAVER_CLIENT_SECRET'),
+    api_base_url='https://openapi.naver.com/v1/nid/me',
+    access_token_url='https://nid.naver.com/oauth2.0/token',
+    authorize_url='https://nid.naver.com/oauth2.0/authorize',
+    client_kwargs={'scope': 'profile'}
+)
+
+oauth.register(
+    name='kakao',
+    client_id=os.getenv('KAKAO_CLIENT_ID'),
+    client_secret=os.getenv('KAKAO_CLIENT_SECRET'),
+    api_base_url='https://kapi.kakao.com/v2/user/me',
+    access_token_url='https://kauth.kakao.com/oauth/token',
+    authorize_url='https://kauth.kakao.com/oauth/authorize',
+    client_kwargs={'scope': 'account_email profile_nickname'}
+)
 
 # 변경: schemes=["bcrypt", "sha256_crypt", "pbkdf2_sha256"] -> 예전 형식도 인식 가능
 pwd_context = CryptContext(
@@ -479,6 +519,122 @@ async def get_current_user_info(user: CurrentUser = Depends(get_current_user_opt
         "is_logged_in": user.is_authenticated,
         "username": user.id if user.is_authenticated else None
     }
+
+
+# ---------------------------------------------------------
+# [추가] 소셜 로그인 라우트
+# ---------------------------------------------------------
+
+@api_router.get('/auth/login/{provider}')
+async def login_social(provider: str, request: Request):
+    """
+    프론트엔드에서 '구글 로그인' 버튼 누르면 이 주소로 이동
+    예: <a href="/api/auth/login/google">Google Login</a>
+    """
+    # 각 플랫폼에 맞는 Redirect URI 생성
+    # 로컬 테스트 시 http인지 https인지 주의 (보통 로컬은 http)
+    redirect_uri = request.url_for('auth_callback', provider=provider)
+
+    # 간혹 https/http 프로토콜 문제 발생 시 강제 변환 (배포 환경 고려)
+    if "localhost" not in redirect_uri:
+        redirect_uri = str(redirect_uri).replace("http://", "https://")
+
+    return await oauth.create_client(provider).authorize_redirect(request, redirect_uri)
+
+
+@api_router.get('/auth/callback/{provider}', name="auth_callback")
+async def auth_callback(provider: str, request: Request, db: Session = Depends(get_db)):
+    """
+    소셜 로그인 성공 후 돌아오는 콜백 주소
+    """
+    try:
+        client = oauth.create_client(provider)
+        token = await client.authorize_access_token(request)
+    except Exception as e:
+        logger.error(f"OAuth Token Error: {e}")
+        return JSONResponse({"success": False, "error": "소셜 인증 실패"}, status_code=400)
+
+    # 사용자 정보 가져오기
+    user_info = None
+    social_id = None
+    email = None
+    nickname = None
+
+    if provider == 'google':
+        user_info = token.get('userinfo')
+        if not user_info:
+            user_info = await client.userinfo(token=token)
+        email = user_info.get('email')
+        social_id = user_info.get('sub')  # 구글 고유 ID
+        nickname = user_info.get('name')
+
+    elif provider == 'naver':
+        resp = await client.get('https://openapi.naver.com/v1/nid/me', token=token)
+        profile = resp.json().get('response', {})
+        email = profile.get('email')
+        social_id = profile.get('id')
+        nickname = profile.get('name') or profile.get('nickname')
+
+    elif provider == 'kakao':
+        resp = await client.get('https://kapi.kakao.com/v2/user/me', token=token)
+        profile = resp.json()
+        kakao_account = profile.get('kakao_account', {})
+
+        social_id = str(profile.get('id'))
+        email = kakao_account.get('email')
+        nickname = kakao_account.get('profile', {}).get('nickname')
+
+    if not email:
+        return JSONResponse({"success": False, "error": "이메일 정보를 가져올 수 없습니다."}, status_code=400)
+
+    # ---------------------------------------------------------
+    # [핵심 로직] DB 연동 (기존 회원 확인 또는 자동 가입)
+    # ---------------------------------------------------------
+
+    # 1. 이메일로 기존 유저 확인
+    # (기존 User 모델에 email 컬럼이 있다고 가정)
+    existing_user = db.query(User).filter(User.email == email).first()
+
+    if existing_user:
+        # 이미 가입된 이메일이면 바로 로그인 처리
+        login_user(request, existing_user)
+        return RedirectResponse(url="/")  # 메인 페이지로 이동
+
+    # 2. 가입된 유저가 없으면 '자동 회원가입' 진행
+    # 소셜 유저는 비밀번호가 없으므로 랜덤 생성하거나 비워둠 (여기서는 랜덤 해시 처리)
+    import uuid
+
+    # ID 충돌 방지를 위해 이메일을 ID로 쓰거나, 소셜 전용 prefix 붙임
+    # 예: google_12345
+    new_user_id = f"{provider}_{social_id[:8]}"
+
+    # 혹시나 ID가 중복되면 이메일 앞부분 사용 등 로직 추가 필요
+    if db.query(User).filter(User.id == new_user_id).first():
+        new_user_id = email.split('@')[0] + f"_{str(uuid.uuid4())[:4]}"
+
+    random_password = str(uuid.uuid4())
+    hashed_password = pwd_context.hash(random_password)
+
+    new_user = User(
+        id=new_user_id,
+        password_hash=hashed_password,
+        email=email,
+        # avatar_url 등 프로필 이미지도 여기서 저장 가능
+    )
+
+    try:
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+
+        # 가입 후 로그인 처리
+        login_user(request, new_user)
+        return RedirectResponse(url="/")
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Social Register Error: {e}")
+        return JSONResponse({"success": False, "error": "소셜 가입 중 오류 발생"}, status_code=500)
 
 
 # ==========================================
