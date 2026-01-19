@@ -533,11 +533,19 @@ async def login_social(provider: str, request: Request):
     """
     # 각 플랫폼에 맞는 Redirect URI 생성
     # 로컬 테스트 시 http인지 https인지 주의 (보통 로컬은 http)
-    redirect_uri = request.url_for('auth_callback', provider=provider)
+    # [수정 전 코드]
+    # redirect_uri = request.url_for('auth_callback', provider=provider)
+    #
+    # # 간혹 https/http 프로토콜 문제 발생 시 강제 변환 (배포 환경 고려)
+    # if "localhost" not in redirect_uri:
+    #     redirect_uri = str(redirect_uri).replace("http://", "https://")
+
+    # [수정 후 코드] URL 객체를 문자열로 먼저 변환해야 합니다.
+    redirect_uri = str(request.url_for('auth_callback', provider=provider)) # <--- str()로 감싸서 문자열로 변환
 
     # 간혹 https/http 프로토콜 문제 발생 시 강제 변환 (배포 환경 고려)
     if "localhost" not in redirect_uri:
-        redirect_uri = str(redirect_uri).replace("http://", "https://")
+        redirect_uri = redirect_uri.replace("http://", "https://")
 
     return await oauth.create_client(provider).authorize_redirect(request, redirect_uri)
 
