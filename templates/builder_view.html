@@ -30,13 +30,13 @@
              --game-danger: #ef4444;
          }
 
-         /* 2. 폰트 적용 (네오둥근모 우선) */
+         /* [디자인 복구] 폰트 및 기본 스타일 */
          .voxel-ui {
-             font-family: 'NeoDunggeunmo', 'DotGothic16', sans-serif;
+             font-family: 'NeoDunggeunmo', monospace;
              color: var(--game-text);
              letter-spacing: 0.5px;
              text-rendering: optimizeLegibility;
-             -webkit-font-smoothing: none; /* 픽셀 느낌 강조 */
+             -webkit-font-smoothing: none;
          }
 
          .voxel-ui button, .voxel-ui select, .voxel-ui input, .voxel-ui textarea { outline: none; }
@@ -49,12 +49,12 @@
              background-size: 100% 100%, 100% 100%;
          }
 
-         /* Node UI: Sharp Corners for Pixel look */
+         /* [디자인 복구] 노드 스타일 (각진 모서리, 강한 그림자) */
          .voxel-ui .node-ui {
              border-radius: 0px !important;
              background: linear-gradient(135deg, rgba(26, 26, 46, 0.98) 0%, rgba(37, 37, 66, 0.95) 100%);
              border: 2px solid var(--game-border-light);
-             box-shadow: 4px 4px 0px 0px rgba(0,0,0,0.5); /* Hard Shadow */
+             box-shadow: 6px 6px 0px 0px rgba(0,0,0,0.5);
              transition: all 0.1s;
              position: absolute;
              z-index: 10;
@@ -63,26 +63,29 @@
          .voxel-ui .node-ui:hover {
              border-color: var(--game-accent-1);
              z-index: 20;
+             transform: translate(-1px, -1px);
+             box-shadow: 8px 8px 0px 0px rgba(99, 102, 241, 0.3);
          }
 
          .voxel-ui .node-ui.selected {
              border-color: var(--game-highlight);
-             box-shadow: 0 0 0 2px var(--game-highlight), 6px 6px 0px 0px rgba(0,0,0,0.6);
+             box-shadow: 0 0 0 2px var(--game-highlight), 8px 8px 0px 0px rgba(0,0,0,0.6);
              z-index: 30;
          }
 
-         /* Connecting Mode Styling */
+         /* 연결 모드 타겟 후보 스타일 */
          .voxel-ui .node-ui.connecting-target-candidate:hover {
              border-color: var(--game-success);
-             box-shadow: 0 0 10px var(--game-success);
+             box-shadow: 0 0 15px var(--game-success);
              cursor: pointer !important;
          }
 
+         /* [디자인 복구] 버튼 스타일 */
          .voxel-ui button {
              border-radius: 0px;
              border: 1px solid var(--game-border-light);
              background: linear-gradient(180deg, rgba(45, 45, 60, 1) 0%, rgba(30, 30, 45, 1) 100%);
-             box-shadow: 2px 2px 0px 0px rgba(0,0,0,0.3);
+             box-shadow: 3px 3px 0px 0px rgba(0,0,0,0.4);
              transition: all 0.1s;
              font-weight: normal;
              color: var(--game-text);
@@ -91,30 +94,34 @@
          .voxel-ui button:hover {
              border-color: var(--game-accent-1);
              transform: translate(-1px, -1px);
-             box-shadow: 3px 3px 0px 0px rgba(0,0,0,0.3);
+             box-shadow: 4px 4px 0px 0px rgba(99, 102, 241, 0.3);
              color: white;
          }
 
          .voxel-ui button:active {
-             transform: translate(1px, 1px);
-             box-shadow: 1px 1px 0px 0px rgba(0,0,0,0.3);
+             transform: translate(2px, 2px);
+             box-shadow: 1px 1px 0px 0px rgba(0,0,0,0.4);
          }
 
+         /* [디자인 복구] 입력창 스타일 */
          .voxel-ui input, .voxel-ui select, .voxel-ui textarea {
              border-radius: 0px;
              border: 1px solid var(--game-border);
              background: #151525;
              color: var(--game-text);
              font-family: 'NeoDunggeunmo', monospace;
+             padding: 0.5rem;
          }
 
          .voxel-ui input:focus, .voxel-ui select:focus, .voxel-ui textarea:focus {
              border-color: var(--game-accent-1);
              background: #1a1a2e;
+             box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
          }
 
+         /* 연결선 스타일 */
          .connection-line { stroke: #6b7280; stroke-width: 2; fill: none; transition: stroke 0.2s; }
-         .connection-line:hover { stroke: var(--game-warning); stroke-width: 4; cursor: pointer; }
+         .connection-line:hover { stroke: var(--game-warning); stroke-width: 4; cursor: pointer; filter: drop-shadow(0 0 4px var(--game-warning)); }
          .connecting-line { stroke: var(--game-success); stroke-width: 3; stroke-dasharray: 4,4; fill: none; animation: dash 0.5s linear infinite; pointer-events: none; }
          @keyframes dash { to { stroke-dashoffset: -8; } }
 
@@ -177,13 +184,11 @@
             let yOffset = 50;
             const xBase = 400;
 
-            // 1. Start Node
             nodes.push({
                 id: 'start', type: 'start', x: 50, y: 50,
                 data: { label: scenData.title || '시나리오 설정', prologue: scenData.prologue || '', gm_notes: scenData.gm_notes || '', background: scenData.background || '' }
             });
 
-            // 2. Scenes
             (scenData.scenes || []).forEach((s, idx) => {
                 nodes.push({
                     id: s.scene_id, type: 'scene', x: xBase, y: yOffset + (idx * 150),
@@ -196,7 +201,6 @@
                 });
             });
 
-            // 3. Endings
             const endingYStart = yOffset + ((scenData.scenes || []).length * 150);
             (scenData.endings || []).forEach((e, idx) => {
                 nodes.push({
@@ -205,7 +209,6 @@
                 });
             });
 
-            // 4. Connections
             (scenData.prologue_connects_to || []).forEach(targetId => {
                 edges.push({ id: `e-start-${targetId}`, source: 'start', target: targetId });
             });
@@ -220,6 +223,7 @@
 
         // --- 메인 컴포넌트 ---
         function ScenarioBuilder() {
+            // [State] Data
             const [nodes, setNodes] = useState([
                 { id: 'start', type: 'start', x: 50, y: 50, data: { label: '시나리오 설정', prologue: '', gm_notes: '', background: '' } },
                 { id: 'scene-1', type: 'scene', x: 400, y: 150, data: { title: '첫 번째 장면', description: '', background: '', trigger: '', npcs: [], enemies: [] } }
@@ -228,22 +232,25 @@
             const [globalNpcs, setGlobalNpcs] = useState([]);
             const [globalEnemies, setGlobalEnemies] = useState([]);
 
+            // [State] UI
             const [isEditMode, setIsEditMode] = useState(false);
             const [scenarioId, setScenarioId] = useState(null);
             const [isDraft, setIsDraft] = useState(false);
             const [isGenerating, setIsGenerating] = useState(false);
 
+            // [State] Canvas
             const [pan, setPan] = useState({ x: 0, y: 0, zoom: 1 });
             const [isPanning, setIsPanning] = useState(false);
             const [dragNode, setDragNode] = useState(null);
 
-            // [State] 연결 소스 노드 ID
-            const [connectSource, setConnectSource] = useState(null);
+            // [State] Connection Logic
+            const [connectSource, setConnectSource] = useState(null); // 연결 시작 노드 ID
 
             const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
             const [selectedNodeId, setSelectedNodeId] = useState(null);
             const canvasRef = useRef(null);
 
+            // [State] Modals
             const [modals, setModals] = useState({ npcGen: false, npcList: false, presetLoad: false, scenarioList: false });
             const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
             const [auditState, setAuditState] = useState({ isOpen: false, isLoading: false, results: null, targetNodeId: null });
@@ -254,7 +261,7 @@
             const [selectedModel, setSelectedModel] = useState('openai/tngtech/deepseek-r1t2-chimera:free');
             const [history, setHistory] = useState({ past: [], future: [] });
 
-            // --- History ---
+            // --- History Logic ---
             const pushHistory = useCallback(() => {
                 setHistory(curr => ({
                     past: [...curr.past, { nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) }],
@@ -330,8 +337,8 @@
             };
 
             const deleteNode = (id) => {
-                if (id === 'start') return showToast("시작 노드는 삭제할 수 없습니다.", "error");
-                if (edges.some(e => e.source === id || e.target === id) && !confirm("연결된 선이 있습니다. 삭제하시겠습니까?")) return;
+                if (id === 'start') return showToast("시작 노드는 삭제 불가", "error");
+                if (edges.some(e => e.source === id || e.target === id) && !confirm("연결선이 존재합니다. 정말 삭제하시겠습니까?")) return;
                 pushHistory();
                 setNodes(prev => prev.filter(n => n.id !== id));
                 setEdges(prev => prev.filter(e => e.source !== id && e.target !== id));
@@ -356,62 +363,64 @@
             };
 
             const loadPreset = (preset) => {
-                if(!confirm("현재 내용이 사라집니다. 적용하시겠습니까?")) return;
+                if(!confirm("현재 작업 내용이 사라집니다. 프리셋을 적용하시겠습니까?")) return;
                 try {
                     let data = typeof preset.data === 'string' ? JSON.parse(preset.data) : preset.data;
                     pushHistory();
-                    setNodes(data.nodes); setEdges(data.edges);
+                    // 프리셋 로드 시 NPC 데이터 구조 정규화
+                    const normalizedNodes = data.nodes.map(n => {
+                        if (n.data) {
+                            if (n.data.npcs) n.data.npcs = n.data.npcs.map(x => typeof x === 'string' ? {name: x} : x);
+                            if (n.data.enemies) n.data.enemies = n.data.enemies.map(x => typeof x === 'string' ? {name: x} : x);
+                        }
+                        return n;
+                    });
+                    setNodes(normalizedNodes); setEdges(data.edges);
                     setModals(m=>({...m, presetLoad:false})); showToast("프리셋 적용됨", "success");
                 } catch(e) { showToast("프리셋 오류", "error"); }
             };
 
-            // --- Connection Logic (Click to Click) ---
+            // --- Connection Logic (Click-to-Connect) ---
             const handleLinkClick = (e, nodeId) => {
-                e.stopPropagation(); // 부모(노드 드래그 등) 이벤트 전파 방지
-
+                e.stopPropagation();
                 if (connectSource === null) {
-                    // [1단계] 소스 선택
                     setConnectSource(nodeId);
-                    showToast("연결할 대상 노드를 클릭하세요 (취소: 배경 클릭)", "info");
+                    showToast("연결할 대상을 클릭하세요 (취소: 배경 클릭)", "info");
                 } else {
-                    // [2단계] 자기 자신을 다시 클릭 -> 연결 모드 취소
                     if (connectSource === nodeId) {
                         setConnectSource(null);
-                        showToast("연결 대기 취소됨", "info");
+                        showToast("연결 취소", "info");
                     } else {
-                        // [3단계] 타겟 연결 (이미 연결된 상태가 아닐 때만)
                         if (!edges.some(eg => eg.source === connectSource && eg.target === nodeId)) {
                             pushHistory();
                             setEdges(prev => [...prev, { id: `e-${Date.now()}`, source: connectSource, target: nodeId }]);
                             showToast("연결되었습니다!", "success");
                         } else {
-                            showToast("이미 연결되어 있습니다.", "warning");
+                            showToast("이미 연결된 상태입니다.", "warning");
                         }
-                        setConnectSource(null); // 연결 후 초기화
+                        setConnectSource(null);
                     }
                 }
             };
 
-            // 노드 본체 클릭 핸들러 (연결 모드일 때 타겟 지정용)
+            // 노드 본체 클릭 (타겟 지정용)
             const handleNodeBodyClick = (e, nodeId) => {
                 if (connectSource && connectSource !== nodeId) {
                     e.stopPropagation();
-                    handleLinkClick(e, nodeId); // 타겟 지정 로직 재사용
+                    handleLinkClick(e, nodeId);
                 }
             };
 
-            // 캔버스 배경 클릭 시 연결 취소
             const handleCanvasClick = (e) => {
                 if (connectSource && !e.target.closest('.node-ui')) {
                     setConnectSource(null);
-                    showToast("연결 대기 취소됨", "info");
+                    showToast("연결 취소됨", "info");
                 }
             };
 
             // --- Canvas Interaction ---
             const handleMouseDown = (e) => {
                 if (e.target.closest('.node-ui')) return;
-                // 우클릭, 휠클릭 시 패닝
                 if (e.button === 0 || e.button === 1 || e.button === 2) setIsPanning(true);
             };
             const handleMouseMove = (e) => {
@@ -431,10 +440,7 @@
                 setIsPanning(false); setDragNode(null);
             };
             const handleNodeDragStart = (e, id) => {
-                // 연결 모드 중에는 드래그 방지 (타겟 선택 우선)
-                if (connectSource) return;
-
-                // 일반 드래그 시작
+                if (connectSource) return; // 연결 중엔 드래그 방지
                 setDragNode(id); setSelectedNodeId(id);
             };
 
@@ -446,7 +452,7 @@
                         method: 'POST', headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ nodes, edges, npcs: [...globalNpcs, ...globalEnemies] })
                     });
-                    setIsDraft(true); showToast("초안 저장 완료", "success");
+                    setIsDraft(true); showToast("저장 완료", "success");
                 } catch(e) { showToast("저장 실패", "error"); }
             };
             const publishScenario = async () => {
@@ -494,7 +500,7 @@
                     }
                     return n;
                 }));
-                showToast(`"${targetId}" 씬의 AI 노트에 추가되었습니다.`, "success");
+                showToast(`"${targetId}" 씬의 AI 노트에 추가됨`, "success");
             };
 
             const showToast = (msg, type) => {
