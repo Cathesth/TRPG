@@ -13,14 +13,17 @@ class MermaidService:
     @staticmethod
     def normalize_scenario_graph(data: dict) -> Tuple[List[Dict], List[Dict]]:
         """
-        ✅ [작업 1] 다양한 시나리오 JSON 스키마를 정규화하여 scenes/endings 추출
+        ✅ [작업 2] 다양한 시나리오 JSON 스키마를 정규화하여 scenes/endings 추출
+        데이터 실종 버그 수정: 중첩된 구조를 끝까지 추적
 
         지원하는 구조:
         1) data["scenes"], data["endings"] (직접)
         2) data["scenario"]["scenes"], data["scenario"]["endings"] (한 단계 래핑)
-        3) data["graph"]["scenes"], data["graph"]["endings"]
-        4) data["nodes"], data["edges"] (React Flow 형식)
-        5) scenes가 dict인 경우: { "Scene-1": {...}, "Scene-2": {...} }
+        3) data["scenario"]["scenario"]["scenes"] (중첩 래핑)
+        4) data["graph"]["scenes"], data["graph"]["endings"]
+        5) data["nodes"], data["edges"] (React Flow 형식)
+        6) scenes가 dict인 경우: { "Scene-1": {...}, "Scene-2": {...} }
+        7) data["scene_map"], data["ending_map"]
 
         Returns:
             (scenes: List[Dict], endings: List[Dict])
@@ -28,12 +31,12 @@ class MermaidService:
         scenes = []
         endings = []
 
-        # ✅ [작업 1] 입력 데이터 구조 검사 로그
+        # ✅ [작업 2-1] 입력 데이터 구조 검사 로그
         logger.info(f"🔍 [MERMAID] normalize_scenario_graph called with data type: {type(data).__name__}")
         if isinstance(data, dict):
             logger.info(f"🔑 [MERMAID] Input data keys: {list(data.keys())[:20]}")
 
-        # ✅ [작업 1-2] 문자열인 경우 json.loads 시도 (방어 코드)
+        # ✅ [작업 2-2] 문자열인 경우 json.loads 시도 (방어 코드)
         if isinstance(data, str):
             logger.warning(f"⚠️ [MERMAID] Input data is string, attempting json.loads...")
             try:
@@ -48,19 +51,25 @@ class MermaidService:
             logger.error(f"❌ [MERMAID] Input data is not a dict: {type(data).__name__}")
             return [], []
 
-        # ✅ [작업 1-3] "scenario" 키가 있고 값이 dict면 unwrap
-        if 'scenario' in data and isinstance(data['scenario'], dict):
-            logger.info(f"📦 [MERMAID] Unwrapping 'scenario' wrapper...")
+        # ✅ [작업 2-3] "scenario" 키 중첩 unwrap (끝까지 추적)
+        max_depth = 5  # 무한 루프 방지
+        depth = 0
+        while 'scenario' in data and isinstance(data.get('scenario'), dict) and depth < max_depth:
+            logger.info(f"📦 [MERMAID] Unwrapping 'scenario' wrapper (depth={depth})...")
             data = data['scenario']
-            logger.info(f"🔑 [MERMAID] After unwrap, keys: {list(data.keys())[:20]}")
+            logger.info(f"🔑 [MERMAID] After unwrap depth {depth}, keys: {list(data.keys())[:20]}")
+            depth += 1
 
-        # ✅ [작업 1-4] scenes 후보 경로 탐색
+        if depth >= max_depth:
+            logger.warning(f"⚠️ [MERMAID] Reached max unwrap depth ({max_depth}), stopping")
+
+        # ✅ [작업 2-4] scenes 후보 경로 탐색 (우선순위 순)
         scenes_candidates = [
             ('scenes', lambda d: d.get('scenes')),
             ('scene_map', lambda d: d.get('scene_map')),
             ('nodes', lambda d: d.get('nodes')),
             ('graph.scenes', lambda d: d.get('graph', {}).get('scenes') if isinstance(d.get('graph'), dict) else None),
-            ('scenario.scenes', lambda d: d.get('scenario', {}).get('scenes') if isinstance(d.get('scenario'), dict) else None),
+            ('data.scenes', lambda d: d.get('data', {}).get('scenes') if isinstance(d.get('data'), dict) else None),
         ]
 
         for candidate_name, getter in scenes_candidates:
@@ -71,7 +80,7 @@ class MermaidService:
                     logger.info(f"✅ [MERMAID] Found scenes at '{candidate_name}': list with {len(scenes)} items")
                     break
                 elif isinstance(scenes_raw, dict):
-                    # dict 형태: { "Scene-1": {...}, ... } -> list로 변환
+                    # dict 형태: { "Scene-1": {...}, "Scene-2": {...} } -> list로 변환
                     scenes = [
                         {**scene_data, 'scene_id': scene_id} if isinstance(scene_data, dict) else {'scene_id': scene_id}
                         for scene_id, scene_data in scenes_raw.items()
@@ -79,12 +88,12 @@ class MermaidService:
                     logger.info(f"✅ [MERMAID] Found scenes at '{candidate_name}': dict converted to list with {len(scenes)} items")
                     break
 
-        # ✅ [작업 1-5] endings 후보 경로 탐색
+        # ✅ [작업 2-5] endings 후보 경로 탐색
         endings_candidates = [
             ('endings', lambda d: d.get('endings')),
             ('ending_map', lambda d: d.get('ending_map')),
             ('graph.endings', lambda d: d.get('graph', {}).get('endings') if isinstance(d.get('graph'), dict) else None),
-            ('scenario.endings', lambda d: d.get('scenario', {}).get('endings') if isinstance(d.get('scenario'), dict) else None),
+            ('data.endings', lambda d: d.get('data', {}).get('endings') if isinstance(d.get('data'), dict) else None),
         ]
 
         for candidate_name, getter in endings_candidates:
@@ -102,7 +111,7 @@ class MermaidService:
                     logger.info(f"✅ [MERMAID] Found endings at '{candidate_name}': dict converted to list with {len(endings)} items")
                     break
 
-        # ✅ [작업 1-6] nodes/edges 구조인 경우 (React Flow) - scenes가 아직 없는 경우에만
+        # ✅ [작업 2-6] nodes/edges 구조인 경우 (React Flow) - scenes가 아직 없는 경우에만
         if not scenes and 'nodes' in data and 'edges' in data:
             logger.info(f"📦 [MERMAID] Detected nodes/edges structure, converting...")
             scenes, endings = MermaidService.convert_nodes_to_scenes(data['nodes'], data['edges'])
@@ -118,7 +127,7 @@ class MermaidService:
             ending_ids_sample = [e.get('ending_id', 'NO_ID') for e in endings[:3]]
             logger.info(f"📊 [MERMAID] Ending IDs sample (first 3): {ending_ids_sample}")
 
-        # ✅ [작업 1-7] 0일 때 디버그 정보 상세화
+        # ✅ [작업 2-7] 0일 때 디버그 정보 상세화
         if not scenes and not endings:
             top_keys = list(data.keys())[:20] if isinstance(data, dict) else []
             logger.warning(f"⚠️ [MERMAID] No scenes/endings found after normalization")
@@ -241,38 +250,39 @@ class MermaidService:
     @staticmethod
     def generate_chart(scenario: Union[Dict, Any], current_scene_id: str = None) -> Dict[str, Any]:
         """
-        시나리오 데이터로부터 Mermaid 차트와 관련 정보 생성
-
-        Args:
-            scenario: 시나리오 데이터 딕셔너리 또는 Scenario 객체
-            current_scene_id: 현재 활성화된 씬 ID (하이라이트용)
-
-        Returns:
-            {
-                'mermaid_code': str,
-                'filtered_scenes': List,
-                ...
-            }
+        ✅ [작업 2] 시나리오 데이터로부터 Mermaid 차트와 관련 정보 생성
+        데이터 추출 로직 개선: normalize_scenario_graph 활용
         """
         try:
-            # 입력 데이터 정규화 (Dict로 변환)
+            # ✅ [작업 2-1] 입력 데이터 정규화 (Dict로 변환)
             if hasattr(scenario, 'data') and isinstance(scenario.data, dict):
-                scenario_data = scenario.data.get('scenario', scenario.data)
+                logger.info(f"🔍 [MERMAID] generate_chart: scenario object detected")
+                scenario_data = scenario.data
             elif isinstance(scenario, dict):
+                logger.info(f"🔍 [MERMAID] generate_chart: dict input detected")
                 scenario_data = scenario
             else:
+                logger.error(f"❌ [MERMAID] generate_chart: unsupported type {type(scenario).__name__}")
                 return {"mermaid_code": "graph TD\nError[데이터 형식 오류]"}
 
-            scenes = scenario_data.get('scenes', [])
-            endings = scenario_data.get('endings', [])
-            nodes = scenario_data.get('nodes', [])
-            edges = scenario_data.get('edges', [])
+            logger.info(f"🔑 [MERMAID] scenario_data keys: {list(scenario_data.keys())[:20]}")
 
-            # [핵심] scenes가 없지만 nodes가 있는 경우 자동 변환 (Viewer 호환성)
-            if (not scenes or len(scenes) == 0) and nodes:
-                scenes, endings = MermaidService.convert_nodes_to_scenes(nodes, edges)
-                scenario_data['scenes'] = scenes
-                scenario_data['endings'] = endings
+            # ✅ [작업 2-2] normalize_scenario_graph로 데이터 추출
+            scenes, endings = MermaidService.normalize_scenario_graph(scenario_data)
+
+            # ✅ [작업 2-3] 추출 실패 시 에러 처리
+            if not scenes and not endings:
+                logger.error(f"❌ [MERMAID] No scenes/endings extracted from scenario_data")
+                return {
+                    "mermaid_code": "graph TD\nError[씬 데이터를 찾을 수 없습니다]",
+                    "filtered_scenes": [],
+                    "scene_names": {},
+                    "ending_names": {},
+                    "scene_display_ids": {},
+                    "ending_display_ids": {},
+                    "incoming_conditions": {},
+                    "ending_incoming_conditions": {}
+                }
 
             # start/PROLOGUE 노드 제외
             filtered_scenes = [
@@ -280,9 +290,11 @@ class MermaidService:
                 if s.get('scene_id') not in ('start', 'PROLOGUE')
             ]
 
+            logger.info(f"✅ [MERMAID] Filtered scenes: {len(filtered_scenes)}, Endings: {len(endings)}")
+
             # ✅ 안전한 ID 매핑 생성
-            id_map = {}  # 원본 ID -> 안전한 ID
-            id_map['PROLOGUE'] = 'Prologue'  # 프롤로그는 하이픈 없이
+            id_map = {}
+            id_map['PROLOGUE'] = 'Prologue'
             id_map['prologue'] = 'Prologue'
 
             for scene in filtered_scenes:
@@ -399,84 +411,37 @@ class MermaidService:
                 node_class = "active" if current_scene_id == ending_id else "endingStyle"
                 mermaid_lines.append(f'    {safe_ending_id}["🏁 {ending_title}"]:::{node_class}')
 
-            mermaid_lines.append("    classDef default fill:#1f2937,stroke:#374151,stroke-width:2px,color:#fff")
-            mermaid_lines.append("    classDef active fill:#164e63,stroke:#22d3ee,stroke-width:3px,color:#fff")
-            mermaid_lines.append("    classDef prologueStyle fill:#0f766e,stroke:#14b8a6,color:#fff")
-            mermaid_lines.append("    classDef sceneStyle fill:#312e81,stroke:#6366f1,color:#fff")
-            mermaid_lines.append("    classDef endingStyle fill:#831843,stroke:#ec4899,color:#fff")
+            # ✅ 스타일 클래스 정의
+            mermaid_lines.extend([
+                "",
+                "    classDef prologueStyle fill:#0f766e,stroke:#14b8a6,stroke-width:2px,color:#fff",
+                "    classDef sceneStyle fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#fff",
+                "    classDef endingStyle fill:#831843,stroke:#f43f5e,stroke-width:2px,color:#fff",
+                "    classDef active fill:#38bdf8,stroke:#0ea5e9,stroke-width:4px,color:#000,font-weight:bold"
+            ])
 
             mermaid_code = "\n".join(mermaid_lines)
-
-            # ✅ 디버그 로그 추가 - 생성된 코드 앞부분 확인
-            logger.info(f"[MERMAID] Generated code preview:\n{chr(10).join(mermaid_code.splitlines()[:7])}")
+            logger.info(f"✅ [MERMAID] Mermaid code generated: {len(mermaid_lines)} lines")
 
             return {
-                'mermaid_code': mermaid_code,
-                'filtered_scenes': filtered_scenes,
-                'incoming_conditions': incoming_conditions,
-                'ending_incoming_conditions': ending_incoming_conditions,
-                'ending_names': ending_names,
-                'scene_names': scene_names,
-                'scene_display_ids': scene_display_ids,
-                'ending_display_ids': ending_display_ids
+                "mermaid_code": mermaid_code,
+                "filtered_scenes": filtered_scenes,
+                "scene_names": scene_names,
+                "ending_names": ending_names,
+                "scene_display_ids": scene_display_ids,
+                "ending_display_ids": ending_display_ids,
+                "incoming_conditions": incoming_conditions,
+                "ending_incoming_conditions": ending_incoming_conditions
             }
 
         except Exception as e:
-            logger.error(f"Mermaid generation error: {e}", exc_info=True)
-            return {"mermaid_code": "graph TD\nError[차트 생성 실패]"}
+            logger.error(f"❌ [MERMAID] generate_chart failed: {e}", exc_info=True)
+            return {"mermaid_code": f"graph TD\nError[차트 생성 오류: {str(e)}]"}
 
     @staticmethod
-    def generate_mermaid_from_scenario(scenario_data: dict) -> str:
+    def generate_mermaid_from_scenario(scenario_data: Dict[str, Any], current_scene_id: str = None) -> str:
         """
-        ✅ [FIX 2-A] generate_chart 래퍼 메서드 - 호환성 유지
-
-        routes/views.py의 view_debug_scenes에서 호출하는 메서드
-        generate_chart를 호출하고 mermaid_code만 추출하여 반환
-
-        Args:
-            scenario_data: 시나리오 데이터 딕셔너리
-
-        Returns:
-            Mermaid 코드 문자열
+        ✅ [작업 2] 레거시 호환 메서드 - generate_chart로 위임
         """
-        try:
-            # ✅ [작업 2] 스키마 정규화 적용
-            logger.info(f"📊 [MERMAID] Input data keys: {list(scenario_data.keys())[:20]}")
-
-            # 정규화로 scenes/endings 추출
-            scenes, endings = MermaidService.normalize_scenario_graph(scenario_data)
-
-            logger.info(f"📊 [MERMAID] After normalization: scenes={len(scenes)}, endings={len(endings)}")
-
-            # ✅ [작업 3] 최소 노드 보장 - scenes가 비어있으면 경고
-            if not scenes and not endings:
-                logger.warning(f"⚠️ [MERMAID] No scenes or endings found in scenario data")
-                return "graph TD\n    Empty[시나리오에 씬이 없습니다]\n    Empty -->|빌더에서 씬을 추가하세요| Start[시작]"
-
-            # 정규화된 데이터를 scenario_data에 반영
-            normalized_data = scenario_data.copy()
-            normalized_data['scenes'] = scenes
-            normalized_data['endings'] = endings
-
-            # generate_chart 호출
-            result = MermaidService.generate_chart(normalized_data)
-
-            # mermaid_code 추출
-            if isinstance(result, dict) and 'mermaid_code' in result:
-                mermaid_code = result['mermaid_code']
-
-                # ✅ 생성된 코드 검증
-                lines = [l for l in mermaid_code.splitlines() if l.strip()]
-                node_lines = [l for l in lines if not l.strip().startswith('classDef') and not l.strip().startswith('graph')]
-
-                logger.info(f"✅ [MERMAID] Successfully generated chart from scenario")
-                logger.info(f"📊 [MERMAID] Output: total_lines={len(lines)}, node_lines={len(node_lines)}")
-
-                return mermaid_code
-            else:
-                logger.warning(f"⚠️ [MERMAID] generate_chart returned unexpected format")
-                return "graph TD\n    A[차트 생성 실패]"
-
-        except Exception as e:
-            logger.error(f"❌ [MERMAID] generate_mermaid_from_scenario failed: {e}", exc_info=True)
-            return "graph TD\n    Error[차트 생성 중 오류 발생]"
+        result = MermaidService.generate_chart(scenario_data, current_scene_id)
+        return result.get("mermaid_code", "graph TD\nError[차트 생성 실패]")
