@@ -25,6 +25,9 @@
              --vx-good: #22c55e;
              --vx-warn: #f59e0b;
              --vx-bad: #ef4444;
+             --vx-tex-a: rgba(255,255,255,0.045);
+             --vx-tex-b: rgba(0,0,0,0.20);
+             --vx-tex-c: rgba(0,0,0,0.35);
          }
 
          .voxel-ui {
@@ -32,6 +35,9 @@
              color: var(--vx-text);
              letter-spacing: 0.1px;
              text-rendering: geometricPrecision;
+             image-rendering: pixelated;
+             -webkit-font-smoothing: none;
+             -moz-osx-font-smoothing: grayscale;
          }
 
          .voxel-ui button,
@@ -45,20 +51,25 @@
              background-color: var(--vx-bg) !important;
              background-image:
                  linear-gradient(transparent 0, transparent 11px, rgba(100, 130, 190, 0.10) 12px),
-                 linear-gradient(90deg, transparent 0, transparent 11px, rgba(100, 130, 190, 0.10) 12px);
+                 linear-gradient(90deg, transparent 0, transparent 11px, rgba(100, 130, 190, 0.10) 12px),
+                 repeating-linear-gradient(0deg, rgba(255,255,255,0.03) 0 1px, transparent 1px 3px),
+                 repeating-linear-gradient(90deg, rgba(0,0,0,0.10) 0 1px, transparent 1px 4px);
              background-size: 12px 12px;
              image-rendering: pixelated;
          }
 
          .voxel-ui .node-ui {
-             border-radius: 10px !important;
-             background:
-                 linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0)) ,
-                 var(--vx-panel) !important;
+             border-radius: 0 !important;
+             background-image:
+                 linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.00)),
+                 linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(7, 10, 15, 0.96)),
+                 repeating-linear-gradient(0deg, var(--vx-tex-a) 0 1px, transparent 1px 4px),
+                 repeating-linear-gradient(90deg, rgba(0,0,0,0.14) 0 1px, transparent 1px 5px);
              border-color: var(--vx-border-2) !important;
              box-shadow:
                  0 0 0 2px rgba(0, 0, 0, 0.25),
-                 10px 10px 0 rgba(0, 0, 0, 0.35);
+                 4px 4px 0 rgba(0, 0, 0, 0.65),
+                 8px 8px 0 rgba(0, 0, 0, 0.35);
          }
 
          .voxel-ui .node-ui:hover {
@@ -68,98 +79,24 @@
                  12px 12px 0 rgba(0, 0, 0, 0.35);
          }
 
-         .voxel-ui .node-ui .cursor-grab {
-             border-top-left-radius: 10px;
-             border-top-right-radius: 10px;
-             background:
-                 linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.00)) !important;
-             border-bottom: 1px solid rgba(255,255,255,0.06);
-         }
-
-         .voxel-ui .node-ui .min-h-\[60px\] {
-             color: var(--vx-muted) !important;
-         }
-
-         .voxel-ui .connection-line {
-             stroke: rgba(140, 170, 230, 0.55);
-             stroke-width: 2.5;
-             stroke-linecap: square;
-             filter: drop-shadow(2px 2px 0 rgba(0,0,0,0.55));
-         }
-
-         .voxel-ui .connecting-line {
-             stroke: rgba(87, 162, 255, 0.95);
-             stroke-width: 3;
-             stroke-linecap: square;
-             filter: drop-shadow(2px 2px 0 rgba(0,0,0,0.55));
-         }
-
-         .voxel-ui .custom-scrollbar::-webkit-scrollbar {
-             width: 10px;
-         }
-
-         .voxel-ui .custom-scrollbar::-webkit-scrollbar-track {
-             background: rgba(15, 23, 42, 0.55);
-             border-left: 1px solid rgba(255,255,255,0.06);
-         }
-
-         .voxel-ui .custom-scrollbar::-webkit-scrollbar-thumb {
-             background: linear-gradient(180deg, rgba(87,162,255,0.60), rgba(139,92,246,0.55));
-             border: 1px solid rgba(0,0,0,0.35);
-             border-radius: 8px;
-         }
-
-         .voxel-ui .bg-gray-900,
-         .voxel-ui .bg-gray-950,
-         .voxel-ui .bg-gray-800 {
-             background-color: var(--vx-panel) !important;
-         }
-
-         .voxel-ui .border-gray-700,
-         .voxel-ui .border-gray-800 {
-             border-color: rgba(255,255,255,0.08) !important;
-         }
-
-         .voxel-ui .text-gray-300,
-         .voxel-ui .text-white {
-             color: var(--vx-text) !important;
-         }
-
-         .voxel-ui .text-gray-400,
-         .voxel-ui .text-gray-500,
-         .voxel-ui .text-gray-600 {
-             color: var(--vx-muted) !important;
-         }
-
-         .voxel-ui .shadow-2xl,
-         .voxel-ui .shadow-xl,
-         .voxel-ui .shadow-lg {
-             box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.25), 12px 12px 0 rgba(0, 0, 0, 0.35) !important;
-         }
-
-         .voxel-ui button,
-         .voxel-ui a,
-         .voxel-ui select,
-         .voxel-ui input,
-         .voxel-ui textarea {
-             -webkit-tap-highlight-color: transparent;
-         }
-
          .voxel-ui button,
          .voxel-ui .cursor-pointer {
              image-rendering: pixelated;
          }
 
          .voxel-ui button {
-             border-radius: 10px;
-             border: 1px solid rgba(255,255,255,0.10);
+             border-radius: 0;
+             border: 2px solid rgba(255,255,255,0.14);
              background-image:
-                 linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0)),
-                 linear-gradient(180deg, rgba(17, 28, 51, 0.95), rgba(11, 18, 34, 0.95));
+                 linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.00)),
+                 linear-gradient(180deg, rgba(17, 28, 51, 0.96), rgba(11, 18, 34, 0.96)),
+                 repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 3px),
+                 repeating-linear-gradient(90deg, rgba(0,0,0,0.18) 0 1px, transparent 1px 4px);
              box-shadow:
                  inset 0 1px 0 rgba(255,255,255,0.10),
                  inset 0 -2px 0 rgba(0,0,0,0.40),
-                 0 0 0 2px rgba(0,0,0,0.25);
+                 0 0 0 2px rgba(0,0,0,0.25),
+                 4px 4px 0 rgba(0,0,0,0.55);
              transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
          }
 
@@ -172,7 +109,8 @@
              box-shadow:
                  inset 0 2px 0 rgba(0,0,0,0.35),
                  inset 0 -1px 0 rgba(255,255,255,0.06),
-                 0 0 0 2px rgba(0,0,0,0.25);
+                 0 0 0 2px rgba(0,0,0,0.25),
+                 3px 3px 0 rgba(0,0,0,0.55);
          }
 
          .voxel-ui button:focus-visible,
@@ -187,14 +125,17 @@
          .voxel-ui input,
          .voxel-ui select,
          .voxel-ui textarea {
-             border-radius: 10px;
-             border: 1px solid rgba(255,255,255,0.10);
+             border-radius: 0;
+             border: 2px solid rgba(255,255,255,0.12);
              background-image:
-                 linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.00)),
-                 linear-gradient(180deg, rgba(10, 15, 26, 0.95), rgba(7, 10, 15, 0.95));
+                 linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.00)),
+                 linear-gradient(180deg, rgba(8, 12, 20, 0.96), rgba(5, 8, 12, 0.96)),
+                 repeating-linear-gradient(0deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 4px),
+                 repeating-linear-gradient(90deg, rgba(0,0,0,0.14) 0 1px, transparent 1px 6px);
              box-shadow:
                  inset 0 2px 0 rgba(0,0,0,0.40),
-                 0 0 0 2px rgba(0,0,0,0.25);
+                 0 0 0 2px rgba(0,0,0,0.25),
+                 3px 3px 0 rgba(0,0,0,0.45);
              color: var(--vx-text);
          }
 
@@ -204,19 +145,22 @@
          }
 
          .voxel-ui .bg-gray-900,
-         .voxel-ui .bg-gray-800 {
+         .voxel-ui .bg-gray-800,
+         .voxel-ui .bg-gray-950 {
              background-image:
-                 linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.00)),
-                 linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(7, 10, 15, 0.95)) !important;
+                 linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.00)),
+                 linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(7, 10, 15, 0.97)),
+                 repeating-linear-gradient(0deg, var(--vx-tex-a) 0 1px, transparent 1px 4px),
+                 repeating-linear-gradient(90deg, rgba(0,0,0,0.18) 0 1px, transparent 1px 6px) !important;
          }
 
          .voxel-ui .rounded-xl,
          .voxel-ui .rounded-lg {
-             border-radius: 14px !important;
+             border-radius: 0 !important;
          }
 
          .voxel-ui .rounded {
-             border-radius: 10px !important;
+             border-radius: 0 !important;
          }
 
          .voxel-ui .bg-gradient-to-r {
@@ -253,12 +197,12 @@
          }
 
          .voxel-ui .node-ui {
-             border-radius: 14px !important;
+             border-radius: 0 !important;
          }
 
          .voxel-ui .node-ui .cursor-grab {
-             border-top-left-radius: 14px;
-             border-top-right-radius: 14px;
+             border-top-left-radius: 0;
+             border-top-right-radius: 0;
          }
 
          .voxel-ui .ring-blue-500 {
