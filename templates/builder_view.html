@@ -1,3 +1,16 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRPG - Scenario Builder & Editor</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
 <style>
          :root {
              --vx-bg: #070a0f;
@@ -121,7 +134,7 @@
          .voxel-ui .shadow-2xl,
          .voxel-ui .shadow-xl,
          .voxel-ui .shadow-lg {
-             box-shadow: 0 0 0 2px rgba(0,0,0,0.25), 12px 12px 0 rgba(0,0,0,0.35) !important;
+             box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.25), 12px 12px 0 rgba(0, 0, 0, 0.35) !important;
          }
 
          .voxel-ui button,
@@ -263,6 +276,10 @@
                  8px 8px 0 rgba(0,0,0,0.35);
          }
  </style>
+</head>
+<body class="bg-black text-white h-screen w-screen">
+
+    <div id="root" class="w-full h-full"></div>
 
 {% raw %}
  <script type="text/babel">
@@ -1153,3 +1170,6 @@
         root.render(<ScenarioBuilder />);
     </script>
  {% endraw %}
+ 
+ </body>
+ </html>
