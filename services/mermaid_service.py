@@ -276,6 +276,7 @@ class MermaidService:
         """
         ✅ [작업 2] 시나리오 데이터로부터 Mermaid 차트와 관련 정보 생성
         데이터 추출 로직 개선: normalize_scenario_graph 활용
+        ✅ [NEW] current_scene_id 파라미터로 현재 씬 하이라이트
         """
         try:
             # ✅ [작업 2-1] 입력 데이터 정규화 (Dict로 변환)
@@ -412,37 +413,43 @@ class MermaidService:
                         safe_target = id_map.get(target_id, MermaidService._safe_node_id(target_id))
                         mermaid_lines.append(f'    Prologue --> {safe_target}')
 
+            # 씬/엔딩 노드 추가
             for scene in filtered_scenes:
-                scene_id = scene['scene_id']
-                safe_scene_id = id_map.get(scene_id, MermaidService._safe_node_id(scene_id))
-                scene_title = MermaidService._escape(scene.get('title') or scene.get('name') or scene_id)
+                scene_id = scene.get('scene_id')
+                safe_id = id_map.get(scene_id, MermaidService._safe_node_id(scene_id))
+                title = MermaidService._escape(scene.get('title', scene.get('name', scene_id)))
 
+                # ✅ [NEW] 현재 씬인 경우 active 스타일 클래스 추가
                 node_class = "active" if current_scene_id == scene_id else "sceneStyle"
-                mermaid_lines.append(f'    {safe_scene_id}["{scene_title}"]:::{node_class}')
+                mermaid_lines.append(f'    {safe_id}["{title}"]:::{node_class}')
+
+            for ending in endings:
+                ending_id = ending.get('ending_id')
+                safe_id = id_map.get(ending_id, MermaidService._safe_node_id(ending_id))
+                title = MermaidService._escape(ending.get('title', ending_id))
+
+                # ✅ [NEW] 현재 씬이 엔딩인 경우 active 스타일 클래스 추가
+                node_class = "active" if current_scene_id == ending_id else "endingStyle"
+                mermaid_lines.append(f'    {safe_id}["🏁 {title}"]:::{node_class}')
+
+            # 트랜지션 추가
+            for scene in filtered_scenes:
+                safe_id = id_map.get(scene.get('scene_id'), MermaidService._safe_node_id(scene.get('scene_id')))
 
                 for trans in scene.get('transitions', []):
                     next_id = trans.get('target_scene_id')
                     if next_id and next_id != 'start':
                         safe_next_id = id_map.get(next_id, MermaidService._safe_node_id(next_id))
                         trigger = MermaidService._escape(trans.get('trigger') or 'action')
-                        mermaid_lines.append(f'    {safe_scene_id} -->|"{trigger}"| {safe_next_id}')
+                        mermaid_lines.append(f'    {safe_id} -->|"{trigger}"| {safe_next_id}')
 
-            for ending in endings:
-                ending_id = ending['ending_id']
-                safe_ending_id = id_map.get(ending_id, MermaidService._safe_node_id(ending_id))
-                ending_title = MermaidService._escape(ending.get('title', '엔딩'))
-
-                node_class = "active" if current_scene_id == ending_id else "endingStyle"
-                mermaid_lines.append(f'    {safe_ending_id}["🏁 {ending_title}"]:::{node_class}')
-
-            # ✅ 스타일 클래스 정의
-            mermaid_lines.extend([
-                "",
-                "    classDef prologueStyle fill:#0f766e,stroke:#14b8a6,stroke-width:2px,color:#fff",
-                "    classDef sceneStyle fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#fff",
-                "    classDef endingStyle fill:#831843,stroke:#f43f5e,stroke-width:2px,color:#fff",
-                "    classDef active fill:#38bdf8,stroke:#0ea5e9,stroke-width:4px,color:#000,font-weight:bold"
-            ])
+            # 스타일 정의 추가
+            mermaid_lines.append("")
+            mermaid_lines.append("classDef prologueStyle fill:#0f766e,stroke:#14b8a6,stroke-width:2px,color:#fff")
+            mermaid_lines.append("classDef sceneStyle fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#fff")
+            mermaid_lines.append("classDef endingStyle fill:#831843,stroke:#f43f5e,stroke-width:2px,color:#fff")
+            # ✅ 현재 씬 하이라이트 스타일 (active 클래스)
+            mermaid_lines.append("classDef active fill:#38bdf8,stroke:#0ea5e9,stroke-width:4px,color:#000,font-weight:bold")
 
             mermaid_code = "\n".join(mermaid_lines)
             logger.info(f"✅ [MERMAID] Mermaid code generated: {len(mermaid_lines)} lines")

@@ -74,12 +74,14 @@ async def view_scenes(request: Request, user=Depends(get_current_user_optional))
 async def view_debug_scenes(
     request: Request,
     scenario_id: str = Query(None, description="시나리오 ID"),
+    session_key: str = Query(None, description="세션 키"),
     user=Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """
     디버그 모드 전체 씬 보기 (플레이어 모드에서 접근)
     ✅ [FIX 3] scenario_id를 쿼리 파라미터로 받거나 sessionStorage에서 복원
+    ✅ [FIX 4] session_key를 받아서 현재 진행 중인 씬 표시
     """
 
     # ✅ scenario_id가 없으면 기본 페이지 반환 (프론트엔드에서 sessionStorage 복원 시도)
@@ -101,6 +103,18 @@ async def view_debug_scenes(
             "user": user,
             "scenario_id": None
         })
+
+    # ✅ [NEW] 세션 키로 현재 진행 중인 씬 조회
+    current_scene_id = None
+    if session_key:
+        try:
+            from models import GameSession
+            game_session = db.query(GameSession).filter(GameSession.session_key == session_key).first()
+            if game_session:
+                current_scene_id = game_session.current_scene_id
+                logger.info(f"✅ [DEBUG SCENES] Found current scene from session: {current_scene_id}")
+        except Exception as session_error:
+            logger.warning(f"⚠️ [DEBUG SCENES] Failed to load session: {session_error}")
 
     # ✅ scenario_id가 있으면 DB에서 시나리오 로드
     try:
@@ -181,7 +195,8 @@ async def view_debug_scenes(
         mermaid_code = "graph TD\n    A[Mermaid 차트 생성 중...]"
         try:
             logger.info(f"🎨 [DEBUG SCENES] Calling MermaidService.generate_mermaid_from_scenario...")
-            mermaid_code = MermaidService.generate_mermaid_from_scenario(scenario_data)
+            # ✅ [NEW] current_scene_id를 Mermaid 서비스에 전달하여 하이라이트 처리
+            mermaid_code = MermaidService.generate_mermaid_from_scenario(scenario_data, current_node_id=current_scene_id)
 
             # ✅ [작업 2] Mermaid 코드 검증 로그 강화
             lines = mermaid_code.splitlines()
@@ -201,9 +216,6 @@ async def view_debug_scenes(
         except Exception as mermaid_error:
             logger.error(f"❌ [DEBUG SCENES] Mermaid generation failed: {mermaid_error}", exc_info=True)
             mermaid_code = "graph TD\n    Error[Mermaid 차트 생성 실패]\n    Error -->|시나리오 데이터는 정상| Info[아래 씬 목록 참조]"
-
-        # 현재 진행 중인 씬 정보 (옵션)
-        current_scene_id = None
 
         # Scene ID 매핑
         scene_display_ids = {s.get('scene_id'): s.get('scene_id') for s in scenario_data.get('scenes', [])}
