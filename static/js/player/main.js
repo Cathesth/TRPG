@@ -4,16 +4,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // 아이콘 초기화
     lucide.createIcons();
 
-    // ✅ [수정 2] 세션 키 복원 및 초기화 로직 개선 - URL 파라미터 1순위
-    // 1단계: URL 파라미터 확인 (최우선)
+    // ✅ [최우선 순위] 세션 ID 결정 로직: URL 파라미터 > sessionStorage
+    // 1순위: URL 파라미터에서 session_id 추출
     const urlParams = new URLSearchParams(window.location.search);
     const urlSessionId = urlParams.get('session_id');
 
-    // 2단계: URL에 session_id가 있으면 최우선으로 사용하고, 기존 값을 모두 덮어씀
-    if (urlSessionId) {
-        console.log('🔑 [INIT] URL parameter detected, overriding all storage:', urlSessionId);
+    // 2순위: sessionStorage에서 trpg_session_key 추출
+    const storageSessionId = sessionStorage.getItem('trpg_session_key');
 
-        // 기존 sessionStorage의 낡은 값을 모두 무시하고 강제 업데이트
+    // URL에서 session_id를 찾았다면 무조건 최우선 사용 & 강제 최신화
+    if (urlSessionId) {
+        console.log('🔑 [INIT] URL parameter detected (priority #1), forcing update:', urlSessionId);
+
+        // 기존 sessionStorage 값 무시하고 강제로 덮어씀
         currentSessionId = urlSessionId;
         sessionStorage.setItem('trpg_session_key', urlSessionId);
 
@@ -22,31 +25,30 @@ document.addEventListener('DOMContentLoaded', function() {
             sessionStorage.setItem(CURRENT_SESSION_ID_KEY, urlSessionId);
         }
 
-        console.log('✅ [INIT] Session ID from URL saved to storage:', urlSessionId);
+        console.log('✅ [INIT] Session ID from URL saved to storage (overriding old values)');
     }
-    // 3단계: URL에 없으면 sessionStorage에서 복원 (trpg_session_key 최우선)
+    // URL에 없으면 sessionStorage에서 복원 (우선순위 #2)
+    else if (storageSessionId) {
+        currentSessionId = storageSessionId;
+        console.log('🔑 [INIT] Session ID restored from storage (priority #2):', currentSessionId);
+    }
+    // 둘 다 없으면 레거시 키 확인
     else if (!currentSessionId) {
-        currentSessionId = sessionStorage.getItem('trpg_session_key') || sessionStorage.getItem(CURRENT_SESSION_ID_KEY);
+        currentSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY);
         if (currentSessionId) {
-            console.log('🔑 [INIT] Session ID restored from storage:', currentSessionId);
+            console.log('🔑 [INIT] Session ID restored from legacy key:', currentSessionId);
         }
     }
+
+    // ✅ [데이터 무결성 검사] 최종 세션 ID 확인
+    console.log('🚀 [SYNC CHECK] Final Session ID:', currentSessionId);
+    console.log('🔍 [SYNC CHECK] Data consistency verification:');
+    console.log('  - URL parameter (session_id):', urlSessionId || 'N/A');
+    console.log('  - Storage (trpg_session_key):', sessionStorage.getItem('trpg_session_key'));
+    console.log('  - Current active ID:', currentSessionId);
 
     // ✅ [수정 3] 데이터 정합성 확인 - API 호출 전 최신 ID 확인
     if (currentSessionId) {
-        console.log('🔍 [INIT] Data consistency check:');
-        console.log('  - Current session ID:', currentSessionId);
-        console.log('  - Storage (trpg_session_key):', sessionStorage.getItem('trpg_session_key'));
-        console.log('  - URL parameter:', urlSessionId || 'N/A');
-
-        // 불일치 경고
-        const storageSessionId = sessionStorage.getItem('trpg_session_key');
-        if (storageSessionId && storageSessionId !== currentSessionId) {
-            console.warn('⚠️ [INIT] Session ID mismatch detected!');
-            console.warn('  - Using:', currentSessionId);
-            console.warn('  - Storage had:', storageSessionId);
-        }
-
         // UI에 세션 ID 즉시 표시
         const sessionIdDisplay = document.getElementById('session-id-display');
         if (sessionIdDisplay) {
@@ -54,6 +56,9 @@ document.addEventListener('DOMContentLoaded', function() {
             sessionIdDisplay.classList.remove('text-gray-300');
             sessionIdDisplay.classList.add('text-green-400');
         }
+
+        // ✅ API 호출 직전 최종 검사
+        console.log('🚀 [SYNC CHECK] Final Session ID before API call:', currentSessionId);
 
         // ✅ [FIX 4] 디버그 모드가 켜져있으면 서버에서 최신 상태 조회
         const isDebugActive = localStorage.getItem(DEBUG_MODE_KEY) === 'true';

@@ -440,14 +440,14 @@
                 if (res.ok) {
                     const data = await res.json();
 
-                    // ✅ [수정 1] session_id를 1순위로 사용하고 sessionStorage에 저장
+                    // ✅ [리다이렉트 전 저장 보장] session_id를 먼저 저장하고 나서 이동
                     const sessionId = data.session_id || data.session_key;
                     const scenarioId = data.scenario_id;
 
+                    // 1단계: sessionStorage에 저장 (이동보다 먼저 실행)
                     if (sessionId) {
-                        // 반드시 세션 ID를 먼저 저장
                         sessionStorage.setItem('trpg_session_key', sessionId);
-                        console.log('✅ [LOAD] Session ID saved to storage:', sessionId);
+                        console.log('✅ [LOAD] Session ID saved to storage before redirect:', sessionId);
                     }
                     if (scenarioId) {
                         sessionStorage.setItem('trpg_scenario_id', scenarioId);
@@ -458,9 +458,9 @@
                     sessionStorage.removeItem('trpg_chat_log');
                     sessionStorage.setItem('trpg_scenario_loaded', 'true');
 
-                    // ✅ [수정 2] URL 파라미터에 session_id를 포함하여 리다이렉트
+                    // 2단계: 저장 완료 후 URL 파라미터에 session_id를 포함하여 리다이렉트
                     if (sessionId) {
-                        console.log('🚀 [LOAD] Redirecting with session_id:', sessionId);
+                        console.log('🚀 [LOAD] Redirecting to player view with session_id:', sessionId);
                         window.location.href = `/views/player?session_id=${sessionId}`;
                     } else {
                         // session_id가 없는 경우 폴백
