@@ -1,15 +1,15 @@
 """
-AI 이미지 생성 서비스 (Pollinations.ai 우회 설정 + HuggingFace 지원)
+AI 이미지 생성 서비스 (Google Imagen 3 기반)
 Railway 환경에서 MiniO에 이미지 저장/로드 지원
 """
 import os
 import logging
 import asyncio
-import aiohttp
-import random
 import uuid
-from typing import Optional, Dict, Any
 from datetime import datetime
+from typing import Optional, Dict, Any
+from google import genai
+from google.genai import types
 
 from core.s3_client import get_s3_client
 
@@ -20,25 +20,30 @@ class ImageService:
 
     def __init__(self):
         self.s3_client = get_s3_client()
+        self.api_key = os.getenv("GOOGLE_API_KEY")
 
-        # 1. 기본: Pollinations.ai (무료, 키 불필요)
-        self.provider = "pollinations"
-        self.pollinations_url = "https://image.pollinations.ai/prompt"
+        # [설정] Google AI Studio의 Imagen 3 모델 사용
+        self.model_name = "imagen-3.0-generate-001"
 
-        # 2. 예비: HuggingFace (무료 토큰 필요)
-        # 만약 Pollinations가 Railway IP를 막으면 이걸 써야 함
-        self.hf_token = os.getenv("HF_TOKEN") # .env에 HF_TOKEN=hf_... 추가 필요
-        self.hf_api_url = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
-
-        # 이미지 생성 프롬프트 템플릿
+        # 이미지 생성 프롬프트 템플릿 (Imagen은 구체적인 지시를 잘 따릅니다)
         self.prompts = {
-            "npc": "pixel art portrait of {description}, 8bit, retro game style, white background, centered, high quality, minimal details",
-            "enemy": "pixel art monster of {description}, 8bit, enemy sprite, retro game style, white background, high quality",
-            "background": "pixel art landscape of {description}, 8bit, game background, retro game style, detailed, 16:9 aspect ratio"
+            "npc": "A high quality 8-bit pixel art portrait of {description}. Retro game character sprite style, white background, centered, clean lines, vibrant colors.",
+            "enemy": "A high quality 8-bit pixel art monster of {description}. Retro game enemy sprite style, intimidating, white background, clean lines.",
+            "background": "A high quality 8-bit pixel art landscape of {description}. Retro game background style, detailed environment, atmospheric, 16:9 aspect ratio."
         }
 
-        self._is_available = True
-        logger.info(f"✅ [Image] 이미지 서비스 초기화 (기본: {self.provider})")
+        if not self.api_key:
+            logger.warning("⚠️ [Image] GOOGLE_API_KEY가 설정되지 않았습니다.")
+            self._is_available = False
+        else:
+            try:
+                # 클라이언트 초기화
+                self.client = genai.Client(api_key=self.api_key)
+                self._is_available = True
+                logger.info(f"✅ [Image] Google Imagen 3 서비스 초기화 완료")
+            except Exception as e:
+                logger.error(f"❌ [Image] Google Client 초기화 실패: {e}")
+                self._is_available = False
 
     @property
     def is_available(self) -> bool:
@@ -49,22 +54,17 @@ class ImageService:
             return None
 
         try:
+            # 1. 프롬프트 생성
             prompt = self.prompts[image_type].format(description=description)
 
-            # 1차 시도: Pollinations
-            image_data = await self._try_pollinations(prompt)
+            # 2. Google Imagen API 호출 (동기 함수이므로 스레드풀에서 실행)
+            image_bytes = await asyncio.to_thread(self._generate_with_google, prompt)
 
-            # 2차 시도: HuggingFace (Pollinations 실패 시 백업)
-            if not image_data and self.hf_token:
-                logger.warning("⚠️ [Image] Pollinations 실패 -> HuggingFace로 재시도")
-                image_data = await self._try_huggingface(prompt)
-
-            if not image_data:
-                logger.error("❌ [Image] 모든 이미지 생성 시도 실패")
+            if not image_bytes:
                 return None
 
-            # S3 업로드
-            image_url = await self._upload_to_s3(image_data, image_type, scenario_id, target_id)
+            # 3. S3 업로드
+            image_url = await self._upload_to_s3(image_bytes, image_type, scenario_id, target_id)
 
             if not image_url:
                 return None
@@ -77,59 +77,34 @@ class ImageService:
                 "generated_at": datetime.now().isoformat()
             }
         except Exception as e:
-            logger.error(f"❌ [Image] 생성 중 예외: {e}")
+            logger.error(f"❌ [Image] 생성 프로세스 오류: {e}")
             return None
 
-    async def _try_pollinations(self, prompt: str) -> Optional[bytes]:
-        """Pollinations.ai 호출 (헤더 위장)"""
+    def _generate_with_google(self, prompt: str) -> Optional[bytes]:
+        """Google Imagen API 호출 (동기)"""
         try:
-            seed = random.randint(0, 1000000)
-            url = f"{self.pollinations_url}/{prompt}"
+            # 이미지 생성 요청
+            response = self.client.models.generate_images(
+                model=self.model_name,
+                prompt=prompt,
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio="1:1" if "background" not in prompt else "16:9",
+                    include_rai_reason=True,
+                    output_mime_type="image/png"
+                )
+            )
 
-            params = {
-                "width": 1024, "height": 1024,
-                "seed": seed, "nologo": "true", "model": "flux"
-            }
+            # 결과 확인
+            if response.generated_images:
+                # 첫 번째 이미지의 바이트 데이터 반환
+                return response.generated_images[0].image.image_bytes
+            else:
+                logger.error("❌ [Image] 생성된 이미지가 없습니다.")
+                return None
 
-            # [중요] 브라우저인 척 위장하는 헤더
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Referer": "https://pollinations.ai/",
-                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-            }
-
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params, headers=headers, timeout=30.0) as response:
-                    if response.status == 200:
-                        content_type = response.headers.get("Content-Type", "")
-                        # HTML이 오면 차단된 것임
-                        if "text/html" in content_type:
-                            logger.warning("⚠️ [Image] Pollinations가 Railway IP를 차단했습니다 (Cloudflare).")
-                            return None
-                        return await response.read()
-                    else:
-                        logger.warning(f"⚠️ [Image] Pollinations 오류: {response.status}")
-                        return None
         except Exception as e:
-            logger.error(f"⚠️ [Image] Pollinations 호출 중 오류: {e}")
-            return None
-
-    async def _try_huggingface(self, prompt: str) -> Optional[bytes]:
-        """HuggingFace Inference API 호출 (백업용)"""
-        try:
-            headers = {"Authorization": f"Bearer {self.hf_token}"}
-            payload = {"inputs": prompt}
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self.hf_api_url, headers=headers, json=payload, timeout=30.0) as response:
-                    if response.status == 200:
-                        return await response.read()
-                    else:
-                        err = await response.text()
-                        logger.error(f"⚠️ [Image] HuggingFace 오류: {response.status} - {err}")
-                        return None
-        except Exception as e:
-            logger.error(f"⚠️ [Image] HuggingFace 호출 중 오류: {e}")
+            logger.error(f"❌ [Image] Google API 호출 실패: {e}")
             return None
 
     async def _upload_to_s3(self, image_data: bytes, image_type: str, scenario_id: Optional[int] = None, target_id: Optional[str] = None) -> Optional[str]:
