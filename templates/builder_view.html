@@ -357,9 +357,10 @@
             const canvasRef = useRef(null);
 
             // Modals & Misc
-            const [modals, setModals] = useState({ npcGen: false, npcList: false, presetLoad: false, scenarioList: false });
+            const [modals, setModals] = useState({ npcGen: false, npcList: false, presetLoad: false, scenarioList: false, imageGen: false });
             const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
             const [auditState, setAuditState] = useState({ isOpen: false, isLoading: false, results: null, targetNodeId: null });
+            const [imageGenState, setImageGenState] = useState({ isLoading: false, result: null });
             const [presetList, setPresetList] = useState([]);
             const [dbNpcList, setDbNpcList] = useState([]);
             const [userScenarios, setUserScenarios] = useState([]);
@@ -602,6 +603,41 @@
                 }));
                 showToast(`"${targetId}" 씬의 AI 노트에 추가됨`, "success");
             };
+
+            // AI 이미지 생성 함수
+            const generateImage = async (imageType, description) => {
+                setImageGenState({ isLoading: true, result: null });
+                try {
+                    const res = await fetch('/api/image/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            image_type: imageType,
+                            description: description,
+                            scenario_id: scenarioId ? parseInt(scenarioId) : null,
+                            target_id: selectedNodeId
+                        })
+                    });
+                    
+                    const json = await res.json();
+                    if (json.success && json.data) {
+                        setImageGenState({ isLoading: false, result: json.data });
+                        showToast("이미지 생성 완료!", "success");
+                        
+                        // 생성된 이미지 URL을 노드 데이터에 저장
+                        if (selectedNodeId) {
+                            const imageKey = imageType === 'background' ? 'background_image' : 
+                                           imageType === 'npc' ? 'npc_image' : 'enemy_image';
+                            updateNodeData(selectedNodeId, imageKey, json.data.image_url);
+                        }
+                    } else {
+                        throw new Error(json.error || '이미지 생성 실패');
+                    }
+                } catch (e) {
+                    showToast("이미지 생성 실패: " + e.message, "error");
+                    setImageGenState({ isLoading: false, result: null });
+                }
+            };
             const loadPreset = (preset) => {
                 if(!confirm("현재 내용이 사라집니다. 적용하시겠습니까?")) return;
                 try {
@@ -810,6 +846,72 @@
                                         <label className="text-[10px] text-[#6A6A8A] block mb-1 flex items-center gap-1 font-bold"><Icon name="brain-circuit" size={12}/> AI 제안 노트</label>
                                         <textarea className="w-full pixel-input p-2 text-xs h-20 resize-none text-[#FFFACD]"
                                                   value={node.data.ai_note || ''} readOnly></textarea>
+                                    </div>
+
+                                    <div className="mt-4 pt-4 border-t-2 border-[#4A4A6A]">
+                                        <label className="text-[10px] text-[#6A6A8A] block mb-1 flex items-center gap-1 font-bold"><Icon name="image" size={12}/> AI 이미지 생성</label>
+                                        
+                                        {/* 이미지 생성 탭 */}
+                                        <div className="space-y-3">
+                                            <div>
+                                                <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">이미지 종류</label>
+                                                <select className="w-full pixel-input p-2 text-xs" id="imageTypeSelect">
+                                                    <option value="npc">NPC 초상화</option>
+                                                    <option value="enemy">적 이미지</option>
+                                                    <option value="background">씬 배경</option>
+                                                </select>
+                                            </div>
+                                            
+                                            <div>
+                                                <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">설명</label>
+                                                <input 
+                                                    type="text" 
+                                                    className="w-full pixel-input p-2 text-xs" 
+                                                    id="imageDescriptionInput"
+                                                    placeholder="생성할 이미지를 설명하세요"
+                                                />
+                                            </div>
+                                            
+                                            <button 
+                                                onClick={() => {
+                                                    const imageType = document.getElementById('imageTypeSelect').value;
+                                                    const description = document.getElementById('imageDescriptionInput').value;
+                                                    if (!description.trim()) {
+                                                        showToast("이미지 설명을 입력하세요", "error");
+                                                        return;
+                                                    }
+                                                    generateImage(imageType, description);
+                                                }}
+                                                disabled={imageGenState.isLoading}
+                                                className="pixel-btn w-full py-2 text-xs text-[#00FFFF] border-[#00FFFF] disabled:opacity-50"
+                                            >
+                                                {imageGenState.isLoading ? (
+                                                    <>
+                                                        <div className="w-3 h-3 border border-[#00FFFF] border-t-transparent animate-spin mr-2"></div>
+                                                        생성 중...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Icon name="sparkles" size={12}/> 이미지 생성
+                                                    </>
+                                                )}
+                                            </button>
+                                            
+                                            {/* 생성된 이미지 미리보기 */}
+                                            {imageGenState.result && (
+                                                <div className="mt-3 p-3 bg-[#0B0B19] border border-[#4A4A6A]">
+                                                    <div className="text-[10px] text-[#6A6A8A] mb-2 font-bold">생성된 이미지</div>
+                                                    <img 
+                                                        src={imageGenState.result.image_url} 
+                                                        alt="Generated" 
+                                                        className="w-full h-32 object-cover border border-[#4A4A6A]"
+                                                    />
+                                                    <div className="text-[10px] text-[#6A6A8A] mt-2">
+                                                        {imageGenState.result.description}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-2 pt-4">
