@@ -196,7 +196,7 @@ async def view_debug_scenes(
         try:
             logger.info(f"🎨 [DEBUG SCENES] Calling MermaidService.generate_mermaid_from_scenario...")
             # ✅ [NEW] current_scene_id를 Mermaid 서비스에 전달하여 하이라이트 처리
-            mermaid_code = MermaidService.generate_mermaid_from_scenario(scenario_data, current_node_id=current_scene_id)
+            mermaid_code = MermaidService.generate_mermaid_from_scenario(scenario_data, current_scene_id=current_scene_id)
 
             # ✅ [작업 2] Mermaid 코드 검증 로그 강화
             lines = mermaid_code.splitlines()
