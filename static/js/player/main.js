@@ -4,48 +4,69 @@ document.addEventListener('DOMContentLoaded', function() {
     // 아이콘 초기화
     lucide.createIcons();
 
-    // ✅ [최우선 순위] 세션 ID 결정 로직: URL 파라미터 > sessionStorage
-    // 1순위: URL 파라미터에서 session_id 추출
+    // ✅ [최우선 순위] URL 파라미터에서 session_id와 scenario_id 추출하여 sessionStorage 강제 업데이트
     const urlParams = new URLSearchParams(window.location.search);
     const urlSessionId = urlParams.get('session_id');
+    const urlScenarioId = urlParams.get('scenario_id');
 
-    // 2순위: sessionStorage에서 trpg_session_key 추출
-    const storageSessionId = sessionStorage.getItem('trpg_session_key');
-
-    // URL에서 session_id를 찾았다면 무조건 최우선 사용 & 강제 최신화
+    // ✅ [FIX] URL에 session_id가 있으면 무조건 sessionStorage 덮어쓰기
     if (urlSessionId) {
         console.log('🔑 [INIT] URL parameter detected (priority #1), forcing update:', urlSessionId);
-
-        // 기존 sessionStorage 값 무시하고 강제로 덮어씀
         currentSessionId = urlSessionId;
         sessionStorage.setItem('trpg_session_key', urlSessionId);
 
-        // 레거시 키도 동기화 (하위 호환성)
+        // 레거시 키도 동기화
         if (CURRENT_SESSION_ID_KEY && CURRENT_SESSION_ID_KEY !== 'trpg_session_key') {
             sessionStorage.setItem(CURRENT_SESSION_ID_KEY, urlSessionId);
         }
-
         console.log('✅ [INIT] Session ID from URL saved to storage (overriding old values)');
-    }
-    // URL에 없으면 sessionStorage에서 복원 (우선순위 #2)
-    else if (storageSessionId) {
-        currentSessionId = storageSessionId;
-        console.log('🔑 [INIT] Session ID restored from storage (priority #2):', currentSessionId);
-    }
-    // 둘 다 없으면 레거시 키 확인
-    else if (!currentSessionId) {
-        currentSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY);
-        if (currentSessionId) {
-            console.log('🔑 [INIT] Session ID restored from legacy key:', currentSessionId);
+    } else {
+        // URL에 없으면 sessionStorage에서 복원
+        const storageSessionId = sessionStorage.getItem('trpg_session_key');
+        if (storageSessionId) {
+            currentSessionId = storageSessionId;
+            console.log('🔑 [INIT] Session ID restored from storage (priority #2):', currentSessionId);
+        } else if (!currentSessionId) {
+            currentSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY);
+            if (currentSessionId) {
+                console.log('🔑 [INIT] Session ID restored from legacy key:', currentSessionId);
+            }
         }
     }
 
-    // ✅ [데이터 무결성 검사] 최종 세션 ID 확인
-    console.log('🚀 [SYNC CHECK] Final Session ID:', currentSessionId);
+    // ✅ [FIX] URL에 scenario_id가 있으면 무조건 sessionStorage 덮어쓰기
+    if (urlScenarioId) {
+        console.log('📋 [INIT] URL scenario_id detected, forcing update:', urlScenarioId);
+        currentScenarioId = urlScenarioId;
+        sessionStorage.setItem('trpg_scenario_id', urlScenarioId);
+
+        // 레거시 키도 동기화
+        if (CURRENT_SCENARIO_ID_KEY && CURRENT_SCENARIO_ID_KEY !== 'trpg_scenario_id') {
+            sessionStorage.setItem(CURRENT_SCENARIO_ID_KEY, urlScenarioId);
+        }
+        isScenarioLoaded = true;
+        console.log('✅ [INIT] Scenario ID from URL saved to storage (overriding old values)');
+    } else {
+        // URL에 없으면 sessionStorage에서 복원
+        if (!currentScenarioId) {
+            currentScenarioId = sessionStorage.getItem(CURRENT_SCENARIO_ID_KEY);
+            if (currentScenarioId) {
+                console.log('📋 [INIT] Scenario ID restored from storage:', currentScenarioId);
+                isScenarioLoaded = true;
+            }
+        }
+    }
+
+    // ✅ [DEBUG] 데이터 정합성 검사 - 타입 확인 추가
+    console.log('🛠️ [DEBUG] Loading Scenario:', currentScenarioId, '(type:', typeof currentScenarioId, ')');
+    console.log('🛠️ [DEBUG] with Session:', currentSessionId, '(type:', typeof currentSessionId, ')');
     console.log('🔍 [SYNC CHECK] Data consistency verification:');
     console.log('  - URL parameter (session_id):', urlSessionId || 'N/A');
+    console.log('  - URL parameter (scenario_id):', urlScenarioId || 'N/A');
     console.log('  - Storage (trpg_session_key):', sessionStorage.getItem('trpg_session_key'));
-    console.log('  - Current active ID:', currentSessionId);
+    console.log('  - Storage (trpg_scenario_id):', sessionStorage.getItem('trpg_scenario_id'));
+    console.log('  - Current active Session ID:', currentSessionId);
+    console.log('  - Current active Scenario ID:', currentScenarioId);
 
     // ✅ [수정 3] 데이터 정합성 확인 - API 호출 전 최신 ID 확인
     if (currentSessionId) {
@@ -74,16 +95,6 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         // ✅ [작업 2-3] 세션을 찾지 못했을 때 구체적인 안내
         console.warn('⚠️ [INIT] No session found. Please load a scenario from the main page.');
-    }
-
-    // ✅ 시나리오 ID 복원
-    if (!currentScenarioId) {
-        currentScenarioId = sessionStorage.getItem(CURRENT_SCENARIO_ID_KEY);
-        if (currentScenarioId) {
-            console.log('📋 [INIT] Scenario ID restored:', currentScenarioId);
-            // 시나리오 로드 상태 설정
-            isScenarioLoaded = true;
-        }
     }
 
     // 모델 버전 초기화 (가장 먼저 실행)
