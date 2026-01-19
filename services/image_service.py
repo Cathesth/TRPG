@@ -1,16 +1,14 @@
 """
-AI 이미지 생성 서비스 (Google Gemini 2.0 Flash 기반 - Free Tier 호환)
+AI 이미지 생성 서비스 (Hugging Face API 기반 - FLUX.1)
 Railway 환경에서 MiniO에 이미지 저장/로드 지원
 """
 import os
 import logging
 import asyncio
+import aiohttp
 import uuid
-import base64
 from datetime import datetime
 from typing import Optional, Dict, Any
-from google import genai
-from google.genai import types
 
 from core.s3_client import get_s3_client
 
@@ -21,29 +19,26 @@ class ImageService:
 
     def __init__(self):
         self.s3_client = get_s3_client()
-        self.api_key = os.getenv("GOOGLE_API_KEY")
+        # [설정] Railway 환경변수에 HF_TOKEN을 꼭 추가해야 합니다.
+        self.hf_token = os.getenv("HF_TOKEN")
 
-        # [수정] AI Studio(무료)에서 이미지 생성이 가능한 최신 모델
-        # "imagen-3.0-generate-002" 대신 Gemini 2.0 Flash를 사용합니다.
-        self.model_name = "gemini-2.0-flash"
+        # [모델] Hugging Face의 최신 고속 모델 (FLUX.1-schnell)
+        # 무료 Inference API를 통해 호출합니다.
+        self.api_url = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
 
+        # 프롬프트 템플릿 (Flux 모델은 자연어 지시를 잘 알아듣습니다)
         self.prompts = {
-            "npc": "Draw a high quality 8-bit pixel art portrait of {description}. Retro game character sprite style, white background, centered, clean lines, vibrant colors.",
-            "enemy": "Draw a high quality 8-bit pixel art monster of {description}. Retro game enemy sprite style, intimidating, white background, clean lines.",
-            "background": "Draw a high quality 8-bit pixel art landscape of {description}. Retro game background style, detailed environment, atmospheric."
+            "npc": "pixel art portrait of {description}, 8-bit style, retro rpg character, white background, centered, high quality, sharp focus, clean lines, minimal details",
+            "enemy": "pixel art monster of {description}, 8-bit style, retro rpg enemy, white background, intimidating, high quality, clean lines",
+            "background": "pixel art landscape of {description}, 8-bit style, retro rpg background, detailed environment, atmospheric, 16:9 aspect ratio"
         }
 
-        if not self.api_key:
-            logger.warning("⚠️ [Image] GOOGLE_API_KEY가 설정되지 않았습니다.")
+        if not self.hf_token:
+            logger.warning("⚠️ [Image] HF_TOKEN(Hugging Face 토큰)이 없습니다. 이미지 생성이 실패할 수 있습니다.")
             self._is_available = False
         else:
-            try:
-                self.client = genai.Client(api_key=self.api_key)
-                self._is_available = True
-                logger.info(f"✅ [Image] Google 서비스 초기화 완료 (Model: {self.model_name})")
-            except Exception as e:
-                logger.error(f"❌ [Image] 초기화 실패: {e}")
-                self._is_available = False
+            self._is_available = True
+            logger.info(f"✅ [Image] Hugging Face 서비스 초기화 (Model: FLUX.1-schnell)")
 
     @property
     def is_available(self) -> bool:
@@ -54,17 +49,18 @@ class ImageService:
             return None
 
         try:
+            # 프롬프트 생성
             prompt = self.prompts[image_type].format(description=description)
             logger.info(f"🎨 [Image] 생성 요청: {prompt[:50]}...")
 
-            # 동기 함수 실행
-            image_bytes = await asyncio.to_thread(self._generate_with_gemini, prompt, image_type)
+            # API 호출
+            image_data = await self._call_huggingface_api(prompt)
 
-            if not image_bytes:
+            if not image_data:
                 return None
 
             # S3 업로드
-            image_url = await self._upload_to_s3(image_bytes, image_type, scenario_id, target_id)
+            image_url = await self._upload_to_s3(image_data, image_type, scenario_id, target_id)
 
             if not image_url:
                 return None
@@ -77,40 +73,37 @@ class ImageService:
                 "generated_at": datetime.now().isoformat()
             }
         except Exception as e:
-            logger.error(f"❌ [Image] 프로세스 오류: {e}")
+            logger.error(f"❌ [Image] 생성 프로세스 오류: {e}")
             return None
 
-    def _generate_with_gemini(self, prompt: str, image_type: str) -> Optional[bytes]:
-        """Gemini 2.0 Flash를 사용하여 이미지 생성"""
+    async def _call_huggingface_api(self, prompt: str) -> Optional[bytes]:
+        """Hugging Face Inference API 호출"""
         try:
-            # 1:1 비율 또는 16:9 비율 설정
-            # Gemini 2.0 Flash는 '1:1', '3:4', '4:3', '9:16', '16:9' 지원
-            aspect = "16:9" if image_type == "background" else "1:1"
+            headers = {"Authorization": f"Bearer {self.hf_token}"}
+            payload = {
+                "inputs": prompt,
+                "parameters": {
+                    # 필요시 파라미터 조정 가능
+                    # "guidance_scale": 3.5,
+                    # "num_inference_steps": 4
+                }
+            }
 
-            # [핵심] generate_content를 쓰되 response_modalities에 'IMAGE'를 포함
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_modalities=["IMAGE"],
-                    # 일부 라이브러리 버전에 따라 image_aspect_ratio가 동작하지 않을 수 있으니
-                    # 프롬프트에 비율을 명시하는 것이 더 안전할 수 있습니다.
-                    # 여기서는 SDK 문법에 맞춰 시도합니다.
-                )
-            )
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.api_url, headers=headers, json=payload, timeout=60.0) as response:
+                    if response.status != 200:
+                        err = await response.text()
+                        logger.error(f"❌ [Image] API 오류 ({response.status}): {err}")
 
-            # 응답에서 이미지 추출
-            if response.candidates and response.candidates[0].content.parts:
-                for part in response.candidates[0].content.parts:
-                    # 인라인 데이터로 이미지가 들어오는 경우
-                    if part.inline_data:
-                        logger.info(f"✅ [Image] 이미지 생성 성공 ({len(part.inline_data.data)} bytes)")
-                        return part.inline_data.data
+                        # 503(모델 로딩중) 에러 발생 시 처리 로직이 필요할 수 있음
+                        if response.status == 503:
+                            logger.info("⏳ [Image] 모델 로딩 중... 잠시 후 다시 시도해주세요.")
 
-                    # SDK 버전에 따라 executable_code 형태로 올 수도 있음 (드묾)
+                        return None
 
-            logger.error("❌ [Image] 생성된 이미지 데이터가 없습니다.")
-            return None
+                    # 이미지가 바이너리 형태로 반환됨
+                    logger.info("✅ [Image] 이미지 데이터 수신 성공")
+                    return await response.read()
 
         except Exception as e:
             logger.error(f"❌ [Image] API 호출 실패: {e}")
