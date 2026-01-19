@@ -79,9 +79,9 @@
 
             <div class="h-6 w-px bg-rpg-700 hidden md:block"></div>
 
-            <button onclick="openModal('likes-modal'); htmx.trigger('#liked-grid', 'load');"
-                    class="text-gray-400 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-white/5 relative group" title="찜한 목록">
-                <i data-lucide="heart" class="w-6 h-6 transition-transform group-hover:scale-110"></i>
+            <button onclick="location.href='/views/player'"
+                    class="text-gray-400 hover:text-rpg-accent transition-colors p-2 rounded-full hover:bg-white/5 relative group" title="플레이어 모드로 돌아가기">
+                <i data-lucide="gamepad-2" class="w-6 h-6 transition-transform group-hover:scale-110"></i>
             </button>
 
             <div hx-get="/api/views/header-profile"
@@ -276,6 +276,28 @@
 <!-- Mermaid JS - 작업 3: 선언적 렌더링으로 변경 -->
 <script type="module">
     import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+
+    // ✅ [NEW] URL 파라미터로 scenario_id와 session_key가 없으면 sessionStorage에서 복원
+    (function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const hasScenarioId = urlParams.has('scenario_id');
+        const hasSessionKey = urlParams.has('session_key');
+
+        if (!hasScenarioId || !hasSessionKey) {
+            const scenarioId = sessionStorage.getItem('current_scenario_id');
+            const sessionKey = sessionStorage.getItem('session_key');
+
+            if (scenarioId) {
+                const newUrl = new URL(window.location.href);
+                if (!hasScenarioId) newUrl.searchParams.set('scenario_id', scenarioId);
+                if (!hasSessionKey && sessionKey) newUrl.searchParams.set('session_key', sessionKey);
+
+                // URL 변경 (페이지 새로고침)
+                window.location.href = newUrl.toString();
+                return;
+            }
+        }
+    })();
 
     // Mermaid 초기화 - startOnLoad 사용
     mermaid.initialize({
