@@ -13,22 +13,21 @@
 
 <style>
          :root {
-             /* Modern Game UI + Brutalism Color Palette */
+             /* Modern Game UI + Brutalism Color Palette (Improved Contrast) */
              --game-bg: #0a0a12;
              --game-panel: #131320;
              --game-panel-light: #1f1f2e;
              --game-border: #2a2a3a;
              --game-border-light: #4a4a6a;
              --game-border-bold: #6a6a9a;
-             --game-text: #e8e8f0;
-             --game-text-muted: #9a9aaa;
-             --game-accent-1: #5a5aff;
-             --game-accent-2: #7a4aff;
-             --game-highlight: #ff4a8a;
-             --game-success: #00d966;
-             --game-warning: #ffaa00;
-             --game-danger: #ff3333;
-             --game-accent-bold: #ffaa00;
+             --game-text: #f0f0f5; /* brighter text */
+             --game-text-muted: #a8a8c0;
+             --game-accent-1: #6366f1; /* Indigo-500 */
+             --game-accent-2: #8b5cf6; /* Violet-500 */
+             --game-highlight: #f472b6; /* Pink-400 */
+             --game-success: #10b981;
+             --game-warning: #f59e0b;
+             --game-danger: #ef4444;
          }
 
          .voxel-ui {
@@ -49,203 +48,108 @@
          .voxel-ui .bg-dots-pattern {
              background-color: var(--game-bg) !important;
              background-image:
-                 repeating-linear-gradient(0deg, transparent 0px, transparent 20px, rgba(90, 90, 255, 0.04) 20px, rgba(90, 90, 255, 0.04) 21px),
-                 repeating-linear-gradient(90deg, transparent 0px, transparent 20px, rgba(90, 90, 255, 0.04) 20px, rgba(90, 90, 255, 0.04) 21px);
+                 radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+                 radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
              background-size: 100% 100%, 100% 100%;
          }
 
          .voxel-ui .node-ui {
-             border-radius: 0px !important;
-             background: linear-gradient(135deg, rgba(19, 19, 32, 0.95) 0%, rgba(31, 31, 46, 0.9) 100%);
-             border: 3px solid var(--game-border-light);
+             border-radius: 4px !important; /* Slightly rounded for better look */
+             background: linear-gradient(135deg, rgba(26, 26, 46, 0.95) 0%, rgba(37, 37, 66, 0.9) 100%);
+             border: 2px solid var(--game-border-light);
              box-shadow:
-                 8px 8px 0 rgba(0, 0, 0, 0.5),
-                 inset 0 1px 0 rgba(255, 255, 255, 0.05);
-             transition: all 120ms ease-out;
-             position: relative;
+                 0 8px 32px rgba(0, 0, 0, 0.5),
+                 inset 0 1px 0 rgba(255, 255, 255, 0.1);
+             transition: transform 0.1s ease-out, box-shadow 0.1s ease-out, border-color 0.2s;
+             position: absolute; /* Essential for dragging */
+             z-index: 10;
          }
 
          .voxel-ui .node-ui:hover {
              border-color: var(--game-accent-1);
              box-shadow:
-                 8px 8px 0 rgba(90, 90, 255, 0.3),
-                 inset 0 1px 0 rgba(90, 90, 255, 0.15),
-                 0 0 20px rgba(90, 90, 255, 0.2);
-             transform: translate(-2px, -2px);
+                 0 12px 48px rgba(99, 102, 241, 0.25),
+                 inset 0 1px 0 rgba(255, 255, 255, 0.15),
+                 0 0 0 1px var(--game-accent-1);
+             z-index: 20; /* Bring to front on hover */
+         }
+
+         .voxel-ui .node-ui.selected {
+             border-color: var(--game-highlight);
+             box-shadow: 0 0 0 2px var(--game-highlight), 0 10px 40px rgba(0,0,0,0.6);
+             z-index: 30;
          }
 
          .voxel-ui button {
-             border-radius: 0px;
-             border: 2px solid var(--game-border-light);
-             background: linear-gradient(135deg, rgba(31, 31, 46, 0.85) 0%, rgba(19, 19, 32, 0.95) 100%);
-             box-shadow:
-                 4px 4px 0 rgba(0, 0, 0, 0.4),
-                 inset 0 1px 0 rgba(255, 255, 255, 0.08);
-             transition: all 100ms ease-out;
-             font-weight: 700;
-             letter-spacing: 0.5px;
-             text-transform: uppercase;
-             font-size: 0.85rem;
+             border-radius: 4px;
+             border: 1px solid var(--game-border-light);
+             background: linear-gradient(180deg, rgba(45, 45, 60, 1) 0%, rgba(30, 30, 45, 1) 100%);
+             box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+             transition: all 0.1s;
+             font-weight: 600;
+             color: var(--game-text);
          }
 
          .voxel-ui button:hover {
              border-color: var(--game-accent-1);
-             box-shadow:
-                 4px 4px 0 rgba(90, 90, 255, 0.4),
-                 inset 0 1px 0 rgba(90, 90, 255, 0.25),
-                 0 0 16px rgba(90, 90, 255, 0.25);
-             background: linear-gradient(135deg, rgba(90, 90, 255, 0.15) 0%, rgba(50, 50, 100, 0.15) 100%);
+             background: linear-gradient(180deg, rgba(55, 55, 75, 1) 0%, rgba(40, 40, 55, 1) 100%);
+             transform: translateY(-1px);
+             color: white;
          }
 
          .voxel-ui button:active {
-             transform: translate(2px, 2px);
-             box-shadow:
-                 0 0 0 rgba(0, 0, 0, 0),
-                 inset 0 2px 4px rgba(0, 0, 0, 0.3);
-         }
-
-         .voxel-ui button:focus-visible {
-             box-shadow:
-                 0 0 0 2px var(--game-bg),
-                 0 0 0 4px var(--game-accent-1);
+             transform: translateY(1px);
+             box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
          }
 
          .voxel-ui input,
          .voxel-ui select,
          .voxel-ui textarea {
-             border-radius: 0px;
-             border: 2px solid var(--game-border-light);
-             background: linear-gradient(135deg, rgba(10, 10, 18, 0.95) 0%, rgba(19, 19, 32, 0.9) 100%);
-             box-shadow:
-                 inset 2px 2px 0 rgba(0, 0, 0, 0.3),
-                 inset 0 0 0 1px rgba(90, 90, 255, 0.08);
+             border-radius: 4px;
+             border: 1px solid var(--game-border);
+             background: #151525;
              color: var(--game-text);
-             transition: all 100ms ease-out;
-             padding: 8px 12px;
-             font-family: 'Courier New', monospace;
+             transition: border-color 0.2s;
          }
 
          .voxel-ui input:focus,
          .voxel-ui select:focus,
          .voxel-ui textarea:focus {
              border-color: var(--game-accent-1);
-             box-shadow:
-                 inset 2px 2px 0 rgba(0, 0, 0, 0.3),
-                 inset 0 0 0 2px rgba(90, 90, 255, 0.25),
-                 0 0 12px rgba(90, 90, 255, 0.2);
+             background: #1a1a2e;
          }
 
          .voxel-ui input::placeholder,
          .voxel-ui textarea::placeholder {
              color: var(--game-text-muted);
+             opacity: 0.7;
          }
 
-         .voxel-ui .bg-gray-900,
-         .voxel-ui .bg-gray-800,
-         .voxel-ui .bg-gray-950 {
-             background: linear-gradient(135deg, rgba(19, 19, 32, 0.95) 0%, rgba(31, 31, 46, 0.9) 100%) !important;
-             border: 2px solid var(--game-border-light);
-         }
+         /* Connection Lines */
+         .connection-line { stroke: #6b7280; stroke-width: 2; fill: none; transition: stroke 0.2s; }
+         .connection-line:hover { stroke: var(--game-warning); stroke-width: 4; cursor: pointer; filter: drop-shadow(0 0 4px var(--game-warning)); }
+         .connecting-line { stroke: var(--game-accent-1); stroke-width: 3; stroke-dasharray: 8,4; fill: none; animation: dash 0.5s linear infinite; pointer-events: none; }
+         @keyframes dash { to { stroke-dashoffset: -12; } }
 
-         .voxel-ui .rounded-xl,
-         .voxel-ui .rounded-lg {
-             border-radius: 0px !important;
-         }
+         /* Scrollbar */
+         .voxel-ui .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+         .voxel-ui .custom-scrollbar::-webkit-scrollbar-track { background: #0f0f1e; }
+         .voxel-ui .custom-scrollbar::-webkit-scrollbar-thumb { background: #3a3a5c; border-radius: 4px; }
+         .voxel-ui .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #5a5a8f; }
 
-         .voxel-ui .rounded {
-             border-radius: 0px !important;
-         }
-
-         .voxel-ui .bg-gradient-to-r {
-             background: linear-gradient(90deg, var(--game-accent-1), var(--game-accent-2)) !important;
-         }
-
-         .voxel-ui .border-blue-700,
-         .voxel-ui .border-blue-600,
-         .voxel-ui .border-indigo-600,
-         .voxel-ui .border-red-600 {
-             border-color: var(--game-border-light) !important;
-         }
-
-         .voxel-ui .bg-blue-900\/50,
-         .voxel-ui .bg-indigo-900\/50,
-         .voxel-ui .bg-red-900\/50 {
-             background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%) !important;
-             border: 1px solid var(--game-border);
-         }
-
-         .voxel-ui .bg-black\/60,
-         .voxel-ui .bg-black\/50 {
-             background: rgba(15, 15, 30, 0.6) !important;
-             backdrop-filter: blur(8px);
-         }
-
-         .voxel-ui .backdrop-blur,
-         .voxel-ui .backdrop-blur-sm {
-             backdrop-filter: blur(12px);
-         }
-
-         .voxel-ui .node-ui .cursor-grab {
-             border-top-left-radius: 0px;
-             border-top-right-radius: 0px;
-             background: linear-gradient(90deg, var(--game-accent-1), var(--game-highlight)) !important;
-             border-bottom: 3px solid var(--game-border-light);
-             color: white;
-             font-weight: 800;
-             letter-spacing: 1px;
-             text-transform: uppercase;
-         }
-
-         .voxel-ui .ring-blue-500 {
-             --tw-ring-color: var(--game-accent-1) !important;
-         }
-
-         .voxel-ui .text-transparent.bg-clip-text.bg-gradient-to-r {
-             background: linear-gradient(90deg, var(--game-accent-1), var(--game-highlight));
-             -webkit-background-clip: text;
-             -webkit-text-fill-color: transparent;
-             background-clip: text;
-         }
-
-         .voxel-ui .fixed.top-5.left-1\/2 {
-             border: 3px solid var(--game-border-light);
-             border-radius: 0px;
-             box-shadow:
-                 6px 6px 0 rgba(0, 0, 0, 0.5),
-                 0 0 20px rgba(90, 90, 255, 0.2);
-             background: linear-gradient(135deg, rgba(19, 19, 32, 0.98) 0%, rgba(31, 31, 46, 0.95) 100%);
-             backdrop-filter: blur(8px);
-         }
-
-         .voxel-ui .custom-scrollbar::-webkit-scrollbar {
-             width: 12px;
-         }
-
-         .voxel-ui .custom-scrollbar::-webkit-scrollbar-track {
-             background: rgba(42, 42, 58, 0.3);
-             border-left: 2px solid var(--game-border);
-         }
-
-         .voxel-ui .custom-scrollbar::-webkit-scrollbar-thumb {
-             background: linear-gradient(180deg, var(--game-accent-1), var(--game-accent-2));
-             border: 1px solid var(--game-border-light);
-             transition: all 100ms ease;
-         }
-
-         .voxel-ui .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-             background: linear-gradient(180deg, var(--game-highlight), var(--game-accent-1));
-             box-shadow: inset 0 0 6px rgba(90, 90, 255, 0.3);
-         }
+         /* Utilities */
+         .no-select { user-select: none; -webkit-user-select: none; }
+         .cursor-grab { cursor: grab; }
+         .cursor-grabbing { cursor: grabbing; }
+         .cursor-crosshair { cursor: crosshair; }
  </style>
 </head>
-<body class="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white h-screen w-screen" style="background-image:
-  repeating-linear-gradient(0deg, transparent 0px, transparent 40px, rgba(90, 90, 255, 0.03) 40px, rgba(90, 90, 255, 0.03) 41px),
-  repeating-linear-gradient(90deg, transparent 0px, transparent 40px, rgba(90, 90, 255, 0.03) 40px, rgba(90, 90, 255, 0.03) 41px);">
+<body class="bg-[#0a0a12] text-white h-screen w-screen overflow-hidden">
 
     <div id="root" class="w-full h-full"></div>
 
 {% raw %}
-     <script type="text/babel">
+    <script type="text/babel">
         const { useState, useRef, useEffect, useCallback } = React;
 
         // --- 아이콘 컴포넌트 ---
@@ -270,14 +174,14 @@
         const Modal = ({ isOpen, title, onClose, children, footer }) => {
             if (!isOpen) return null;
             return (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fade-in p-4">
-                    <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
-                        <div className="p-6 border-b border-gray-700 flex justify-between items-center bg-gradient-to-r from-indigo-600/20 to-purple-600/20 rounded-t-2xl">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in p-4">
+                    <div className="bg-[#1a1a2e] border border-[#3a3a5c] rounded-lg shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+                        <div className="p-4 border-b border-[#3a3a5c] flex justify-between items-center bg-[#252542] rounded-t-lg">
                             <h3 className="font-bold text-white text-lg flex items-center gap-2">{title}</h3>
-                            <button onClick={onClose} className="text-gray-400 hover:text-indigo-400 transition-colors"><Icon name="x"/></button>
+                            <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors"><Icon name="x"/></button>
                         </div>
-                        <div className="p-6 overflow-y-auto custom-scrollbar flex-1">{children}</div>
-                        {footer && <div className="p-6 border-t border-gray-700 bg-gray-800 rounded-b-2xl flex justify-end gap-2">{footer}</div>}
+                        <div className="p-4 overflow-y-auto custom-scrollbar flex-1">{children}</div>
+                        {footer && <div className="p-4 border-t border-[#3a3a5c] bg-[#1a1a2e] rounded-b-lg flex justify-end gap-2">{footer}</div>}
                     </div>
                 </div>
             );
@@ -314,7 +218,6 @@
                         background: s.background || '',
                         trigger: s.trigger || '',
                         ai_note: s.ai_note || '',
-                        // [수정] 문자열 -> 객체 변환 {name: "..."}
                         npcs: (s.npcs || []).map(n => typeof n === 'string' ? { name: n } : n),
                         enemies: (s.enemies || []).map(e => typeof e === 'string' ? { name: e } : e)
                     }
@@ -362,6 +265,7 @@
 
         // --- 메인 컴포넌트 ---
         function ScenarioBuilder() {
+            // [State] 데이터
             const [nodes, setNodes] = useState([
                 { id: 'start', type: 'start', x: 50, y: 50, data: { label: '시나리오 설정', prologue: '', gm_notes: '', background: '' } },
                 { id: 'scene-1', type: 'scene', x: 400, y: 150, data: { title: '첫 번째 장면', description: '', background: '', trigger: '', npcs: [], enemies: [] } }
@@ -370,11 +274,13 @@
             const [globalNpcs, setGlobalNpcs] = useState([]);
             const [globalEnemies, setGlobalEnemies] = useState([]);
 
+            // [State] UI & 모드
             const [isEditMode, setIsEditMode] = useState(false);
             const [scenarioId, setScenarioId] = useState(null);
             const [isDraft, setIsDraft] = useState(false);
             const [isGenerating, setIsGenerating] = useState(false);
 
+            // [State] 캔버스 조작
             const [pan, setPan] = useState({ x: 0, y: 0, zoom: 1 });
             const [isPanning, setIsPanning] = useState(false);
             const [dragNode, setDragNode] = useState(null);
@@ -383,15 +289,18 @@
             const [selectedNodeId, setSelectedNodeId] = useState(null);
             const canvasRef = useRef(null);
 
+            // [State] 모달 및 Audit
             const [modals, setModals] = useState({ npcGen: false, npcList: false, presetLoad: false, scenarioList: false });
             const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
             const [auditState, setAuditState] = useState({ isOpen: false, isLoading: false, results: null, targetNodeId: null });
 
+            // [State] 데이터 목록
             const [presetList, setPresetList] = useState([]);
             const [dbNpcList, setDbNpcList] = useState([]);
             const [userScenarios, setUserScenarios] = useState([]);
             const [selectedModel, setSelectedModel] = useState('openai/tngtech/deepseek-r1t2-chimera:free');
 
+            // [History] Undo/Redo
             const [history, setHistory] = useState({ past: [], future: [] });
 
             const pushHistory = useCallback(() => {
@@ -455,16 +364,11 @@
                             loadedEdges = converted.edges;
                         }
 
-                        // [수정] 노드 데이터 내 NPC/Enemy가 문자열인 경우 객체로 정규화
                         if (loadedNodes) {
                             loadedNodes = loadedNodes.map(n => {
                                 if (n.data) {
-                                    if (n.data.npcs) {
-                                        n.data.npcs = n.data.npcs.map(x => typeof x === 'string' ? {name: x} : x);
-                                    }
-                                    if (n.data.enemies) {
-                                        n.data.enemies = n.data.enemies.map(x => typeof x === 'string' ? {name: x} : x);
-                                    }
+                                    if (n.data.npcs) n.data.npcs = n.data.npcs.map(x => typeof x === 'string' ? {name: x} : x);
+                                    if (n.data.enemies) n.data.enemies = n.data.enemies.map(x => typeof x === 'string' ? {name: x} : x);
                                 }
                                 return n;
                             });
@@ -482,6 +386,7 @@
                 }
             };
 
+            // --- 액션 핸들러 ---
             const addNode = (type) => {
                 pushHistory();
                 const id = `${type}-${Date.now()}`;
@@ -532,7 +437,6 @@
                 }));
             };
 
-            // [수정] 프리셋 로드 시에도 NPC 데이터 정규화 적용
             const loadPreset = (preset) => {
                 if(!confirm("현재 캔버스의 내용이 모두 변경됩니다. 프리셋을 불러오시겠습니까?")) return;
                 try {
@@ -541,7 +445,6 @@
 
                     if(data.nodes && data.edges) {
                         pushHistory();
-
                         const normalizedNodes = data.nodes.map(n => {
                             if (n.data) {
                                 if (n.data.npcs) n.data.npcs = n.data.npcs.map(x => typeof x === 'string' ? {name: x} : x);
@@ -549,7 +452,6 @@
                             }
                             return n;
                         });
-
                         setNodes(normalizedNodes);
                         setEdges(data.edges);
                         setModals(m => ({...m, presetLoad: false}));
@@ -653,7 +555,6 @@
 
             const applySuggestion = (issue) => {
                 if (!issue.scene_id) return;
-
                 const targetId = issue.scene_id;
                 const suggestionText = `\n[${new Date().toLocaleTimeString()} AI 제안]\n문제: ${issue.message}\n제안: ${issue.suggestion}\n`;
 
@@ -661,21 +562,19 @@
                     if (n.id === targetId || n.data.title === targetId) {
                         return {
                             ...n,
-                            data: {
-                                ...n.data,
-                                ai_note: (n.data.ai_note || "") + suggestionText
-                            }
+                            data: { ...n.data, ai_note: (n.data.ai_note || "") + suggestionText }
                         };
                     }
                     return n;
                 }));
-
                 showToast(`"${targetId}" 씬의 AI 노트에 추가되었습니다.`, "success");
             };
 
+            // --- 캔버스 핸들러 ---
             const handleMouseDown = (e) => {
                 if (e.target.closest('.node-ui')) return;
-                if (e.button === 0 || e.button === 1) setIsPanning(true);
+                // 우클릭 또는 휠 클릭 시 패닝
+                if (e.button === 0 || e.button === 1 || e.button === 2) setIsPanning(true);
             };
             const handleMouseMove = (e) => {
                 const rect = canvasRef.current.getBoundingClientRect();
@@ -694,14 +593,18 @@
                 setIsPanning(false); setDragNode(null); setConnectSource(null);
             };
             const handleNodeDragStart = (e, id) => {
-                e.stopPropagation();
+                // 이벤트 전파는 막지만, 드래그 로직은 실행
+                // e.stopPropagation(); // <-- 이 부분이 과도하게 막는 원인일 수 있음 (상황에 따라)
+
                 if (connectSource && connectSource !== id) {
+                    // 연결 모드
                     if (!edges.some(eg => eg.source === connectSource && eg.target === id)) {
                         pushHistory();
                         setEdges(prev => [...prev, { id: `e-${Date.now()}`, source: connectSource, target: id }]);
                     }
                     setConnectSource(null);
                 } else {
+                    // 이동 모드
                     setDragNode(id); setSelectedNodeId(id);
                 }
             };
@@ -712,9 +615,8 @@
             };
 
             return (
-                <div className="voxel-ui flex h-screen overflow-hidden text-sm font-sans" onMouseUp={handleMouseUp} onMouseMove={handleMouseMove}>
+                <div className="voxel-ui flex h-screen overflow-hidden text-sm font-sans" onMouseUp={handleMouseUp} onMouseMove={handleMouseMove} onContextMenu={e => e.preventDefault()}>
 
-                    {/* [로딩 오버레이] */}
                     {isGenerating && (
                         <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-fade-in">
                             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
@@ -723,17 +625,15 @@
                         </div>
                     )}
 
-                    {/* [AI Audit 결과 모달] */}
                     {auditState.isOpen && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4">
-                            <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
-                                <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800 rounded-t-xl">
+                            <div className="bg-[#1a1a2e] border border-[#3a3a5c] rounded-lg shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+                                <div className="p-4 border-b border-[#3a3a5c] flex justify-between items-center bg-[#252542] rounded-t-lg">
                                     <h3 className="font-bold text-white flex items-center gap-2">
                                         <Icon name="brain-circuit"/> AI 검수 리포트
                                     </h3>
                                     <button onClick={() => setAuditState(p => ({...p, isOpen: false}))} className="text-gray-400 hover:text-white"><Icon name="x"/></button>
                                 </div>
-
                                 <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
                                     {auditState.isLoading ? (
                                         <div className="flex flex-col items-center justify-center py-12 text-gray-400">
@@ -749,30 +649,19 @@
                                                     </div>
                                                     <h4 className="text-xl font-bold text-white mb-2">이야기가 자연스럽습니다!</h4>
                                                     <p className="text-gray-400">발견된 서사적 오류나 개연성 문제가 없습니다.</p>
-                                                    {auditState.results?.summary && (
-                                                        <div className="mt-4 p-3 bg-gray-800 rounded text-sm text-gray-400 max-w-lg">
-                                                            {auditState.results.summary}
-                                                        </div>
-                                                    )}
+                                                    {auditState.results?.summary && <div className="mt-4 p-3 bg-gray-800 rounded text-sm text-gray-400 max-w-lg">{auditState.results.summary}</div>}
                                                 </div>
                                             ) : (
                                                 <div className="space-y-4">
                                                     <div className="bg-red-900/20 border border-red-900/50 p-3 rounded text-red-200 text-sm font-bold flex items-center gap-2">
-                                                        <Icon name="alert-triangle" size={16}/>
-                                                        총 {auditState.results?.issues.length}개의 개선점이 발견되었습니다.
+                                                        <Icon name="alert-triangle" size={16}/> 총 {auditState.results?.issues.length}개의 개선점이 발견되었습니다.
                                                     </div>
-
                                                     {auditState.results?.issues.map((issue, idx) => (
                                                         <div key={idx} className="bg-gray-800 border border-gray-700 rounded-lg p-4">
                                                             <div className="flex justify-between items-start mb-2">
-                                                                <span className="bg-gray-700 text-xs px-2 py-1 rounded text-gray-300 font-mono flex items-center gap-1">
-                                                                    <Icon name="map-pin" size={12}/> {issue.scene_id || 'Unknown Scene'}
-                                                                </span>
-                                                                <span className={`text-xs font-bold px-2 py-1 rounded uppercase ${issue.severity === 'error' ? 'bg-red-500 text-white' : 'bg-yellow-500 text-black'}`}>
-                                                                    {issue.severity || 'Warning'}
-                                                                </span>
+                                                                <span className="bg-gray-700 text-xs px-2 py-1 rounded text-gray-300 font-mono flex items-center gap-1"><Icon name="map-pin" size={12}/> {issue.scene_id || 'Unknown Scene'}</span>
+                                                                <span className={`text-xs font-bold px-2 py-1 rounded uppercase ${issue.severity === 'error' ? 'bg-red-500 text-white' : 'bg-yellow-500 text-black'}`}>{issue.severity || 'Warning'}</span>
                                                             </div>
-
                                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
                                                                 <div className="p-3 bg-red-900/10 border border-red-900/30 rounded">
                                                                     <div className="text-xs text-red-400 font-bold mb-1 flex items-center gap-1"><Icon name="x-circle" size={12}/> PROBLEM</div>
@@ -783,12 +672,7 @@
                                                                     <p className="text-sm text-gray-300 whitespace-pre-wrap">{issue.suggestion}</p>
                                                                 </div>
                                                             </div>
-
-                                                            <button
-                                                                onClick={() => applySuggestion(issue)}
-                                                                className="mt-3 w-full py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 border border-blue-600/30 rounded text-sm font-bold flex items-center justify-center gap-2 transition-colors">
-                                                                <Icon name="pen-tool" size={14}/> 수정 내역 반영 (AI 노트에 추가)
-                                                            </button>
+                                                            <button onClick={() => applySuggestion(issue)} className="mt-3 w-full py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 border border-blue-600/30 rounded text-sm font-bold flex items-center justify-center gap-2 transition-colors"><Icon name="pen-tool" size={14}/> 수정 내역 반영 (AI 노트에 추가)</button>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -800,72 +684,41 @@
                         </div>
                     )}
 
-                    {/* 토스트 알림 */}
                     {toast.show && (
                         <div className={`fixed top-5 left-1/2 -translate-x-1/2 z-[100] px-4 py-2 rounded shadow-lg font-bold animate-fade-in ${toast.type==='error'?'bg-red-600':toast.type==='success'?'bg-green-600':'bg-blue-600'}`}>
                             {toast.msg}
                         </div>
                     )}
 
-                    {/* 좌측 사이드바 (Builder Tools) */}
-                    <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col z-20 shadow-2xl">
-                        <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-                            <span className="font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">Builder</span>
+                    {/* 좌측 사이드바 */}
+                    <div className="w-64 bg-[#131320] border-r border-[#2a2a3a] flex flex-col z-20 shadow-2xl">
+                        <div className="p-4 border-b border-[#2a2a3a] flex items-center justify-between">
+                            <span className="font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-pink-400">Builder</span>
                             <a href="/" className="text-gray-500 hover:text-white"><Icon name="home"/></a>
                         </div>
-
                         <div className="p-4 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
                             <div className="text-xs font-bold text-gray-500 uppercase mb-1">Create</div>
-                            <button onClick={() => addNode('scene')} className="w-full py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-indigo-300 flex items-center justify-center gap-2 transition-colors">
-                                <Icon name="plus-square"/> 씬 추가
-                            </button>
-                            <button onClick={() => addNode('ending')} className="w-full py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-red-300 flex items-center justify-center gap-2 transition-colors">
-                                <Icon name="flag"/> 엔딩 추가
-                            </button>
-
-                            <div className="h-px bg-gray-800 my-2"></div>
-
+                            <button onClick={() => addNode('scene')} className="w-full py-2 text-indigo-300 flex items-center justify-center gap-2 transition-colors"><Icon name="plus-square"/> 씬 추가</button>
+                            <button onClick={() => addNode('ending')} className="w-full py-2 text-red-300 flex items-center justify-center gap-2 transition-colors"><Icon name="flag"/> 엔딩 추가</button>
+                            <div className="h-px bg-[#2a2a3a] my-2"></div>
                             <div className="text-xs font-bold text-gray-500 uppercase mb-1">Assets</div>
-                            <button onClick={() => setModals(m => ({ ...m, npcGen: true }))} className="w-full py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-green-300 flex items-center justify-center gap-2">
-                                <Icon name="user-plus"/> NPC 생성
-                            </button>
-                            <button onClick={async () => {
-                                try { const res = await fetch('/api/npc/list'); const data = await res.json(); setDbNpcList(data); setModals(m=>({...m, npcList:true})); } catch(e){ showToast("목록 로드 실패","error"); }
-                            }} className="w-full py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-teal-300 flex items-center justify-center gap-2">
-                                <Icon name="users"/> NPC 불러오기
-                            </button>
-
-                            <div className="h-px bg-gray-800 my-2"></div>
-
+                            <button onClick={() => setModals(m => ({ ...m, npcGen: true }))} className="w-full py-2 text-green-300 flex items-center justify-center gap-2"><Icon name="user-plus"/> NPC 생성</button>
+                            <button onClick={async () => { try { const res = await fetch('/api/npc/list'); const data = await res.json(); setDbNpcList(data); setModals(m=>({...m, npcList:true})); } catch(e){ showToast("목록 로드 실패","error"); } }} className="w-full py-2 text-teal-300 flex items-center justify-center gap-2"><Icon name="users"/> NPC 불러오기</button>
+                            <div className="h-px bg-[#2a2a3a] my-2"></div>
                             <div className="text-xs font-bold text-gray-500 uppercase mb-1">Tools</div>
                             <div className="flex gap-2">
-                                <button onClick={undo} className="flex-1 py-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-400" title="Undo"><Icon name="undo-2"/></button>
-                                <button onClick={redo} className="flex-1 py-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-400" title="Redo"><Icon name="redo-2"/></button>
+                                <button onClick={undo} className="flex-1 py-2 text-gray-400" title="Undo"><Icon name="undo-2"/></button>
+                                <button onClick={redo} className="flex-1 py-2 text-gray-400" title="Redo"><Icon name="redo-2"/></button>
                             </div>
-                            <button onClick={async () => {
-                                try { const res = await fetch('/api/presets'); const data = await res.json(); setPresetList(data); setModals(m=>({...m, presetLoad:true})); } catch(e){}
-                            }} className="w-full py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-blue-300 flex items-center justify-center gap-2 mt-2">
-                                <Icon name="folder-open"/> 프리셋 로드
-                            </button>
-                            <button onClick={async () => {
-                                try { const res = await fetch('/api/scenarios/data?filter=my'); const data = await res.json(); setUserScenarios(data); setModals(m=>({...m, scenarioList:true})); } catch(e){}
-                            }} className="w-full py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-purple-300 flex items-center justify-center gap-2 mt-2">
-                                <Icon name="file-edit"/> 시나리오 로드
-                            </button>
+                            <button onClick={async () => { try { const res = await fetch('/api/presets'); const data = await res.json(); setPresetList(data); setModals(m=>({...m, presetLoad:true})); } catch(e){} }} className="w-full py-2 text-blue-300 flex items-center justify-center gap-2 mt-2"><Icon name="folder-open"/> 프리셋 로드</button>
+                            <button onClick={async () => { try { const res = await fetch('/api/scenarios/data?filter=my'); const data = await res.json(); setUserScenarios(data); setModals(m=>({...m, scenarioList:true})); } catch(e){} }} className="w-full py-2 text-purple-300 flex items-center justify-center gap-2 mt-2"><Icon name="file-edit"/> 시나리오 로드</button>
                         </div>
-
-                        <div className="p-4 border-t border-gray-800 bg-gray-900 z-20">
-                            {/* 전체 스토리 검수 버튼 */}
-                            <button onClick={() => runAiAudit(null)}
-                                    className="w-full mb-3 py-2 bg-violet-900/30 hover:bg-violet-900/50 text-violet-300 border border-violet-700/50 rounded font-bold flex items-center justify-center gap-2 text-xs transition-colors">
-                                <Icon name="brain-circuit"/> 전체 스토리 AI 검수
-                            </button>
-
+                        <div className="p-4 border-t border-[#2a2a3a] bg-[#131320] z-20">
+                            <button onClick={() => runAiAudit(null)} className="w-full mb-3 py-2 text-violet-300 border border-violet-700/50 rounded font-bold flex items-center justify-center gap-2 text-xs transition-colors"><Icon name="brain-circuit"/> 전체 스토리 AI 검수</button>
                             {!isEditMode && (
                                 <div className="mb-3">
                                     <label className="text-xs text-gray-500 block mb-1">AI Model</label>
-                                    <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
-                                            className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300">
+                                    <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} className="w-full bg-[#0a0a12] border border-[#2a2a3a] rounded px-2 py-1 text-xs text-gray-300">
                                         <option value="openai/tngtech/deepseek-r1t2-chimera:free">DeepSeek R1 (Free)</option>
                                         <option value="openai/google/gemini-2.5-flash">Gemini 2.5 Flash</option>
                                         <option value="openai/anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
@@ -873,31 +726,22 @@
                                     </select>
                                 </div>
                             )}
-
                             {isEditMode ? (
                                 <div className="space-y-2">
-                                    <button onClick={saveDraft} className="w-full py-2 bg-blue-900/50 border border-blue-700 hover:bg-blue-800 text-blue-200 rounded font-bold flex items-center justify-center gap-2">
-                                        <Icon name="save"/> Draft 저장
-                                    </button>
-                                    <button onClick={publishScenario} className="w-full py-2 bg-green-700 hover:bg-green-600 text-white rounded font-bold flex items-center justify-center gap-2 shadow-lg">
-                                        <Icon name="upload"/> 최종 반영
-                                    </button>
+                                    <button onClick={saveDraft} className="w-full py-2 text-blue-200 font-bold flex items-center justify-center gap-2"><Icon name="save"/> Draft 저장</button>
+                                    <button onClick={publishScenario} className="w-full py-2 text-green-200 font-bold flex items-center justify-center gap-2"><Icon name="upload"/> 최종 반영</button>
                                 </div>
                             ) : (
-                                <button onClick={generateNewScenario} className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded shadow-lg flex items-center justify-center gap-2">
-                                    <Icon name="play"/> 시나리오 생성
-                                </button>
+                                <button onClick={generateNewScenario} className="w-full py-3 text-white font-bold flex items-center justify-center gap-2"><Icon name="play"/> 시나리오 생성</button>
                             )}
                         </div>
                     </div>
 
                     {/* 캔버스 영역 */}
-                    <div ref={canvasRef} className="flex-1 relative bg-[#0a0a0a] bg-dots-pattern cursor-crosshair overflow-hidden"
+                    <div ref={canvasRef} className="flex-1 relative bg-[#0a0a12] bg-dots-pattern cursor-crosshair overflow-hidden"
                          onMouseDown={handleMouseDown}
                          onWheel={(e) => setPan(p => ({ ...p, zoom: Math.min(Math.max(0.2, p.zoom - e.deltaY * 0.001), 3) }))}>
-
                         <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${pan.zoom})`, transformOrigin: '0 0', width: '100%', height: '100%' }}>
-                            {/* Edges */}
                             <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                                 {edges.map(e => {
                                     const s = nodes.find(n => n.id === e.source), t = nodes.find(n => n.id === e.target);
@@ -909,16 +753,12 @@
                                     return <line x1={s.x+100} y1={s.y+40} x2={mousePos.x} y2={mousePos.y} className="connecting-line" />;
                                 })()}
                             </svg>
-
-                            {/* Nodes */}
                             {nodes.map(node => (
                                 <div key={node.id} style={{ left: node.x, top: node.y }}
                                      onMouseDown={(e) => handleNodeDragStart(e, node.id)}
-                                     className={`node-ui absolute w-[200px] bg-gray-900 border-2 rounded-lg node-shadow group transition-colors
-                                        ${selectedNodeId === node.id ? 'border-white z-20 ring-2 ring-blue-500' :
-                                          node.type==='start'?'border-blue-600':node.type==='ending'?'border-red-600':'border-indigo-600'}`}>
-
-                                    <div className={`p-2 text-xs font-bold flex justify-between items-center cursor-grab active:cursor-grabbing
+                                     className={`node-ui absolute w-[200px] p-0 flex flex-col
+                                        ${selectedNodeId === node.id ? 'selected' : ''}`}>
+                                    <div className={`p-2 text-xs font-bold flex justify-between items-center cursor-grab active:cursor-grabbing rounded-t
                                         ${node.type==='start'?'bg-blue-900/50 text-blue-200':node.type==='ending'?'bg-red-900/50 text-red-200':'bg-indigo-900/50 text-indigo-200'}`}>
                                         <span className="flex items-center gap-1">
                                             {node.type==='start' && <Icon name="settings" size={12}/>}
@@ -928,22 +768,18 @@
                                         </span>
                                         <button onMouseDown={(e) => {e.stopPropagation(); setConnectSource(node.id)}} className="p-1 hover:bg-white/20 rounded"><Icon name="link" size={12}/></button>
                                     </div>
-                                    <div className="p-3 text-xs text-gray-300 min-h-[60px]">
+                                    <div className="p-3 text-xs text-gray-300 min-h-[60px] bg-[#1a1a2e] rounded-b">
                                         <div className="font-bold mb-1 truncate text-white">{node.data.title || node.data.label || '제목 없음'}</div>
-                                        <div className="text-gray-500 line-clamp-2">{node.data.description || node.data.prologue || '내용 없음'}</div>
+                                        <div className="text-gray-400 line-clamp-2">{node.data.description || node.data.prologue || '내용 없음'}</div>
                                     </div>
                                 </div>
                             ))}
                         </div>
-
-                        {/* 줌 컨트롤 */}
-                        <div className="absolute top-4 right-4 bg-gray-900 border border-gray-700 rounded-lg p-2 flex flex-col gap-2 shadow-lg z-30">
-                             <button onClick={() => setPan(p=>({...p, zoom: p.zoom+0.1}))} className="hover:text-blue-400"><Icon name="plus"/></button>
+                        <div className="absolute top-4 right-4 bg-[#131320] border border-[#2a2a3a] rounded p-2 flex flex-col gap-2 shadow-lg z-30">
+                             <button onClick={() => setPan(p=>({...p, zoom: p.zoom+0.1}))}><Icon name="plus"/></button>
                              <button onClick={() => setPan({x:0, y:0, zoom:1})} className="text-xs font-mono">{Math.round(pan.zoom*100)}%</button>
-                             <button onClick={() => setPan(p=>({...p, zoom: p.zoom-0.1}))} className="hover:text-blue-400"><Icon name="minus"/></button>
+                             <button onClick={() => setPan(p=>({...p, zoom: p.zoom-0.1}))}><Icon name="minus"/></button>
                         </div>
-
-                        {/* 편집 모드 뱃지 */}
                         {isEditMode && (
                             <div className="absolute top-4 left-4 bg-black/60 backdrop-blur border border-gray-700 rounded-full px-4 py-1.5 flex items-center gap-2 z-30">
                                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
@@ -954,152 +790,98 @@
                     </div>
 
                     {/* 우측 속성 패널 */}
-                    <div className="w-80 bg-gray-900 border-l border-gray-800 p-4 overflow-y-auto custom-scrollbar z-20 shadow-xl">
+                    <div className="w-80 bg-[#131320] border-l border-[#2a2a3a] p-4 overflow-y-auto custom-scrollbar z-20 shadow-xl">
                         {selectedNodeId ? (() => {
                             const node = nodes.find(n => n.id === selectedNodeId);
                             if(!node) return null;
                             const isStart = node.type === 'start';
-
                             return (
                                 <div className="space-y-4 animate-fade-in">
-                                    <h3 className="font-bold border-b border-gray-700 pb-2 flex items-center gap-2">
+                                    <h3 className="font-bold border-b border-[#2a2a3a] pb-2 flex items-center gap-2 text-white">
                                         <Icon name="sliders"/> 속성 편집
-                                        <span className="text-xs bg-gray-800 px-2 py-0.5 rounded text-gray-400 ml-auto">{node.type}</span>
+                                        <span className="text-xs bg-[#252542] px-2 py-0.5 rounded text-gray-400 ml-auto">{node.type}</span>
                                     </h3>
-
                                     <div>
                                         <label className="text-xs text-gray-500 block mb-1">제목 <span className="text-red-500">*</span></label>
-                                        <input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-blue-500 focus:outline-none"
-                                               value={node.data.title || node.data.label || ''}
-                                               onChange={e => updateNodeData(node.id, isStart?'label':'title', e.target.value)} />
+                                        <input className="w-full" value={node.data.title || node.data.label || ''} onChange={e => updateNodeData(node.id, isStart?'label':'title', e.target.value)} />
                                     </div>
-
                                     <div>
                                         <label className="text-xs text-gray-500 block mb-1">{isStart ? '프롤로그' : '내용/묘사'} <span className="text-red-500">*</span></label>
-                                        <textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm h-32 resize-none focus:border-blue-500 focus:outline-none"
-                                                  value={node.data.description || node.data.prologue || ''}
-                                                  onChange={e => updateNodeData(node.id, isStart?'prologue':'description', e.target.value)}></textarea>
+                                        <textarea className="w-full h-32 resize-none" value={node.data.description || node.data.prologue || ''} onChange={e => updateNodeData(node.id, isStart?'prologue':'description', e.target.value)}></textarea>
                                     </div>
-
                                     {node.type === 'scene' && (
                                         <div>
                                             <label className="text-xs text-gray-500 block mb-1">진입 트리거</label>
-                                            <input className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-blue-500 focus:outline-none"
-                                                   value={node.data.trigger || ''}
-                                                   placeholder="예: 문을 연다, 적을 쓰러뜨린다"
-                                                   onChange={e => updateNodeData(node.id, 'trigger', e.target.value)} />
+                                            <input className="w-full" value={node.data.trigger || ''} placeholder="예: 문을 연다" onChange={e => updateNodeData(node.id, 'trigger', e.target.value)} />
                                         </div>
                                     )}
-
-                                    {/* AI 제안 노트 */}
                                     <div>
-                                        <label className="text-xs text-gray-500 block mb-1 flex items-center gap-1">
-                                            <Icon name="brain-circuit" size={12}/> AI 제안 노트
-                                        </label>
-                                        <textarea className="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm h-24 resize-none focus:border-violet-500 focus:outline-none text-gray-300"
-                                                  placeholder="AI 검수 후 수정 제안이 이곳에 기록됩니다."
-                                                  value={node.data.ai_note || ''}
-                                                  onChange={e => updateNodeData(node.id, 'ai_note', e.target.value)}></textarea>
+                                        <label className="text-xs text-gray-500 block mb-1 flex items-center gap-1"><Icon name="brain-circuit" size={12}/> AI 제안 노트</label>
+                                        <textarea className="w-full h-24 resize-none" placeholder="AI 검수 결과 기록" value={node.data.ai_note || ''} onChange={e => updateNodeData(node.id, 'ai_note', e.target.value)}></textarea>
                                     </div>
-
-                                    {/* NPC / 적 관리 섹션 */}
                                     {node.type === 'scene' && (
-                                        <div className="space-y-4 pt-4 border-t border-gray-800">
-                                            {/* NPC 관리 */}
+                                        <div className="space-y-4 pt-4 border-t border-[#2a2a3a]">
                                             <div>
                                                 <label className="text-xs text-gray-500 block mb-1 font-bold">등장 NPC</label>
                                                 <div className="space-y-1 mb-2">
                                                     {(node.data.npcs || []).map((npc, idx) => (
-                                                        <div key={idx} className="flex justify-between items-center bg-gray-800 p-2 rounded border border-gray-700 text-xs">
+                                                        <div key={idx} className="flex justify-between items-center bg-[#1a1a2e] p-2 rounded border border-[#2a2a3a] text-xs">
                                                             <span className="text-green-400 font-bold">{npc.name}</span>
                                                             <button onClick={() => removeEntityFromNode(node.id, 'npcs', idx)} className="text-gray-500 hover:text-red-500"><Icon name="x" size={14}/></button>
                                                         </div>
                                                     ))}
                                                 </div>
-                                                <select className="w-full bg-gray-800 border border-gray-700 rounded p-1.5 text-xs text-gray-400 focus:outline-none"
-                                                        onChange={(e) => {
-                                                            if(!e.target.value) return;
-                                                            const npc = globalNpcs.find(n => n.name === e.target.value);
-                                                            if(npc) addEntityToNode(node.id, 'npcs', npc);
-                                                            e.target.value = ""; // reset
-                                                        }}>
-                                                    <option value="">+ NPC 추가 (Global List)</option>
+                                                <select className="w-full" onChange={(e) => { if(!e.target.value) return; const npc = globalNpcs.find(n => n.name === e.target.value); if(npc) addEntityToNode(node.id, 'npcs', npc); e.target.value = ""; }}>
+                                                    <option value="">+ NPC 추가</option>
                                                     {globalNpcs.map((n, i) => <option key={i} value={n.name}>{n.name}</option>)}
                                                 </select>
                                             </div>
-
-                                            {/* Enemy 관리 */}
                                             <div>
-                                                <label className="text-xs text-gray-500 block mb-1 font-bold">등장 적 (Enemies)</label>
+                                                <label className="text-xs text-gray-500 block mb-1 font-bold">등장 적</label>
                                                 <div className="space-y-1 mb-2">
                                                     {(node.data.enemies || []).map((enemy, idx) => (
-                                                        <div key={idx} className="flex justify-between items-center bg-gray-800 p-2 rounded border border-gray-700 text-xs">
+                                                        <div key={idx} className="flex justify-between items-center bg-[#1a1a2e] p-2 rounded border border-[#2a2a3a] text-xs">
                                                             <span className="text-red-400 font-bold">{enemy.name}</span>
                                                             <button onClick={() => removeEntityFromNode(node.id, 'enemies', idx)} className="text-gray-500 hover:text-red-500"><Icon name="x" size={14}/></button>
                                                         </div>
                                                     ))}
                                                 </div>
-                                                <select className="w-full bg-gray-800 border border-gray-700 rounded p-1.5 text-xs text-gray-400 focus:outline-none"
-                                                        onChange={(e) => {
-                                                            if(!e.target.value) return;
-                                                            const enemy = globalEnemies.find(n => n.name === e.target.value);
-                                                            if(enemy) addEntityToNode(node.id, 'enemies', enemy);
-                                                            e.target.value = ""; // reset
-                                                        }}>
-                                                    <option value="">+ 적 추가 (Global List)</option>
+                                                <select className="w-full" onChange={(e) => { if(!e.target.value) return; const enemy = globalEnemies.find(n => n.name === e.target.value); if(enemy) addEntityToNode(node.id, 'enemies', enemy); e.target.value = ""; }}>
+                                                    <option value="">+ 적 추가</option>
                                                     {globalEnemies.map((n, i) => <option key={i} value={n.name}>{n.name}</option>)}
                                                 </select>
                                             </div>
                                         </div>
                                     )}
-
-                                    <div className="pt-4 border-t border-gray-800 grid grid-cols-2 gap-2">
-                                        <button onClick={() => runAiAudit(node.id)} className="col-span-2 py-2 bg-violet-900/30 text-violet-300 border border-violet-700/50 rounded hover:bg-violet-800/30 flex items-center justify-center gap-2">
-                                            <Icon name="brain-circuit"/> AI 개연성 검수 (현재 씬)
-                                        </button>
-
-                                        {!isStart && (
-                                            <button onClick={() => deleteNode(node.id)} className="col-span-2 py-2 bg-red-900/30 text-red-300 border border-red-700/50 rounded hover:bg-red-800/30 flex items-center justify-center gap-2 mt-2">
-                                                <Icon name="trash-2"/> 삭제
-                                            </button>
-                                        )}
+                                    <div className="pt-4 border-t border-[#2a2a3a] grid grid-cols-2 gap-2">
+                                        <button onClick={() => runAiAudit(node.id)} className="col-span-2 py-2 text-violet-300 border border-violet-700/50 flex items-center justify-center gap-2"><Icon name="brain-circuit"/> AI 검수</button>
+                                        {!isStart && <button onClick={() => deleteNode(node.id)} className="col-span-2 py-2 text-red-300 border border-red-700/50 flex items-center justify-center gap-2 mt-2"><Icon name="trash-2"/> 삭제</button>}
                                     </div>
                                 </div>
                             );
                         })() : (
-                            <div className="h-full flex flex-col items-center justify-center text-gray-600 gap-2">
+                            <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-2">
                                 <Icon name="mouse-pointer-2" size={32} className="opacity-50"/>
-                                <p>편집할 노드를 선택하세요</p>
+                                <p>노드를 선택하세요</p>
                             </div>
                         )}
                     </div>
 
-                    {/* NPC 목록 모달 */}
                     <Modal isOpen={modals.npcList} title="NPC 목록" onClose={() => setModals(m=>({...m, npcList:false}))}>
                         <div className="space-y-2">
                             {dbNpcList.map((npc, i) => (
-                                <div key={i} className="flex justify-between items-center p-3 bg-gray-800 rounded border border-gray-700">
-                                    <div>
-                                        <span className="font-bold text-white">{npc.name}</span>
-                                        <span className={`text-xs ml-2 px-1.5 py-0.5 rounded ${npc.isEnemy?'bg-red-900 text-red-300':'bg-green-900 text-green-300'}`}>{npc.isEnemy?'Enemy':'NPC'}</span>
-                                        <div className="text-xs text-gray-400">{npc.role || npc.description}</div>
-                                    </div>
-                                    <button onClick={() => {
-                                        const list = npc.isEnemy ? setGlobalEnemies : setGlobalNpcs;
-                                        list(prev => [...prev, npc]);
-                                        showToast(`${npc.name} 추가됨`, "success");
-                                    }} className="bg-gray-700 hover:bg-blue-600 px-3 py-1 rounded text-xs transition-colors">추가</button>
+                                <div key={i} className="flex justify-between items-center p-3 bg-[#1a1a2e] rounded border border-[#3a3a5c]">
+                                    <div><span className="font-bold text-white">{npc.name}</span><span className={`text-xs ml-2 px-1.5 py-0.5 rounded ${npc.isEnemy?'bg-red-900 text-red-300':'bg-green-900 text-green-300'}`}>{npc.isEnemy?'Enemy':'NPC'}</span></div>
+                                    <button onClick={() => { const list = npc.isEnemy ? setGlobalEnemies : setGlobalNpcs; list(prev => [...prev, npc]); showToast(`${npc.name} 추가됨`, "success"); }} className="px-3 py-1 rounded text-xs transition-colors">추가</button>
                                 </div>
                             ))}
                         </div>
                     </Modal>
 
-                    {/* 시나리오 목록 모달 */}
                     <Modal isOpen={modals.scenarioList} title="내 시나리오" onClose={() => setModals(m=>({...m, scenarioList:false}))}>
                          <div className="space-y-2">
                             {userScenarios.map(s => (
-                                <div key={s.id} onClick={() => window.location.href=`/views/scenes/edit/${s.filename}` }
-                                     className="p-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded cursor-pointer group transition-colors">
+                                <div key={s.id} onClick={() => window.location.href=`/views/scenes/edit/${s.filename}` } className="p-3 bg-[#1a1a2e] hover:bg-[#252542] border border-[#3a3a5c] rounded cursor-pointer group transition-colors">
                                     <div className="font-bold text-white group-hover:text-blue-400">{s.title}</div>
                                     <div className="text-xs text-gray-400 mt-1 line-clamp-2">{s.prologue}</div>
                                 </div>
@@ -1107,36 +889,25 @@
                          </div>
                     </Modal>
 
-                    {/* 프리셋 목록 모달 */}
                     <Modal isOpen={modals.presetLoad} title="프리셋 불러오기" onClose={() => setModals(m=>({...m, presetLoad:false}))}>
                         <div className="space-y-2">
-                            {presetList.length === 0 ? (
-                                <div className="text-center text-gray-500 py-4">저장된 프리셋이 없습니다.</div>
-                            ) : (
-                                presetList.map((p, i) => (
-                                    <div key={i} onClick={() => loadPreset(p)}
-                                         className="p-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded cursor-pointer group transition flex justify-between items-center">
-                                        <div>
-                                            <div className="font-bold text-white group-hover:text-blue-400">{p.name}</div>
-                                            <div className="text-xs text-gray-400">{p.description || '설명 없음'}</div>
-                                        </div>
-                                        <Icon name="download" className="text-gray-500 group-hover:text-white"/>
-                                    </div>
-                                ))
-                            )}
+                            {presetList.length === 0 ? <div className="text-center text-gray-500 py-4">프리셋 없음</div> : presetList.map((p, i) => (
+                                <div key={i} onClick={() => loadPreset(p)} className="p-3 bg-[#1a1a2e] hover:bg-[#252542] border border-[#3a3a5c] rounded cursor-pointer group transition flex justify-between items-center">
+                                    <div><div className="font-bold text-white group-hover:text-blue-400">{p.name}</div><div className="text-xs text-gray-400">{p.description}</div></div>
+                                    <Icon name="download" className="text-gray-500 group-hover:text-white"/>
+                                </div>
+                            ))}
                         </div>
                     </Modal>
 
-                    {/* NPC Generator Iframe Modal */}
                     {modals.npcGen && (
                         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur p-4">
-                            <div className="bg-gray-900 w-full max-w-2xl h-[80vh] rounded-xl border border-gray-700 flex flex-col relative overflow-hidden">
+                            <div className="bg-[#1a1a2e] w-full max-w-2xl h-[80vh] rounded-xl border border-[#3a3a5c] flex flex-col relative overflow-hidden">
                                 <button onClick={() => setModals(m=>({...m, npcGen:false}))} className="absolute top-2 right-2 p-2 bg-black/50 rounded-full hover:bg-red-600 z-10"><Icon name="x"/></button>
                                 <iframe src="/builder/npc-generator" className="w-full h-full" title="NPC Gen"></iframe>
                             </div>
                         </div>
                     )}
-
                 </div>
             );
         }
@@ -1144,7 +915,7 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ScenarioBuilder />);
     </script>
- {% endraw %}
+{% endraw %}
 
- </body>
- </html>
+</body>
+</html>
