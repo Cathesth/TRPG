@@ -13,20 +13,22 @@
 
 <style>
          :root {
-             /* Modern Game UI Color Palette */
-             --game-bg: #0f0f1e;
-             --game-panel: #1a1a2e;
-             --game-panel-light: #252542;
-             --game-border: #3a3a5c;
-             --game-border-light: #5a5a8f;
+             /* Modern Game UI + Brutalism Color Palette */
+             --game-bg: #0a0a12;
+             --game-panel: #131320;
+             --game-panel-light: #1f1f2e;
+             --game-border: #2a2a3a;
+             --game-border-light: #4a4a6a;
+             --game-border-bold: #6a6a9a;
              --game-text: #e8e8f0;
-             --game-text-muted: #a8a8c0;
-             --game-accent-1: #6366f1;
-             --game-accent-2: #8b5cf6;
-             --game-highlight: #ec4899;
-             --game-success: #10b981;
-             --game-warning: #f59e0b;
-             --game-danger: #ef4444;
+             --game-text-muted: #9a9aaa;
+             --game-accent-1: #5a5aff;
+             --game-accent-2: #7a4aff;
+             --game-highlight: #ff4a8a;
+             --game-success: #00d966;
+             --game-warning: #ffaa00;
+             --game-danger: #ff3333;
+             --game-accent-bold: #ffaa00;
          }
 
          .voxel-ui {
@@ -47,54 +49,59 @@
          .voxel-ui .bg-dots-pattern {
              background-color: var(--game-bg) !important;
              background-image:
-                 radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
-                 radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
+                 repeating-linear-gradient(0deg, transparent 0px, transparent 20px, rgba(90, 90, 255, 0.04) 20px, rgba(90, 90, 255, 0.04) 21px),
+                 repeating-linear-gradient(90deg, transparent 0px, transparent 20px, rgba(90, 90, 255, 0.04) 20px, rgba(90, 90, 255, 0.04) 21px);
              background-size: 100% 100%, 100% 100%;
          }
 
          .voxel-ui .node-ui {
-             border-radius: 12px !important;
-             background: linear-gradient(135deg, rgba(26, 26, 46, 0.9) 0%, rgba(37, 37, 66, 0.8) 100%);
-             border: 1px solid var(--game-border-light);
+             border-radius: 0px !important;
+             background: linear-gradient(135deg, rgba(19, 19, 32, 0.95) 0%, rgba(31, 31, 46, 0.9) 100%);
+             border: 3px solid var(--game-border-light);
              box-shadow:
-                 0 8px 32px rgba(0, 0, 0, 0.3),
-                 inset 0 1px 0 rgba(255, 255, 255, 0.1);
-             transition: all 200ms ease-out;
+                 8px 8px 0 rgba(0, 0, 0, 0.5),
+                 inset 0 1px 0 rgba(255, 255, 255, 0.05);
+             transition: all 120ms ease-out;
+             position: relative;
          }
 
          .voxel-ui .node-ui:hover {
              border-color: var(--game-accent-1);
              box-shadow:
-                 0 12px 48px rgba(99, 102, 241, 0.2),
-                 inset 0 1px 0 rgba(255, 255, 255, 0.15),
-                 0 0 24px rgba(99, 102, 241, 0.15);
+                 8px 8px 0 rgba(90, 90, 255, 0.3),
+                 inset 0 1px 0 rgba(90, 90, 255, 0.15),
+                 0 0 20px rgba(90, 90, 255, 0.2);
+             transform: translate(-2px, -2px);
          }
 
          .voxel-ui button {
-             border-radius: 8px;
-             border: 1px solid var(--game-border);
-             background: linear-gradient(135deg, rgba(37, 37, 66, 0.8) 0%, rgba(26, 26, 46, 0.9) 100%);
+             border-radius: 0px;
+             border: 2px solid var(--game-border-light);
+             background: linear-gradient(135deg, rgba(31, 31, 46, 0.85) 0%, rgba(19, 19, 32, 0.95) 100%);
              box-shadow:
-                 inset 0 1px 0 rgba(255, 255, 255, 0.1),
-                 0 4px 12px rgba(0, 0, 0, 0.2);
-             transition: all 150ms ease-out;
-             font-weight: 500;
+                 4px 4px 0 rgba(0, 0, 0, 0.4),
+                 inset 0 1px 0 rgba(255, 255, 255, 0.08);
+             transition: all 100ms ease-out;
+             font-weight: 700;
+             letter-spacing: 0.5px;
+             text-transform: uppercase;
+             font-size: 0.85rem;
          }
 
          .voxel-ui button:hover {
              border-color: var(--game-accent-1);
              box-shadow:
-                 inset 0 1px 0 rgba(99, 102, 241, 0.3),
-                 0 8px 20px rgba(99, 102, 241, 0.25),
-                 0 0 16px rgba(99, 102, 241, 0.15);
-             transform: translateY(-2px);
+                 4px 4px 0 rgba(90, 90, 255, 0.4),
+                 inset 0 1px 0 rgba(90, 90, 255, 0.25),
+                 0 0 16px rgba(90, 90, 255, 0.25);
+             background: linear-gradient(135deg, rgba(90, 90, 255, 0.15) 0%, rgba(50, 50, 100, 0.15) 100%);
          }
 
          .voxel-ui button:active {
-             transform: translateY(0);
+             transform: translate(2px, 2px);
              box-shadow:
-                 inset 0 2px 4px rgba(0, 0, 0, 0.2),
-                 0 2px 4px rgba(0, 0, 0, 0.2);
+                 0 0 0 rgba(0, 0, 0, 0),
+                 inset 0 2px 4px rgba(0, 0, 0, 0.3);
          }
 
          .voxel-ui button:focus-visible {
@@ -106,14 +113,16 @@
          .voxel-ui input,
          .voxel-ui select,
          .voxel-ui textarea {
-             border-radius: 8px;
-             border: 1px solid var(--game-border);
-             background: linear-gradient(135deg, rgba(15, 15, 30, 0.9) 0%, rgba(26, 26, 46, 0.8) 100%);
+             border-radius: 0px;
+             border: 2px solid var(--game-border-light);
+             background: linear-gradient(135deg, rgba(10, 10, 18, 0.95) 0%, rgba(19, 19, 32, 0.9) 100%);
              box-shadow:
-                 inset 0 2px 4px rgba(0, 0, 0, 0.2),
-                 inset 0 0 0 1px rgba(99, 102, 241, 0.1);
+                 inset 2px 2px 0 rgba(0, 0, 0, 0.3),
+                 inset 0 0 0 1px rgba(90, 90, 255, 0.08);
              color: var(--game-text);
-             transition: all 150ms ease-out;
+             transition: all 100ms ease-out;
+             padding: 8px 12px;
+             font-family: 'Courier New', monospace;
          }
 
          .voxel-ui input:focus,
@@ -121,9 +130,9 @@
          .voxel-ui textarea:focus {
              border-color: var(--game-accent-1);
              box-shadow:
-                 inset 0 2px 4px rgba(0, 0, 0, 0.2),
-                 inset 0 0 0 1px rgba(99, 102, 241, 0.3),
-                 0 0 16px rgba(99, 102, 241, 0.15);
+                 inset 2px 2px 0 rgba(0, 0, 0, 0.3),
+                 inset 0 0 0 2px rgba(90, 90, 255, 0.25),
+                 0 0 12px rgba(90, 90, 255, 0.2);
          }
 
          .voxel-ui input::placeholder,
@@ -134,17 +143,17 @@
          .voxel-ui .bg-gray-900,
          .voxel-ui .bg-gray-800,
          .voxel-ui .bg-gray-950 {
-             background: linear-gradient(135deg, rgba(26, 26, 46, 0.9) 0%, rgba(37, 37, 66, 0.8) 100%) !important;
-             border: 1px solid var(--game-border);
+             background: linear-gradient(135deg, rgba(19, 19, 32, 0.95) 0%, rgba(31, 31, 46, 0.9) 100%) !important;
+             border: 2px solid var(--game-border-light);
          }
 
          .voxel-ui .rounded-xl,
          .voxel-ui .rounded-lg {
-             border-radius: 12px !important;
+             border-radius: 0px !important;
          }
 
          .voxel-ui .rounded {
-             border-radius: 8px !important;
+             border-radius: 0px !important;
          }
 
          .voxel-ui .bg-gradient-to-r {
@@ -177,12 +186,14 @@
          }
 
          .voxel-ui .node-ui .cursor-grab {
-             border-top-left-radius: 12px;
-             border-top-right-radius: 12px;
-             background: linear-gradient(90deg, var(--game-accent-1), var(--game-accent-2)) !important;
-             border-bottom: 1px solid var(--game-border-light);
+             border-top-left-radius: 0px;
+             border-top-right-radius: 0px;
+             background: linear-gradient(90deg, var(--game-accent-1), var(--game-highlight)) !important;
+             border-bottom: 3px solid var(--game-border-light);
              color: white;
-             font-weight: 600;
+             font-weight: 800;
+             letter-spacing: 1px;
+             text-transform: uppercase;
          }
 
          .voxel-ui .ring-blue-500 {
@@ -197,41 +208,44 @@
          }
 
          .voxel-ui .fixed.top-5.left-1\/2 {
-             border: 1px solid var(--game-border-light);
-             border-radius: 12px;
+             border: 3px solid var(--game-border-light);
+             border-radius: 0px;
              box-shadow:
-                 0 12px 48px rgba(0, 0, 0, 0.4),
-                 0 0 24px rgba(99, 102, 241, 0.2);
-             background: linear-gradient(135deg, rgba(26, 26, 46, 0.95) 0%, rgba(37, 37, 66, 0.9) 100%);
-             backdrop-filter: blur(12px);
+                 6px 6px 0 rgba(0, 0, 0, 0.5),
+                 0 0 20px rgba(90, 90, 255, 0.2);
+             background: linear-gradient(135deg, rgba(19, 19, 32, 0.98) 0%, rgba(31, 31, 46, 0.95) 100%);
+             backdrop-filter: blur(8px);
          }
 
          .voxel-ui .custom-scrollbar::-webkit-scrollbar {
-             width: 8px;
+             width: 12px;
          }
 
          .voxel-ui .custom-scrollbar::-webkit-scrollbar-track {
-             background: rgba(99, 102, 241, 0.05);
-             border-radius: 4px;
+             background: rgba(42, 42, 58, 0.3);
+             border-left: 2px solid var(--game-border);
          }
 
          .voxel-ui .custom-scrollbar::-webkit-scrollbar-thumb {
              background: linear-gradient(180deg, var(--game-accent-1), var(--game-accent-2));
-             border-radius: 4px;
-             transition: all 200ms ease;
+             border: 1px solid var(--game-border-light);
+             transition: all 100ms ease;
          }
 
          .voxel-ui .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-             background: linear-gradient(180deg, var(--game-accent-2), var(--game-highlight));
+             background: linear-gradient(180deg, var(--game-highlight), var(--game-accent-1));
+             box-shadow: inset 0 0 6px rgba(90, 90, 255, 0.3);
          }
  </style>
 </head>
-<body class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white h-screen w-screen">
+<body class="bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white h-screen w-screen" style="background-image:
+  repeating-linear-gradient(0deg, transparent 0px, transparent 40px, rgba(90, 90, 255, 0.03) 40px, rgba(90, 90, 255, 0.03) 41px),
+  repeating-linear-gradient(90deg, transparent 0px, transparent 40px, rgba(90, 90, 255, 0.03) 40px, rgba(90, 90, 255, 0.03) 41px);">
 
     <div id="root" class="w-full h-full"></div>
 
 {% raw %}
- <script type="text/babel">
+     <script type="text/babel">
         const { useState, useRef, useEffect, useCallback } = React;
 
         // --- 아이콘 컴포넌트 ---
@@ -300,8 +314,9 @@
                         background: s.background || '',
                         trigger: s.trigger || '',
                         ai_note: s.ai_note || '',
-                        npcs: s.npcs || [],
-                        enemies: s.enemies || []
+                        // [수정] 문자열 -> 객체 변환 {name: "..."}
+                        npcs: (s.npcs || []).map(n => typeof n === 'string' ? { name: n } : n),
+                        enemies: (s.enemies || []).map(e => typeof e === 'string' ? { name: e } : e)
                     }
                 };
                 nodes.push(node);
@@ -347,7 +362,6 @@
 
         // --- 메인 컴포넌트 ---
         function ScenarioBuilder() {
-            // [State] 데이터
             const [nodes, setNodes] = useState([
                 { id: 'start', type: 'start', x: 50, y: 50, data: { label: '시나리오 설정', prologue: '', gm_notes: '', background: '' } },
                 { id: 'scene-1', type: 'scene', x: 400, y: 150, data: { title: '첫 번째 장면', description: '', background: '', trigger: '', npcs: [], enemies: [] } }
@@ -356,13 +370,11 @@
             const [globalNpcs, setGlobalNpcs] = useState([]);
             const [globalEnemies, setGlobalEnemies] = useState([]);
 
-            // [State] UI & 모드
             const [isEditMode, setIsEditMode] = useState(false);
             const [scenarioId, setScenarioId] = useState(null);
             const [isDraft, setIsDraft] = useState(false);
             const [isGenerating, setIsGenerating] = useState(false);
 
-            // [State] 캔버스 조작
             const [pan, setPan] = useState({ x: 0, y: 0, zoom: 1 });
             const [isPanning, setIsPanning] = useState(false);
             const [dragNode, setDragNode] = useState(null);
@@ -371,18 +383,15 @@
             const [selectedNodeId, setSelectedNodeId] = useState(null);
             const canvasRef = useRef(null);
 
-            // [State] 모달 및 Audit
             const [modals, setModals] = useState({ npcGen: false, npcList: false, presetLoad: false, scenarioList: false });
             const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
             const [auditState, setAuditState] = useState({ isOpen: false, isLoading: false, results: null, targetNodeId: null });
 
-            // [State] 데이터 목록
             const [presetList, setPresetList] = useState([]);
             const [dbNpcList, setDbNpcList] = useState([]);
             const [userScenarios, setUserScenarios] = useState([]);
             const [selectedModel, setSelectedModel] = useState('openai/tngtech/deepseek-r1t2-chimera:free');
 
-            // [History] Undo/Redo
             const [history, setHistory] = useState({ past: [], future: [] });
 
             const pushHistory = useCallback(() => {
@@ -446,6 +455,21 @@
                             loadedEdges = converted.edges;
                         }
 
+                        // [수정] 노드 데이터 내 NPC/Enemy가 문자열인 경우 객체로 정규화
+                        if (loadedNodes) {
+                            loadedNodes = loadedNodes.map(n => {
+                                if (n.data) {
+                                    if (n.data.npcs) {
+                                        n.data.npcs = n.data.npcs.map(x => typeof x === 'string' ? {name: x} : x);
+                                    }
+                                    if (n.data.enemies) {
+                                        n.data.enemies = n.data.enemies.map(x => typeof x === 'string' ? {name: x} : x);
+                                    }
+                                }
+                                return n;
+                            });
+                        }
+
                         setNodes(loadedNodes || []);
                         setEdges(loadedEdges || []);
                         setGlobalNpcs(scen.npcs?.filter(n => !n.isEnemy && !n.is_enemy) || []);
@@ -458,7 +482,6 @@
                 }
             };
 
-            // --- 액션 핸들러 ---
             const addNode = (type) => {
                 pushHistory();
                 const id = `${type}-${Date.now()}`;
@@ -485,7 +508,6 @@
                 setNodes(prev => prev.map(n => n.id === id ? { ...n, data: { ...n.data, [key]: value } } : n));
             };
 
-            // NPC/Enemy 씬 할당 함수
             const addEntityToNode = (id, key, entity) => {
                 setNodes(prev => prev.map(n => {
                     if (n.id === id) {
@@ -510,17 +532,25 @@
                 }));
             };
 
-            // [추가] 프리셋 로드 함수
+            // [수정] 프리셋 로드 시에도 NPC 데이터 정규화 적용
             const loadPreset = (preset) => {
                 if(!confirm("현재 캔버스의 내용이 모두 변경됩니다. 프리셋을 불러오시겠습니까?")) return;
                 try {
                     let data = preset.data;
-                    // 문자열로 저장된 경우 파싱
                     if(typeof data === 'string') data = JSON.parse(data);
 
                     if(data.nodes && data.edges) {
-                        pushHistory(); // 현재 상태 백업
-                        setNodes(data.nodes);
+                        pushHistory();
+
+                        const normalizedNodes = data.nodes.map(n => {
+                            if (n.data) {
+                                if (n.data.npcs) n.data.npcs = n.data.npcs.map(x => typeof x === 'string' ? {name: x} : x);
+                                if (n.data.enemies) n.data.enemies = n.data.enemies.map(x => typeof x === 'string' ? {name: x} : x);
+                            }
+                            return n;
+                        });
+
+                        setNodes(normalizedNodes);
                         setEdges(data.edges);
                         setModals(m => ({...m, presetLoad: false}));
                         showToast(`프리셋 "${preset.name}" 적용 완료`, "success");
@@ -533,7 +563,6 @@
                 }
             };
 
-            // --- 저장 및 생성 ---
             const saveDraft = async () => {
                 if (!scenarioId) return;
                 try {
@@ -584,7 +613,6 @@
                 }
             };
 
-            // --- AI Audit ---
             const runAiAudit = async (nodeId = null) => {
                 const mode = nodeId ? 'single' : 'full';
                 const targetName = nodeId ? nodes.find(n => n.id === nodeId)?.data.title : "전체 시나리오";
@@ -623,7 +651,6 @@
                 }
             };
 
-            // AI 제안 반영 핸들러 (ai_note 필드에 추가)
             const applySuggestion = (issue) => {
                 if (!issue.scene_id) return;
 
@@ -646,7 +673,6 @@
                 showToast(`"${targetId}" 씬의 AI 노트에 추가되었습니다.`, "success");
             };
 
-            // --- 캔버스 핸들러 ---
             const handleMouseDown = (e) => {
                 if (e.target.closest('.node-ui')) return;
                 if (e.button === 0 || e.button === 1) setIsPanning(true);
@@ -965,7 +991,7 @@
                                         </div>
                                     )}
 
-                                    {/* AI 제안 노트 (Trigger와 버튼 사이) */}
+                                    {/* AI 제안 노트 */}
                                     <div>
                                         <label className="text-xs text-gray-500 block mb-1 flex items-center gap-1">
                                             <Icon name="brain-circuit" size={12}/> AI 제안 노트
@@ -1081,7 +1107,7 @@
                          </div>
                     </Modal>
 
-                    {/* [추가] 프리셋 목록 모달 */}
+                    {/* 프리셋 목록 모달 */}
                     <Modal isOpen={modals.presetLoad} title="프리셋 불러오기" onClose={() => setModals(m=>({...m, presetLoad:false}))}>
                         <div className="space-y-2">
                             {presetList.length === 0 ? (
