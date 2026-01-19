@@ -446,6 +446,26 @@
                     <div id="login-error" class="text-red-400 text-xs hidden"></div>
                     <button type="submit" class="w-full bg-rpg-accent hover:bg-white text-black font-bold py-4 rounded-lg shadow-lg transition-all">ACCESS SYSTEM</button>
                 </form>
+
+                <div class="mt-6 pt-6 border-t border-rpg-700">
+                    <p class="text-xs text-gray-500 text-center mb-3">간편 로그인 / 회원가입</p>
+                    <div class="flex flex-col gap-2">
+                        <a href="/api/auth/login/google" class="flex items-center justify-center gap-3 w-full py-3 bg-white text-gray-800 font-bold rounded-lg hover:bg-gray-100 transition-colors">
+                            <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="w-5 h-5" alt="G">
+                            <span>Google로 계속하기</span>
+                        </a>
+
+                        <a href="/api/auth/login/naver" class="flex items-center justify-center gap-3 w-full py-3 bg-[#03C75A] text-white font-bold rounded-lg hover:opacity-90 transition-opacity">
+                            <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M16.273 12.845L7.376 0H0v24h7.726V11.156L16.624 24H24V0h-7.727v12.845z"/></svg>
+                            <span>Naver로 계속하기</span>
+                        </a>
+
+                        <a href="/api/auth/login/kakao" class="flex items-center justify-center gap-3 w-full py-3 bg-[#FEE500] text-[#191919] font-bold rounded-lg hover:opacity-90 transition-opacity">
+                            <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 3.185-9 7.115 0 2.557 1.707 4.8 4.27 6.054-.188.702-.682 2.545-.78 2.94-.122.49.178.483.376.351.155-.103 2.466-1.675 3.464-2.353.541.08 1.1.123 1.67.123 4.97 0 9-3.185 9-7.115S16.97 3 12 3z"/></svg>
+                            <span>Kakao로 계속하기</span>
+                        </a>
+                    </div>
+                </div>
                 <div class="mt-6 text-center text-sm text-gray-500">
                     계정이 없으신가요? <button onclick="closeModal('login-modal'); openModal('register-modal')" class="text-rpg-accent hover:underline font-bold ml-1">회원가입 하기</button>
                 </div>

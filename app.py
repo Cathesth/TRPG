@@ -1,18 +1,26 @@
 import os
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, APIRouter
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 
-from config import LOG_FORMAT, LOG_DATE_FORMAT
+from config import LOG_FORMAT, LOG_DATE_FORMAT, get_full_version
 from models import create_tables
 
+# [중요] 작성하신 api.py를 가져오기 위한 임포트 (이게 없어서 빨간줄 발생)
+from routes import api
+from models import Base, engine # DB 모델 초기화용
+
+# [추가] 뷰 로직 처리를 위한 서비스 Import
+from services.mermaid_service import MermaidService
+from core.state import GameState
+from routes.auth import get_current_user_optional, CurrentUser
 
 # 환경 변수 로드
 load_dotenv()
@@ -74,10 +82,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# [수정] 정적 파일 마운트 (이 부분만 남기고 아래 중복 코드는 제거했습니다)
+
 # static/avatars 폴더가 없으면 생성하고, /static 경로로 접근 가능하게 설정
 os.makedirs("static/avatars", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 3. DB 테이블 생성 (앱 시작 시 자동 생성)
+Base.metadata.create_all(bind=engine)
 
 # HTTPS 프록시 미들웨어 (Railway 등 프록시 환경 대응)
 class HTTPSMiddleware(BaseHTTPMiddleware):
@@ -88,6 +99,10 @@ class HTTPSMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 app.add_middleware(HTTPSMiddleware)
+
+# [수정 1] 세션 미들웨어 (CORSMiddleware와 섞여있던 부분 정리)
+# secret_key 변수를 여기서 정의해서 사용하거나 os.getenv를 직접 사용
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
 
 # 세션 미들웨어 (쿠키 기반 세션)
 app.add_middleware(
@@ -127,42 +142,54 @@ templates = Jinja2Templates(directory="templates")
 # =================================================================
 
 # 라우터 등록
-#from routes import api_router, game_router, views_router
+from routes import api_router, game_router, views_router
 # [추가] api.py에 정의한 mypage_router를 직접 가져옵니다.
 #from routes.api import mypage_router
 
 # [새 코드] 각 파일에서 직접 Import
-from routes.views import views_router
+#from routes.views import views_router
 from routes.game import game_router
 from routes.api import api_router, mypage_router
 
 
-# [추가] assets 라우터 등록 (S3 이미지 업로드용 - 해당 파일이 있어야 함)
-# 만약 routes/assets.py 파일이 없다면 이 줄은 에러가 납니다. 확인해주세요.
-try:
-    from routes.assets import router as assets_router
-    app.include_router(assets_router) # [S3] Assets 라우터 등록
-except ImportError:
-    logger.warning("routes.assets module not found. Assets router skipped.")
-
 # [추가] Vector DB 라우터 등록
-from routes.vector_api import router as vector_router
+#from routes.vector_api import router as vector_router (아래 try-except에서 처리함)
 
 app.include_router(views_router)
 app.include_router(api_router)
 app.include_router(game_router)
 
-
-
 # [중요] 마이페이지 라우터를 명시적으로 등록하여 404 에러 해결
 app.include_router(mypage_router)
 
 
+
 # [S3] Assets 라우터 등록
-app.include_router(assets_router)
+#app.include_router(assets_router) # <----- 삭제필요 (변수 정의 안됨, 아래쪽 try-except에서 안전하게 등록함)
 
 # [Vector DB] Vector DB 라우터 등록
-app.include_router(vector_router)
+#app.include_router(vector_router) # <----- 삭제필요 (변수 정의 안됨 혹은 중복 등록)
+
+# [추가] 4. 라우터 등록 (api.py 연결)
+# 여기서 api.api_router를 연결합니다.
+#app.include_router(api.api_router) <----- 삭제필요 (위에서 app.include_router(api_router)로 이미 등록됨)
+#app.include_router(api.mypage_router) # 마이페이지 라우터도 등록 <----- 삭제필요 (위에서 app.include_router(mypage_router)로 이미 등록됨)
+
+# 3. [선택] Assets 라우터 (파일이 없어도 에러 안 나게 처리)
+try:
+    from routes.assets import router as assets_router
+    app.include_router(assets_router)
+    logger.info("✅ Assets router loaded.")
+except ImportError:
+    logger.warning("⚠️ routes.assets module not found. Assets router skipped.")
+
+# 4. [Vector DB] 라우터 (파일이 없을 경우 대비하여 try-except 처리 권장)
+try:
+    from routes.vector_api import router as vector_router
+    app.include_router(vector_router)
+    logger.info("✅ Vector DB router loaded.")
+except ImportError:
+    logger.warning("routes.vector_api module not found. Vector DB router skipped.")
 
 
 # Health check 엔드포인트 (Railway 모니터링용)
@@ -170,8 +197,14 @@ app.include_router(vector_router)
 async def health_check():
     return {"status": "healthy", "service": "TRPG Studio"}
 
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/views/main") # 또는 index.html 경로
+
 
 if __name__ == '__main__':
     import uvicorn
     port = int(os.getenv("PORT", 5001))
     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
+
+
