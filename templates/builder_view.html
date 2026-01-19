@@ -1,39 +1,4 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TRPG - Scenario Builder & Editor</title>
-
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-
-    <style>
-        body { background-color: #111; color: #fff; margin: 0; overflow: hidden; font-family: 'Pretendard', sans-serif; }
-        .bg-dots-pattern { background-image: radial-gradient(#333 1px, transparent 1px); background-size: 20px 20px; }
-        .no-select { user-select: none; -webkit-user-select: none; }
-        ::-webkit-scrollbar { width: 6px; background: #111; }
-        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-
-        .connection-line { stroke: #6b7280; stroke-width: 3; fill: none; transition: stroke 0.2s; }
-        .connection-line:hover { stroke: #f59e0b; stroke-width: 4; cursor: pointer; filter: drop-shadow(0 0 4px #f59e0b); }
-        .connecting-line { stroke: #6366f1; stroke-width: 3; stroke-dasharray: 8,4; fill: none; animation: dash 0.5s linear infinite; }
-        @keyframes dash { to { stroke-dashoffset: -12; } }
-
-        .node-shadow { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); }
-        .animate-fade-in { animation: fadeIn 0.2s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-    </style>
-</head>
-<body class="bg-black text-white h-screen w-screen">
-
-    <div id="root" class="w-full h-full"></div>
-
-    {% raw %}
-    <script type="text/babel">
+<script type="text/babel">
         const { useState, useRef, useEffect, useCallback } = React;
 
         // --- 아이콘 컴포넌트 ---
@@ -101,7 +66,7 @@
                         description: s.description || '',
                         background: s.background || '',
                         trigger: s.trigger || '',
-                        ai_note: s.ai_note || '', // [추가] AI 노트 필드
+                        ai_note: s.ai_note || '',
                         npcs: s.npcs || [],
                         enemies: s.enemies || []
                     }
@@ -121,7 +86,7 @@
                         title: e.title || '엔딩',
                         description: e.description || '',
                         background: e.background || '',
-                        ai_note: e.ai_note || '' // [추가]
+                        ai_note: e.ai_note || ''
                     }
                 };
                 nodes.push(node);
@@ -287,12 +252,11 @@
                 setNodes(prev => prev.map(n => n.id === id ? { ...n, data: { ...n.data, [key]: value } } : n));
             };
 
-            // [추가] NPC/Enemy 씬 할당 함수
+            // NPC/Enemy 씬 할당 함수
             const addEntityToNode = (id, key, entity) => {
                 setNodes(prev => prev.map(n => {
                     if (n.id === id) {
                         const currentList = n.data[key] || [];
-                        // 중복 체크 (이름 기준)
                         if (currentList.some(e => e.name === entity.name)) {
                             showToast("이미 추가된 캐릭터입니다.", "warning");
                             return n;
@@ -311,6 +275,29 @@
                     }
                     return n;
                 }));
+            };
+
+            // [추가] 프리셋 로드 함수
+            const loadPreset = (preset) => {
+                if(!confirm("현재 캔버스의 내용이 모두 변경됩니다. 프리셋을 불러오시겠습니까?")) return;
+                try {
+                    let data = preset.data;
+                    // 문자열로 저장된 경우 파싱
+                    if(typeof data === 'string') data = JSON.parse(data);
+
+                    if(data.nodes && data.edges) {
+                        pushHistory(); // 현재 상태 백업
+                        setNodes(data.nodes);
+                        setEdges(data.edges);
+                        setModals(m => ({...m, presetLoad: false}));
+                        showToast(`프리셋 "${preset.name}" 적용 완료`, "success");
+                    } else {
+                        showToast("호환되지 않는 프리셋 형식입니다.", "error");
+                    }
+                } catch(e) {
+                    console.error(e);
+                    showToast("프리셋 로드 중 오류 발생", "error");
+                }
             };
 
             // --- 저장 및 생성 ---
@@ -377,7 +364,7 @@
                         method: 'POST', headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({
                             scenario: { nodes, edges },
-                            scene_id: nodeId, // null이면 전체 검수
+                            scene_id: nodeId,
                             model: selectedModel
                         })
                     });
@@ -403,22 +390,20 @@
                 }
             };
 
-            // [수정] AI 제안 반영 핸들러 (ai_note 필드에 추가)
+            // AI 제안 반영 핸들러 (ai_note 필드에 추가)
             const applySuggestion = (issue) => {
                 if (!issue.scene_id) return;
 
                 const targetId = issue.scene_id;
-                // AI 제안 내용을 보기 좋게 포맷팅
                 const suggestionText = `\n[${new Date().toLocaleTimeString()} AI 제안]\n문제: ${issue.message}\n제안: ${issue.suggestion}\n`;
 
                 setNodes(prev => prev.map(n => {
-                    // Mermaid 등에서 ID가 바뀔 수 있어 Title로도 매칭 시도
                     if (n.id === targetId || n.data.title === targetId) {
                         return {
                             ...n,
                             data: {
                                 ...n.data,
-                                ai_note: (n.data.ai_note || "") + suggestionText // [변경] ai_note에 추가
+                                ai_note: (n.data.ai_note || "") + suggestionText
                             }
                         };
                     }
@@ -498,7 +483,6 @@
                                         </div>
                                     ) : (
                                         <>
-                                            {/* PASS: 이슈가 없는 경우 */}
                                             {auditState.results?.issues.length === 0 ? (
                                                 <div className="flex flex-col items-center justify-center py-12 text-center">
                                                     <div className="w-20 h-20 bg-green-900/30 rounded-full flex items-center justify-center mb-4">
@@ -513,7 +497,6 @@
                                                     )}
                                                 </div>
                                             ) : (
-                                                /* FAIL: 이슈가 있는 경우 */
                                                 <div className="space-y-4">
                                                     <div className="bg-red-900/20 border border-red-900/50 p-3 rounded text-red-200 text-sm font-bold flex items-center gap-2">
                                                         <Icon name="alert-triangle" size={16}/>
@@ -613,7 +596,7 @@
                         </div>
 
                         <div className="p-4 border-t border-gray-800 bg-gray-900 z-20">
-                            {/* [추가] 전체 스토리 검수 버튼 */}
+                            {/* 전체 스토리 검수 버튼 */}
                             <button onClick={() => runAiAudit(null)}
                                     className="w-full mb-3 py-2 bg-violet-900/30 hover:bg-violet-900/50 text-violet-300 border border-violet-700/50 rounded font-bold flex items-center justify-center gap-2 text-xs transition-colors">
                                 <Icon name="brain-circuit"/> 전체 스토리 AI 검수
@@ -749,7 +732,7 @@
                                         </div>
                                     )}
 
-                                    {/* [추가] AI 제안 노트 (Trigger와 버튼 사이) */}
+                                    {/* AI 제안 노트 (Trigger와 버튼 사이) */}
                                     <div>
                                         <label className="text-xs text-gray-500 block mb-1 flex items-center gap-1">
                                             <Icon name="brain-circuit" size={12}/> AI 제안 노트
@@ -760,7 +743,7 @@
                                                   onChange={e => updateNodeData(node.id, 'ai_note', e.target.value)}></textarea>
                                     </div>
 
-                                    {/* [추가] NPC / 적 관리 섹션 */}
+                                    {/* NPC / 적 관리 섹션 */}
                                     {node.type === 'scene' && (
                                         <div className="space-y-4 pt-4 border-t border-gray-800">
                                             {/* NPC 관리 */}
@@ -865,6 +848,26 @@
                          </div>
                     </Modal>
 
+                    {/* [추가] 프리셋 목록 모달 */}
+                    <Modal isOpen={modals.presetLoad} title="프리셋 불러오기" onClose={() => setModals(m=>({...m, presetLoad:false}))}>
+                        <div className="space-y-2">
+                            {presetList.length === 0 ? (
+                                <div className="text-center text-gray-500 py-4">저장된 프리셋이 없습니다.</div>
+                            ) : (
+                                presetList.map((p, i) => (
+                                    <div key={i} onClick={() => loadPreset(p)}
+                                         className="p-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded cursor-pointer group transition flex justify-between items-center">
+                                        <div>
+                                            <div className="font-bold text-white group-hover:text-blue-400">{p.name}</div>
+                                            <div className="text-xs text-gray-400">{p.description || '설명 없음'}</div>
+                                        </div>
+                                        <Icon name="download" className="text-gray-500 group-hover:text-white"/>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </Modal>
+
                     {/* NPC Generator Iframe Modal */}
                     {modals.npcGen && (
                         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur p-4">
@@ -882,7 +885,3 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ScenarioBuilder />);
     </script>
-    {% endraw %}
-
-</body>
-</html>
