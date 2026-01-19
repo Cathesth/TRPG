@@ -4,13 +4,26 @@ document.addEventListener('DOMContentLoaded', function() {
     // 아이콘 초기화
     lucide.createIcons();
 
-    // ✅ [FIX 2&4] 세션 키 복원 및 즉시 DB 데이터 fetch
-    // 1단계: 세션 키 찾기 (모든 가능한 키 확인)
-    if (!currentSessionId) {
-        currentSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY) || sessionStorage.getItem("trpg_session_key");
+    // ✅ [작업 2] 세션 키 복원 및 초기화 로직 개선
+    // 1단계: URL 파라미터 확인 (최우선)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlSessionId = urlParams.get('session_id');
+
+    // 2단계: URL에 session_id가 있으면 우선 사용하고 저장
+    if (urlSessionId) {
+        currentSessionId = urlSessionId;
+        sessionStorage.setItem('trpg_session_key', urlSessionId);
+        console.log('🔑 [INIT] Session ID from URL, saved:', urlSessionId);
+    }
+    // 3단계: URL에 없으면 sessionStorage에서 복원 (trpg_session_key 우선)
+    else if (!currentSessionId) {
+        currentSessionId = sessionStorage.getItem('trpg_session_key') || sessionStorage.getItem(CURRENT_SESSION_ID_KEY);
+        if (currentSessionId) {
+            console.log('🔑 [INIT] Session ID restored from storage:', currentSessionId);
+        }
     }
 
-    // 2단계: 세션 키를 찾았으면 UI 갱신 및 DB fetch
+    // 4단계: 세션 키를 찾았으면 UI 갱신 및 DB fetch
     if (currentSessionId) {
         console.log('🔑 [INIT] Session ID found:', currentSessionId);
 
@@ -31,6 +44,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // 디버그 모드가 꺼져있어도 기존 DB fetch 유지 (하위 호환성)
             window.fetchGameDataFromDB();
         }
+    } else {
+        // ✅ [작업 2-3] 세션을 찾지 못했을 때 구체적인 안내
+        console.warn('⚠️ [INIT] No session found. Please load a scenario from the main page.');
     }
 
     // ✅ 시나리오 ID 복원
