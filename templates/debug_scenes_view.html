@@ -53,10 +53,10 @@
         }
     </style>
 </head>
-<body class="min-h-screen flex flex-col selection:bg-rpg-accent selection:text-black">
+<body class="min-h-screen flex flex-col selection:bg-rpg-accent selection:text-black bg-black">
 
-    <!-- 상단 헤더 (index.html과 동일하게) -->
-    <header class="fixed top-0 left-0 w-full h-20 bg-rpg-900/90 backdrop-blur-md border-b border-rpg-700 z-50 px-8 flex items-center justify-between">
+    <!-- 상단 헤더 (index.html과 100% 동일) -->
+    <header class="fixed top-0 left-0 w-full h-20 bg-black/80 backdrop-blur-md border-b border-rpg-700 z-50 px-8 flex items-center justify-between">
         <div class="flex items-center gap-3 cursor-pointer" onclick="location.href='/'">
             <div class="w-10 h-10 bg-rpg-accent rounded flex items-center justify-center shadow-[0_0_15px_#38bdf8]">
                 <i data-lucide="sword" class="text-black w-6 h-6 fill-current"></i>
@@ -92,8 +92,8 @@
         </div>
     </header>
 
-    <!-- 메인 콘텐츠 -->
-    <main class="flex-1 mt-20 pb-20 w-full">
+    <!-- 메인 콘텐츠 (배경 칠흑색, w-full) -->
+    <main class="flex-1 mt-20 pb-20 w-full bg-black">
         <div class="container mx-auto px-8 py-8 fade-in">
 
             <!-- 헤더 -->
@@ -142,9 +142,7 @@
                 <!-- 그래프 컨테이너 -->
                 <div id="graph-container" class="flex-1 w-full h-full cursor-grab active:cursor-grabbing overflow-hidden flex items-center justify-center bg-[#111827]">
                     <div id="graph-inner" class="transition-transform duration-75 origin-center">
-                        <pre class="mermaid transition-opacity duration-500" id="mermaid-graph">
-                            {{ mermaid_code | safe }}
-                        </pre>
+                        <div class="mermaid" id="mermaid-graph">{{ mermaid_code | safe }}</div>
                     </div>
                 </div>
             </div>
@@ -275,16 +273,16 @@
         </div>
     </main>
 
-<!-- Mermaid JS -->
+<!-- Mermaid JS - 작업 3: 선언적 렌더링으로 변경 -->
 <script type="module">
     import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
 
-    // ✅ Mermaid 초기화 - 작업 3 반영
+    // Mermaid 초기화 - startOnLoad 사용
     mermaid.initialize({
         startOnLoad: true,
         theme: 'dark',
         securityLevel: 'loose',
-        logLevel: 'debug',
+        logLevel: 'info',
         flowchart: {
             useMaxWidth: false,
             htmlLabels: true,
@@ -301,30 +299,22 @@
         startY: 0
     };
 
-    async function renderGraph() {
-        const element = document.querySelector('#mermaid-graph');
-        if (!element) {
-            console.error('Mermaid element not found');
-            return;
+    // Lucide 아이콘 초기화 - 페이지 로드 시
+    window.addEventListener('DOMContentLoaded', () => {
+        console.log('[DEBUG] Initializing Lucide icons...');
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            lucide.createIcons();
+            console.log('[DEBUG] Lucide icons initialized');
         }
+    });
 
-        try {
-            const graphDefinition = element.textContent.trim();
-            console.log('[DEBUG] Rendering Mermaid chart:', graphDefinition.substring(0, 100));
-
-            element.removeAttribute('data-processed');
-            await mermaid.run({ nodes: [element] });
-
-            console.log('[DEBUG] Mermaid chart rendered successfully');
-        } catch (err) {
-            console.error('[ERROR] Mermaid rendering failed:', err);
-            element.innerHTML = `<div style="color: #ef4444; padding: 20px;">차트 렌더링 실패: ${err.message}</div>`;
-        }
-    }
-
+    // Mermaid 렌더링 완료 후 Lucide 재초기화
     window.addEventListener('load', () => {
-        lucide.createIcons();
-        renderGraph();
+        setTimeout(() => {
+            if (typeof lucide !== 'undefined' && lucide.createIcons) {
+                lucide.createIcons();
+            }
+        }, 500);
     });
 
     // Pan & Zoom 기능
@@ -380,6 +370,19 @@
         const { scale, pointX, pointY } = window.panZoomState;
         inner.style.transform = `translate(${pointX}px, ${pointY}px) scale(${scale})`;
     }
+
+    // 검색 기능 (index.html 호환)
+    window.performSearch = function() {
+        const query = document.getElementById('search-input')?.value;
+        if (query) {
+            window.location.href = `/?search=${encodeURIComponent(query)}`;
+        }
+    };
+
+    // 모달 기능 (index.html 호환)
+    window.openModal = function(modalId) {
+        console.log('[DEBUG] openModal called:', modalId);
+    };
 </script>
 
 <!-- Style Classes for Mermaid -->

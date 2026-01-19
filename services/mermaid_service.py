@@ -14,7 +14,7 @@ class MermaidService:
     def normalize_scenario_graph(data: dict) -> Tuple[List[Dict], List[Dict]]:
         """
         ✅ [작업 2] 다양한 시나리오 JSON 스키마를 정규화하여 scenes/endings 추출
-        데이터 실종 버그 수정: 중첩된 구조를 끝까지 추적
+        데이터 실종 버그 수정: 최상위 레벨에서 scenes를 먼저 확인, 없을 때만 중첩 구조로 진입
 
         지원하는 구조:
         1) data["scenes"], data["endings"] (직접)
@@ -51,19 +51,8 @@ class MermaidService:
             logger.error(f"❌ [MERMAID] Input data is not a dict: {type(data).__name__}")
             return [], []
 
-        # ✅ [작업 2-3] "scenario" 키 중첩 unwrap (끝까지 추적)
-        max_depth = 5  # 무한 루프 방지
-        depth = 0
-        while 'scenario' in data and isinstance(data.get('scenario'), dict) and depth < max_depth:
-            logger.info(f"📦 [MERMAID] Unwrapping 'scenario' wrapper (depth={depth})...")
-            data = data['scenario']
-            logger.info(f"🔑 [MERMAID] After unwrap depth {depth}, keys: {list(data.keys())[:20]}")
-            depth += 1
-
-        if depth >= max_depth:
-            logger.warning(f"⚠️ [MERMAID] Reached max unwrap depth ({max_depth}), stopping")
-
-        # ✅ [작업 2-4] scenes 후보 경로 탐색 (우선순위 순)
+        # ✅ [작업 2-3] 최상위 레벨에서 scenes/endings 먼저 확인 (데이터 실종 버그 수정)
+        # 'scenes' 키가 현재 레벨에 있는지 먼저 확인
         scenes_candidates = [
             ('scenes', lambda d: d.get('scenes')),
             ('scene_map', lambda d: d.get('scene_map')),
@@ -72,12 +61,13 @@ class MermaidService:
             ('data.scenes', lambda d: d.get('data', {}).get('scenes') if isinstance(d.get('data'), dict) else None),
         ]
 
+        # 최상위 레벨에서 scenes 탐색
         for candidate_name, getter in scenes_candidates:
             scenes_raw = getter(data)
             if scenes_raw:
                 if isinstance(scenes_raw, list):
                     scenes = scenes_raw
-                    logger.info(f"✅ [MERMAID] Found scenes at '{candidate_name}': list with {len(scenes)} items")
+                    logger.info(f"✅ [MERMAID] Found scenes at TOP LEVEL '{candidate_name}': list with {len(scenes)} items")
                     break
                 elif isinstance(scenes_raw, dict):
                     # dict 형태: { "Scene-1": {...}, "Scene-2": {...} } -> list로 변환
@@ -85,8 +75,42 @@ class MermaidService:
                         {**scene_data, 'scene_id': scene_id} if isinstance(scene_data, dict) else {'scene_id': scene_id}
                         for scene_id, scene_data in scenes_raw.items()
                     ]
-                    logger.info(f"✅ [MERMAID] Found scenes at '{candidate_name}': dict converted to list with {len(scenes)} items")
+                    logger.info(f"✅ [MERMAID] Found scenes at TOP LEVEL '{candidate_name}': dict converted to list with {len(scenes)} items")
                     break
+
+        # ✅ [작업 2-4] scenes가 없고 'scenario' 키만 있다면 그때만 안으로 들어가기
+        if not scenes and 'scenario' in data and isinstance(data.get('scenario'), dict):
+            logger.info(f"📦 [MERMAID] No scenes at top level, unwrapping 'scenario' wrapper...")
+
+            # 중첩 구조 unwrap (최대 5단계까지)
+            unwrapped_data = data['scenario']
+            max_depth = 5
+            depth = 1
+
+            while 'scenario' in unwrapped_data and isinstance(unwrapped_data.get('scenario'), dict) and depth < max_depth:
+                logger.info(f"📦 [MERMAID] Unwrapping nested 'scenario' wrapper (depth={depth})...")
+                unwrapped_data = unwrapped_data['scenario']
+                logger.info(f"🔑 [MERMAID] After unwrap depth {depth}, keys: {list(unwrapped_data.keys())[:20]}")
+                depth += 1
+
+            # unwrapped_data에서 scenes 재탐색
+            for candidate_name, getter in scenes_candidates:
+                scenes_raw = getter(unwrapped_data)
+                if scenes_raw:
+                    if isinstance(scenes_raw, list):
+                        scenes = scenes_raw
+                        logger.info(f"✅ [MERMAID] Found scenes in UNWRAPPED data at '{candidate_name}': list with {len(scenes)} items")
+                        break
+                    elif isinstance(scenes_raw, dict):
+                        scenes = [
+                            {**scene_data, 'scene_id': scene_id} if isinstance(scene_data, dict) else {'scene_id': scene_id}
+                            for scene_id, scene_data in scenes_raw.items()
+                        ]
+                        logger.info(f"✅ [MERMAID] Found scenes in UNWRAPPED data at '{candidate_name}': dict converted to list with {len(scenes)} items")
+                        break
+
+            # unwrapped_data에서 endings도 탐색
+            data = unwrapped_data  # 이후 endings 탐색에서 사용하기 위해 업데이트
 
         # ✅ [작업 2-5] endings 후보 경로 탐색
         endings_candidates = [
