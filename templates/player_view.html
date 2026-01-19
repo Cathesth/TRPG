@@ -102,10 +102,10 @@
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col selection:bg-rpg-accent selection:text-black">
+<body class="min-h-screen overflow-hidden selection:bg-rpg-accent selection:text-black">
 
 <!-- 상단 헤더 (index.html 스타일) -->
-<header class="fixed top-0 left-0 w-full h-20 bg-rpg-900/90 backdrop-blur-md border-b border-rpg-700 z-50 px-8 flex items-center justify-between">
+<header class="fixed top-0 left-0 w-full h-20 bg-rpg-900/90 backdrop-blur-md border-b border-rpg-700 z-50 px-8 flex items-center justify-between shrink-0">
     <!-- 왼쪽: 로고 -->
     <div class="flex items-center gap-3 cursor-pointer" onclick="location.href='/'">
         <div class="w-10 h-10 bg-rpg-accent rounded flex items-center justify-center shadow-[0_0_15px_#38bdf8]">
@@ -155,12 +155,15 @@
     </div>
 </header>
 
-<!-- 메인 콘텐츠 영역 (전체 너비) -->
-<div class="flex-1 flex pt-20 h-screen overflow-hidden">
-    <div class="flex flex-1 overflow-hidden">
-        <!-- 채팅 영역 전체 컨테이너 -->
-        <div class="flex-1 flex flex-col bg-rpg-900">
+<!-- 메인 콘텐츠 영역 (전체 화면 고정, 헤더 아래) -->
+<div class="flex flex-col h-screen overflow-hidden">
+    <!-- 헤더 공간 확보 -->
+    <div class="h-20 shrink-0"></div>
 
+    <!-- 실제 콘텐츠 영역 (flex-1로 남은 공간 모두 차지) -->
+    <div class="flex-1 flex overflow-hidden">
+        <!-- 좌측: 게임 영역 (채팅 로그 + 입력창) -->
+        <div class="flex-1 flex flex-col h-full overflow-hidden bg-rpg-900">
             <!-- 시나리오 로드 모달 -->
             <div id="load-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/90 backdrop-blur-sm">
                 <div class="bg-rpg-800 border border-rpg-700 rounded-xl w-full max-w-4xl h-[80vh] flex flex-col shadow-2xl overflow-hidden m-4">
@@ -192,7 +195,7 @@
                 </div>
             </div>
 
-            <!-- 채팅 로그 영역 (독립 스크롤) - flex-1로 남은 공간 모두 차지 -->
+            <!-- 채팅 로그 영역 (독립 스크롤) -->
             <div id="chat-log" class="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth">
                 <!-- 알림 메시지 영역 -->
                 <div id="init-result" class="mb-4"></div>
@@ -232,7 +235,7 @@
                 </div>
             </div>
 
-            <!-- 입력창 (고정) - shrink-0으로 축소 방지 -->
+            <!-- 입력창 (하단 고정) -->
             <div class="shrink-0 p-4 bg-rpg-900 border-t border-rpg-700">
                 <form id="game-form" class="max-w-4xl mx-auto flex gap-2">
                     <input type="text" name="action" autofocus autocomplete="off"
@@ -245,8 +248,8 @@
             </div>
         </div>
 
-        <!-- 스탯 사이드바 (독립 스크롤) -->
-        <div class="w-80 bg-rpg-800 border-l border-rpg-700 flex flex-col hidden lg:flex">
+        <!-- 우측: PlayerStatus 사이드바 (독립 스크롤) -->
+        <div class="w-80 h-full bg-rpg-800 border-l border-rpg-700 flex flex-col overflow-hidden hidden lg:flex">
             <!-- 헤더 (고정) -->
             <div class="shrink-0 p-4 border-b border-rpg-700">
                 <div class="flex items-center justify-between">
@@ -260,7 +263,7 @@
                 </div>
             </div>
 
-            <!-- 스크롤 가능한 콘텐츠 영역 -->
+            <!-- 스크롤 가능한 콘텐츠 영역 (독립 스크롤) -->
             <div class="flex-1 overflow-y-auto p-4">
                 <div id="player-stats-area">
                     {% if vars %}
