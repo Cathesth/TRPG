@@ -22,11 +22,12 @@ class ImageService:
         self.s3_client = get_s3_client()
         self.openrouter_api_url = "https://openrouter.ai/api/v1/chat/completions"
         self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+        self.image_model = os.getenv("OPENROUTER_IMAGE_MODEL", "nanobanana")
         
         # 이미지 생성 프롬프트 템플릿
         self.prompts = {
             "npc": "Create an 8bit pixel art portrait of {description}, game character sprite, retro gaming style, clean lines, vibrant colors, transparent background. The image should be suitable for a TRPG game character.",
-            "enemy": "Create an 8bit pixel art monster of {description}, enemy sprite, retro gaming style, intimidating but not scary, clean pixel art, vibrant colors, transparent background. The image should be suitable for a TRPG game enemy.", 
+            "enemy": "Create an 8bit pixel art monster of {description}, enemy sprite, retro gaming style, intimidating but not scary, clean pixel art, vibrant colors, transparent background. The image should be suitable for a TRPG game enemy.",
             "background": "Create an 8bit pixel art landscape of {description}, game background, retro gaming style, detailed environment, atmospheric, vibrant colors, 16:9 aspect ratio. The image should be suitable as a TRPG scene background."
         }
         
@@ -107,7 +108,7 @@ class ImageService:
             async with aiohttp.ClientSession() as session:
                 # Use a text-to-image model from OpenRouter
                 payload = {
-                    "model": "stability-ai/stable-diffusion-3-5-large",
+                    "model": self.image_model,
                     "messages": [
                         {
                             "role": "user",
