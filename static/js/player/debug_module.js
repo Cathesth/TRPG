@@ -235,6 +235,14 @@ function updateNPCStatus(npcData) {
                             relationship >= 40 ? 'text-blue-400' :
                             relationship >= 20 ? 'text-yellow-400' : 'text-red-400';
 
+        // AI 이미지 URL 확인 (npc_image 또는 enemy_image)
+        const imageUrl = npcData.npc_image || npcData.enemy_image;
+        const imageDisplay = imageUrl ? `
+            <div class="mt-2 mb-2">
+                <img src="${imageUrl}" alt="${npcName}" class="w-16 h-16 object-cover border-2 border-gray-600 rounded" />
+            </div>
+        ` : '';
+
         html += `
             <div class="bg-gray-800/50 rounded p-2 border border-gray-700 text-xs">
                 <div class="flex items-center justify-between mb-1">
@@ -244,6 +252,7 @@ function updateNPCStatus(npcData) {
                     </span>
                     <span class="${statusColor} text-[10px] font-bold">${status.toUpperCase()}</span>
                 </div>
+                ${imageDisplay}
                 <div class="space-y-0.5 text-[10px] text-gray-400">
                     <div class="flex justify-between">
                         <span>HP:</span>

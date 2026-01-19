@@ -35,6 +35,7 @@ from services.ai_audit_service import AIAuditService
 from services.history_service import HistoryService
 from services.npc_service import save_custom_npc
 from services.mermaid_service import MermaidService
+from services.image_service import get_image_service
 
 # 인증 및 모델
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
@@ -97,6 +98,13 @@ class AuditRequest(BaseModel):
     scene_id: Optional[str] = None
     audit_type: str = 'full'
     model: Optional[str] = None
+
+
+class ImageGenerateRequest(BaseModel):
+    image_type: str  # 'npc', 'enemy', 'background'
+    description: str
+    scenario_id: Optional[int] = None
+    target_id: Optional[str] = None
 
 # [추가] 빌더에서 그래프 데이터(Nodes/Edges)를 직접 보내 검수 요청할 때 사용하는 모델
 class BuilderAuditRequest(BaseModel):
@@ -997,6 +1005,39 @@ async def generate_npc_api(data: NPCGenerateRequest):
         return {"success": True, "data": npc_data}
     except Exception as e:
         logger.error(f"NPC Generation Error: {e}")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+@api_router.post('/image/generate')
+async def generate_image_api(data: ImageGenerateRequest, user: CurrentUser = Depends(get_current_user)):
+    """AI 이미지 생성 API (Nanobana 모델 사용)"""
+    try:
+        image_service = get_image_service()
+        
+        if not image_service.is_available:
+            return JSONResponse({
+                "success": False, 
+                "error": "이미지 생성 서비스를 사용할 수 없습니다. 관리자에게 문의하세요."
+            }, status_code=503)
+        
+        # 이미지 생성
+        result = await image_service.generate_image(
+            image_type=data.image_type,
+            description=data.description,
+            scenario_id=data.scenario_id,
+            target_id=data.target_id
+        )
+        
+        if result:
+            return {"success": True, "data": result}
+        else:
+            return JSONResponse({
+                "success": False,
+                "error": "이미지 생성에 실패했습니다. 다시 시도해주세요."
+            }, status_code=500)
+            
+    except Exception as e:
+        logger.error(f"Image Generation Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 

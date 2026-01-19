@@ -416,6 +416,10 @@ async function submitWithStreaming(actionText) {
                         // Game Engine의 스트리밍 타입 처리
                         switch (data.type) {
                             case 'prefix':
+                                // Check for background image in scene data
+                                if (data.background_image) {
+                                    currentContent += `<div class="mb-4 relative"><img src="${data.background_image}" alt="Scene Background" class="w-full h-48 object-cover rounded-lg border-2 border-gray-700" /></div>`;
+                                }
                                 currentContent += data.content;
                                 contentDiv.innerHTML = currentContent + '<span id="narrator-stream"></span><span class="streaming-cursor">▌</span>';
                                 break;
