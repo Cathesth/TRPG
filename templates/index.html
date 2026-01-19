@@ -440,11 +440,15 @@
                 if (res.ok) {
                     const data = await res.json();
 
+                    // ✅ [FIX] 기존 세션 데이터 완전히 클리어 (낡은 데이터 간섭 차단)
+                    console.log('🧹 [LOAD] Clearing old session data...');
+                    sessionStorage.clear();
+
                     // ✅ [리다이렉트 전 저장 보장] session_id를 먼저 저장하고 나서 이동
                     const sessionId = data.session_id || data.session_key;
                     const scenarioId = data.scenario_id;
 
-                    // 1단계: sessionStorage에 저장 (이동보다 먼저 실행)
+                    // 1단계: sessionStorage에 새 세션 데이터 저장 (이동보다 먼저 실행)
                     if (sessionId) {
                         sessionStorage.setItem('trpg_session_key', sessionId);
                         console.log('✅ [LOAD] Session ID saved to storage before redirect:', sessionId);
@@ -454,13 +458,16 @@
                         console.log('✅ [LOAD] Scenario ID saved:', scenarioId);
                     }
 
-                    // 채팅 로그 초기화 및 로드 플래그 설정
-                    sessionStorage.removeItem('trpg_chat_log');
+                    // 로드 플래그 설정
                     sessionStorage.setItem('trpg_scenario_loaded', 'true');
 
-                    // 2단계: 저장 완료 후 URL 파라미터에 session_id를 포함하여 리다이렉트
-                    if (sessionId) {
-                        console.log('🚀 [LOAD] Redirecting to player view with session_id:', sessionId);
+                    // 2단계: 저장 완료 후 URL 파라미터에 session_id와 scenario_id를 포함하여 리다이렉트
+                    if (sessionId && scenarioId) {
+                        console.log('🚀 [LOAD] Redirecting to player view with session_id:', sessionId, 'scenario_id:', scenarioId);
+                        window.location.href = `/views/player?session_id=${sessionId}&scenario_id=${scenarioId}`;
+                    } else if (sessionId) {
+                        // scenario_id가 없는 경우 (하위 호환성)
+                        console.warn('⚠️ [LOAD] No scenario_id received, redirecting with session_id only');
                         window.location.href = `/views/player?session_id=${sessionId}`;
                     } else {
                         // session_id가 없는 경우 폴백
