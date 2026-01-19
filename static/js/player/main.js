@@ -128,39 +128,4 @@ document.body.addEventListener('htmx:afterSwap', function(evt) {
 
 lucide.createIcons();
 
-// 사이드바 로직
-(function() {
-    const sidebar = document.querySelector('.sidebar');
-    const SIDEBAR_STATE_KEY = 'sidebar_expanded';
-    let isRestoredState = false;
-
-    if (sessionStorage.getItem(SIDEBAR_STATE_KEY) === 'true') {
-        sidebar.style.transition = 'none';
-        sidebar.classList.add('expanded');
-        isRestoredState = true;
-        sessionStorage.removeItem(SIDEBAR_STATE_KEY);
-        requestAnimationFrame(() => requestAnimationFrame(() => sidebar.style.transition = ''));
-    }
-
-    if (isRestoredState) {
-        setTimeout(() => {
-            const checkMousePosition = (e) => {
-                const rect = sidebar.getBoundingClientRect();
-                const isInsideSidebar = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
-                if (!isInsideSidebar) sidebar.classList.remove('expanded');
-                document.removeEventListener('mousemove', checkMousePosition);
-            };
-            document.addEventListener('mousemove', checkMousePosition, { once: true });
-        }, 100);
-    }
-
-    sidebar.querySelectorAll('a[href], button').forEach(link => {
-        link.addEventListener('click', function(e) {
-            if (this.tagName === 'A' && this.href) {
-                sessionStorage.setItem(SIDEBAR_STATE_KEY, 'true');
-                sidebar.classList.add('expanded');
-            }
-        });
-    });
-    sidebar.addEventListener('mouseleave', () => sidebar.classList.remove('expanded'));
-})();
+// 사이드바 로직 제거됨 (작업 2)
