@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" class="dark">
 <head>
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
     <meta charset="UTF-8">
@@ -10,11 +10,39 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        rpg: {
+                            900: '#020617',
+                            800: '#0f172a',
+                            700: '#1e293b',
+                            accent: '#38bdf8',
+                            hover: '#0ea5e9',
+                            danger: '#ef4444',
+                        }
+                    },
+                    fontFamily: {
+                        title: ['Cinzel', 'serif'],
+                        body: ['Inter', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
     <style>
-        body { font-family: 'Pretendard', sans-serif; }
+        body {
+            background-color: #020617 !important;
+            color: #e2e8f0 !important;
+            font-family: 'Inter', 'Noto Sans KR', sans-serif;
+        }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
@@ -26,13 +54,9 @@
         .streaming-cursor { animation: blink 1s step-end infinite; color: #818cf8; }
         @keyframes blink { 50% { opacity: 0; } }
 
-        .serif-font { font-family: 'Noto Sans KR', 'Pretendard', sans-serif; }
+        .serif-font { font-family: 'Noto Sans KR', 'Inter', sans-serif; }
 
-        /* 배경색 커스텀 클래스 */
-        .bg-dark-900 { background-color: #0f0f14; }
-        .bg-dark-800 { background-color: #18181b; }
-
-        /* 힌트 키워드 하이라이트 스타일 (Game Engine 연동) */
+        /* 힌트 키워드 하이라이트 스타일 */
         mark {
             background: linear-gradient(120deg, rgba(251, 191, 36, 0.15) 0%, rgba(251, 191, 36, 0.2) 100%);
             color: #fbbf24;
@@ -51,24 +75,6 @@
             background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(79, 70, 229, 0.05) 100%);
             border-left: 3px solid #6366f1;
         }
-
-        .brand-gradient {
-            background: linear-gradient(135deg, #6E47E6 0%, #818cf8 100%);
-        }
-
-        .text-brand-light { color: #818cf8; }
-
-        /* 사이드바 스타일 */
-        .sidebar { width: 72px; transition: width 0.3s ease; }
-        .sidebar:hover, .sidebar.expanded { width: 260px; }
-        .sidebar .nav-text, .sidebar .logo-text, .sidebar .section-title, .sidebar .user-info, .sidebar .user-chevron {
-            opacity: 0; white-space: nowrap; transition: opacity 0.2s ease;
-        }
-        .sidebar:hover .nav-text, .sidebar.expanded .nav-text,
-        .sidebar:hover .logo-text, .sidebar.expanded .logo-text,
-        .sidebar:hover .section-title, .sidebar.expanded .section-title,
-        .sidebar:hover .user-info, .sidebar.expanded .user-info,
-        .sidebar:hover .user-chevron, .sidebar.expanded .user-chevron { opacity: 1; }
 
         /* 입력창 스타일 */
         input:disabled, button:disabled { cursor: not-allowed !important; opacity: 0.5; }
@@ -91,129 +97,80 @@
         .typing-dot:nth-child(2) { animation: typing-dot 1.4s infinite 0.2s; }
         .typing-dot:nth-child(3) { animation: typing-dot 1.4s infinite 0.4s; }
 
-        /* 디버그 정보 영역 스크롤 스타일 (스크롤바 숨김) */
-        #debug-info-area {
-            overflow-y: auto;
-            -ms-overflow-style: none;  /* IE and Edge */
-            scrollbar-width: none;  /* Firefox */
-        }
-        #debug-info-area::-webkit-scrollbar {
-            display: none;  /* Chrome, Safari, Opera */
-        }
-
-        /* 스크롤바 완전 제거 (작업 3) */
-        .no-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-        .no-scrollbar {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
+        /* 스크롤바 완전 제거 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
-<body class="bg-dark-900 text-gray-200 h-screen flex overflow-hidden">
+<body class="min-h-screen flex flex-col selection:bg-rpg-accent selection:text-black">
 
-<!-- 사이드바 -->
-<div class="sidebar bg-dark-800 border-r border-white/5 flex flex-col hidden md:flex shrink-0 z-20 overflow-hidden">
-    <div class="p-4 h-16 flex items-center">
-        <div class="flex items-center gap-2 cursor-pointer" onclick="location.href='/'">
-            <div class="w-10 h-10 brand-gradient rounded-lg flex items-center justify-center text-white shadow-lg shadow-brand-purple/20 shrink-0">
-                <i data-lucide="dice-5" class="w-5 h-5 fill-current"></i>
-            </div>
-            <span class="logo-text text-xl font-bold text-white tracking-tight">TRPG Studio</span>
+<!-- 상단 헤더 (index.html 스타일) -->
+<header class="fixed top-0 left-0 w-full h-20 bg-rpg-900/90 backdrop-blur-md border-b border-rpg-700 z-50 px-8 flex items-center justify-between">
+    <!-- 왼쪽: 로고 -->
+    <div class="flex items-center gap-3 cursor-pointer" onclick="location.href='/'">
+        <div class="w-10 h-10 bg-rpg-accent rounded flex items-center justify-center shadow-[0_0_15px_#38bdf8]">
+            <i data-lucide="sword" class="text-black w-6 h-6 fill-current"></i>
         </div>
+        <span class="font-title text-2xl font-black text-white tracking-widest hover:text-rpg-accent transition-colors">TRPG.OS</span>
     </div>
 
-    <nav class="flex-1 px-3 space-y-1 mt-2">
-        <div class="section-title text-[10px] font-semibold text-gray-500 px-3 py-2 uppercase tracking-wider">Workspace</div>
-        <a href="/" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
-            <i data-lucide="layout-grid" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
-            <span class="nav-text">대시보드</span>
-        </a>
-        <a href="/views/builder" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
-            <i data-lucide="pen-tool" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
-            <span class="nav-text">시나리오 빌더</span>
-        </a>
-        <a href="/views/player" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/5 text-white group cursor-pointer text-sm font-medium">
-            <i data-lucide="gamepad-2" class="w-5 h-5 text-brand-light shrink-0"></i>
-            <span class="nav-text">플레이어 모드</span>
-        </a>
-        <a href="/views/scenes" onclick="sessionStorage.setItem('trpg_navigation_flag', 'true');" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
-            <i data-lucide="git-merge" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
-            <span class="nav-text">전체 씬 보기</span>
-        </a>
-    </nav>
-    <div class="p-3 border-t border-white/5">
-        <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
-            <img src="https://api.dicebear.com/7.x/notionists/svg?seed=Felix" alt="User" class="w-8 h-8 rounded-full bg-gray-700 shrink-0">
-            <div class="user-info flex-1 min-w-0">
-                <p class="text-sm font-medium text-white truncate">Game Master</p>
-                <p class="text-[11px] text-gray-500 truncate">Free Plan</p>
-            </div>
-            <i data-lucide="chevron-right" class="user-chevron w-4 h-4 text-gray-500"></i>
-        </div>
-    </div>
-</div>
-
-<!-- 메인 뷰 -->
-<div class="flex-1 flex flex-col h-full relative z-10 bg-dark-900 overflow-hidden">
-
-    <!-- 상단 헤더 -->
-    <header class="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-dark-900/80 backdrop-blur-md sticky top-0 z-20">
-        <div class="flex items-center gap-4">
-            <div class="text-indigo-400 font-bold flex items-center gap-2">
-                <i data-lucide="gamepad-2" class="w-5 h-5"></i>
-                플레이어 모드
-            </div>
-            <div class="flex items-center gap-2 ml-4">
-                <label class="text-xs text-gray-400 font-medium">AI 제공사:</label>
-                <select id="provider-select" onchange="updateModelVersions()"
-                    class="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 hover:bg-gray-750 transition-colors">
-                    <option value="google">🔷 Google</option>
-                    <option value="anthropic">🟣 Anthropic</option>
-                    <option value="openai">🟢 OpenAI</option>
-                    <option value="deepseek" selected>🔴 DeepSeek</option>
-                    <option value="meta">🔵 Meta</option>
-                    <option value="xai">⚫ xAI</option>
-                    <option value="mistral">🟠 Mistral</option>
-                    <option value="xiaomi">🟡 Xiaomi</option>
-                </select>
-
-                <label class="text-xs text-gray-400 font-medium">모델 버전:</label>
-                <select id="model-version-select"
-                    class="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 hover:bg-gray-750 transition-colors min-w-[200px]">
-                    <!-- JavaScript로 동적 생성 -->
-                </select>
-            </div>
-        </div>
+    <!-- 오른쪽: AI 모델 선택 & 프로필 -->
+    <div class="flex items-center gap-5">
+        <!-- AI 모델 선택 -->
         <div class="flex items-center gap-2">
-            <button id="scenes-btn" onclick="openScenesView()" disabled
-               class="bg-pink-900/80 hover:bg-pink-800 text-pink-200 px-4 py-2 rounded-lg border border-pink-700/50 flex items-center gap-2 text-sm font-bold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">
-                <i data-lucide="git-merge" class="w-4 h-4"></i>
-                <span class="hidden sm:inline">전체 씬 보기</span>
-            </button>
-            <button id="load-btn" onclick="openLoadModal()"
-                    class="bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-4 py-2 rounded-lg border border-indigo-700/50 flex items-center gap-2 text-sm font-bold transition-all hover:scale-105">
-                <i data-lucide="folder-open" class="w-4 h-4"></i>
-                <span class="hidden sm:inline">시나리오 불러오기</span>
-            </button>
-        </div>
-    </header>
+            <label class="text-xs text-gray-400 font-medium">AI:</label>
+            <select id="provider-select" onchange="updateModelVersions()"
+                class="bg-rpg-800 border border-rpg-700 text-gray-200 text-xs rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-rpg-accent hover:bg-rpg-800/80 transition-colors">
+                <option value="google">🔷 Google</option>
+                <option value="anthropic">🟣 Anthropic</option>
+                <option value="openai">🟢 OpenAI</option>
+                <option value="deepseek" selected>🔴 DeepSeek</option>
+                <option value="meta">🔵 Meta</option>
+                <option value="xai">⚫ xAI</option>
+                <option value="mistral">🟠 Mistral</option>
+                <option value="xiaomi">🟡 Xiaomi</option>
+            </select>
 
+            <select id="model-version-select"
+                class="bg-rpg-800 border border-rpg-700 text-gray-200 text-xs rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-rpg-accent hover:bg-rpg-800/80 transition-colors min-w-[180px]">
+                <!-- JavaScript로 동적 생성 -->
+            </select>
+        </div>
+
+        <div class="h-6 w-px bg-rpg-700"></div>
+
+        <!-- 시나리오 불러오기 버튼 -->
+        <button id="load-btn" onclick="openLoadModal()"
+                class="bg-rpg-accent hover:bg-rpg-hover text-black px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-bold transition-all hover:scale-105 shadow-[0_0_10px_rgba(56,189,248,0.3)]">
+            <i data-lucide="folder-open" class="w-4 h-4"></i>
+            <span class="hidden sm:inline">시나리오 불러오기</span>
+        </button>
+
+        <!-- 유저 프로필 (index.html과 동일) -->
+        <div hx-get="/api/views/header-profile"
+             hx-trigger="load from:body"
+             hx-swap="innerHTML">
+             <div class="w-10 h-10 rounded-full bg-rpg-800 animate-pulse"></div>
+        </div>
+    </div>
+</header>
+
+<!-- 메인 콘텐츠 영역 (전체 너비) -->
+<div class="flex-1 flex pt-20 h-screen overflow-hidden">
     <div class="flex flex-1 overflow-hidden">
         <!-- 채팅 영역 -->
-        <div class="flex-1 flex flex-col relative bg-dark-900">
+        <div class="flex-1 flex flex-col relative bg-rpg-900">
 
             <!-- 시나리오 로드 모달 -->
             <div id="load-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/90 backdrop-blur-sm">
-                <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-4xl h-[80vh] flex flex-col shadow-2xl overflow-hidden m-4">
-                    <div class="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-800">
+                <div class="bg-rpg-800 border border-rpg-700 rounded-xl w-full max-w-4xl h-[80vh] flex flex-col shadow-2xl overflow-hidden m-4">
+                    <div class="p-4 border-b border-rpg-700 flex justify-between items-center bg-rpg-800">
                         <h3 class="text-xl font-bold text-white flex items-center gap-2">
                             <i data-lucide="folder-open" class="text-yellow-500"></i> 저장된 시나리오 목록
                         </h3>
                         <div class="flex items-center gap-3">
                             <select id="scenario-sort" onchange="reloadScenarioList()"
-                                    class="bg-gray-700 border border-gray-600 text-gray-200 text-sm rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                                    class="bg-rpg-900 border border-rpg-700 text-gray-200 text-sm rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-rpg-accent">
                                 <option value="newest">최신순</option>
                                 <option value="oldest">오래된순</option>
                                 <option value="name_asc">이름 오름차순</option>
@@ -221,13 +178,13 @@
                             <button onclick="closeLoadModal()" class="text-gray-400 hover:text-white p-2"><i data-lucide="x" class="w-6 h-6"></i></button>
                         </div>
                     </div>
-                    <div class="flex-1 overflow-y-auto p-6 bg-gray-900">
+                    <div class="flex-1 overflow-y-auto p-6 bg-rpg-900">
                         <div id="scenario-list-container"
                              hx-get="/api/scenarios?sort=newest&filter=all"
                              hx-trigger="revealed"
                              class="grid gap-4 grid-cols-1 md:grid-cols-2">
                             <div class="col-span-1 md:col-span-2 text-center text-gray-500 py-12">
-                                <i data-lucide="loader" class="w-8 h-8 mx-auto mb-2 animate-spin text-indigo-500"></i>
+                                <i data-lucide="loader" class="w-8 h-8 mx-auto mb-2 animate-spin text-rpg-accent"></i>
                                 <p>목록 불러오는 중...</p>
                             </div>
                         </div>
@@ -246,8 +203,8 @@
                     </div>
                     <div class="flex-1">
                         <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
-                        <div class="bg-[#1a1a1e] border-gray-700 p-3 rounded-lg border text-gray-300 text-sm leading-relaxed">
-                            시스템에 접속했습니다. 우측 상단의 <span class="text-indigo-400 font-bold">[시나리오 불러오기]</span> 버튼을 눌러 게임을 로드하세요.
+                        <div class="bg-rpg-800 border-rpg-700 p-3 rounded-lg border text-gray-300 text-sm leading-relaxed">
+                            시스템에 접속했습니다. 우측 상단의 <span class="text-rpg-accent font-bold">[시나리오 불러오기]</span> 버튼을 눌러 게임을 로드하세요.
                         </div>
                     </div>
                 </div>
@@ -259,7 +216,7 @@
                     </div>
                     <div class="flex-1">
                         <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
-                        <div id="loading-message" class="bg-[#1a1a1e]/50 border border-gray-700/50 p-3 rounded-lg text-gray-400 text-sm flex flex-col gap-1">
+                        <div id="loading-message" class="bg-rpg-800/50 border border-rpg-700/50 p-3 rounded-lg text-gray-400 text-sm flex flex-col gap-1">
                             <div class="flex items-center gap-2">
                                 <div class="flex gap-1">
                                     <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full typing-dot"></div>
@@ -274,13 +231,13 @@
                 </div>
             </div>
 
-            <!-- 입력창 (자연어 입력 중심) -->
-            <div class="p-4 bg-gray-900 border-t border-gray-800 absolute bottom-0 w-full z-20">
+            <!-- 입력창 -->
+            <div class="p-4 bg-rpg-900 border-t border-rpg-700 absolute bottom-0 w-full z-20">
                 <form id="game-form" class="max-w-4xl mx-auto flex gap-2">
                     <input type="text" name="action" autofocus autocomplete="off"
-                           class="flex-1 bg-gray-800 border border-gray-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-gray-500"
+                           class="flex-1 bg-rpg-800 border border-rpg-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-rpg-accent focus:ring-1 focus:ring-rpg-accent placeholder-gray-500"
                            placeholder="어떤 행동을 하시겠습니까? (예: 문을 연다, 주변을 살펴본다...)">
-                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-bold transition-colors">
+                    <button type="submit" class="bg-rpg-accent hover:bg-rpg-hover text-black px-6 py-3 rounded-lg font-bold transition-colors">
                         <i data-lucide="send"></i>
                     </button>
                 </form>
@@ -288,24 +245,24 @@
         </div>
 
         <!-- 스탯 사이드바 -->
-        <div class="w-80 bg-gray-900 border-l border-gray-800 p-4 pb-20 overflow-y-auto no-scrollbar hidden lg:block">
+        <div class="w-80 bg-rpg-800 border-l border-rpg-700 p-4 pb-20 overflow-y-auto no-scrollbar hidden lg:block">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-gray-400 font-bold flex items-center gap-2">
                     <i data-lucide="user" class="w-4 h-4"></i>
                     PLAYER STATUS
                 </h3>
-                <button type="button" onclick="toggleDebugInfo()" class="cursor-pointer group hover:bg-gray-800 rounded p-1 transition-colors" title="디버그 모드">
-                    <i id="debug-icon" data-lucide="bug" class="w-4 h-4 text-gray-500 group-hover:text-indigo-400 transition-colors"></i>
+                <button type="button" onclick="toggleDebugInfo()" class="cursor-pointer group hover:bg-rpg-900 rounded p-1 transition-colors" title="디버그 모드">
+                    <i id="debug-icon" data-lucide="bug" class="w-4 h-4 text-gray-500 group-hover:text-rpg-accent transition-colors"></i>
                 </button>
             </div>
             <div id="player-stats-area">
                 {% if vars %}
                     <!-- 서버 사이드 렌더링 유지 -->
-                    <div class="bg-[#1a1e2e] rounded-lg p-4 border border-[#2d2d35] shadow-sm mb-4">
+                    <div class="bg-rpg-900 rounded-lg p-4 border border-rpg-700 shadow-sm mb-4">
                         <!-- ... stats content ... -->
                     </div>
                 {% else %}
-                    <div class="text-gray-500 text-sm text-center py-4 bg-gray-800/50 rounded-lg border border-gray-700 border-dashed">
+                    <div class="text-gray-500 text-sm text-center py-4 bg-rpg-800/50 rounded-lg border border-rpg-700 border-dashed">
                         <i data-lucide="ghost" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
                         데이터 없음<br>
                         <span class="text-xs">상단 [시나리오 불러오기]를 눌러주세요.</span>
@@ -313,10 +270,10 @@
                 {% endif %}
             </div>
 
-            <!-- 디버그 정보 영역 (체크박스 활성화 시 표시) -->
+            <!-- 디버그 정보 영역 -->
             <div id="debug-info-area" class="hidden mt-4 space-y-4">
                 <!-- 전체 씬 보기 버튼 -->
-                <div class="border-t border-gray-800 pt-4">
+                <div class="border-t border-rpg-700 pt-4">
                     <button onclick="openDebugScenesView()"
                             class="w-full bg-gradient-to-r from-pink-900/80 to-purple-900/80 hover:from-pink-800 hover:to-purple-800 text-white py-3 rounded-lg border border-pink-700/50 flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-lg hover:shadow-pink-500/20">
                         <i data-lucide="git-merge" class="w-4 h-4"></i>
@@ -325,7 +282,7 @@
                 </div>
 
                 <!-- 세션 ID 표시 -->
-                <div class="bg-gray-800/30 rounded p-2 border border-gray-700/50">
+                <div class="bg-rpg-900/50 rounded p-2 border border-rpg-700/50">
                     <div class="text-gray-500 text-[10px] mb-1 flex items-center gap-1">
                         <i data-lucide="key" class="w-2.5 h-2.5"></i>
                         Session ID
@@ -336,26 +293,26 @@
                 </div>
 
                 <!-- NPC 상태 -->
-                <div class="border-t border-gray-800 pt-4">
+                <div class="border-t border-rpg-700 pt-4">
                     <h4 class="text-gray-400 font-bold text-sm mb-3 flex items-center gap-2">
                         <i data-lucide="users" class="w-3.5 h-3.5"></i>
                         NPC STATUS
                     </h4>
                     <div id="npc-status-area" class="space-y-2">
-                        <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                        <div class="text-gray-500 text-xs text-center py-2 bg-rpg-800/50 rounded border border-rpg-700 border-dashed">
                             NPC 데이터 없음
                         </div>
                     </div>
                 </div>
 
                 <!-- World State Manager -->
-                <div class="border-t border-gray-800 pt-4 mb-10">
+                <div class="border-t border-rpg-700 pt-4 mb-10">
                     <h4 class="text-gray-400 font-bold text-sm mb-3 flex items-center gap-2">
                         <i data-lucide="globe" class="w-3.5 h-3.5"></i>
                         WORLD STATE
                     </h4>
                     <div id="world-state-area" class="text-xs">
-                        <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+                        <div class="text-gray-500 text-xs text-center py-2 bg-rpg-800/50 rounded border border-rpg-700 border-dashed">
                             World State 데이터 없음
                         </div>
                     </div>
