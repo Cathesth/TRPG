@@ -4,18 +4,27 @@ document.addEventListener('DOMContentLoaded', function() {
     // 아이콘 초기화
     lucide.createIcons();
 
-    // ✅ [작업 2] 세션 키 복원 및 초기화 로직 개선
+    // ✅ [수정 2] 세션 키 복원 및 초기화 로직 개선 - URL 파라미터 1순위
     // 1단계: URL 파라미터 확인 (최우선)
     const urlParams = new URLSearchParams(window.location.search);
     const urlSessionId = urlParams.get('session_id');
 
-    // 2단계: URL에 session_id가 있으면 우선 사용하고 저장
+    // 2단계: URL에 session_id가 있으면 최우선으로 사용하고, 기존 값을 모두 덮어씀
     if (urlSessionId) {
+        console.log('🔑 [INIT] URL parameter detected, overriding all storage:', urlSessionId);
+
+        // 기존 sessionStorage의 낡은 값을 모두 무시하고 강제 업데이트
         currentSessionId = urlSessionId;
         sessionStorage.setItem('trpg_session_key', urlSessionId);
-        console.log('🔑 [INIT] Session ID from URL, saved:', urlSessionId);
+
+        // 레거시 키도 동기화 (하위 호환성)
+        if (CURRENT_SESSION_ID_KEY && CURRENT_SESSION_ID_KEY !== 'trpg_session_key') {
+            sessionStorage.setItem(CURRENT_SESSION_ID_KEY, urlSessionId);
+        }
+
+        console.log('✅ [INIT] Session ID from URL saved to storage:', urlSessionId);
     }
-    // 3단계: URL에 없으면 sessionStorage에서 복원 (trpg_session_key 우선)
+    // 3단계: URL에 없으면 sessionStorage에서 복원 (trpg_session_key 최우선)
     else if (!currentSessionId) {
         currentSessionId = sessionStorage.getItem('trpg_session_key') || sessionStorage.getItem(CURRENT_SESSION_ID_KEY);
         if (currentSessionId) {
@@ -23,9 +32,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // 4단계: 세션 키를 찾았으면 UI 갱신 및 DB fetch
+    // ✅ [수정 3] 데이터 정합성 확인 - API 호출 전 최신 ID 확인
     if (currentSessionId) {
-        console.log('🔑 [INIT] Session ID found:', currentSessionId);
+        console.log('🔍 [INIT] Data consistency check:');
+        console.log('  - Current session ID:', currentSessionId);
+        console.log('  - Storage (trpg_session_key):', sessionStorage.getItem('trpg_session_key'));
+        console.log('  - URL parameter:', urlSessionId || 'N/A');
+
+        // 불일치 경고
+        const storageSessionId = sessionStorage.getItem('trpg_session_key');
+        if (storageSessionId && storageSessionId !== currentSessionId) {
+            console.warn('⚠️ [INIT] Session ID mismatch detected!');
+            console.warn('  - Using:', currentSessionId);
+            console.warn('  - Storage had:', storageSessionId);
+        }
 
         // UI에 세션 ID 즉시 표시
         const sessionIdDisplay = document.getElementById('session-id-display');
@@ -39,9 +59,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const isDebugActive = localStorage.getItem(DEBUG_MODE_KEY) === 'true';
         if (isDebugActive) {
             console.log('🔍 [INIT] Debug mode active, fetching latest state from server...');
+            console.log('🔍 [INIT] Will call API with session ID:', currentSessionId);
             fetchLatestSessionState();
         } else {
             // 디버그 모드가 꺼져있어도 기존 DB fetch 유지 (하위 호환성)
+            console.log('🔍 [INIT] Fetching game data from DB with session ID:', currentSessionId);
             window.fetchGameDataFromDB();
         }
     } else {
