@@ -1,5 +1,5 @@
 """
-AI 이미지 생성 서비스 (Hugging Face API 기반 - FLUX.1)
+AI 이미지 생성 서비스 (Hugging Face New Router API 기반)
 Railway 환경에서 MiniO에 이미지 저장/로드 지원
 """
 import os
@@ -19,14 +19,13 @@ class ImageService:
 
     def __init__(self):
         self.s3_client = get_s3_client()
-        # [설정] Railway 환경변수에 HF_TOKEN을 꼭 추가해야 합니다.
+        # [필수] Railway 환경변수 HF_TOKEN 필요
         self.hf_token = os.getenv("HF_TOKEN")
 
-        # [모델] Hugging Face의 최신 고속 모델 (FLUX.1-schnell)
-        # 무료 Inference API를 통해 호출합니다.
-        self.api_url = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
+        # [수정] Hugging Face API 주소 변경 (api-inference -> router)
+        self.api_url = "https://router.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
 
-        # 프롬프트 템플릿 (Flux 모델은 자연어 지시를 잘 알아듣습니다)
+        # 프롬프트 템플릿
         self.prompts = {
             "npc": "pixel art portrait of {description}, 8-bit style, retro rpg character, white background, centered, high quality, sharp focus, clean lines, minimal details",
             "enemy": "pixel art monster of {description}, 8-bit style, retro rpg enemy, white background, intimidating, high quality, clean lines",
@@ -38,7 +37,7 @@ class ImageService:
             self._is_available = False
         else:
             self._is_available = True
-            logger.info(f"✅ [Image] Hugging Face 서비스 초기화 (Model: FLUX.1-schnell)")
+            logger.info(f"✅ [Image] Hugging Face 서비스 초기화 (Router Mode)")
 
     @property
     def is_available(self) -> bool:
@@ -77,15 +76,14 @@ class ImageService:
             return None
 
     async def _call_huggingface_api(self, prompt: str) -> Optional[bytes]:
-        """Hugging Face Inference API 호출"""
+        """Hugging Face Inference Router 호출"""
         try:
             headers = {"Authorization": f"Bearer {self.hf_token}"}
             payload = {
                 "inputs": prompt,
                 "parameters": {
-                    # 필요시 파라미터 조정 가능
-                    # "guidance_scale": 3.5,
-                    # "num_inference_steps": 4
+                    "width": 1024,
+                    "height": 1024
                 }
             }
 
@@ -95,14 +93,12 @@ class ImageService:
                         err = await response.text()
                         logger.error(f"❌ [Image] API 오류 ({response.status}): {err}")
 
-                        # 503(모델 로딩중) 에러 발생 시 처리 로직이 필요할 수 있음
                         if response.status == 503:
                             logger.info("⏳ [Image] 모델 로딩 중... 잠시 후 다시 시도해주세요.")
 
                         return None
 
-                    # 이미지가 바이너리 형태로 반환됨
-                    logger.info("✅ [Image] 이미지 데이터 수신 성공")
+                    logger.info("✅ [Image] 데이터 수신 완료")
                     return await response.read()
 
         except Exception as e:
