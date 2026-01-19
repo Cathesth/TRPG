@@ -24,7 +24,7 @@ class ImageService:
 
         # [모델] Google Imagen 3 (가장 최신/고품질)
         # 002가 안되면 001이 표준입니다.
-        self.model_name = "imagen-3.0-generate-002"
+        self.model_name = "imagen-4.0-fast-generate"
 
         self.prompts = {
             "npc": "Draw a high quality 8-bit pixel art portrait of {description}. Retro game character sprite style, white background, centered, clean lines, vibrant colors.",
