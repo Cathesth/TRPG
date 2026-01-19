@@ -7,12 +7,40 @@
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
 
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        rpg: {
+                            900: '#020617',
+                            800: '#0f172a',
+                            700: '#1e293b',
+                            accent: '#38bdf8',
+                            hover: '#0ea5e9',
+                            danger: '#ef4444',
+                        }
+                    },
+                    fontFamily: {
+                        title: ['Cinzel', 'serif'],
+                        body: ['Inter', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
 
     <style>
-        body { font-family: 'Pretendard', sans-serif; }
+        body {
+            background-color: #020617 !important;
+            color: #e2e8f0 !important;
+            font-family: 'Inter', sans-serif;
+        }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
@@ -21,177 +49,56 @@
         .fade-in { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        .brand-gradient {
-            background: linear-gradient(135deg, #6E47E6 0%, #818cf8 100%);
-        }
-
-        .sidebar {
-            width: 72px;
-            transition: width 0.3s ease;
-        }
-        .sidebar:hover,
-        .sidebar.expanded {
-            width: 260px;
-        }
-        .sidebar .nav-text {
-            opacity: 0;
-            white-space: nowrap;
-            transition: opacity 0.2s ease;
-        }
-        .sidebar:hover .nav-text,
-        .sidebar.expanded .nav-text {
-            opacity: 1;
-        }
-        .sidebar .logo-text {
-            opacity: 0;
-            white-space: nowrap;
-            transition: opacity 0.2s ease;
-        }
-        .sidebar:hover .logo-text,
-        .sidebar.expanded .logo-text {
-            opacity: 1;
-        }
-        .sidebar .section-title {
-            opacity: 0;
-            transition: opacity 0.2s ease;
-        }
-        .sidebar:hover .section-title,
-        .sidebar.expanded .section-title {
-            opacity: 1;
-        }
-        .sidebar .user-info {
-            opacity: 0;
-            transition: opacity 0.2s ease;
-        }
-        .sidebar:hover .user-info,
-        .sidebar.expanded .user-info {
-            opacity: 1;
-        }
-        .sidebar .user-chevron {
-            opacity: 0;
-            transition: opacity 0.2s ease;
-        }
-        .sidebar:hover .user-chevron,
-        .sidebar.expanded .user-chevron {
-            opacity: 1;
-        }
-
-        .version-badge {
-            position: fixed;
-            bottom: 16px;
-            right: 16px;
-            font-size: 10px;
-            color: #6b7280;
-            font-family: 'Courier New', monospace;
-            z-index: 1000;
-            pointer-events: none;
-            user-select: none;
-        }
-
         .noto-sans-font {
             font-family: 'Noto Sans KR', 'Pretendard', sans-serif;
         }
     </style>
-
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        dark: {
-                            900: '#111111',
-                            800: '#1c1c1c',
-                            700: '#2c2c2c',
-                            600: '#3f3f46',
-                        },
-                        brand: {
-                            purple: '#6E47E6',
-                            light: '#9F7AEA'
-                        }
-                    }
-                }
-            }
-        }
-    </script>
 </head>
-<body class="bg-dark-900 text-gray-200 h-screen flex overflow-hidden">
+<body class="min-h-screen flex flex-col selection:bg-rpg-accent selection:text-black bg-black">
 
-<!-- 사이드바 -->
-<div class="sidebar bg-dark-800 border-r border-white/5 flex flex-col hidden md:flex shrink-0 z-20 overflow-hidden">
-    <div class="p-4 h-16 flex items-center">
-        <div class="flex items-center gap-2 cursor-pointer" onclick="location.href='/'">
-            <div class="w-10 h-10 brand-gradient rounded-lg flex items-center justify-center text-white shadow-lg shadow-brand-purple/20 shrink-0">
-                <i data-lucide="dice-5" class="w-5 h-5 fill-current"></i>
+    <!-- 상단 헤더 (index.html과 100% 동일) -->
+    <header class="fixed top-0 left-0 w-full h-20 bg-black/80 backdrop-blur-md border-b border-rpg-700 z-50 px-8 flex items-center justify-between">
+        <div class="flex items-center gap-3 cursor-pointer" onclick="location.href='/'">
+            <div class="w-10 h-10 bg-rpg-accent rounded flex items-center justify-center shadow-[0_0_15px_#38bdf8]">
+                <i data-lucide="sword" class="text-black w-6 h-6 fill-current"></i>
             </div>
-            <span class="logo-text text-xl font-bold text-white tracking-tight">TRPG Studio</span>
+            <span class="font-title text-2xl font-black text-white tracking-widest hover:text-rpg-accent transition-colors">TRPG.OS</span>
         </div>
-    </div>
 
-    <nav class="flex-1 px-3 space-y-1 mt-2">
-        <div class="section-title text-[10px] font-semibold text-gray-500 px-3 py-2 uppercase tracking-wider">Workspace</div>
-
-        <a href="/" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
-            <i data-lucide="layout-grid" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
-            <span class="nav-text">대시보드</span>
-        </a>
-
-        <a href="/views/builder"
-           class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
-            <i data-lucide="pen-tool" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
-            <span class="nav-text">시나리오 빌더</span>
-        </a>
-
-        <a href="/views/player"
-           class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white group cursor-pointer text-sm font-medium transition-colors">
-            <i data-lucide="gamepad-2" class="w-5 h-5 text-gray-500 group-hover:text-gray-300 shrink-0"></i>
-            <span class="nav-text">플레이어 모드</span>
-        </a>
-
-        <a href="/views/debug_scenes"
-           class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/5 text-white group cursor-pointer text-sm font-medium">
-            <i data-lucide="git-merge" class="w-5 h-5 text-brand-light shrink-0"></i>
-            <span class="nav-text">전체 씬 보기</span>
-        </a>
-    </nav>
-
-    <div class="p-3 border-t border-white/5">
-        <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
-            <img src="https://api.dicebear.com/7.x/notionists/svg?seed=Felix" alt="User" class="w-8 h-8 rounded-full bg-gray-700 shrink-0">
-            <div class="user-info flex-1 min-w-0">
-                <p class="text-sm font-medium text-white truncate">Game Master</p>
-                <p class="text-[11px] text-gray-500 truncate">Debug Mode</p>
+        <div class="flex items-center gap-5">
+            <div class="hidden md:flex items-center bg-rpg-800 border border-rpg-700 rounded-full px-4 py-1.5 focus-within:border-rpg-accent transition-colors group shadow-inner">
+                <input type="text"
+                       id="search-input"
+                       name="search"
+                       onkeyup="if(event.key === 'Enter') performSearch()"
+                       placeholder="Search scenarios..."
+                       class="bg-transparent border-none text-sm text-gray-300 focus:outline-none w-48 placeholder-gray-600 transition-all focus:w-64 focus:bg-rpg-800 focus:text-white">
+                <button onclick="performSearch()" class="ml-2 text-gray-500 group-hover:text-white transition-colors" title="검색">
+                    <i data-lucide="search" class="w-4 h-4"></i>
+                </button>
             </div>
-            <i data-lucide="chevron-right" class="user-chevron w-4 h-4 text-gray-500"></i>
-        </div>
-    </div>
-</div>
 
-<!-- 메인 뷰 -->
-<div class="flex-1 flex h-full relative z-10 bg-dark-900 overflow-hidden">
-    <div class="flex-1 flex flex-col h-full overflow-hidden">
+            <div class="h-6 w-px bg-rpg-700 hidden md:block"></div>
 
-    <!-- 상단 헤더 -->
-    <header class="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-dark-900/80 backdrop-blur-md sticky top-0 z-20">
-        <div class="flex items-center gap-4">
-            <div class="text-pink-400 font-bold flex items-center gap-2">
-                <i data-lucide="git-merge" class="w-5 h-5"></i>
-                디버그 씬 보기
-                <span class="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full border border-purple-500/30">읽기 전용</span>
+            <button onclick="location.href='/views/player'"
+                    class="text-gray-400 hover:text-rpg-accent transition-colors p-2 rounded-full hover:bg-white/5 relative group" title="플레이어 모드로 돌아가기">
+                <i data-lucide="gamepad-2" class="w-6 h-6 transition-transform group-hover:scale-110"></i>
+            </button>
+
+            <div hx-get="/api/views/header-profile"
+                 hx-trigger="load from:body"
+                 hx-swap="innerHTML">
+                 <div class="w-10 h-10 rounded-full bg-rpg-800 animate-pulse"></div>
             </div>
-        </div>
-        <div class="flex items-center gap-2">
-            <a href="/views/player" class="bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-4 py-2 rounded-lg border border-indigo-700/50 flex items-center gap-2 text-sm font-bold transition-all hover:scale-105">
-                <i data-lucide="gamepad-2" class="w-4 h-4"></i>
-                <span class="hidden sm:inline">플레이어 모드로 돌아가기</span>
-            </a>
         </div>
     </header>
 
-    <div class="flex-1 overflow-y-auto p-8 fade-in relative flex flex-col">
-        <div class="max-w-7xl mx-auto w-full flex flex-col h-full">
+    <!-- 메인 콘텐츠 (배경 칠흑색, w-full) -->
+    <main class="flex-1 mt-20 pb-20 w-full bg-black">
+        <div class="container mx-auto px-8 py-8 fade-in">
 
             <!-- 헤더 -->
-            <div class="flex items-end justify-between border-b border-gray-800 pb-4 mb-6 shrink-0">
+            <div class="flex items-end justify-between border-b border-rpg-700 pb-4 mb-6">
                 <div>
                     <h2 class="text-3xl font-bold text-white flex items-center gap-3">
                         <i data-lucide="git-merge" class="text-pink-500"></i>
@@ -211,23 +118,23 @@
             </div>
 
             <!-- Mermaid 그래프 영역 -->
-            <div class="relative bg-gray-900 rounded-xl border border-gray-800 shadow-inner overflow-hidden flex flex-col h-[600px] shrink-0">
+            <div class="relative bg-rpg-800 rounded-xl border border-rpg-700 shadow-inner overflow-hidden flex flex-col h-[600px]">
 
                 <!-- 줌 컨트롤 -->
                 <div class="absolute bottom-4 right-4 z-20 flex gap-2">
-                    <button onclick="zoomGraph(0.1)" class="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-600 shadow-lg" title="Zoom In">
+                    <button onclick="zoomGraph(0.1)" class="p-2 bg-rpg-800 hover:bg-rpg-700 text-white rounded border border-rpg-700 shadow-lg" title="Zoom In">
                         <i data-lucide="plus" class="w-4 h-4"></i>
                     </button>
-                    <button onclick="resetZoom()" class="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-600 shadow-lg" title="Reset View">
+                    <button onclick="resetZoom()" class="p-2 bg-rpg-800 hover:bg-rpg-700 text-white rounded border border-rpg-700 shadow-lg" title="Reset View">
                         <i data-lucide="maximize" class="w-4 h-4"></i>
                     </button>
-                    <button onclick="zoomGraph(-0.1)" class="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded border border-gray-600 shadow-lg" title="Zoom Out">
+                    <button onclick="zoomGraph(-0.1)" class="p-2 bg-rpg-800 hover:bg-rpg-700 text-white rounded border border-rpg-700 shadow-lg" title="Zoom Out">
                         <i data-lucide="minus" class="w-4 h-4"></i>
                     </button>
                 </div>
 
                 <!-- 범례 -->
-                <div class="absolute top-4 right-4 z-20 bg-gray-900/90 p-2 rounded text-xs text-gray-400 border border-gray-700 pointer-events-none">
+                <div class="absolute top-4 right-4 z-20 bg-rpg-900/90 p-2 rounded text-xs text-gray-400 border border-rpg-700 pointer-events-none">
                     <span class="inline-block w-3 h-3 bg-[#0f766e] mr-1 rounded-sm align-middle"></span>Prologue
                     <span class="inline-block w-3 h-3 bg-[#312e81] ml-2 mr-1 rounded-sm align-middle"></span>Start
                     <span class="inline-block w-3 h-3 bg-[#831843] ml-2 mr-1 rounded-sm align-middle"></span>End
@@ -236,9 +143,7 @@
                 <!-- 그래프 컨테이너 -->
                 <div id="graph-container" class="flex-1 w-full h-full cursor-grab active:cursor-grabbing overflow-hidden flex items-center justify-center bg-[#111827]">
                     <div id="graph-inner" class="transition-transform duration-75 origin-center">
-                        <pre class="mermaid transition-opacity duration-500" id="mermaid-graph">
-                            {{ mermaid_code | safe }}
-                        </pre>
+                        <div class="mermaid" id="mermaid-graph">{{ mermaid_code | safe }}</div>
                     </div>
                 </div>
             </div>
@@ -246,28 +151,28 @@
             <!-- 상세 리스트 -->
             <div class="mt-8 space-y-4 pb-8">
 
-                <details class="group bg-gray-900 rounded-lg border {% if current_scene_id == 'prologue' %}border-cyan-400 shadow-lg shadow-cyan-500/20{% else %}border-gray-800{% endif %} {% if current_scene_id == 'prologue' %}relative{% endif %}">
+                <details class="group bg-rpg-800 rounded-lg border {% if current_scene_id == 'prologue' %}border-cyan-400 shadow-lg shadow-cyan-500/20{% else %}border-rpg-700{% endif %} {% if current_scene_id == 'prologue' %}relative{% endif %}">
                     {% if current_scene_id == 'prologue' %}
                     <div class="absolute -top-2 -right-2 bg-cyan-400 text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg z-10">
                         <i data-lucide="map-pin" class="w-3 h-3"></i>
                         현재 위치
                     </div>
                     {% endif %}
-                    <summary class="p-4 cursor-pointer font-bold text-gray-300 hover:text-white flex justify-between items-center select-none bg-gray-800/30">
+                    <summary class="p-4 cursor-pointer font-bold text-gray-300 hover:text-white flex justify-between items-center select-none bg-rpg-800/30">
                         <span class="flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4 text-yellow-500"></i> 프롤로그 (Prologue)</span>
                         <i data-lucide="chevron-down" class="transition-transform group-open:rotate-180"></i>
                     </summary>
-                    <div class="p-6 border-t border-gray-800 text-gray-300 leading-relaxed bg-gray-900/50 noto-sans-font">
+                    <div class="p-6 border-t border-rpg-700 text-gray-300 leading-relaxed bg-rpg-900/50 noto-sans-font">
                         {{ scenario.prologue or scenario.prologue_text or "프롤로그 없음" }}
                     </div>
                 </details>
 
-                <details class="group bg-gray-900 rounded-lg border border-gray-800">
-                    <summary class="p-4 cursor-pointer font-bold text-gray-300 hover:text-white flex justify-between items-center select-none bg-gray-800/30">
+                <details class="group bg-rpg-800 rounded-lg border border-rpg-700">
+                    <summary class="p-4 cursor-pointer font-bold text-gray-300 hover:text-white flex justify-between items-center select-none bg-rpg-800/30">
                         <span class="flex items-center gap-2"><i data-lucide="clapperboard" class="w-4 h-4 text-blue-500"></i> 씬 목록 (Scenes)</span>
                         <i data-lucide="chevron-down" class="transition-transform group-open:rotate-180"></i>
                     </summary>
-                    <div class="p-4 border-t border-gray-800 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="p-4 border-t border-rpg-700 grid grid-cols-1 md:grid-cols-2 gap-4">
                         {% for scene in scenes %}
                         <div class="bg-indigo-900/10 p-4 rounded border {% if current_scene_id == scene.scene_id %}border-cyan-400 shadow-lg shadow-cyan-500/20{% else %}border-indigo-900/30 hover:border-indigo-500/30{% endif %} transition-colors {% if current_scene_id == scene.scene_id %}relative{% endif %}">
                             {% if current_scene_id == scene.scene_id %}
@@ -324,12 +229,12 @@
                     </div>
                 </details>
 
-                <details class="group bg-gray-900 rounded-lg border border-gray-800">
-                    <summary class="p-4 cursor-pointer font-bold text-gray-300 hover:text-white flex justify-between items-center select-none bg-gray-800/30">
+                <details class="group bg-rpg-800 rounded-lg border border-rpg-700">
+                    <summary class="p-4 cursor-pointer font-bold text-gray-300 hover:text-white flex justify-between items-center select-none bg-rpg-800/30">
                         <span class="flex items-center gap-2"><i data-lucide="flag" class="w-4 h-4 text-red-500"></i> 엔딩 목록 (Endings)</span>
                         <i data-lucide="chevron-down" class="transition-transform group-open:rotate-180"></i>
                     </summary>
-                    <div class="p-4 border-t border-gray-800 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="p-4 border-t border-rpg-700 grid grid-cols-1 md:grid-cols-2 gap-4">
                         {% for ending in scenario.endings %}
                         <div class="bg-red-900/10 p-4 rounded border {% if current_scene_id == ending.ending_id %}border-cyan-400 shadow-lg shadow-cyan-500/20{% else %}border-red-900/30 hover:border-red-500/30{% endif %} transition-colors {% if current_scene_id == ending.ending_id %}relative{% endif %}">
                             {% if current_scene_id == ending.ending_id %}
@@ -367,19 +272,40 @@
             </div>
 
         </div>
-    </div>
-    </div>
-</div>
+    </main>
 
-<!-- Mermaid JS -->
+<!-- Mermaid JS - 작업 3: 선언적 렌더링으로 변경 -->
 <script type="module">
     import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
 
-    // ✅ [FIX 1-2] Mermaid 초기화 - startOnLoad=false로 고정
+    // ✅ [NEW] URL 파라미터로 scenario_id와 session_key가 없으면 sessionStorage에서 복원
+    (function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const hasScenarioId = urlParams.has('scenario_id');
+        const hasSessionKey = urlParams.has('session_key');
+
+        if (!hasScenarioId || !hasSessionKey) {
+            const scenarioId = sessionStorage.getItem('current_scenario_id');
+            const sessionKey = sessionStorage.getItem('session_key');
+
+            if (scenarioId) {
+                const newUrl = new URL(window.location.href);
+                if (!hasScenarioId) newUrl.searchParams.set('scenario_id', scenarioId);
+                if (!hasSessionKey && sessionKey) newUrl.searchParams.set('session_key', sessionKey);
+
+                // URL 변경 (페이지 새로고침)
+                window.location.href = newUrl.toString();
+                return;
+            }
+        }
+    })();
+
+    // Mermaid 초기화 - startOnLoad 사용
     mermaid.initialize({
-        startOnLoad: false,
+        startOnLoad: true,
         theme: 'dark',
         securityLevel: 'loose',
+        logLevel: 'info',
         flowchart: {
             useMaxWidth: false,
             htmlLabels: true,
@@ -396,241 +322,99 @@
         startY: 0
     };
 
-    async function renderGraph() {
-        const element = document.querySelector('#mermaid-graph');
-        if (!element) {
-            console.error('❌ Mermaid element not found');
-            return;
+    // Lucide 아이콘 초기화 - 페이지 로드 시
+    window.addEventListener('DOMContentLoaded', () => {
+        console.log('[DEBUG] Initializing Lucide icons...');
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            lucide.createIcons();
+            console.log('[DEBUG] Lucide icons initialized');
         }
+    });
 
-        // ✅ [FIX 1-4] Mermaid 라이브러리 로딩 실패 감지
-        if (typeof mermaid === 'undefined') {
-            console.error('❌ [Mermaid] Library not loaded');
-            element.innerHTML = `
-                <div class="text-red-400 p-6 bg-red-900/20 rounded-lg border border-red-500/30">
-                    <div class="font-bold text-lg mb-2">⚠️ Mermaid 라이브러리 로딩 실패</div>
-                    <div class="text-sm text-red-300 mb-4">CDN 연결을 확인해주세요.</div>
-                    <details class="text-xs">
-                        <summary class="cursor-pointer text-gray-400 hover:text-white mb-2">
-                            📄 원본 데이터 보기
-                        </summary>
-                        <pre class="bg-gray-900 p-4 rounded border border-gray-700 overflow-auto max-h-96 text-gray-300">${element.textContent}</pre>
-                    </details>
-                </div>
-            `;
-            return;
-        }
-
-        // ✅ [FIX 1-1] 원본 코드 백업 및 즉시 표시 (opacity-0 제거 효과)
-        const graphDef = element.textContent.trim();
-        console.log('🔍 [Mermaid] Attempting to render chart...');
-        console.log('📝 [Mermaid] Graph definition length:', graphDef.length);
-        console.log('📝 [Mermaid] First 10 lines:');
-        graphDef.split('\n').slice(0, 10).forEach((line, idx) => {
-            console.log(`  ${idx + 1}: ${line}`);
-        });
-
-        // ✅ [작업 2] Empty placeholder 체크
-        if (graphDef.includes('Empty[시나리오에 씬이 없습니다]')) {
-            console.warn('⚠️ [Mermaid] Detected empty placeholder - scenario has no scenes');
-        }
-
-        try {
-            // ✅ [FIX 1-3] 단일 렌더링 방식 사용 (mermaid.render)
-            const { svg } = await mermaid.render('mermaidGraph_' + Date.now(), graphDef);
-            element.innerHTML = svg;
-            element.classList.add('opacity-100');
-            console.log('✅ [Mermaid] Chart rendered successfully');
-
-            // SVG 스타일 조정
-            const svgElement = element.querySelector('svg');
-            if (svgElement) {
-                svgElement.style.maxWidth = 'none';
-                svgElement.style.height = 'auto';
+    // Mermaid 렌더링 완료 후 Lucide 재초기화
+    window.addEventListener('load', () => {
+        setTimeout(() => {
+            if (typeof lucide !== 'undefined' && lucide.createIcons) {
+                lucide.createIcons();
             }
+        }, 500);
+    });
 
-            highlightCurrentScene();
-        } catch (err) {
-            console.error('❌ [Mermaid] Rendering failed:', err);
-
-            // ✅ [FIX 1-3] 실패해도 빈 화면 방지 - 오류 메시지 + raw 코드 표시
-            element.innerHTML = `
-                <div class="text-red-400 p-6 bg-red-900/20 rounded-lg border border-red-500/30 max-w-4xl mx-auto">
-                    <div class="font-bold text-lg mb-2 flex items-center gap-2">
-                        <span>⚠️ Mermaid 렌더링 실패</span>
-                    </div>
-                    <div class="text-sm text-red-300 mb-4">차트 문법에 오류가 있을 수 있습니다.</div>
-                    <div class="text-xs text-gray-400 mb-4">Error: ${err.message || err}</div>
-                    <details class="text-xs">
-                        <summary class="cursor-pointer text-gray-400 hover:text-white mb-2">
-                            📄 원본 Mermaid 코드 보기 (${graphDef.length} chars)
-                        </summary>
-                        <pre class="bg-gray-900 p-4 rounded border border-gray-700 overflow-auto max-h-96 text-gray-300">${graphDef}</pre>
-                    </details>
-                </div>
-            `;
-        }
-    }
-
-    function highlightCurrentScene() {
-        const currentSceneId = '{{ current_scene_id }}';
-        if (!currentSceneId) return;
-
-        const svg = document.querySelector('#mermaid-graph svg');
-        if (!svg) return;
-
-        const allNodes = svg.querySelectorAll('.node');
-
-        allNodes.forEach(node => {
-            const nodeId = node.getAttribute('id') || '';
-
-            // ✅ 안전한 ID 형태로 변환된 것을 고려한 매칭 로직
-            let extractedId = '';
-
-            // flowchart- prefix 제거
-            let cleaned = nodeId.replace(/^flowchart-/, '');
-
-            // 마지막 숫자 suffix 제거 (-123)
-            const lastDashIndex = cleaned.lastIndexOf('-');
-            if (lastDashIndex > 0) {
-                const afterLastDash = cleaned.substring(lastDashIndex + 1);
-                if (/^\d+$/.test(afterLastDash)) {
-                    extractedId = cleaned.substring(0, lastDashIndex);
-                } else {
-                    extractedId = cleaned;
-                }
-            } else {
-                extractedId = cleaned;
-            }
-
-            // 언더스코어를 하이픈으로 복원하여 원본 ID와 비교
-            const restoredId = extractedId.replace(/_/g, '-');
-
-            const isPrologueNode = extractedId.toUpperCase() === 'PROLOGUE';
-            const isCurrentPrologue = currentSceneId.toLowerCase() === 'prologue' && isPrologueNode;
-            const isCurrentScene = restoredId === currentSceneId || extractedId === currentSceneId;
-
-            if (isCurrentPrologue || isCurrentScene) {
-                const rect = node.querySelector('rect') || node.querySelector('polygon');
-                if (rect) {
-                    rect.setAttribute('stroke', '#22d3ee');
-                    rect.setAttribute('stroke-width', '3');
-                    rect.setAttribute('fill', '#164e63');
-
-                    const animate = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
-                    animate.setAttribute('attributeName', 'opacity');
-                    animate.setAttribute('values', '1;0.6;1');
-                    animate.setAttribute('dur', '2s');
-                    animate.setAttribute('repeatCount', 'indefinite');
-                    rect.appendChild(animate);
-                }
-            }
-        });
-    }
-
-    window.updateTransform = function() {
-        const inner = document.getElementById('graph-inner');
-        if(inner) {
-            inner.style.transform = `translate(${window.panZoomState.pointX}px, ${window.panZoomState.pointY}px) scale(${window.panZoomState.scale})`;
-        }
-    }
-
-    window.zoomGraph = function(delta) {
-        window.panZoomState.scale += delta;
-        if (window.panZoomState.scale < 0.1) window.panZoomState.scale = 0.1;
-        if (window.panZoomState.scale > 5) window.panZoomState.scale = 5;
-        window.updateTransform();
-    }
-
-    window.resetZoom = function() {
-        window.panZoomState = { scale: 1, panning: false, pointX: 0, pointY: 0, startX: 0, startY: 0 };
-        window.updateTransform();
-    }
-
+    // Pan & Zoom 기능
     const container = document.getElementById('graph-container');
+    const inner = document.getElementById('graph-inner');
 
-    container.addEventListener('mousedown', function(e) {
-        e.preventDefault();
+    container.addEventListener('mousedown', startPan);
+    container.addEventListener('mousemove', onPan);
+    container.addEventListener('mouseup', endPan);
+    container.addEventListener('mouseleave', endPan);
+    container.addEventListener('wheel', onWheel, { passive: false });
+
+    function startPan(e) {
+        window.panZoomState.panning = true;
         window.panZoomState.startX = e.clientX - window.panZoomState.pointX;
         window.panZoomState.startY = e.clientY - window.panZoomState.pointY;
-        window.panZoomState.panning = true;
         container.style.cursor = 'grabbing';
-    });
+    }
 
-    document.addEventListener('mouseup', function(e) {
-        window.panZoomState.panning = false;
-        container.style.cursor = 'grab';
-    });
-
-    document.addEventListener('mousemove', function(e) {
+    function onPan(e) {
         if (!window.panZoomState.panning) return;
         e.preventDefault();
         window.panZoomState.pointX = e.clientX - window.panZoomState.startX;
         window.panZoomState.pointY = e.clientY - window.panZoomState.startY;
-        window.updateTransform();
-    });
+        updateTransform();
+    }
 
-    container.addEventListener('wheel', function(e) {
+    function endPan() {
+        window.panZoomState.panning = false;
+        container.style.cursor = 'grab';
+    }
+
+    function onWheel(e) {
         e.preventDefault();
-        const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        window.zoomGraph(delta);
-    }, { passive: false });
+        const delta = e.deltaY > 0 ? -0.05 : 0.05;
+        window.panZoomState.scale = Math.max(0.1, Math.min(3, window.panZoomState.scale + delta));
+        updateTransform();
+    }
 
-    // ✅ 렌더 실행
-    renderGraph();
+    window.zoomGraph = function(delta) {
+        window.panZoomState.scale = Math.max(0.1, Math.min(3, window.panZoomState.scale + delta));
+        updateTransform();
+    };
+
+    window.resetZoom = function() {
+        window.panZoomState.scale = 1;
+        window.panZoomState.pointX = 0;
+        window.panZoomState.pointY = 0;
+        updateTransform();
+    };
+
+    function updateTransform() {
+        const { scale, pointX, pointY } = window.panZoomState;
+        inner.style.transform = `translate(${pointX}px, ${pointY}px) scale(${scale})`;
+    }
+
+    // 검색 기능 (index.html 호환)
+    window.performSearch = function() {
+        const query = document.getElementById('search-input')?.value;
+        if (query) {
+            window.location.href = `/?search=${encodeURIComponent(query)}`;
+        }
+    };
+
+    // 모달 기능 (index.html 호환)
+    window.openModal = function(modalId) {
+        console.log('[DEBUG] openModal called:', modalId);
+    };
 </script>
 
-<!-- ✅ [FIX 3] 시나리오 ID 복원 및 에러 처리 로직 추가 -->
-<script>
-    // ✅ [FIX 3] 시나리오 ID를 다양한 소스에서 확보
-    (function() {
-        // 1. URL 쿼리 파라미터에서 시도
-        const urlParams = new URLSearchParams(window.location.search);
-        let scenarioId = urlParams.get('scenario_id');
-
-        // 2. sessionStorage에서 시도 (키 이름 통일)
-        if (!scenarioId) {
-            scenarioId = sessionStorage.getItem('trpg_scenario_id') ||
-                        sessionStorage.getItem('current_scenario_id') ||
-                        sessionStorage.getItem('scenario_id');
-        }
-
-        // 3. 현재 세션에서 서버 조회 시도
-        if (!scenarioId) {
-            const sessionId = sessionStorage.getItem('current_session_id') ||
-                            sessionStorage.getItem('trpg_session_key');
-
-            if (sessionId) {
-                console.log('🔍 [Scenes View] Fetching scenario_id from session:', sessionId);
-                fetch(`/game/session_state?session_id=${sessionId}`)
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.success && data.scenario_id) {
-                            console.log('✅ [Scenes View] Scenario ID restored from server:', data.scenario_id);
-                            sessionStorage.setItem('trpg_scenario_id', data.scenario_id);
-
-                            // 시나리오 ID가 없는 상태로 렌더링되었다면 새로고침
-                            if (!window.location.search.includes('scenario_id')) {
-                                window.location.href = `/views/debug_scenes?scenario_id=${data.scenario_id}`;
-                            }
-                        } else {
-                            console.warn('⚠️ [Scenes View] Failed to restore scenario_id from server');
-                        }
-                    })
-                    .catch(err => {
-                        console.error('❌ [Scenes View] Error fetching session state:', err);
-                    });
-            }
-        }
-
-        // ✅ [FIX 3] 복원된 시나리오 ID를 sessionStorage에 저장
-        if(scenarioId) {
-            sessionStorage.setItem('trpg_scenario_id', scenarioId);
-            console.log('✅ [FIX 3] Scenario ID restored:', scenarioId);
-        }
-    })();
-</script>
+<!-- Style Classes for Mermaid -->
+<style>
+    .prologueStyle { fill: #0f766e !important; stroke: #14b8a6 !important; }
+    .sceneStyle { fill: #312e81 !important; stroke: #818cf8 !important; }
+    .endingStyle { fill: #831843 !important; stroke: #f43f5e !important; }
+    .active { fill: #38bdf8 !important; stroke: #0ea5e9 !important; font-weight: bold !important; }
+</style>
 
 </body>
 </html>
-

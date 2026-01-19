@@ -9,7 +9,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=DotGothic16&display=swap" rel="stylesheet">
 
     <script>
         tailwind.config = {
@@ -18,17 +18,19 @@
                 extend: {
                     colors: {
                         rpg: {
-                            900: '#020617', // Main Background
-                            800: '#0f172a', // Card Background
-                            700: '#1e293b', // Border
-                            accent: '#38bdf8', // Cyan
-                            hover: '#0ea5e9', // Blue
-                            danger: '#ef4444', // Red
+                            900: '#0B0B19', // Main Background
+                            800: '#1A0B2E', // Card Background
+                            700: '#2D1B4E', // Border
+                            accent: '#00FFFF', // Cyan
+                            hover: '#00DDDD', // Blue
+                            danger: '#FF007F', // Red
                         }
                     },
                     fontFamily: {
-                        title: ['Cinzel', 'serif'],
-                        body: ['Inter', 'sans-serif']
+                        pixel: ['Press Start 2P', 'monospace'],
+                        dot: ['DotGothic16', 'sans-serif'],
+                        title: ['Press Start 2P', 'monospace'],
+                        body: ['DotGothic16', 'sans-serif']
                     },
                     animation: {
                         'slide-infinite': 'slide 40s linear infinite',
@@ -44,7 +46,79 @@
         }
     </script>
     <style>
-        body { background-color: #020617 !important; color: #e2e8f0 !important; font-family: 'Inter', sans-serif; }
+        /* 8-bit Pixel Art Base */
+        body {
+            background: linear-gradient(180deg, #0B0B19 0%, #1A0B2E 50%, #0B0B19 100%) !important;
+            color: #e2e8f0 !important;
+            font-family: 'DotGothic16', sans-serif;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+
+        /* CRT Effect - Scanlines */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.15),
+                rgba(0, 0, 0, 0.15) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* Pixel Border Effect */
+        .pixel-border {
+            border: 3px solid currentColor;
+            border-radius: 0 !important;
+            box-shadow: 
+                4px 4px 0 rgba(0, 0, 0, 0.3),
+                8px 8px 0 rgba(0, 0, 0, 0.2),
+                12px 12px 0 rgba(0, 0, 0, 0.1);
+        }
+
+        .pixel-btn {
+            background: transparent;
+            border: 3px solid currentColor;
+            color: #FFFACD;
+            font-family: 'Press Start 2P', monospace;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 8px 16px;
+            transition: all 0.2s;
+            position: relative;
+            border-radius: 0 !important;
+        }
+
+        .pixel-btn:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 
+                2px 2px 0 rgba(0, 0, 0, 0.3),
+                4px 4px 0 rgba(0, 0, 0, 0.2);
+        }
+
+        .pixel-input {
+            background: rgba(26, 11, 46, 0.8) !important;
+            border: 2px solid #4A4A6A !important;
+            color: #FFFACD !important;
+            font-family: 'DotGothic16', sans-serif;
+            border-radius: 0 !important;
+            padding: 8px 12px !important;
+        }
+
+        .pixel-input:focus {
+            border-color: #00FFFF !important;
+            box-shadow: 0 0 8px rgba(0, 255, 255, 0.3) !important;
+            outline: none !important;
+        }
 
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -69,14 +143,16 @@
             scroll-behavior: auto;
         }
 
-        /* API 카드 디자인 */
+        /* API 카드 디자인 - 8-bit style */
         .scenario-card-base {
-            background-color: #0f172a !important;
-            border: 1px solid #1e293b !important;
-            border-radius: 0.75rem !important;
+            background-color: #1A0B2E !important;
+            border: 3px solid #4A4A6A !important;
+            border-radius: 0 !important;
             overflow: hidden !important;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
-            transition: all 0.3s ease !important;
+            box-shadow: 
+                4px 4px 0 rgba(0, 0, 0, 0.5),
+                8px 8px 0 rgba(0, 0, 0, 0.3) !important;
+            transition: all 0.2s ease !important;
             display: flex !important;
             flex-direction: column !important;
 
@@ -88,10 +164,22 @@
             flex-shrink: 0 !important;
         }
         .scenario-card-base:hover {
-            border-color: #38bdf8 !important;
-            box-shadow: 0 0 20px rgba(56, 189, 248, 0.2) !important;
-            transform: translateY(-4px) !important;
+            border-color: #00FFFF !important;
+            box-shadow: 
+                2px 2px 0 rgba(0, 0, 0, 0.5),
+                4px 4px 0 rgba(0, 0, 0, 0.3),
+                0 0 16px rgba(0, 255, 255, 0.4) !important;
+            transform: translate(-2px, -2px) !important;
         }
+
+        /* Lucide Icons - Thick Stroke */
+        [data-lucide] {
+            stroke-width: 3;
+            color: #FFFACD;
+        }
+
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body class="min-h-screen flex flex-col selection:bg-rpg-accent selection:text-black">
@@ -459,11 +547,41 @@
                 const res = await fetch('/api/load_scenario', { method: 'POST', body: formData });
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.session_key) { sessionStorage.setItem('trpg_session_key', data.session_key); }
-                    if (data.scenario_id) { sessionStorage.setItem('trpg_scenario_id', data.scenario_id); }
-                    sessionStorage.removeItem('trpg_chat_log');
+
+                    // ✅ [FIX] 기존 세션 데이터 완전히 클리어 (낡은 데이터 간섭 차단)
+                    console.log('🧹 [LOAD] Clearing old session data...');
+                    sessionStorage.clear();
+
+                    // ✅ [리다이렉트 전 저장 보장] session_id를 먼저 저장하고 나서 이동
+                    const sessionId = data.session_id || data.session_key;
+                    const scenarioId = data.scenario_id;
+
+                    // 1단계: sessionStorage에 새 세션 데이터 저장 (이동보다 먼저 실행)
+                    if (sessionId) {
+                        sessionStorage.setItem('trpg_session_key', sessionId);
+                        console.log('✅ [LOAD] Session ID saved to storage before redirect:', sessionId);
+                    }
+                    if (scenarioId) {
+                        sessionStorage.setItem('trpg_scenario_id', scenarioId);
+                        console.log('✅ [LOAD] Scenario ID saved:', scenarioId);
+                    }
+
+                    // 로드 플래그 설정
                     sessionStorage.setItem('trpg_scenario_loaded', 'true');
-                    window.location.href = '/views/player';
+
+                    // 2단계: 저장 완료 후 URL 파라미터에 session_id와 scenario_id를 포함하여 리다이렉트
+                    if (sessionId && scenarioId) {
+                        console.log('🚀 [LOAD] Redirecting to player view with session_id:', sessionId, 'scenario_id:', scenarioId);
+                        window.location.href = `/views/player?session_id=${sessionId}&scenario_id=${scenarioId}`;
+                    } else if (sessionId) {
+                        // scenario_id가 없는 경우 (하위 호환성)
+                        console.warn('⚠️ [LOAD] No scenario_id received, redirecting with session_id only');
+                        window.location.href = `/views/player?session_id=${sessionId}`;
+                    } else {
+                        // session_id가 없는 경우 폴백
+                        console.warn('⚠️ [LOAD] No session_id received, redirecting without parameter');
+                        window.location.href = '/views/player';
+                    }
                 } else {
                     alert('로드 실패: ' + await res.text());
                     btn.innerHTML = originalText;

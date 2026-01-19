@@ -340,10 +340,11 @@ async def game_act_stream(
             # ✅ [중요] 세션의 scenario_id와 요청받은 scenario_id 일치 여부 검증
             stored_scenario_id = game_session_record.scenario_id
 
-            if scenario_id is not None and stored_scenario_id != scenario_id:
+            # ✅ [FIX] 타입 불일치 방지: 양쪽 모두 int()로 형변환하여 비교
+            if scenario_id is not None and int(stored_scenario_id) != int(scenario_id):
                 logger.warning(
-                    f"⚠️ [SESSION MISMATCH] Session {session_id} has scenario_id={stored_scenario_id}, "
-                    f"but request has scenario_id={scenario_id}. Creating new session."
+                    f"⚠️ [SESSION MISMATCH] Session {session_id} has scenario_id={stored_scenario_id} (type: {type(stored_scenario_id).__name__}), "
+                    f"but request has scenario_id={scenario_id} (type: {type(scenario_id).__name__}). Creating new session."
                 )
                 should_create_new_session = True
                 session_id = None  # 세션 무효화

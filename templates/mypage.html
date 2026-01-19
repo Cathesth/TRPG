@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=DotGothic16&display=swap" rel="stylesheet">
 
     <script>
         tailwind.config = {
@@ -16,18 +16,20 @@
                 extend: {
                     colors: {
                         rpg: {
-                            900: '#020617', // Main Background
-                            800: '#0f172a', // Panel Background
-                            700: '#1e293b', // Border
-                            accent: '#38bdf8', // Cyan
-                            hover: '#0ea5e9', // Blue
-                            danger: '#ef4444', // Red
-                            success: '#22c55e', // Green
+                            900: '#0B0B19', // Main Background
+                            800: '#1A0B2E', // Panel Background
+                            700: '#2D1B4E', // Border
+                            accent: '#00FFFF', // Cyan
+                            hover: '#00DDDD', // Blue
+                            danger: '#FF007F', // Red
+                            success: '#10b981', // Green
                         }
                     },
                     fontFamily: {
-                        title: ['Cinzel', 'serif'],
-                        sans: ['Inter', 'sans-serif'],
+                        pixel: ['Press Start 2P', 'monospace'],
+                        dot: ['DotGothic16', 'sans-serif'],
+                        title: ['Press Start 2P', 'monospace'],
+                        body: ['DotGothic16', 'sans-serif']
                     }
                 }
             }
@@ -35,27 +37,100 @@
     </script>
 
     <style>
-        /* 텍스트 글로우 애니메이션 */
+        /* 8-bit Pixel Art Base */
+        body {
+            background: linear-gradient(180deg, #0B0B19 0%, #1A0B2E 50%, #0B0B19 100%) !important;
+            color: #e2e8f0 !important;
+            font-family: 'DotGothic16', sans-serif;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+
+        /* CRT Effect - Scanlines */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.15),
+                rgba(0, 0, 0, 0.15) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* Pixel Border Effect */
+        .pixel-border {
+            border: 3px solid currentColor;
+            border-radius: 0 !important;
+            box-shadow: 
+                4px 4px 0 rgba(0, 0, 0, 0.3),
+                8px 8px 0 rgba(0, 0, 0, 0.2),
+                12px 12px 0 rgba(0, 0, 0, 0.1);
+        }
+
+        .pixel-btn {
+            background: transparent;
+            border: 3px solid currentColor;
+            color: #FFFACD;
+            font-family: 'Press Start 2P', monospace;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 8px 16px;
+            transition: all 0.2s;
+            position: relative;
+            border-radius: 0 !important;
+        }
+
+        .pixel-btn:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 
+                2px 2px 0 rgba(0, 0, 0, 0.3),
+                4px 4px 0 rgba(0, 0, 0, 0.2);
+        }
+
+        .pixel-input {
+            background: rgba(26, 11, 46, 0.8) !important;
+            border: 2px solid #4A4A6A !important;
+            color: #FFFACD !important;
+            font-family: 'DotGothic16', sans-serif;
+            border-radius: 0 !important;
+            padding: 8px 12px !important;
+        }
+
+        .pixel-input:focus {
+            border-color: #00FFFF !important;
+            box-shadow: 0 0 8px rgba(0, 255, 255, 0.3) !important;
+            outline: none !important;
+        }
+
+        /* 텍스트 글로우 애니메이션 - 8-bit style */
         @keyframes textGlow {
-            0%, 100% { text-shadow: 0 0 5px rgba(56, 189, 248, 0.2); }
-            50% { text-shadow: 0 0 15px rgba(56, 189, 248, 0.6); color: white; }
+            0%, 100% { text-shadow: 0 0 5px rgba(0, 255, 255, 0.3); }
+            50% { text-shadow: 0 0 15px rgba(0, 255, 255, 0.8); color: #00FFFF; }
         }
         .animate-text-glow:hover {
             animation: textGlow 2s infinite;
         }
 
-        /* 커스텀 스크롤바 */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #020617; }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #475569; }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #020617;
-            color: #e2e8f0;
+        /* 커스텀 스크롤바 - Pixel style */
+        ::-webkit-scrollbar { width: 12px; }
+        ::-webkit-scrollbar-track { background: #0B0B19; }
+        ::-webkit-scrollbar-thumb { 
+            background: #4A4A6A; 
+            border: 2px solid #2D1B4E;
+            border-radius: 0 !important;
         }
-        .font-title { font-family: 'Cinzel', serif; }
+        ::-webkit-scrollbar-thumb:hover { background: #6A6A8A; }
+
+        .font-title { font-family: 'Press Start 2P', monospace; }
 
         /* 모달 활성화 시 바디 스크롤 방지 */
         body.modal-active { overflow: hidden; }
@@ -92,6 +167,7 @@
         #my-scenario-grid .card-desc {
             font-size: 0.8rem !important;
             -webkit-line-clamp: 2 !important;
+            line-clamp: 2 !important;
             min-height: 2.4em !important;
         }
 
