@@ -463,19 +463,39 @@
 
             // [변경] 연결 로직 (Source 클릭 -> Target 클릭)
             const handleLinkClick = useCallback((e, nodeId) => {
-                e.stopPropagation();
+                e.stopPropagation(); // 이벤트 전파 중단
 
                 if (connectSource === null) {
-                    // 1단계: 시작점 선택
+                    // 1단계: 연결 모드 시작
                     setConnectSource(nodeId);
                     showToast("연결할 대상 노드를 클릭하세요 (취소: 배경 클릭)", "info");
                 } else {
-                    // 2단계: 도착점 선택 (자기 자신 클릭 시 취소)
+                    // 이미 연결 모드일 때 버튼을 누르면:
                     if (connectSource === nodeId) {
-                        setConnectSource(null);
+                        setConnectSource(null); // 취소
                         showToast("연결 취소", "info");
                     } else {
-                        // 연결 생성
+                        // 다른 노드 버튼을 눌렀을 때도 연결 허용
+                        if (!edges.some(eg => eg.source === connectSource && eg.target === nodeId)) {
+                            pushHistory();
+                            setEdges(prev => [...prev, { id: `e-${Date.now()}`, source: connectSource, target: nodeId }]);
+                            showToast("연결되었습니다!", "success");
+                        }
+                        setConnectSource(null);
+                    }
+                }
+            }, [connectSource, edges, pushHistory]);
+
+            // [신규 추가] 노드 본문 클릭 (연결 마무리 또는 단순 선택)
+            const handleNodeBodyClick = useCallback((e, nodeId) => {
+                e.stopPropagation();
+
+                if (connectSource) {
+                    // 연결 모드 중일 때 본문을 누르면 -> 연결 마무리
+                    if (connectSource === nodeId) {
+                        setConnectSource(null); // 자기 자신 누르면 취소
+                        showToast("연결 취소", "info");
+                    } else {
                         if (!edges.some(eg => eg.source === connectSource && eg.target === nodeId)) {
                             pushHistory();
                             setEdges(prev => [...prev, { id: `e-${Date.now()}`, source: connectSource, target: nodeId }]);
@@ -483,23 +503,13 @@
                         } else {
                             showToast("이미 연결되어 있습니다.", "warning");
                         }
-                        setConnectSource(null);
+                        setConnectSource(null); // 연결 모드 종료
                     }
-                }
-            }, [connectSource, edges, pushHistory]);
-
-            // [추가] 노드 본문 클릭 핸들러 (수정된 로직)
-            const handleNodeBodyClick = useCallback((e, nodeId) => {
-                e.stopPropagation();
-
-                // 연결 모드(connectSource가 있음)일 때만 본문 클릭으로 연결을 마무리함
-                if (connectSource) {
-                    handleLinkClick(e, nodeId);
                 } else {
-                    // 연결 모드가 아닐 때는 그냥 노드 선택만 함 (연결 시작 안 함)
+                    // 연결 모드가 아닐 때 본문을 누르면 -> 단순 선택 (속성창 열기)
                     setSelectedNodeId(nodeId);
                 }
-            }, [connectSource, handleLinkClick]);
+            }, [connectSource, edges, pushHistory]);
 
             // 캔버스 배경 클릭 시 연결 취소
             const handleCanvasClick = (e) => {
@@ -756,7 +766,7 @@
                                     isConnectSource={connectSource === node.id}
                                     isCandidate={connectSource && connectSource !== node.id}
                                     onMouseDown={handleNodeDragStart}
-                                    onClick={handleLinkClick}
+                                    onClick={handleNodeBodyClick}
                                     onLinkClick={handleLinkClick}
                                     onDelete={deleteNode}
                                     onAudit={runAiAudit}
