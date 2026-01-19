@@ -162,10 +162,29 @@
             box-shadow: 0 0 8px #FFFACD;
         }
 
-        /* 8-bit Block Cursor for Input - Native Caret Style */
+        /* 8-bit Block Cursor for Input */
         #action-input {
-            caret-color: #FFFACD;
-            caret-shape: block;
+            caret-color: transparent;
+            font-size: 16px;
+            line-height: 1.5;
+            position: relative;
+        }
+
+        /* Custom block cursor */
+        .custom-cursor {
+            position: absolute;
+            width: 10px;
+            height: 20px;
+            background: #FFFACD;
+            pointer-events: none;
+            animation: cursor-blink 1s step-end infinite;
+            z-index: 10;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        @keyframes cursor-blink {
+            50% { opacity: 0; }
         }
 
         /* Input Field Pixel Style */
@@ -521,6 +540,66 @@
     if (typeof lucide !== 'undefined' && lucide.createIcons) {
         lucide.createIcons();
     }
+</script>
+
+<!-- 8비트 블록 커서 초기화 -->
+<script>
+(function() {
+    const input = document.getElementById('action-input');
+    if (!input) return;
+
+    // 커스텀 커서 요소 생성
+    const cursor = document.createElement('div');
+    cursor.className = 'custom-cursor';
+    input.parentElement.appendChild(cursor);
+
+    // 커서 위치 업데이트 함수
+    function updateCursorPosition() {
+        const inputRect = input.getBoundingClientRect();
+        const textWidth = getTextWidth(input.value.substring(0, input.selectionStart), input);
+
+        // 입력창 내부 패딩 고려 (px-4 = 16px)
+        const leftPosition = inputRect.left + 16 + textWidth;
+
+        cursor.style.left = leftPosition + 'px';
+        cursor.style.top = inputRect.top + 'px';
+        cursor.style.height = (inputRect.height - 16) + 'px';
+    }
+
+    // 텍스트 너비 계산
+    function getTextWidth(text, element) {
+        const canvas = getTextWidth.canvas || (getTextWidth.canvas = document.createElement('canvas'));
+        const context = canvas.getContext('2d');
+        const style = window.getComputedStyle(element);
+        context.font = style.font;
+        return context.measureText(text).width;
+    }
+
+    // 포커스 상태 관리
+    input.addEventListener('focus', () => {
+        cursor.style.display = 'block';
+        updateCursorPosition();
+    });
+
+    input.addEventListener('blur', () => {
+        cursor.style.display = 'none';
+    });
+
+    // 입력, 클릭, 키 이벤트마다 위치 업데이트
+    input.addEventListener('input', updateCursorPosition);
+    input.addEventListener('click', updateCursorPosition);
+    input.addEventListener('keyup', updateCursorPosition);
+    input.addEventListener('keydown', updateCursorPosition);
+
+    // 창 크기 변경 시 위치 재계산
+    window.addEventListener('resize', updateCursorPosition);
+
+    // 스크롤 시에도 위치 업데이트
+    window.addEventListener('scroll', updateCursorPosition);
+
+    // 초기 커서 숨김
+    cursor.style.display = 'none';
+})();
 </script>
 
 <!-- 버전 표시 -->
