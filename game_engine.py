@@ -1567,7 +1567,8 @@ def check_npc_appearance(state: PlayerState) -> str:
     if state.get('previous_scene_id') == curr_id:
         return ""
 
-    all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
+    scenario = get_scenario_by_id(scenario_id)
+    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
     curr_scene = all_scenes.get(curr_id)
     if not curr_scene: return ""
 
@@ -1797,14 +1798,26 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         world_state.from_dict(state['world_state'])
 
     # ========================================
-    # 💀 작업 2: 죽은 NPC 상태 정보 수집 (환각 방지)
+    # 현재 씬 정보 추출 (scene_title, scene_type, npc_names, enemy_names)
     # ========================================
     curr_scene = all_scenes.get(curr_id) if curr_id not in all_endings else None
+    scene_title = ""
+    scene_type = "normal"
+    npc_names = []
+    enemy_names = []
+
+    if curr_scene:
+        scene_title = curr_scene.get('title', curr_id)
+        scene_type = curr_scene.get('type', 'normal')
+        npc_names = curr_scene.get('npcs', [])
+        enemy_names = curr_scene.get('enemies', [])
+
+    # ========================================
+    # 💀 작업 2: 죽은 NPC 상태 정보 수집 (환각 방지)
+    # ========================================
     npc_status_context = ""
 
     if curr_scene:
-        npc_names = curr_scene.get('npcs', [])
-        enemy_names = curr_scene.get('enemies', [])
         all_npc_names = npc_names + enemy_names
 
         dead_npcs = []
