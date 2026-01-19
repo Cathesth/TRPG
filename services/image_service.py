@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, Dict, Any
 from google import genai
-from google.genai import types
+from google.genai.types import GenerateImageConfig, GenerateImageRequest
 
 from core.s3_client import get_s3_client
 
@@ -22,8 +22,8 @@ class ImageService:
         self.s3_client = get_s3_client()
         self.api_key = os.getenv("GOOGLE_API_KEY")
 
-        # [설정] Google AI Studio의 Imagen 3 모델 사용
-        self.model_name = os.getenv("GOOGLE_IMAGE_MODEL", "imagen-3.0-fast-generate-001")
+        # [설정] Google AI Studio의 Imagen 3 모델 사용 (올바른 모델명)
+        self.model_name = os.getenv("GOOGLE_IMAGE_MODEL", "imagen-3.0-generate-001")
 
         # 이미지 생성 프롬프트 템플릿 (Imagen은 구체적인 지시를 잘 따릅니다)
         self.prompts = {
@@ -40,7 +40,7 @@ class ImageService:
                 # 클라이언트 초기화
                 self.client = genai.Client(api_key=self.api_key)
                 self._is_available = True
-                logger.info(f"✅ [Image] Google Imagen 3 서비스 초기화 완료")
+                logger.info(f"✅ [Image] Google Imagen 3 서비스 초기화 완료 (모델: {self.model_name})")
             except Exception as e:
                 logger.error(f"❌ [Image] Google Client 초기화 실패: {e}")
                 self._is_available = False
@@ -56,9 +56,10 @@ class ImageService:
         try:
             # 1. 프롬프트 생성
             prompt = self.prompts[image_type].format(description=description)
+            logger.info(f"🎨 [Image] 이미지 생성 시작: {image_type} - {description[:50]}...")
 
             # 2. Google Imagen API 호출 (동기 함수이므로 스레드풀에서 실행)
-            image_bytes = await asyncio.to_thread(self._generate_with_google, prompt)
+            image_bytes = await asyncio.to_thread(self._generate_with_google, prompt, image_type)
 
             if not image_bytes:
                 return None
@@ -69,6 +70,7 @@ class ImageService:
             if not image_url:
                 return None
 
+            logger.info(f"✅ [Image] 이미지 생성 완료: {image_url}")
             return {
                 "success": True,
                 "image_url": image_url,
@@ -80,25 +82,37 @@ class ImageService:
             logger.error(f"❌ [Image] 생성 프로세스 오류: {e}")
             return None
 
-    def _generate_with_google(self, prompt: str) -> Optional[bytes]:
+    def _generate_with_google(self, prompt: str, image_type: str) -> Optional[bytes]:
         """Google Imagen API 호출 (동기)"""
         try:
-            # 이미지 생성 요청
+            # aspect_ratio 결정
+            aspect_ratio = "16:9" if image_type == "background" else "1:1"
+
+            logger.info(f"🔄 [Image] API 호출: model={self.model_name}, aspect_ratio={aspect_ratio}")
+
+            # 이미지 생성 요청 (올바른 메서드 사용)
             response = self.client.models.generate_images(
                 model=self.model_name,
                 prompt=prompt,
-                config=types.GenerateImagesConfig(
+                config=GenerateImageConfig(
                     number_of_images=1,
-                    aspect_ratio="1:1" if "background" not in prompt else "16:9",
-                    include_rai_reason=True,
-                    output_mime_type="image/png"
+                    aspect_ratio=aspect_ratio,
+                    safety_filter_level="block_some",
+                    person_generation="allow_adult"
                 )
             )
 
             # 결과 확인
-            if response.generated_images:
-                # 첫 번째 이미지의 바이트 데이터 반환
-                return response.generated_images[0].image.image_bytes
+            if response and hasattr(response, 'generated_images') and response.generated_images:
+                image_data = response.generated_images[0]
+
+                # 이미지 바이트 데이터 추출
+                if hasattr(image_data, 'image') and hasattr(image_data.image, 'image_bytes'):
+                    logger.info(f"✅ [Image] API 응답 성공: {len(image_data.image.image_bytes)} bytes")
+                    return image_data.image.image_bytes
+                else:
+                    logger.error("❌ [Image] 응답 구조가 예상과 다릅니다.")
+                    return None
             else:
                 logger.error("❌ [Image] 생성된 이미지가 없습니다.")
                 return None
