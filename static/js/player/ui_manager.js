@@ -14,7 +14,7 @@ function enableGameUI() {
 
     if (input) {
         input.disabled = false;
-        input.placeholder = "어떤 행동을 하시겠습니까? (예: 문을 연다, 살펴본다...)";
+        input.placeholder = "어떤 행동을 하시겠습니까?";
         input.classList.remove('opacity-50', 'cursor-not-allowed');
     }
     if (submitBtn) {
@@ -44,6 +44,20 @@ function disableGameUI() {
     if (scenesBtn) scenesBtn.disabled = true;
 }
 
+// 픽셀 아트 블록 게이지 생성 함수
+function createBlockGauge(current, max, type = 'hp') {
+    const segments = 10; // 10개의 블록
+    const filled = Math.ceil((current / max) * segments);
+    const className = type === 'hp' ? 'filled-hp' : 'filled-sanity';
+
+    let html = '<div class="block-gauge">';
+    for (let i = 0; i < segments; i++) {
+        html += `<div class="block-gauge-segment ${i < filled ? className : ''}"></div>`;
+    }
+    html += '</div>';
+    return html;
+}
+
 // UI 초기화 함수 (완전 초기 상태)
 function initializeEmptyGameUI() {
     const chatLog = document.getElementById('chat-log');
@@ -58,13 +72,13 @@ function initializeEmptyGameUI() {
         // 초기 안내 메시지 복원
         const introHtml = `
             <div id="intro-message" class="flex gap-4 fade-in mb-4">
-                <div class="w-8 h-8 rounded-lg bg-indigo-900 flex items-center justify-center shrink-0">
-                    <i data-lucide="bot" class="text-white w-4 h-4"></i>
+                <div class="w-10 h-10 rounded-none bg-indigo-900 flex items-center justify-center shrink-0 pixel-border">
+                    <i data-lucide="bot" class="text-white w-5 h-5"></i>
                 </div>
                 <div class="flex-1">
-                    <div class="text-indigo-400 text-xs font-bold mb-1">GM</div>
-                    <div class="bg-[#1a1a1e] border-gray-700 p-3 rounded-lg border text-gray-300 text-sm leading-relaxed">
-                        시스템에 접속했습니다. 우측 상단의 <span class="text-indigo-400 font-bold">[시나리오 불러오기]</span> 버튼을 눌러 게임을 로드하세요.
+                    <div class="text-indigo-400 text-xs font-bold mb-1 font-pixel">GM</div>
+                    <div class="bg-rpg-800 pixel-border p-3 rounded-none text-gray-300 text-sm leading-relaxed font-dot">
+                        시스템에 접속했습니다. 우측 상단의 <span class="text-rpg-accent font-bold">[불러오기]</span> 버튼을 눌러 게임을 로드하세요.
                     </div>
                 </div>
             </div>
@@ -76,10 +90,10 @@ function initializeEmptyGameUI() {
         const statsArea = document.getElementById('player-stats-area');
         if (statsArea) {
             statsArea.innerHTML = `
-                <div class="text-gray-500 text-sm text-center py-4 bg-gray-800/50 rounded-lg border border-gray-700 border-dashed">
+                <div class="text-gray-500 text-sm text-center py-4 bg-rpg-900/50 rounded-none pixel-border font-dot">
                     <i data-lucide="ghost" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
                     데이터 없음<br>
-                    <span class="text-xs">상단 [시나리오 불러오기]를 눌러주세요.</span>
+                    <span class="text-xs">상단 [불러오기]를 눌러주세요.</span>
                 </div>
             `;
         }
@@ -103,7 +117,7 @@ function showEmptyDebugState() {
 
     if (npcStatusArea) {
         npcStatusArea.innerHTML = `
-            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+            <div class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
                 NPC 데이터 없음
             </div>
         `;
@@ -111,7 +125,7 @@ function showEmptyDebugState() {
 
     if (worldStateArea) {
         worldStateArea.innerHTML = `
-            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+            <div class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
                 World State 데이터 없음
             </div>
         `;
@@ -145,15 +159,15 @@ function restoreChatLog() {
         if (intro) intro.remove();
         const initResult = document.getElementById('init-result');
         initResult.innerHTML = `
-        <div class="bg-green-900/30 border border-green-800 text-green-400 p-4 rounded-lg flex items-center gap-3 fade-in mt-4">
+        <div class="bg-green-900/30 pixel-border text-green-400 p-4 rounded-none flex items-center gap-3 fade-in mt-4">
             <i data-lucide="check-circle" class="w-6 h-6"></i>
-            <div>
+            <div class="font-dot">
                 <div class="font-bold">로드 완료!</div>
                 <div class="text-sm opacity-80">아래 버튼을 클릭하거나 채팅창에 "시작"을 입력하세요.</div>
             </div>
         </div>
         <button onclick="submitGameAction('시작')"
-                class="mt-3 w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shadow-lg">
+                class="mt-3 w-full bg-rpg-accent hover:bg-rpg-hover text-black py-3 rounded-none font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shadow-lg border-2 border-black font-dot">
             <i data-lucide="play" class="w-5 h-5"></i>
             게임 시작하기
         </button>
@@ -182,15 +196,15 @@ function resetGameUI() {
 
     // 로드 완료 메시지 표시
     initResult.innerHTML = `
-    <div class="bg-green-900/30 border border-green-800 text-green-400 p-4 rounded-lg flex items-center gap-3 fade-in mt-4">
+    <div class="bg-green-900/30 pixel-border text-green-400 p-4 rounded-none flex items-center gap-3 fade-in mt-4">
         <i data-lucide="check-circle" class="w-6 h-6"></i>
-        <div>
+        <div class="font-dot">
             <div class="font-bold">로드 완료!</div>
             <div class="text-sm opacity-80">아래 버튼을 클릭하거나 채팅창에 "시작"을 입력하세요.</div>
         </div>
     </div>
     <button onclick="submitGameAction('시작')"
-            class="mt-3 w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shadow-lg">
+            class="mt-3 w-full bg-rpg-accent hover:bg-rpg-hover text-black py-3 rounded-none font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shadow-lg border-2 border-black font-dot">
         <i data-lucide="play" class="w-5 h-5"></i>
         게임 시작하기
     </button>
@@ -201,7 +215,7 @@ function resetGameUI() {
     // 스탯 영역 초기화
     if (statsArea) {
         statsArea.innerHTML = `
-        <div class="text-gray-500 text-sm text-center py-4 bg-gray-800/50 rounded-lg border border-gray-700 border-dashed">
+        <div class="text-gray-500 text-sm text-center py-4 bg-rpg-900/50 rounded-none pixel-border font-dot">
             <i data-lucide="ghost" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
             데이터 없음<br>
             <span class="text-xs">게임을 시작하면 표시됩니다.</span>
@@ -215,7 +229,7 @@ function resetGameUI() {
 
     if (npcStatusArea) {
         npcStatusArea.innerHTML = `
-            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+            <div class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
                 NPC 데이터 없음
             </div>
         `;
@@ -223,7 +237,7 @@ function resetGameUI() {
 
     if (worldStateArea) {
         worldStateArea.innerHTML = `
-            <div class="text-gray-500 text-xs text-center py-2 bg-gray-800/50 rounded border border-gray-700 border-dashed">
+            <div class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
                 World State 데이터 없음
             </div>
         `;
@@ -243,47 +257,46 @@ function updateStats(statsData) {
     const statsArea = document.getElementById('player-stats-area');
     if (!statsArea) return;
 
-    // 스탯 표시 로직
+    // 스탯 표시 로직 (픽셀 아트 스타일)
     const statConfig = {
-        'hp': { icon: 'heart', color: 'red', isBar: true, max: 'max_hp' },
-        'mp': { icon: 'zap', color: 'blue', isBar: true, max: 'max_mp' },
-        'sanity': { icon: 'brain', color: 'purple', isBar: true, max: 100 },
-        'gold': { icon: 'coins', color: 'yellow' }
+        'hp': { icon: 'heart', color: 'text-red-400', isBar: true, max: 'max_hp', type: 'hp' },
+        'mp': { icon: 'zap', color: 'text-blue-400', isBar: true, max: 'max_mp', type: 'mp' },
+        'sanity': { icon: 'brain', color: 'text-purple-400', isBar: true, max: 100, type: 'sanity' },
+        'gold': { icon: 'coins', color: 'text-yellow-400' }
     };
 
     let html = `
-    <div class="bg-[#1a1e2e] rounded-lg p-4 border border-[#2d2d35] shadow-sm mb-4 fade-in">
+    <div class="bg-rpg-900 rounded-none p-4 pixel-border shadow-sm mb-4 fade-in">
         <div class="flex justify-between items-center mb-3">
-            <span class="text-xs font-bold text-gray-400 uppercase">Status</span>
-            <i data-lucide="activity" class="w-3 h-3 text-red-500"></i>
+            <span class="text-xs font-bold text-gray-400 uppercase font-pixel">STATUS</span>
+            <i data-lucide="activity" class="w-4 h-4 text-red-500"></i>
         </div>
-        <div class="space-y-2">`;
+        <div class="space-y-3">`;
 
     for (const [k, v] of Object.entries(statsData)) {
         // world_state와 내부 플래그 필터링
         if (k !== 'inventory' && k !== 'world_state' && !k.startsWith('max_') && !k.startsWith('npc_appeared_') && !k.startsWith('_')) {
-            const config = statConfig[k.toLowerCase()] || { icon: 'circle', color: 'gray' };
-            const colorClass = `text-${config.color}-400`;
-            const bgColorClass = `bg-${config.color}-500`;
+            const config = statConfig[k.toLowerCase()] || { icon: 'circle', color: 'text-gray-400' };
 
             if (config.isBar) {
                 let maxVal = typeof config.max === 'string' ? (statsData[config.max] || 100) : 100;
-                let percentage = Math.min(100, Math.max(0, (v / maxVal) * 100));
                 html += `
-                <div class="mb-2">
-                    <div class="flex justify-between items-center mb-1">
-                        <span class="text-xs text-gray-400 flex items-center gap-1"><i data-lucide="${config.icon}" class="w-3 h-3 ${colorClass}"></i>${k.toUpperCase()}</span>
-                        <span class="text-xs font-bold text-white">${v}/${maxVal}</span>
+                <div class="mb-3">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs ${config.color} flex items-center gap-1 font-dot font-bold">
+                            <i data-lucide="${config.icon}" class="w-4 h-4"></i>${k.toUpperCase()}
+                        </span>
+                        <span class="text-xs font-bold text-white font-pixel">${v}/${maxVal}</span>
                     </div>
-                    <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
-                        <div class="${bgColorClass} h-full transition-all duration-300 rounded-full" style="width: ${percentage}%"></div>
-                    </div>
+                    ${createBlockGauge(v, maxVal, config.type || 'hp')}
                 </div>`;
             } else {
                 html += `
-                <div class="flex justify-between items-center border-b border-gray-800 py-1.5">
-                    <span class="text-xs text-gray-400 flex items-center gap-1"><i data-lucide="${config.icon}" class="w-3 h-3 ${colorClass}"></i>${k.toUpperCase()}</span>
-                    <span class="text-white font-bold text-sm">${v}</span>
+                <div class="flex justify-between items-center border-b-2 border-rpg-700 py-2">
+                    <span class="text-xs ${config.color} flex items-center gap-1 font-dot font-bold">
+                        <i data-lucide="${config.icon}" class="w-4 h-4"></i>${k.toUpperCase()}
+                    </span>
+                    <span class="text-white font-bold text-sm font-pixel">${v}</span>
                 </div>`;
             }
         }
@@ -292,11 +305,15 @@ function updateStats(statsData) {
 
     if (statsData.inventory && statsData.inventory.length > 0) {
         html += `
-        <div class="border-t border-gray-700 pt-3 mt-3">
-            <div class="text-[10px] text-gray-500 mb-2 flex items-center gap-1"><i data-lucide="backpack" class="w-3 h-3"></i>INVENTORY</div>
+        <div class="border-t-4 border-rpg-700 pt-3 mt-3">
+            <div class="text-[10px] text-gray-500 mb-2 flex items-center gap-1 font-pixel">
+                <i data-lucide="backpack" class="w-3 h-3"></i>INVENTORY
+            </div>
             <div class="flex flex-wrap gap-1">`;
         for (const item of statsData.inventory) {
-            html += `<span class="bg-gray-800 px-2 py-1 rounded text-[10px] text-indigo-300 border border-gray-700 flex items-center gap-1"><i data-lucide="box" class="w-2.5 h-2.5"></i>${item}</span>`;
+            html += `<span class="bg-rpg-800 px-2 py-1 rounded-none text-[10px] text-indigo-300 pixel-border flex items-center gap-1 font-dot">
+                <i data-lucide="box" class="w-2.5 h-2.5"></i>${item}
+            </span>`;
         }
         html += '</div></div>';
     }
