@@ -1,14 +1,15 @@
 """
-AI 이미지 생성 서비스 (Hugging Face SDXL 1.0 - 가장 안정적)
+AI 이미지 생성 서비스 (Google Imagen 3.0 API)
 Railway 환경에서 MiniO에 이미지 저장/로드 지원
 """
 import os
 import logging
 import asyncio
-import aiohttp
 import uuid
 from datetime import datetime
 from typing import Optional, Dict, Any
+from google import genai
+from google.genai import types
 
 from core.s3_client import get_s3_client
 
@@ -19,25 +20,30 @@ class ImageService:
 
     def __init__(self):
         self.s3_client = get_s3_client()
-        self.hf_token = os.getenv("HF_TOKEN")
+        self.api_key = os.getenv("GOOGLE_API_KEY")
 
-        # [모델] Stability AI의 SDXL 1.0 (Flux보다 훨씬 안정적임)
-        # 410 오류 방지를 위해 router 주소 사용
-        self.api_url = "https://router.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+        # [모델] Google Imagen 3 (가장 최신/고품질)
+        # 002가 안되면 001이 표준입니다.
+        self.model_name = "imagen-3.0-generate-002"
 
-        # 프롬프트 템플릿
         self.prompts = {
-            "npc": "pixel art portrait of {description}, 8-bit, retro rpg style, white background, centered, clean lines, high quality",
-            "enemy": "pixel art monster of {description}, 8-bit, retro rpg style, white background, intimidating, clean lines, high quality",
-            "background": "pixel art landscape of {description}, 8-bit, retro rpg style, detailed environment, atmospheric, 16:9 aspect ratio"
+            "npc": "Draw a high quality 8-bit pixel art portrait of {description}. Retro game character sprite style, white background, centered, clean lines, vibrant colors.",
+            "enemy": "Draw a high quality 8-bit pixel art monster of {description}. Retro game enemy sprite style, intimidating, white background, clean lines.",
+            "background": "Draw a high quality 8-bit pixel art landscape of {description}. Retro game background style, detailed environment, atmospheric."
         }
 
-        if not self.hf_token:
-            logger.warning("⚠️ [Image] HF_TOKEN이 없습니다. 이미지 생성이 불가능합니다.")
+        if not self.api_key:
+            logger.warning("⚠️ [Image] GOOGLE_API_KEY가 없습니다.")
             self._is_available = False
         else:
-            self._is_available = True
-            logger.info(f"✅ [Image] 서비스 초기화 (Model: SDXL 1.0)")
+            try:
+                # 구글 클라이언트 초기화
+                self.client = genai.Client(api_key=self.api_key)
+                self._is_available = True
+                logger.info(f"✅ [Image] Google Imagen 3 서비스 초기화 (Model: {self.model_name})")
+            except Exception as e:
+                logger.error(f"❌ [Image] 클라이언트 초기화 실패: {e}")
+                self._is_available = False
 
     @property
     def is_available(self) -> bool:
@@ -51,14 +57,14 @@ class ImageService:
             prompt = self.prompts[image_type].format(description=description)
             logger.info(f"🎨 [Image] 생성 요청: {prompt[:50]}...")
 
-            # API 호출
-            image_data = await self._call_huggingface_api(prompt)
+            # API 호출 (동기 함수라 스레드풀 사용)
+            image_bytes = await asyncio.to_thread(self._call_google_api, prompt, image_type)
 
-            if not image_data:
+            if not image_bytes:
                 return None
 
             # S3 업로드
-            image_url = await self._upload_to_s3(image_data, image_type, scenario_id, target_id)
+            image_url = await self._upload_to_s3(image_bytes, image_type, scenario_id, target_id)
 
             if not image_url:
                 return None
@@ -71,41 +77,37 @@ class ImageService:
                 "generated_at": datetime.now().isoformat()
             }
         except Exception as e:
-            logger.error(f"❌ [Image] 생성 프로세스 오류: {e}")
+            logger.error(f"❌ [Image] 프로세스 오류: {e}")
             return None
 
-    async def _call_huggingface_api(self, prompt: str) -> Optional[bytes]:
-        """Hugging Face API 호출 (Retry 로직 포함)"""
-        headers = {"Authorization": f"Bearer {self.hf_token}"}
-        payload = {"inputs": prompt}
+    def _call_google_api(self, prompt: str, image_type: str) -> Optional[bytes]:
+        """Google Imagen API 호출"""
+        try:
+            aspect_ratio = "16:9" if image_type == "background" else "1:1"
 
-        # 모델이 'Cold Boot' 상태일 때 503 에러가 날 수 있음 -> 최대 3번 재시도
-        for attempt in range(3):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(self.api_url, headers=headers, json=payload, timeout=60.0) as response:
+            # [핵심] models.generate_images 메서드 사용
+            response = self.client.models.generate_images(
+                model=self.model_name,
+                prompt=prompt,
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio=aspect_ratio,
+                    include_rai_reason=True,
+                    output_mime_type="image/png"
+                )
+            )
 
-                        if response.status == 200:
-                            logger.info("✅ [Image] 생성 성공")
-                            return await response.read()
-
-                        error_msg = await response.text()
-
-                        # 503: 모델 로딩 중 (흔한 경우)
-                        if response.status == 503:
-                            wait_time = 10
-                            logger.info(f"⏳ [Image] 모델 로딩 중... {wait_time}초 대기 후 재시도 ({attempt+1}/3)")
-                            await asyncio.sleep(wait_time)
-                            continue
-
-                        logger.error(f"❌ [Image] API 오류 ({response.status}): {error_msg}")
-                        return None
-
-            except Exception as e:
-                logger.error(f"❌ [Image] 연결 실패: {e}")
+            if response.generated_images:
+                logger.info("✅ [Image] 생성 성공")
+                return response.generated_images[0].image.image_bytes
+            else:
+                logger.error("❌ [Image] 생성된 이미지가 없습니다.")
                 return None
 
-        return None
+        except Exception as e:
+            # 오류 메시지 상세 로깅
+            logger.error(f"❌ [Image] Google API 오류: {e}")
+            return None
 
     async def _upload_to_s3(self, image_data: bytes, image_type: str, scenario_id: Optional[int] = None, target_id: Optional[str] = None) -> Optional[str]:
         try:
