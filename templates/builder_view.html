@@ -488,6 +488,19 @@
                 }
             }, [connectSource, edges, pushHistory]);
 
+            // [추가] 노드 본문 클릭 핸들러 (수정된 로직)
+            const handleNodeBodyClick = useCallback((e, nodeId) => {
+                e.stopPropagation();
+
+                // 연결 모드(connectSource가 있음)일 때만 본문 클릭으로 연결을 마무리함
+                if (connectSource) {
+                    handleLinkClick(e, nodeId);
+                } else {
+                    // 연결 모드가 아닐 때는 그냥 노드 선택만 함 (연결 시작 안 함)
+                    setSelectedNodeId(nodeId);
+                }
+            }, [connectSource, handleLinkClick]);
+
             // 캔버스 배경 클릭 시 연결 취소
             const handleCanvasClick = (e) => {
                 if (connectSource && !e.target.closest('.node-ui')) {

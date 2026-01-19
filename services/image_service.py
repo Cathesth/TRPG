@@ -22,7 +22,7 @@ class ImageService:
         self.s3_client = get_s3_client()
         self.openrouter_api_url = "https://openrouter.ai/api/v1/chat/completions"
         self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
-        self.image_model = os.getenv("OPENROUTER_IMAGE_MODEL", "nanobanana")
+        self.image_model = os.getenv("OPENROUTER_IMAGE_MODEL", "google/gemini-2.5-flash-image-preview")
         
         # 이미지 생성 프롬프트 템플릿
         self.prompts = {
