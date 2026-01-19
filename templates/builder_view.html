@@ -264,7 +264,8 @@
          }
  </style>
 
-<script type="text/babel">
+{% raw %}
+ <script type="text/babel">
         const { useState, useRef, useEffect, useCallback } = React;
 
         // --- 아이콘 컴포넌트 ---
@@ -1151,3 +1152,4 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ScenarioBuilder />);
     </script>
+ {% endraw %}
