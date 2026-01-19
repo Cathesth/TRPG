@@ -162,17 +162,10 @@
             box-shadow: 0 0 8px #FFFACD;
         }
 
-        /* Blinking Block Cursor */
-        .pixel-cursor {
-            display: inline-block;
-            width: 8px;
-            height: 16px;
-            background: #00FFFF;
-            animation: blink-block 1s step-end infinite;
-        }
-
-        @keyframes blink-block {
-            50% { opacity: 0; }
+        /* 8-bit Block Cursor for Input - Native Caret Style */
+        #action-input {
+            caret-color: #FFFACD;
+            caret-shape: block;
         }
 
         /* Input Field Pixel Style */
@@ -421,7 +414,6 @@
                         <input type="text" id="action-input" name="action" autofocus autocomplete="off"
                                class="w-full bg-rpg-800 border-2 border-rpg-700 text-white rounded-none px-4 py-3 focus:outline-none focus:border-rpg-accent focus:ring-0 placeholder-gray-500 font-dot"
                                placeholder="어떤 행동을 하시겠습니까?">
-                        <span class="pixel-cursor absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none"></span>
                     </div>
                     <button type="submit" class="bg-rpg-accent hover:bg-rpg-hover text-black px-6 py-3 rounded-none font-bold transition-colors border-2 border-black shadow-[0_0_8px_#00FFFF]">
                         <i data-lucide="send" class="w-5 h-5"></i>
