@@ -1,5 +1,5 @@
 """
-AI 이미지 생성 서비스 (Hugging Face New Router API 기반)
+AI 이미지 생성 서비스 (Hugging Face SDXL 1.0 - 가장 안정적)
 Railway 환경에서 MiniO에 이미지 저장/로드 지원
 """
 import os
@@ -19,25 +19,25 @@ class ImageService:
 
     def __init__(self):
         self.s3_client = get_s3_client()
-        # [필수] Railway 환경변수 HF_TOKEN 필요
         self.hf_token = os.getenv("HF_TOKEN")
 
-        # [수정] Hugging Face API 주소 변경 (api-inference -> router)
-        self.api_url = "https://router.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
+        # [모델] Stability AI의 SDXL 1.0 (Flux보다 훨씬 안정적임)
+        # 410 오류 방지를 위해 router 주소 사용
+        self.api_url = "https://router.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
 
         # 프롬프트 템플릿
         self.prompts = {
-            "npc": "pixel art portrait of {description}, 8-bit style, retro rpg character, white background, centered, high quality, sharp focus, clean lines, minimal details",
-            "enemy": "pixel art monster of {description}, 8-bit style, retro rpg enemy, white background, intimidating, high quality, clean lines",
-            "background": "pixel art landscape of {description}, 8-bit style, retro rpg background, detailed environment, atmospheric, 16:9 aspect ratio"
+            "npc": "pixel art portrait of {description}, 8-bit, retro rpg style, white background, centered, clean lines, high quality",
+            "enemy": "pixel art monster of {description}, 8-bit, retro rpg style, white background, intimidating, clean lines, high quality",
+            "background": "pixel art landscape of {description}, 8-bit, retro rpg style, detailed environment, atmospheric, 16:9 aspect ratio"
         }
 
         if not self.hf_token:
-            logger.warning("⚠️ [Image] HF_TOKEN(Hugging Face 토큰)이 없습니다. 이미지 생성이 실패할 수 있습니다.")
+            logger.warning("⚠️ [Image] HF_TOKEN이 없습니다. 이미지 생성이 불가능합니다.")
             self._is_available = False
         else:
             self._is_available = True
-            logger.info(f"✅ [Image] Hugging Face 서비스 초기화 (Router Mode)")
+            logger.info(f"✅ [Image] 서비스 초기화 (Model: SDXL 1.0)")
 
     @property
     def is_available(self) -> bool:
@@ -48,7 +48,6 @@ class ImageService:
             return None
 
         try:
-            # 프롬프트 생성
             prompt = self.prompts[image_type].format(description=description)
             logger.info(f"🎨 [Image] 생성 요청: {prompt[:50]}...")
 
@@ -76,34 +75,37 @@ class ImageService:
             return None
 
     async def _call_huggingface_api(self, prompt: str) -> Optional[bytes]:
-        """Hugging Face Inference Router 호출"""
-        try:
-            headers = {"Authorization": f"Bearer {self.hf_token}"}
-            payload = {
-                "inputs": prompt,
-                "parameters": {
-                    "width": 1024,
-                    "height": 1024
-                }
-            }
+        """Hugging Face API 호출 (Retry 로직 포함)"""
+        headers = {"Authorization": f"Bearer {self.hf_token}"}
+        payload = {"inputs": prompt}
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self.api_url, headers=headers, json=payload, timeout=60.0) as response:
-                    if response.status != 200:
-                        err = await response.text()
-                        logger.error(f"❌ [Image] API 오류 ({response.status}): {err}")
+        # 모델이 'Cold Boot' 상태일 때 503 에러가 날 수 있음 -> 최대 3번 재시도
+        for attempt in range(3):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(self.api_url, headers=headers, json=payload, timeout=60.0) as response:
 
+                        if response.status == 200:
+                            logger.info("✅ [Image] 생성 성공")
+                            return await response.read()
+
+                        error_msg = await response.text()
+
+                        # 503: 모델 로딩 중 (흔한 경우)
                         if response.status == 503:
-                            logger.info("⏳ [Image] 모델 로딩 중... 잠시 후 다시 시도해주세요.")
+                            wait_time = 10
+                            logger.info(f"⏳ [Image] 모델 로딩 중... {wait_time}초 대기 후 재시도 ({attempt+1}/3)")
+                            await asyncio.sleep(wait_time)
+                            continue
 
+                        logger.error(f"❌ [Image] API 오류 ({response.status}): {error_msg}")
                         return None
 
-                    logger.info("✅ [Image] 데이터 수신 완료")
-                    return await response.read()
+            except Exception as e:
+                logger.error(f"❌ [Image] 연결 실패: {e}")
+                return None
 
-        except Exception as e:
-            logger.error(f"❌ [Image] API 호출 실패: {e}")
-            return None
+        return None
 
     async def _upload_to_s3(self, image_data: bytes, image_type: str, scenario_id: Optional[int] = None, target_id: Optional[str] = None) -> Optional[str]:
         try:
