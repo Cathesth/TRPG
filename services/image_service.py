@@ -1,5 +1,5 @@
 """
-AI 이미지 생성 서비스 (Nanobana 모델)
+AI 이미지 생성 서비스 (OpenRouter 모델)
 Railway 환경에서 MiniO에 이미지 저장/로드 지원
 """
 import os
@@ -20,22 +20,22 @@ class ImageService:
     
     def __init__(self):
         self.s3_client = get_s3_client()
-        self.nanobana_api_url = os.getenv("NANOBANA_API_URL", "https://api.nanobana.ai/v1/generate")
-        self.nanobana_api_key = os.getenv("NANOBANA_API_KEY")
+        self.openrouter_api_url = "https://openrouter.ai/api/v1/chat/completions"
+        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
         
         # 이미지 생성 프롬프트 템플릿
         self.prompts = {
-            "npc": "8bit pixel art portrait of {description}, game character sprite, retro gaming style, clean lines, vibrant colors, transparent background",
-            "enemy": "8bit pixel art monster of {description}, enemy sprite, retro gaming style, intimidating but not scary, clean pixel art, vibrant colors, transparent background", 
-            "background": "8bit pixel art landscape of {description}, game background, retro gaming style, detailed environment, atmospheric, vibrant colors, 16:9 aspect ratio"
+            "npc": "Create an 8bit pixel art portrait of {description}, game character sprite, retro gaming style, clean lines, vibrant colors, transparent background. The image should be suitable for a TRPG game character.",
+            "enemy": "Create an 8bit pixel art monster of {description}, enemy sprite, retro gaming style, intimidating but not scary, clean pixel art, vibrant colors, transparent background. The image should be suitable for a TRPG game enemy.", 
+            "background": "Create an 8bit pixel art landscape of {description}, game background, retro gaming style, detailed environment, atmospheric, vibrant colors, 16:9 aspect ratio. The image should be suitable as a TRPG scene background."
         }
         
-        if not self.nanobana_api_key:
-            logger.warning("⚠️ [Image] NANOBANA_API_KEY가 설정되지 않았습니다. 이미지 생성이 비활성화됩니다.")
+        if not self.openrouter_api_key:
+            logger.warning("⚠️ [Image] OPENROUTER_API_KEY가 설정되지 않았습니다. 이미지 생성이 비활성화됩니다.")
             self._is_available = False
         else:
             self._is_available = True
-            logger.info("✅ [Image] Nanobana 이미지 생성 서비스 초기화 완료")
+            logger.info("✅ [Image] OpenRouter 이미지 생성 서비스 초기화 완료")
     
     @property
     def is_available(self) -> bool:
@@ -73,8 +73,8 @@ class ImageService:
             # 프롬프트 생성
             prompt = self.prompts[image_type].format(description=description)
             
-            # Nanobana API 호출
-            image_data = await self._call_nanobana_api(prompt)
+            # OpenRouter API 호출
+            image_data = await self._call_openrouter_api(prompt)
             if not image_data:
                 return None
             
@@ -101,52 +101,78 @@ class ImageService:
             logger.error(f"❌ [Image] 이미지 생성 실패: {e}")
             return None
     
-    async def _call_nanobana_api(self, prompt: str) -> Optional[bytes]:
-        """Nanobana API 호출하여 이미지 데이터 받기"""
+    async def _call_openrouter_api(self, prompt: str) -> Optional[bytes]:
+        """OpenRouter API 호출하여 이미지 데이터 받기"""
         try:
             async with aiohttp.ClientSession() as session:
+                # Use a text-to-image model from OpenRouter
                 payload = {
-                    "prompt": prompt,
-                    "model": "nanobana-8bit",  # 8bit 픽셀 아트 전용 모델
-                    "width": 512 if "portrait" in prompt or "sprite" in prompt else 1024,
-                    "height": 512 if "portrait" in prompt or "sprite" in prompt else 576,
-                    "steps": 20,
-                    "cfg_scale": 7.5,
-                    "samples": 1
+                    "model": "stability-ai/stable-diffusion-3-5-large",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    "response_format": {
+                        "type": "image",
+                        "image": {
+                            "size": "1024x1024",
+                            "quality": "standard"
+                        }
+                    }
                 }
                 
                 headers = {
-                    "Authorization": f"Bearer {self.nanobana_api_key}",
-                    "Content-Type": "application/json"
+                    "Authorization": f"Bearer {self.openrouter_api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://trpg-studio.com",
+                    "X-Title": "TRPG Studio"
                 }
                 
                 async with session.post(
-                    self.nanobana_api_url,
+                    self.openrouter_api_url,
                     json=payload,
                     headers=headers,
                     timeout=60.0
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
-                        logger.error(f"❌ [Image] Nanobana API 오류: {response.status} - {error_text}")
+                        logger.error(f"❌ [Image] OpenRouter API 오류: {response.status} - {error_text}")
                         return None
                     
-                    # 이미지 데이터 추출 (base64 또는 바이너리)
+                    # 이미지 데이터 추출
                     result = await response.json()
-                    if "images" in result and len(result["images"]) > 0:
-                        # base64 이미지 디코딩
-                        import base64
-                        image_base64 = result["images"][0]["data"]
-                        return base64.b64decode(image_base64)
+                    if "choices" in result and len(result["choices"]) > 0:
+                        # 이미지 URL 또는 base64 데이터 추출
+                        choice = result["choices"][0]
+                        if "message" in choice and "content" in choice["message"]:
+                            content = choice["message"]["content"]
+                            if isinstance(content, str) and content.startswith("data:image"):
+                                # base64 이미지 디코딩
+                                import base64
+                                image_base64 = content.split(",")[1]  # data:image/png;base64, 제거
+                                return base64.b64decode(image_base64)
+                            elif isinstance(content, str) and content.startswith("http"):
+                                # URL에서 이미지 다운로드
+                                async with session.get(content) as img_response:
+                                    if img_response.status == 200:
+                                        return await img_response.read()
+                                    else:
+                                        logger.error(f"❌ [Image] 이미지 다운로드 실패: {img_response.status}")
+                                        return None
+                        else:
+                            logger.error("❌ [Image] OpenRouter API 응답 형식이 잘못되었습니다.")
+                            return None
                     else:
-                        logger.error("❌ [Image] Nanobana API 응답에 이미지 데이터가 없습니다.")
+                        logger.error("❌ [Image] OpenRouter API 응답에 이미지 데이터가 없습니다.")
                         return None
                         
         except asyncio.TimeoutError:
-            logger.error("❌ [Image] Nanobana API 타임아웃")
+            logger.error("❌ [Image] OpenRouter API 타임아웃")
             return None
         except Exception as e:
-            logger.error(f"❌ [Image] Nanobana API 호출 실패: {e}")
+            logger.error(f"❌ [Image] OpenRouter API 호출 실패: {e}")
             return None
     
     async def _upload_to_s3(
