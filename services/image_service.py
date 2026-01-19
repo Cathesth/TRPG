@@ -9,7 +9,6 @@ import uuid
 from datetime import datetime
 from typing import Optional, Dict, Any
 from google import genai
-from google.genai.types import GenerateImageConfig, GenerateImageRequest
 
 from core.s3_client import get_s3_client
 
@@ -90,16 +89,16 @@ class ImageService:
 
             logger.info(f"🔄 [Image] API 호출: model={self.model_name}, aspect_ratio={aspect_ratio}")
 
-            # 이미지 생성 요청 (올바른 메서드 사용)
+            # 이미지 생성 요청 (dict로 config 전달)
             response = self.client.models.generate_images(
                 model=self.model_name,
                 prompt=prompt,
-                config=GenerateImageConfig(
-                    number_of_images=1,
-                    aspect_ratio=aspect_ratio,
-                    safety_filter_level="block_some",
-                    person_generation="allow_adult"
-                )
+                config={
+                    "number_of_images": 1,
+                    "aspect_ratio": aspect_ratio,
+                    "safety_filter_level": "block_some",
+                    "person_generation": "allow_adult"
+                }
             )
 
             # 결과 확인
