@@ -172,15 +172,14 @@
 
         /* Custom block cursor */
         .custom-cursor {
-            position: absolute;
-            width: 10px;
-            height: 20px;
+            position: fixed;
+            width: 8px;
+            height: 18px;
             background: #FFFACD;
             pointer-events: none;
             animation: cursor-blink 1s step-end infinite;
-            z-index: 10;
-            top: 50%;
-            transform: translateY(-50%);
+            z-index: 10000;
+            box-shadow: 0 0 3px #FFFACD;
         }
 
         @keyframes cursor-blink {
@@ -551,19 +550,31 @@
     // 커스텀 커서 요소 생성
     const cursor = document.createElement('div');
     cursor.className = 'custom-cursor';
-    input.parentElement.appendChild(cursor);
+    document.body.appendChild(cursor);
 
     // 커서 위치 업데이트 함수
     function updateCursorPosition() {
         const inputRect = input.getBoundingClientRect();
+        const style = window.getComputedStyle(input);
+        const fontSize = parseFloat(style.fontSize);
+        const lineHeight = parseFloat(style.lineHeight);
+        const paddingTop = parseFloat(style.paddingTop);
+        const paddingLeft = parseFloat(style.paddingLeft);
+
         const textWidth = getTextWidth(input.value.substring(0, input.selectionStart), input);
 
-        // 입력창 내부 패딩 고려 (px-4 = 16px)
-        const leftPosition = inputRect.left + 16 + textWidth;
+        // 텍스트 라인의 실제 높이 계산
+        const textHeight = lineHeight || fontSize * 1.5;
+        const cursorHeight = Math.min(18, textHeight);
+
+        // 입력창 내부 중앙 정렬
+        const verticalCenter = inputRect.top + paddingTop + (inputRect.height - paddingTop - parseFloat(style.paddingBottom)) / 2;
+        const topPosition = verticalCenter - cursorHeight / 2;
+        const leftPosition = inputRect.left + paddingLeft + textWidth;
 
         cursor.style.left = leftPosition + 'px';
-        cursor.style.top = inputRect.top + 'px';
-        cursor.style.height = (inputRect.height - 16) + 'px';
+        cursor.style.top = topPosition + 'px';
+        cursor.style.height = cursorHeight + 'px';
     }
 
     // 텍스트 너비 계산
