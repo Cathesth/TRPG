@@ -90,7 +90,7 @@ class ImageService:
             logger.info(f"🔄 [Image] API 호출: model={self.model_name}, aspect_ratio={aspect_ratio}")
 
             # 이미지 생성 요청 (dict로 config 전달)
-            response = self.client.models.generate_images(
+            response = self.client.generate_images(
                 model=self.model_name,
                 prompt=prompt,
                 config={
