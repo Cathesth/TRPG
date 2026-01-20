@@ -871,38 +871,13 @@ def rule_node(state: PlayerState):
         # ========================================
         npc_state = world_state.get_npc_state(target_npc)
         if npc_state and npc_state.get('status') == 'dead':
-            logger.info(f"💀 [COMBAT] {target_npc} is dead, blocking NPC dialogue")
+            logger.info(f"💀 [COMBAT] {target_npc} is dead, blocking further attacks")
 
-            # ========================================
-            # 💰 NPC 드랍 아이템 시스템
-            # ========================================
-            # 시나리오에서 NPC 데이터 조회
-            scenario_data = get_scenario_by_id(scenario_id)
-            npcs_data = scenario_data.get('npcs', [])
-
-            # 해당 NPC의 drop_items 확인
-            for npc_data in npcs_data:
-                if npc_data.get('name') == target_npc:
-                    drop_items = npc_data.get('drop_items', [])
-
-                    if drop_items and isinstance(drop_items, list):
-                        # 아이템 드랍 처리
-                        for item_name in drop_items:
-                            world_state._add_item(item_name)
-                            logger.info(f"💰 [LOOT] {target_npc} dropped item: '{item_name}'")
-
-                        # system_message에 전리품 정보 추가
-                        items_text = ', '.join(drop_items)
-                        loot_message = f"\n💰 전리품: {target_npc}에게서 [{items_text}]을(를) 획득했습니다!"
-                        state['system_message'] += loot_message
-
-                        # narrative_history에 기록
-                        world_state.add_narrative_event(f"{target_npc} 처치 후 전리품 [{items_text}] 획득")
-
-                        logger.info(f"💰 [LOOT] Total items dropped from {target_npc}: {len(drop_items)}")
-                    else:
-                        logger.info(f"💰 [LOOT] No items to drop from {target_npc}")
-                    break
+            # 이미 죽은 NPC 공격 시 메시지
+            sys_msg.append(f"⚠️ {target_npc}은(는) 이미 사망했습니다.")
+            state['system_message'] = " | ".join(sys_msg)
+            state['world_state'] = world_state.to_dict()
+            return state
 
         # (c) 데미지 산정 (random 10~20)
         damage = random.randint(10, 20)
@@ -912,6 +887,53 @@ def rule_node(state: PlayerState):
         combat_result = world_state.damage_npc(target_npc, damage)
 
         logger.info(f"⚔️ [COMBAT] Result: {combat_result}")
+
+        # ========================================
+        # 💰 [전리품 시스템] NPC HP가 0 이하가 되어 status='dead'로 변경된 경우 drop_items 처리
+        # ========================================
+        npc_state_after = world_state.get_npc_state(target_npc)
+        if npc_state_after and npc_state_after.get('status') == 'dead':
+            logger.info(f"💀 [LOOT] {target_npc} has died, checking for loot...")
+
+            # 시나리오에서 NPC 데이터 조회
+            scenario_data = get_scenario_by_id(scenario_id)
+            npcs_data = scenario_data.get('npcs', [])
+
+            # npcs가 딕셔너리 형태일 수도 있으므로 안전하게 처리
+            if isinstance(npcs_data, dict):
+                npcs_data = list(npcs_data.values())
+
+            # 해당 NPC의 drop_items 확인
+            dropped_items = []
+            for npc_data in npcs_data:
+                if not isinstance(npc_data, dict):
+                    continue
+
+                if npc_data.get('name') == target_npc:
+                    drop_items = npc_data.get('drop_items', [])
+
+                    if drop_items and isinstance(drop_items, list):
+                        # 아이템 드랍 처리
+                        for item_name in drop_items:
+                            world_state._add_item(item_name)
+                            dropped_items.append(item_name)
+                            logger.info(f"💰 [LOOT] {target_npc} dropped item: '{item_name}'")
+
+                        # player_vars의 inventory도 동기화
+                        state['player_vars']['inventory'] = world_state.player["inventory"].copy()
+
+                        logger.info(f"💰 [LOOT] Total items dropped from {target_npc}: {len(drop_items)}")
+                    else:
+                        logger.info(f"💰 [LOOT] No items to drop from {target_npc}")
+                    break
+
+            # system_message에 전리품 정보 추가
+            if dropped_items:
+                items_text = ', '.join(dropped_items)
+                combat_result += f"\n💰 전투 승리! [{items_text}]을(를) 획득했습니다!"
+
+                # narrative_history에 기록
+                world_state.add_narrative_event(f"{target_npc} 처치 후 전리품 [{items_text}] 획득")
 
         # ========================================
         # 💥 작업 2: 플레이어 HP 동기화 - WorldState의 HP를 player_vars에 강제 동기화
@@ -953,7 +975,7 @@ def rule_node(state: PlayerState):
     # 🗑️ 아이템 버리기 의도 처리 (item_action)
     # ========================================
     if state['parsed_intent'] == 'item_action':
-        logger.info(f"🗑️ [ITEM_ACTION] Item discard/use intent detected in rule_node")
+        logger.info(f"🎒 [ITEM_ACTION] Item action intent detected in rule_node")
 
         # 유저 입력에서 아이템 이름 추출
         player_vars = state.get('player_vars', {})
@@ -962,6 +984,10 @@ def rule_node(state: PlayerState):
         # 버리기 키워드 확인
         discard_keywords = ['버리', '버려', '버린', '던져', '던지', '버렸', '폐기', '제거']
         is_discard_action = any(kw in user_action for kw in discard_keywords)
+
+        # ✅ 줍기 키워드 확인
+        pickup_keywords = ['줍', '습득', '챙긴', '획득', '가져', '집어', '주워']
+        is_pickup_action = any(kw in user_action for kw in pickup_keywords)
 
         if is_discard_action:
             # 인벤토리에서 아이템 찾기
@@ -989,6 +1015,38 @@ def rule_node(state: PlayerState):
             else:
                 sys_msg.append("⚠️ 버릴 아이템을 찾을 수 없습니다.")
                 logger.warning(f"⚠️ [ITEM_ACTION] Item not found in inventory. User input: '{user_action}'")
+
+        elif is_pickup_action:
+            # ✅ [아이템 줍기 로직] 시나리오에서 현재 씬의 아이템 찾기
+            scenario_data = get_scenario_by_id(scenario_id)
+            items_registry = scenario_data.get('items', [])
+
+            # 유저 입력에서 아이템 이름 추출 시도
+            item_to_pickup = None
+            for item_data in items_registry:
+                if isinstance(item_data, dict):
+                    item_name = item_data.get('name', '')
+                    if item_name and item_name in user_action:
+                        item_to_pickup = item_name
+                        break
+
+            if item_to_pickup:
+                # WorldState에 아이템 추가
+                world_state._add_item(item_to_pickup)
+
+                # player_vars에도 동기화
+                state['player_vars']['inventory'] = world_state.player["inventory"].copy()
+
+                # 시스템 메시지
+                sys_msg.append(f"📦 '{item_to_pickup}'을(를) 주웠습니다!")
+
+                # 서사 이벤트 기록
+                world_state.add_narrative_event(f"플레이어가 '{item_to_pickup}'을(를) 획득함")
+
+                logger.info(f"📦 [ITEM_ACTION] Item picked up: '{item_to_pickup}'")
+            else:
+                sys_msg.append("⚠️ 주울 수 있는 아이템이 보이지 않습니다.")
+                logger.warning(f"⚠️ [ITEM_ACTION] No item found to pick up. User input: '{user_action}'")
 
         # system_message 설정
         state['system_message'] = " | ".join(sys_msg)
