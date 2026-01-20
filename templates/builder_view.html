@@ -56,7 +56,7 @@
         ::-webkit-scrollbar-thumb { background: var(--pixel-border); border: 1px solid var(--bg-night-start); }
         ::-webkit-scrollbar-thumb:hover { background: var(--pixel-border-light); }
 
-        /* Pixel Borders (Box Shadow Hack for sharp corners) */
+        /* Pixel Borders */
         .pixel-box {
             background-color: rgba(19, 19, 32, 0.95);
             box-shadow:
@@ -65,9 +65,6 @@
                 0 -2px 0 0 var(--pixel-border),
                 0 2px 0 0 var(--pixel-border);
             margin: 2px;
-        }
-        .pixel-box-sm {
-            box-shadow: 0 0 0 2px var(--pixel-border);
         }
 
         /* Buttons & Inputs */
@@ -121,8 +118,6 @@
         }
         .node-ui:hover { border-color: var(--text-accent); z-index: 50; }
         .node-ui.selected { border-color: var(--color-success); box-shadow: 0 0 0 2px var(--color-success), 4px 4px 0px 0px rgba(0,0,0,0.5); z-index: 50; }
-
-        /* 연결 대상 후보 스타일 */
         .node-ui.connecting-target-candidate:hover {
             border-color: var(--color-success);
             cursor: crosshair !important;
@@ -142,7 +137,6 @@
     <script type="text/babel">
         const { useState, useRef, useEffect, useCallback, useMemo } = React;
 
-        // --- llm_factory.py 기반 AI 모델 리스트 ---
         const AVAILABLE_AI_MODELS = [
             { id: "openai/google/gemini-2.0-flash-001", name: "Gemini 2.0 Flash", provider: "Google" },
             { id: "openai/anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic" },
@@ -151,7 +145,6 @@
             { id: "openai/meta-llama/llama-3.1-405b-instruct", name: "Llama 3.1 405B", provider: "Meta" },
         ];
 
-        // --- 아이콘 (Memoized) ---
         const Icon = React.memo(({ name, size = 18, className = "" }) => {
             const ref = useRef(null);
             useEffect(() => {
@@ -169,7 +162,6 @@
             return <span ref={ref} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}></span>;
         });
 
-        // --- Node Item Component ---
         const NodeItem = React.memo(({ node, isSelected, isConnectSource, isCandidate, onMouseDown, onClick, onLinkClick, onDelete, onAudit }) => {
             const handleBodyClick = (e) => {
                 if (onClick) onClick(e, node.id);
@@ -214,7 +206,6 @@
             );
         });
 
-        // --- Edge Layer Component ---
         const EdgeLayer = React.memo(({ edges, nodes, connectSource, mousePos }) => {
             return (
                 <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
@@ -231,7 +222,6 @@
             );
         });
 
-        // --- 픽셀 모달 ---
         const Modal = ({ isOpen, title, onClose, children, footer }) => {
             if (!isOpen) return null;
             return (
@@ -250,18 +240,16 @@
             );
         };
 
-        // --- [복구됨] 컨버터 함수 (Legacy Data -> Nodes 변환) ---
+        // --- [FIX] 트리거 데이터 보존 컨버터 ---
         const convertScenesToNodes = (scenData) => {
             const nodes = [], edges = [];
             let yOffset = 50; const xBase = 400;
 
-            // 1. Start 노드 생성
             nodes.push({
                 id: 'start', type: 'start', x: 50, y: 50,
                 data: { label: scenData.title || '시나리오 설정', prologue: scenData.prologue || '', gm_notes: scenData.gm_notes || '', background: scenData.background || '' }
             });
 
-            // 2. Scene 노드 생성
             (scenData.scenes || []).forEach((s, idx) => {
                 nodes.push({
                     id: s.scene_id, type: 'scene', x: xBase, y: yOffset + (idx * 200),
@@ -271,7 +259,6 @@
                         background: s.background || '',
                         trigger: s.trigger || '',
                         ai_note: s.ai_note || '',
-                        // 이미지 필드 보존 확인
                         background_image: s.background_image || '',
                         npcs: (s.npcs || []).map(n => typeof n === 'string' ? {name:n} : n),
                         enemies: (s.enemies || []).map(e => typeof e === 'string' ? {name:e} : e),
@@ -280,7 +267,6 @@
                 });
             });
 
-            // 3. Ending 노드 생성
             const endingYStart = yOffset + ((scenData.scenes || []).length * 200);
             (scenData.endings || []).forEach((e, idx) => {
                 nodes.push({
@@ -289,7 +275,6 @@
                 });
             });
 
-            // 4. 연결선(Edge) 생성 - [핵심 수정] 트리거 데이터 보존
             (scenData.prologue_connects_to || []).forEach(targetId => edges.push({ id: `e-start-${targetId}`, source: 'start', target: targetId }));
 
             (scenData.scenes || []).forEach(s => {
@@ -299,8 +284,7 @@
                             id: `e-${s.scene_id}-${t.target_scene_id}-${i}`,
                             source: s.scene_id,
                             target: t.target_scene_id,
-                            // ⚠️ 여기가 수정됨: 트리거 텍스트를 data.label에 저장하여 보존
-                            data: { label: t.trigger || '' }
+                            data: { label: t.trigger || '' } // [중요] 트리거 텍스트 보존
                         });
                     }
                 });
@@ -320,7 +304,7 @@
             // Global Assets State
             const [globalNpcs, setGlobalNpcs] = useState([]);
             const [globalEnemies, setGlobalEnemies] = useState([]);
-            const [globalItems, setGlobalItems] = useState([]); // [추가] 아이템 상태
+            const [globalItems, setGlobalItems] = useState([]);
 
             // UI State
             const [isEditMode, setIsEditMode] = useState(false);
@@ -346,20 +330,21 @@
             const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
             const [auditState, setAuditState] = useState({ isOpen: false, isLoading: false, results: null, targetNodeId: null });
             const [imageGenState, setImageGenState] = useState({ isLoading: false, result: null });
-            // [추가] 이미지 생성 타겟 관리를 위한 State
-            const [genImgType, setGenImgType] = useState('background'); // 'background', 'npc', 'enemy', 'item'
-            const [targetIndex, setTargetIndex] = useState(-1); // 리스트 내 인덱스 (-1은 선택 안함)
 
-            // Lists for Modals
+            // [추가] 이미지 생성 타겟 상태
+            const [genImgType, setGenImgType] = useState('background');
+            const [targetIndex, setTargetIndex] = useState(-1);
+
+            // Lists
             const [presetList, setPresetList] = useState([]);
             const [dbNpcList, setDbNpcList] = useState([]);
-            const [dbItemList, setDbItemList] = useState([]); // [추가] DB 아이템 리스트
+            const [dbItemList, setDbItemList] = useState([]);
             const [userScenarios, setUserScenarios] = useState([]);
 
             const [selectedModel, setSelectedModel] = useState('openai/tngtech/deepseek-r1t2-chimera:free');
             const [history, setHistory] = useState({ past: [], future: [] });
 
-            // History Logic
+            // ... (History Logic: pushHistory, undo, redo - 동일)
             const pushHistory = useCallback(() => {
                 setHistory(curr => ({
                     past: [...curr.past, { nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) }],
@@ -407,22 +392,18 @@
                         let loadedNodes = scen.nodes || [];
                         let loadedEdges = scen.edges || [];
 
-                        // [추가] 아이템 데이터 로드
                         setGlobalItems(scen.items || []);
 
-                        // [중요] Legacy Data 변환 로직 복구
                         if ((!loadedNodes || loadedNodes.length === 0) && scen.scenes) {
                             const converted = convertScenesToNodes(scen);
                             loadedNodes = converted.nodes;
                             loadedEdges = converted.edges;
                         }
 
-                        // Normalize Nodes
                         if(loadedNodes) loadedNodes = loadedNodes.map(n => {
                             if(n.data) {
                                 if(n.data.npcs) n.data.npcs = n.data.npcs.map(x => typeof x === 'string' ? {name: x} : x);
                                 if(n.data.enemies) n.data.enemies = n.data.enemies.map(x => typeof x === 'string' ? {name: x} : x);
-                                // [추가] 아이템 정규화
                                 if(n.data.items) n.data.items = n.data.items.map(x => typeof x === 'string' ? {name: x} : x);
                             }
                             return n;
@@ -436,194 +417,7 @@
                 } catch (e) { showToast("로드 실패: " + e.message, "error"); }
             };
 
-            // Actions
-            const addNode = (type) => {
-                pushHistory();
-                const id = `${type}-${Date.now()}`;
-                const newData = type === 'scene'
-                    ? { title: '새 장면', description: '', trigger: '', ai_note: '', npcs: [], enemies: [], items: [] }
-                    : { title: '새 엔딩', description: '', ai_note: '' };
-                setNodes(prev => [...prev, { id, type, x: -pan.x/pan.zoom + 200, y: -pan.y/pan.zoom + 200, data: newData }]);
-            };
-
-            const deleteNode = useCallback((id) => {
-                if (id === 'start') return showToast("시작 노드는 삭제할 수 없습니다.", "error");
-                if (edges.some(e => e.source === id || e.target === id) && !confirm("연결된 선이 있습니다. 삭제하시겠습니까?")) return;
-                pushHistory();
-                setNodes(prev => prev.filter(n => n.id !== id));
-                setEdges(prev => prev.filter(e => e.source !== id && e.target !== id));
-                setSelectedNodeId(null);
-            }, [edges, pushHistory]);
-
-            const updateNodeData = useCallback((id, key, value) => {
-                setNodes(prev => prev.map(n => n.id === id ? { ...n, data: { ...n.data, [key]: value } } : n));
-            }, []);
-
-            const handleLinkClick = useCallback((e, nodeId) => {
-                e.stopPropagation();
-                if (connectSource === null) {
-                    setConnectSource(nodeId);
-                    showToast("연결할 대상 노드를 클릭하세요", "info");
-                } else {
-                    if (connectSource === nodeId) {
-                        setConnectSource(null); showToast("연결 취소", "info");
-                    } else {
-                        if (!edges.some(eg => eg.source === connectSource && eg.target === nodeId)) {
-                            pushHistory();
-                            setEdges(prev => [...prev, { id: `e-${Date.now()}`, source: connectSource, target: nodeId }]);
-                            showToast("연결되었습니다!", "success");
-                        }
-                        setConnectSource(null);
-                    }
-                }
-            }, [connectSource, edges, pushHistory]);
-
-            const handleNodeBodyClick = useCallback((e, nodeId) => {
-                e.stopPropagation();
-                if (connectSource) {
-                    if (connectSource === nodeId) {
-                        setConnectSource(null); showToast("연결 취소", "info");
-                    } else {
-                        if (!edges.some(eg => eg.source === connectSource && eg.target === nodeId)) {
-                            pushHistory();
-                            setEdges(prev => [...prev, { id: `e-${Date.now()}`, source: connectSource, target: nodeId }]);
-                            showToast("연결 성공", "success");
-                        }
-                        setConnectSource(null);
-                    }
-                } else {
-                    setSelectedNodeId(nodeId);
-                }
-            }, [connectSource, edges, pushHistory]);
-
-            const handleCanvasClick = (e) => {
-                if (connectSource && !e.target.closest('.node-ui')) {
-                    setConnectSource(null); showToast("연결 대기 취소됨", "info");
-                }
-            };
-
-            // Canvas Interaction
-            const handleMouseDown = useCallback((e) => {
-                if (e.target.closest('.node-ui')) return;
-                if (e.button === 0 || e.button === 1) setIsPanning(true);
-            }, []);
-
-            const handleMouseMove = useCallback((e) => {
-                const rect = canvasRef.current.getBoundingClientRect();
-                const x = (e.clientX - rect.left - pan.x) / pan.zoom;
-                const y = (e.clientY - rect.top - pan.y) / pan.zoom;
-                setMousePos({ x, y });
-                if (isPanning) {
-                    setPan(p => ({ ...p, x: p.x + e.movementX, y: p.y + e.movementY }));
-                } else if (dragNode) {
-                    setNodes(prev => prev.map(n => n.id === dragNode ? { ...n, x, y } : n));
-                }
-            }, [isPanning, dragNode, pan]);
-
-            const handleMouseUp = () => {
-                if (dragNode) pushHistory();
-                setIsPanning(false); setDragNode(null);
-            };
-
-            const handleNodeDragStart = useCallback((e, id) => {
-                if (connectSource) return;
-                setDragNode(id); setSelectedNodeId(id);
-            }, [connectSource]);
-
-            // Helpers
-            const showToast = (msg, type) => {
-                setToast({ show: true, msg, type });
-                setTimeout(() => setToast({ show: false, msg: '', type: 'info' }), 3000);
-            };
-
-            // [수정] 아이템/NPC 추가 함수 (범용)
-            const addEntityToNode = useCallback((id, key, entity) => {
-                setNodes(prev => prev.map(n => {
-                    if (n.id === id) {
-                        const list = n.data[key] || [];
-                        if (list.some(e => e.name === entity.name)) return n;
-                        return { ...n, data: { ...n.data, [key]: [...list, entity] } };
-                    } return n;
-                }));
-            }, []);
-
-            const removeEntityFromNode = useCallback((id, key, idx) => {
-                setNodes(prev => prev.map(n => n.id === id ? { ...n, data: { ...n.data, [key]: (n.data[key]||[]).filter((_,i)=>i!==idx) } } : n));
-            }, []);
-
-            // [추가] 이미지 URL 헬퍼
-            const getImageUrl = (url) => {
-                if (!url) return '';
-                // 이미지를 백엔드 프록시 태워서 가져옴 (인코딩 필수)
-                return `/image/serve/${encodeURIComponent(url)}`;
-            };
-
-            // API Calls
-            const saveDraft = async () => {
-                if (!scenarioId) return;
-                try {
-                    await fetch(`/api/draft/${scenarioId}/save`, {
-                        method: 'POST', headers: {'Content-Type': 'application/json'},
-                        // [추가] items 포함 저장
-                        body: JSON.stringify({ nodes, edges, npcs: [...globalNpcs, ...globalEnemies], items: globalItems })
-                    });
-                    setIsDraft(true); showToast("저장 완료", "success");
-                } catch(e) { showToast("저장 실패", "error"); }
-            };
-
-            const publishScenario = async () => {
-                if(!confirm("반영하시겠습니까?")) return;
-                try {
-                    await fetch(`/api/draft/${scenarioId}/publish`, { method: 'POST' });
-                    setIsDraft(false); showToast("반영 완료", "success");
-                } catch(e) { showToast("반영 실패", "error"); }
-            };
-
-            const generateNewScenario = async () => {
-                if (nodes.length < 2) return showToast("최소 2개의 노드 필요", "error");
-                setIsGenerating(true);
-                try {
-                    const res = await fetch('/api/init_game', {
-                        method: 'POST', headers: {'Content-Type': 'application/json'},
-                        // [추가] items 포함
-                        body: JSON.stringify({ nodes, edges, npcs: [...globalNpcs, ...globalEnemies], items: globalItems, model: selectedModel, title: nodes[0].data.label })
-                    });
-                    const json = await res.json();
-                    if(json.filename) window.location.href = `/views/scenes/edit/${json.filename}`;
-                    else throw new Error(json.error);
-                } catch(e) { showToast(e.message, "error"); setIsGenerating(false); }
-            };
-
-            const runAiAudit = async (nodeId = null) => {
-                setAuditState({ isOpen: true, isLoading: true, results: null, targetNodeId: nodeId });
-                try {
-                    const res = await fetch('/api/audit/scene', {
-                        method: 'POST', headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ scenario: { nodes, edges }, scene_id: nodeId, model: selectedModel })
-                    });
-                    const json = await res.json();
-                    if(json.success && json.result) {
-                        const r = json.result;
-                        const issues = [...(r.coherence?.issues||[]), ...(r.trigger?.issues||[])];
-                        setAuditState(prev => ({ ...prev, isLoading: false, results: { issues, summary: json.summary } }));
-                    } else throw new Error(json.error);
-                } catch(e) { showToast("검수 실패", "error"); setAuditState(p=>({...p, isOpen:false})); }
-            };
-
-            const applySuggestion = (issue) => {
-                if (!issue.scene_id) return;
-                const targetId = issue.scene_id;
-                const suggestionText = `\n[${new Date().toLocaleTimeString()} AI 제안]\n문제: ${issue.message}\n제안: ${issue.suggestion}\n`;
-                setNodes(prev => prev.map(n => {
-                    if (n.id === targetId || n.data.title === targetId) {
-                        return { ...n, data: { ...n.data, ai_note: (n.data.ai_note || "") + suggestionText } };
-                    }
-                    return n;
-                }));
-                showToast(`"${targetId}" 씬의 AI 노트에 추가됨`, "success");
-            };
-
-            // [수정] 이미지 생성 및 저장 로직 (개별 대상 저장 지원)
+            // [수정] 이미지 생성 및 저장 로직 (개별 대상 저장)
             const generateImage = async (imageType, description) => {
                 setImageGenState({ isLoading: true, result: null });
                 try {
@@ -648,23 +442,20 @@
                                 if (n.id !== selectedNodeId) return n;
                                 const newData = { ...n.data };
 
-                                // 1. 씬 배경일 경우
                                 if (imageType === 'background') {
                                     newData.background_image = json.data.image_url;
                                 }
-                                // 2. NPC/적/아이템 리스트의 특정 항목일 경우
                                 else if (targetIndex >= 0) {
                                     let listKey = '';
                                     if (imageType === 'npc') listKey = 'npcs';
                                     else if (imageType === 'enemy') listKey = 'enemies';
                                     else if (imageType === 'item') listKey = 'items';
 
-                                    // 해당 리스트가 있고 인덱스가 유효하면 이미지 속성 업데이트
                                     if (listKey && newData[listKey] && newData[listKey][targetIndex]) {
-                                        const list = [...newData[listKey]]; // 불변성 유지를 위해 복사
+                                        const list = [...newData[listKey]];
                                         list[targetIndex] = {
                                             ...list[targetIndex],
-                                            image: json.data.image_url // 'image' 필드에 URL 저장
+                                            image: json.data.image_url
                                         };
                                         newData[listKey] = list;
                                     }
@@ -679,6 +470,150 @@
                 }
             };
 
+            // Actions, Node/Link Handlers ... (생략 없이 포함)
+            const addNode = (type) => {
+                pushHistory();
+                const id = `${type}-${Date.now()}`;
+                const newData = type === 'scene'
+                    ? { title: '새 장면', description: '', trigger: '', ai_note: '', npcs: [], enemies: [], items: [] }
+                    : { title: '새 엔딩', description: '', ai_note: '' };
+                setNodes(prev => [...prev, { id, type, x: -pan.x/pan.zoom + 200, y: -pan.y/pan.zoom + 200, data: newData }]);
+            };
+            const deleteNode = useCallback((id) => {
+                if (id === 'start') return showToast("시작 노드는 삭제할 수 없습니다.", "error");
+                if (edges.some(e => e.source === id || e.target === id) && !confirm("연결된 선이 있습니다. 삭제하시겠습니까?")) return;
+                pushHistory();
+                setNodes(prev => prev.filter(n => n.id !== id));
+                setEdges(prev => prev.filter(e => e.source !== id && e.target !== id));
+                setSelectedNodeId(null);
+            }, [edges, pushHistory]);
+            const updateNodeData = useCallback((id, key, value) => {
+                setNodes(prev => prev.map(n => n.id === id ? { ...n, data: { ...n.data, [key]: value } } : n));
+            }, []);
+            const handleLinkClick = useCallback((e, nodeId) => {
+                e.stopPropagation();
+                if (connectSource === null) { setConnectSource(nodeId); showToast("연결할 대상 노드를 클릭하세요", "info"); }
+                else {
+                    if (connectSource === nodeId) { setConnectSource(null); showToast("연결 취소", "info"); }
+                    else {
+                        if (!edges.some(eg => eg.source === connectSource && eg.target === nodeId)) {
+                            pushHistory();
+                            setEdges(prev => [...prev, { id: `e-${Date.now()}`, source: connectSource, target: nodeId }]);
+                            showToast("연결되었습니다!", "success");
+                        }
+                        setConnectSource(null);
+                    }
+                }
+            }, [connectSource, edges, pushHistory]);
+            const handleNodeBodyClick = useCallback((e, nodeId) => {
+                e.stopPropagation();
+                if (connectSource) {
+                    if (connectSource === nodeId) { setConnectSource(null); showToast("연결 취소", "info"); }
+                    else {
+                        if (!edges.some(eg => eg.source === connectSource && eg.target === nodeId)) {
+                            pushHistory();
+                            setEdges(prev => [...prev, { id: `e-${Date.now()}`, source: connectSource, target: nodeId }]);
+                            showToast("연결되었습니다!", "success");
+                        }
+                        setConnectSource(null);
+                    }
+                } else { setSelectedNodeId(nodeId); }
+            }, [connectSource, edges, pushHistory]);
+            const handleCanvasClick = (e) => {
+                if (connectSource && !e.target.closest('.node-ui')) { setConnectSource(null); showToast("연결 대기 취소됨", "info"); }
+            };
+            const handleMouseDown = useCallback((e) => {
+                if (e.target.closest('.node-ui')) return;
+                if (e.button === 0 || e.button === 1) setIsPanning(true);
+            }, []);
+            const handleMouseMove = useCallback((e) => {
+                const rect = canvasRef.current.getBoundingClientRect();
+                const x = (e.clientX - rect.left - pan.x) / pan.zoom;
+                const y = (e.clientY - rect.top - pan.y) / pan.zoom;
+                setMousePos({ x, y });
+                if (isPanning) { setPan(p => ({ ...p, x: p.x + e.movementX, y: p.y + e.movementY })); }
+                else if (dragNode) { setNodes(prev => prev.map(n => n.id === dragNode ? { ...n, x, y } : n)); }
+            }, [isPanning, dragNode, pan]);
+            const handleMouseUp = () => { if (dragNode) pushHistory(); setIsPanning(false); setDragNode(null); };
+            const handleNodeDragStart = useCallback((e, id) => { if (connectSource) return; setDragNode(id); setSelectedNodeId(id); }, [connectSource]);
+            const showToast = (msg, type) => {
+                setToast({ show: true, msg, type });
+                setTimeout(() => setToast({ show: false, msg: '', type: 'info' }), 3000);
+            };
+            const addEntityToNode = useCallback((id, key, entity) => {
+                setNodes(prev => prev.map(n => {
+                    if (n.id === id) {
+                        const list = n.data[key] || [];
+                        if (list.some(e => e.name === entity.name)) return n;
+                        return { ...n, data: { ...n.data, [key]: [...list, entity] } };
+                    } return n;
+                }));
+            }, []);
+            const removeEntityFromNode = useCallback((id, key, idx) => {
+                setNodes(prev => prev.map(n => n.id === id ? { ...n, data: { ...n.data, [key]: (n.data[key]||[]).filter((_,i)=>i!==idx) } } : n));
+            }, []);
+            const getImageUrl = (url) => {
+                if (!url) return '';
+                if (url.startsWith('http') || url.startsWith('https')) return `/image/serve/${encodeURIComponent(url)}`;
+                return `/image/serve/${encodeURIComponent(url)}`;
+            };
+            const saveDraft = async () => {
+                if (!scenarioId) return;
+                try {
+                    await fetch(`/api/draft/${scenarioId}/save`, {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ nodes, edges, npcs: [...globalNpcs, ...globalEnemies], items: globalItems })
+                    });
+                    setIsDraft(true); showToast("저장 완료", "success");
+                } catch(e) { showToast("저장 실패", "error"); }
+            };
+            const publishScenario = async () => {
+                if(!confirm("반영하시겠습니까?")) return;
+                try {
+                    await fetch(`/api/draft/${scenarioId}/publish`, { method: 'POST' });
+                    setIsDraft(false); showToast("반영 완료", "success");
+                } catch(e) { showToast("반영 실패", "error"); }
+            };
+            const generateNewScenario = async () => {
+                if (nodes.length < 2) return showToast("최소 2개의 노드 필요", "error");
+                setIsGenerating(true);
+                try {
+                    const res = await fetch('/api/init_game', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ nodes, edges, npcs: [...globalNpcs, ...globalEnemies], items: globalItems, model: selectedModel, title: nodes[0].data.label })
+                    });
+                    const json = await res.json();
+                    if(json.filename) window.location.href = `/views/scenes/edit/${json.filename}`;
+                    else throw new Error(json.error);
+                } catch(e) { showToast(e.message, "error"); setIsGenerating(false); }
+            };
+            const runAiAudit = async (nodeId = null) => {
+                setAuditState({ isOpen: true, isLoading: true, results: null, targetNodeId: nodeId });
+                try {
+                    const res = await fetch('/api/audit/scene', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ scenario: { nodes, edges }, scene_id: nodeId, model: selectedModel })
+                    });
+                    const json = await res.json();
+                    if(json.success && json.result) {
+                        const r = json.result;
+                        const issues = [...(r.coherence?.issues||[]), ...(r.trigger?.issues||[])];
+                        setAuditState(prev => ({ ...prev, isLoading: false, results: { issues, summary: json.summary } }));
+                    } else throw new Error(json.error);
+                } catch(e) { showToast("검수 실패", "error"); setAuditState(p=>({...p, isOpen:false})); }
+            };
+            const applySuggestion = (issue) => {
+                if (!issue.scene_id) return;
+                const targetId = issue.scene_id;
+                const suggestionText = `\n[${new Date().toLocaleTimeString()} AI 제안]\n문제: ${issue.message}\n제안: ${issue.suggestion}\n`;
+                setNodes(prev => prev.map(n => {
+                    if (n.id === targetId || n.data.title === targetId) {
+                        return { ...n, data: { ...n.data, ai_note: (n.data.ai_note || "") + suggestionText } };
+                    }
+                    return n;
+                }));
+                showToast(`"${targetId}" 씬의 AI 노트에 추가됨`, "success");
+            };
             const loadPreset = (preset) => {
                 if(!confirm("현재 내용이 사라집니다. 적용하시겠습니까?")) return;
                 try {
@@ -689,7 +624,7 @@
                 } catch(e) { showToast("프리셋 오류", "error"); }
             };
 
-            // [메시지 수신 핸들러 추가 - 중요!]
+            // 메시지 핸들러
             useEffect(() => {
                 const handleMessage = (event) => {
                     if (event.data.type === 'ADD_NPC') {
@@ -753,7 +688,7 @@
                             <button onClick={() => setModals(m => ({ ...m, npcGen: true }))} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#00FFFF]"><Icon name="user-plus"/> NPC 생성</button>
                             <button onClick={async () => { try { const res = await fetch('/api/npc/list'); const data = await res.json(); setDbNpcList(data); setModals(m=>({...m, npcList:true})); } catch(e){} }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs"><Icon name="users"/> NPC 불러오기</button>
 
-                            {/* [추가] 아이템 관련 버튼 */}
+                            {/* [수정] 아이템 생성: NPC 모달을 열고 탭 전환 신호 보냄 */}
                             <button onClick={() => {
                                 setModals(m => ({ ...m, npcGen: true }));
                                 setTimeout(() => {
@@ -771,9 +706,7 @@
                                 <button onClick={redo} className="pixel-btn flex-1 py-2 text-[#6A6A8A]" title="다시하기"><Icon name="redo-2"/></button>
                             </div>
                             <button onClick={async () => { try { const res = await fetch('/api/presets'); const data = await res.json(); setPresetList(data); setModals(m=>({...m, presetLoad:true})); } catch(e){} }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2"><Icon name="folder-open"/> 프리셋 로드</button>
-
-                            {/* [수정] 시나리오 목록 불러오기 */}
-                            <button onClick={async () => { try { const res = await fetch('/api/scenarios/data?filter=my'); const data = await res.json(); setUserScenarios(data); setModals(m=>({...m, scenarioList:true})); } catch(e){ showToast("목록 로드 실패", "error"); } }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2"><Icon name="file-edit"/> 시나리오 로드</button>
+                            <button onClick={async () => { try { const res = await fetch('/api/scenarios/data?filter=my'); const data = await res.json(); setUserScenarios(data); setModals(m=>({...m, scenarioList:true})); } catch(e){} }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2"><Icon name="file-edit"/> 시나리오 로드</button>
                         </div>
                         <div className="p-4 border-t-2 border-[#4A4A6A] bg-[#0B0B19]">
                             <div className="mb-3">
@@ -817,10 +750,8 @@
                                     onLinkClick={handleLinkClick}
                                     onDelete={deleteNode}
                                     onAudit={runAiAudit}
-                                    // [추가] Global Assets Props Pass
                                     globalNpcs={globalNpcs}
                                     globalEnemies={globalEnemies}
-                                    // globalItems는 NodeItem 내부에서 직접 쓰진 않고, Panel에서 쓰지만 통일성 위해
                                 />
                             ))}
                         </div>
@@ -934,6 +865,7 @@
                                                   value={node.data.ai_note || ''} readOnly></textarea>
                                     </div>
 
+                                    {/* [수정됨] AI 이미지 생성 및 미리보기 패널 */}
                                     <div className="mt-4 pt-4 border-t-2 border-[#4A4A6A]">
                                         <label className="text-[10px] text-[#6A6A8A] block mb-1 flex items-center gap-1 font-bold">
                                             <Icon name="image" size={12}/> AI 이미지 생성
@@ -987,7 +919,7 @@
                                                 );
                                             })()}
 
-                                            {/* 3. 현재 적용된 이미지 미리보기 (이 부분이 핵심!) */}
+                                            {/* 3. 현재 적용된 이미지 미리보기 */}
                                             {(() => {
                                                 const node = nodes.find(n => n.id === selectedNodeId);
                                                 let currentImageUrl = null;
@@ -1072,6 +1004,13 @@
                                             </button>
                                         </div>
                                     </div>
+
+                                    <div className="grid grid-cols-2 gap-2 pt-4">
+                                        <button onClick={() => runAiAudit(node.id)} className="pixel-btn py-2 text-xs col-span-2 text-[#6366f1] border-[#6366f1]"><Icon name="brain-circuit"/> 씬 검수</button>
+                                        {!isStart && <button onClick={() => deleteNode(node.id)} className="pixel-btn py-2 text-xs col-span-2 text-[#FF007F] border-[#FF007F]"><Icon name="trash-2"/> 삭제</button>}
+                                    </div>
+                                </div>
+                            );
                         })() : (
                             <div className="h-full flex flex-col items-center justify-center text-[#6A6A8A] gap-4">
                                 <Icon name="mouse-pointer-2" size={48} className="opacity-50"/>
@@ -1120,7 +1059,7 @@
                                 userScenarios.map(s => (
                                     <div key={s.id} onClick={() => window.location.href=`/views/scenes/edit/${s.filename}` }
                                          className="p-4 bg-[#0B0B19] border border-[#4A4A6A] hover:border-[#00FFFF] cursor-pointer group transition-all">
-                                        <div className="font-bold text-[#FFFACD] group-hover:text-white">{s.title || '제목 없음'}</div>
+                                        <div className="font-bold text-[#FFFACD] group-hover:text-white">{s.title}</div>
                                         <div className="text-xs text-[#6A6A8A] mt-1 truncate">{s.prologue}</div>
                                     </div>
                                 ))
