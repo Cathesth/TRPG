@@ -250,6 +250,46 @@
             );
         };
 
+        // --- [복구됨] 컨버터 함수 (Legacy Data -> Nodes 변환) ---
+        const convertScenesToNodes = (scenData) => {
+            const nodes = [], edges = [];
+            let yOffset = 50; const xBase = 400;
+
+            nodes.push({
+                id: 'start', type: 'start', x: 50, y: 50,
+                data: { label: scenData.title || '시나리오 설정', prologue: scenData.prologue || '', gm_notes: scenData.gm_notes || '', background: scenData.background || '' }
+            });
+
+            (scenData.scenes || []).forEach((s, idx) => {
+                nodes.push({
+                    id: s.scene_id, type: 'scene', x: xBase, y: yOffset + (idx * 200),
+                    data: {
+                        title: s.title || s.name || s.scene_id, description: s.description || '', background: s.background || '',
+                        trigger: s.trigger || '', ai_note: s.ai_note || '',
+                        npcs: (s.npcs || []).map(n => typeof n === 'string' ? {name:n} : n),
+                        enemies: (s.enemies || []).map(e => typeof e === 'string' ? {name:e} : e),
+                        items: (s.items || []).map(i => typeof i === 'string' ? {name:i} : i)
+                    }
+                });
+            });
+
+            const endingYStart = yOffset + ((scenData.scenes || []).length * 200);
+            (scenData.endings || []).forEach((e, idx) => {
+                nodes.push({
+                    id: e.ending_id, type: 'ending', x: xBase + 400, y: endingYStart + (idx * 200),
+                    data: { title: e.title || '엔딩', description: e.description || '', background: e.background || '', ai_note: e.ai_note || '' }
+                });
+            });
+
+            (scenData.prologue_connects_to || []).forEach(targetId => edges.push({ id: `e-start-${targetId}`, source: 'start', target: targetId }));
+            (scenData.scenes || []).forEach(s => {
+                (s.transitions || []).forEach((t, i) => {
+                    if (t.target_scene_id) edges.push({ id: `e-${s.scene_id}-${t.target_scene_id}-${i}`, source: s.scene_id, target: t.target_scene_id });
+                });
+            });
+            return { nodes, edges };
+        };
+
         // --- 메인 컴포넌트 ---
         function ScenarioBuilder() {
             // Data State
@@ -349,9 +389,11 @@
                         // [추가] 아이템 데이터 로드
                         setGlobalItems(scen.items || []);
 
+                        // [중요] Legacy Data 변환 로직 복구
                         if ((!loadedNodes || loadedNodes.length === 0) && scen.scenes) {
-                            // Legacy Convert Logic (omitted for brevity, assume similar to before)
-                            // ...
+                            const converted = convertScenesToNodes(scen);
+                            loadedNodes = converted.nodes;
+                            loadedEdges = converted.edges;
                         }
 
                         // Normalize Nodes
@@ -663,7 +705,7 @@
                             <button onClick={() => setModals(m => ({ ...m, npcGen: true }))} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#00FFFF]"><Icon name="user-plus"/> NPC 생성</button>
                             <button onClick={async () => { try { const res = await fetch('/api/npc/list'); const data = await res.json(); setDbNpcList(data); setModals(m=>({...m, npcList:true})); } catch(e){} }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs"><Icon name="users"/> NPC 불러오기</button>
 
-                            {/* [수정] 아이템 생성: NPC 모달을 재활용하고 탭 전환 신호를 보냄 */}
+                            {/* [추가] 아이템 관련 버튼 */}
                             <button onClick={() => {
                                 setModals(m => ({ ...m, npcGen: true }));
                                 setTimeout(() => {
