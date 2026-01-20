@@ -448,7 +448,7 @@ SET
     "initial_state": {
       "hp": 100,
       "sanity": 80,
-      "Radiation": 0,
+      "radiation": 0,
       "inventory": [
         "녹슨 단검",
         "구식 방독면"
