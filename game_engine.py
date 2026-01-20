@@ -1191,7 +1191,7 @@ def rule_node(state: PlayerState):
                             if item_name not in inventory:
                                 inventory.append(item_name)
 
-                                # ✅ WorldState._add_item 호출로 인벤토리에 정상 반영
+                                # ✅ WorldState._add_item 호출로 레지스트리 기반 처리
                                 world_state._add_item(item_name)
 
                                 # ✅ 레지스트리에서 아이템 정보 조회 및 로깅
@@ -1203,12 +1203,18 @@ def rule_node(state: PlayerState):
                                 else:
                                     sys_msg.append(f"📦 획득: {item_name}")
                                     logger.warning(f"⚠️ [ITEM GAIN] '{item_name}' not in registry")
+
+                                # 서사 이벤트 기록
+                                world_state.add_narrative_event(f"플레이어가 '{item_name}'을(를) 획득했습니다.")
                             else:
                                 logger.debug(f"[ITEM GAIN] '{item_name}' already in inventory, skipped")
 
                         elif operation == "lose_item":
                             if item_name in inventory:
                                 inventory.remove(item_name)
+
+                                # ✅ WorldState._remove_item 호출로 레지스트리 기반 처리
+                                world_state._remove_item(item_name)
 
                                 # ✅ 레지스트리에서 아이템 정보 조회 및 로깅
                                 item_details = world_state.get_item_details(item_name)
@@ -1219,8 +1225,11 @@ def rule_node(state: PlayerState):
                                 else:
                                     sys_msg.append(f"🗑️ 사용: {item_name}")
                                     logger.warning(f"⚠️ [ITEM LOSE] '{item_name}' not in registry")
+
+                                # 서사 이벤트 기록
+                                world_state.add_narrative_event(f"플레이어가 '{item_name}'을(를) 사용/잃었습니다.")
                             else:
-                                logger.debug(f"[ITEM LOSE] '{item_name}' not in inventory, skipped")
+                                logger.warning(f"⚠️ [ITEM LOSE] Attempted to remove '{item_name}' but not in inventory")
 
                         state['player_vars']['inventory'] = inventory
 

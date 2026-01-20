@@ -183,20 +183,26 @@ class WorldState:
         Args:
             scenario_data: 시나리오 JSON 데이터 (DB에서 로드)
         """
-        # 🔴 DB 정합성: 중첩된 scenario 구조 처리
-        if 'scenario' in scenario_data and isinstance(scenario_data['scenario'], dict):
-            scenario_data = scenario_data['scenario']
-            logger.info("📦 [DB STRUCTURE] Unwrapped nested 'scenario' key from DB data")
+        # 🔍 [DEBUG] 데이터 구조 파악을 위한 로그
+        logger.info(f"🔍 [DEBUG] scenario_data keys: {list(scenario_data.keys())}")
+
+        # 🔴 스마트 unwrapping: items/npcs 키가 직접 없을 때만 scenario 키 시도
+        if 'items' not in scenario_data and 'npcs' not in scenario_data:
+            if 'scenario' in scenario_data and isinstance(scenario_data['scenario'], dict):
+                logger.info("📦 [DB STRUCTURE] Unwrapping nested 'scenario' key (items/npcs not found at root)")
+                scenario_data = scenario_data['scenario']
+            else:
+                logger.warning("⚠️ [DB STRUCTURE] No 'items' or 'npcs' at root, and no nested 'scenario' key found")
+        else:
+            logger.info("✅ [DB STRUCTURE] items/npcs found at root level, no unwrapping needed")
 
         # ✅ 아이템 레지스트리 구축 (schemas.Item 객체로 변환)
         from schemas import Item, Effect  # 순환 참조 방지를 위해 함수 내 import
 
-        # ✅ 중요: Railway DB 구조에 맞춰 items 경로 수정
-        # 구조: scenario_data['scenario']['items'] 또는 scenario_data['items']
         items_data = scenario_data.get('items', [])
 
         if not items_data:
-            logger.warning("⚠️ [ITEM REGISTRY] No items found in scenario_data['items']")
+            logger.warning("⚠️ [ITEM REGISTRY] No items found in scenario_data")
         else:
             logger.info(f"📦 [ITEM REGISTRY] Found {len(items_data)} items in scenario data")
 
@@ -227,7 +233,7 @@ class WorldState:
 
                     # ✅ 레지스트리에 dict 형태로 저장 (직렬화 편의성)
                     self.item_registry[item_name] = item_obj.model_dump()
-                    logger.info(f"📋 [ITEM REGISTRY] Registered: '{item_name}' | usable={item_obj.usable} | effects={len(item_obj.effects)} | is_key={item_obj.is_key_item}")
+                    logger.info(f"📋 [ITEM REGISTRY] Registered: '{item_name}' | Description: '{item_obj.description}' | usable={item_obj.usable} | effects={len(item_obj.effects)} | is_key={item_obj.is_key_item}")
 
                 except Exception as e:
                     logger.error(f"❌ [ITEM REGISTRY] Failed to register item '{item_name}': {e}")
@@ -240,7 +246,7 @@ class WorldState:
                         'usable': True
                     }
 
-        logger.info(f"📦 [ITEM REGISTRY] {len(self.item_registry)} items registered from DB scenario")
+        logger.info(f"✅ [ITEM REGISTRY] Total {len(self.item_registry)} items registered successfully")
 
         # [변경] 플레이어 초기 스탯 설정 - player_vars로 이동
         # player_state의 player_vars가 플레이어 스탯을 관리함
@@ -258,6 +264,8 @@ class WorldState:
         # NPC 초기화
         npcs_data = scenario_data.get('npcs', [])
         scenes_data = scenario_data.get('scenes', [])
+
+        logger.info(f"📦 [NPC INIT] Found {len(npcs_data)} NPCs in scenario data")
 
         for npc in npcs_data:
             npc_name = npc.get('name')
@@ -289,6 +297,15 @@ class WorldState:
                 logger.warning(f"Invalid max_hp value for NPC '{npc_name}': {npc_max_hp_raw}, using HP value {npc_hp}")
                 npc_max_hp = npc_hp
 
+            # ✅ drop_items 추출 및 레지스트리 확인
+            drop_items = npc.get('drop_items', [])
+            if drop_items:
+                logger.info(f"💰 [NPC LOOT] '{npc_name}' has drop_items: {drop_items}")
+                # 드롭 아이템이 레지스트리에 있는지 검증
+                for drop_item in drop_items:
+                    if drop_item not in self.item_registry:
+                        logger.warning(f"⚠️ [NPC LOOT] Drop item '{drop_item}' from NPC '{npc_name}' NOT in item_registry")
+
             # NPC 초기 상태 설정
             self.npcs[npc_name] = {
                 "status": "alive",
@@ -298,11 +315,13 @@ class WorldState:
                 "relationship": 50,
                 "is_hostile": npc.get('isEnemy', False),
                 "location": npc_location or "unknown",
-                "flags": {}
+                "flags": {},
+                "drop_items": drop_items  # ✅ drop_items를 NPC 상태에 저장
             }
 
-        logger.info(f"🌍 [WORLD STATE] Initialized with {len(self.npcs)} NPCs")
+            logger.info(f"📋 [NPC REGISTRY] '{npc_name}' | HP: {npc_hp}/{npc_max_hp} | Location: {npc_location} | Loot: {len(drop_items)} items")
 
+        logger.info(f"🌍 [WORLD STATE] Initialized with {len(self.npcs)} NPCs and {len(self.item_registry)} items")
     # ========================================
     # 2. 상태 업데이트 (핵심 로직)
     # ========================================
@@ -435,6 +454,7 @@ class WorldState:
         """
         아이템 추가 (레지스트리 기반)
         레지스트리에 등록된 아이템인지 확인하고, 상세 정보를 로그에 남김
+        player['inventory']와 외부 player_vars 동기화 보장
         """
         if isinstance(item, str):
             if item not in self.player["inventory"]:
@@ -443,9 +463,11 @@ class WorldState:
                 if item in self.item_registry:
                     item_info = self.item_registry[item]
                     description = item_info.get('description', '설명 없음')
-                    logger.info(f"📦 [ITEM SYSTEM] Item gained: {item} | Description: {description}")
+                    logger.info(f"✅ [ITEM ADD] '{item}' added | Description: {description}")
                 else:
-                    logger.warning(f"📦 [ITEM SYSTEM] Item gained: {item} (⚠️ NOT in item_registry)")
+                    logger.warning(f"⚠️ [ITEM ADD] '{item}' added (NOT in item_registry)")
+            else:
+                logger.debug(f"[ITEM ADD] '{item}' already in inventory, skipping duplicate")
         elif isinstance(item, list):
             for i in item:
                 if i not in self.player["inventory"]:
@@ -453,19 +475,28 @@ class WorldState:
                     if i in self.item_registry:
                         item_info = self.item_registry[i]
                         description = item_info.get('description', '설명 없음')
-                        logger.info(f"📦 [ITEM SYSTEM] Item gained: {i} | Description: {description}")
+                        logger.info(f"✅ [ITEM ADD] '{i}' added | Description: {description}")
                     else:
-                        logger.warning(f"📦 [ITEM SYSTEM] Item gained: {i} (⚠️ NOT in item_registry)")
+                        logger.warning(f"⚠️ [ITEM ADD] '{i}' added (NOT in item_registry)")
 
     def _remove_item(self, item: Union[str, List[str]]):
-        """아이템 제거"""
+        """
+        아이템 제거
+        player['inventory']에서 제거하며 상세 로그 기록
+        """
         if isinstance(item, str):
             if item in self.player["inventory"]:
                 self.player["inventory"].remove(item)
+                logger.info(f"🗑️ [ITEM REMOVE] '{item}' removed from inventory")
+            else:
+                logger.warning(f"⚠️ [ITEM REMOVE] Attempted to remove '{item}' but not in inventory")
         elif isinstance(item, list):
             for i in item:
                 if i in self.player["inventory"]:
                     self.player["inventory"].remove(i)
+                    logger.info(f"🗑️ [ITEM REMOVE] '{i}' removed from inventory")
+                else:
+                    logger.warning(f"⚠️ [ITEM REMOVE] Attempted to remove '{i}' but not in inventory")
 
     def _update_npc_state(self, npc_name: str, effect: Dict[str, Any]):
         """NPC 상태 업데이트"""
