@@ -410,9 +410,13 @@ def intent_parser_node(state: PlayerState) -> PlayerState:
     transitions = curr_scene.get('transitions', [])
     scene_type = curr_scene.get('type', 'normal')
     scene_title = curr_scene.get('title', 'Untitled')
-    # [FIX] 데이터 정규화: dict/str 모두 처리
+    # [FIX] 데이터 정규화: dict/str 모두 처리 - 이름만 추출
     npc_names = [n.get('name') if isinstance(n, dict) else n for n in curr_scene.get('npcs', [])]
     enemy_names = [e.get('name') if isinstance(e, dict) else e for e in curr_scene.get('enemies', [])]
+
+    # 빈 값이나 None 제거
+    npc_names = [n for n in npc_names if n]
+    enemy_names = [e for e in enemy_names if e]
 
     # =============================================================================
     # [작업 1] 하드코딩 기반 고우선순위 필터링 (최소화)
@@ -779,7 +783,15 @@ def rule_node(state: PlayerState):
 
         # target_npc가 없으면 현재 씬의 NPC/적 목록에서 추출 시도
         if not target_npc:
-            npc_list = curr_scene.get('npcs', []) + curr_scene.get('enemies', []) if curr_scene else []
+            # [FIX] 데이터 정규화: dict/str 모두 처리 - 이름만 추출
+            npcs_raw = curr_scene.get('npcs', []) if curr_scene else []
+            enemies_raw = curr_scene.get('enemies', []) if curr_scene else []
+
+            npc_list = [n.get('name') if isinstance(n, dict) else n for n in npcs_raw]
+            npc_list += [e.get('name') if isinstance(e, dict) else e for e in enemies_raw]
+
+            # 빈 값 제거
+            npc_list = [n for n in npc_list if n]
 
             # user_input에서 NPC 이름 매칭 시도
             for npc_name in npc_list:

@@ -668,8 +668,9 @@ class WorldState:
             npc_name = npc_name.get('name', '')
             logger.warning(f"⚠️ [GET_NPC_STATE] Received dict instead of str, extracted name: '{npc_name}'")
 
+        # 이름 추출 실패 시 None 반환 (시스템 다운 방지)
         if not npc_name or not isinstance(npc_name, str):
-            logger.warning(f"⚠️ [GET_NPC_STATE] Invalid npc_name: {npc_name}")
+            logger.warning(f"⚠️ [GET_NPC_STATE] Invalid npc_name: {npc_name}, returning None")
             return None
 
         return self.npcs.get(npc_name)
