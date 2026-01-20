@@ -10,26 +10,30 @@ class GlobalVariable(BaseModel):
     type: str = Field(default="int", description="int, boolean, string")
 
 
-class Item(BaseModel):
-    name: str = Field(description="Unique item name")
-    description: str = Field(description="Item flavor text")
-    is_key_item: bool = Field(default=False, description="If true, critical for progression")
-
-
-# --- Logic Components ---
-
-class Condition(BaseModel):
-    target: str = Field(description="Variable name OR Item name")
-    type: str = Field(description="'variable' or 'item'")
-    operator: str = Field(description=">, <, ==, >=, <=, has, not_has")
-    value: Any = Field(description="Comparison value (e.g., 50, true)")
-
+# --- Logic Components (Effect must be defined before Item) ---
 
 class Effect(BaseModel):
     target: str = Field(description="Variable name OR Item name")
     type: str = Field(description="'variable' or 'item'")
     operation: str = Field(description="add, subtract, set, gain_item, lose_item")
     value: Any
+
+
+class Item(BaseModel):
+    name: str = Field(description="Unique item name")
+    description: str = Field(description="Item flavor text")
+    is_key_item: bool = Field(default=False, description="If true, critical for progression")
+    effects: List[Effect] = Field(default=[], description="Effects when item is used")
+    usable: bool = Field(default=True, description="Whether the item can be used")
+
+
+# --- Logic Components (Condition remains here) ---
+
+class Condition(BaseModel):
+    target: str = Field(description="Variable name OR Item name")
+    type: str = Field(description="'variable' or 'item'")
+    operator: str = Field(description=">, <, ==, >=, <=, has, not_has")
+    value: Any = Field(description="Comparison value (e.g., 50, true)")
 
 
 # --- Scene Components (CHANGED) ---
@@ -53,6 +57,7 @@ class NPC(BaseModel):
     description: str = Field(description="Visual description")
     image_prompt: Optional[str] = Field(None, description="Prompt for generating NPC portrait")
     dialogue_style: str = Field(description="How they speak")
+    drop_items: List[str] = Field(default=[], description="Items dropped when NPC is defeated")
 
 
 class Scene(BaseModel):

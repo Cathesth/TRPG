@@ -847,26 +847,38 @@ def rule_node(state: PlayerState):
         # ========================================
         npc_state = world_state.get_npc_state(target_npc)
         if npc_state and npc_state.get('status') == 'dead':
-            logger.info(f"💀 [COMBAT BLOCKED] {target_npc} is already dead, cannot attack corpse")
+            logger.info(f"💀 [COMBAT] {target_npc} is dead, blocking NPC dialogue")
 
-            # 시체 공격 시도 메시지
-            state['system_message'] = f"💀 이미 차갑게 식어버린 시체입니다. 공격할 가치도 없습니다."
+            # ========================================
+            # 💰 NPC 드랍 아이템 시스템
+            # ========================================
+            # 시나리오에서 NPC 데이터 조회
+            scenario_data = get_scenario_by_id(scenario_id)
+            npcs_data = scenario_data.get('npcs', [])
 
-            # 데미지 계산 및 반격 로직 건너뛰기
-            state['world_state'] = world_state.to_dict()
-            state['npc_output'] = ""
+            # 해당 NPC의 drop_items 확인
+            for npc_data in npcs_data:
+                if npc_data.get('name') == target_npc:
+                    drop_items = npc_data.get('drop_items', [])
 
-            # ✅ 작업 1: attack 시도이므로 stuck_count 증가 (장면 이동 없음)
-            old_stuck_count = state.get('stuck_count', 0)
-            state['stuck_count'] = old_stuck_count + 1
-            world_state.stuck_count = state['stuck_count']
-            logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (attacked corpse)")
+                    if drop_items and isinstance(drop_items, list):
+                        # 아이템 드랍 처리
+                        for item_name in drop_items:
+                            world_state._add_item(item_name)
+                            logger.info(f"💰 [LOOT] {target_npc} dropped item: '{item_name}'")
 
-            # ✅ 작업 3: 데이터 정합성 보장
-            state['world_state'] = world_state.to_dict()
-            logger.info(f"💾 [DB SYNC] World state saved with stuck_count: {state['stuck_count']}")
+                        # system_message에 전리품 정보 추가
+                        items_text = ', '.join(drop_items)
+                        loot_message = f"\n💰 전리품: {target_npc}에게서 [{items_text}]을(를) 획득했습니다!"
+                        state['system_message'] += loot_message
 
-            return state
+                        # narrative_history에 기록
+                        world_state.add_narrative_event(f"{target_npc} 처치 후 전리품 [{items_text}] 획득")
+
+                        logger.info(f"💰 [LOOT] Total items dropped from {target_npc}: {len(drop_items)}")
+                    else:
+                        logger.info(f"💰 [LOOT] No items to drop from {target_npc}")
+                    break
 
         # (c) 데미지 산정 (random 10~20)
         damage = random.randint(10, 20)
@@ -1319,6 +1331,37 @@ def npc_node(state: PlayerState):
         npc_state = world_state.get_npc_state(target_npc)
         if npc_state and npc_state.get('status') == 'dead':
             logger.info(f"💀 [COMBAT] {target_npc} is dead, blocking NPC dialogue")
+
+            # ========================================
+            # 💰 NPC 드랍 아이템 시스템
+            # ========================================
+            # 시나리오에서 NPC 데이터 조회
+            scenario_data = get_scenario_by_id(scenario_id)
+            npcs_data = scenario_data.get('npcs', [])
+
+            # 해당 NPC의 drop_items 확인
+            for npc_data in npcs_data:
+                if npc_data.get('name') == target_npc:
+                    drop_items = npc_data.get('drop_items', [])
+
+                    if drop_items and isinstance(drop_items, list):
+                        # 아이템 드랍 처리
+                        for item_name in drop_items:
+                            world_state._add_item(item_name)
+                            logger.info(f"💰 [LOOT] {target_npc} dropped item: '{item_name}'")
+
+                        # system_message에 전리품 정보 추가
+                        items_text = ', '.join(drop_items)
+                        loot_message = f"\n💰 전리품: {target_npc}에게서 [{items_text}]을(를) 획득했습니다!"
+                        state['system_message'] += loot_message
+
+                        # narrative_history에 기록
+                        world_state.add_narrative_event(f"{target_npc} 처치 후 전리품 [{items_text}] 획득")
+
+                        logger.info(f"💰 [LOOT] Total items dropped from {target_npc}: {len(drop_items)}")
+                    else:
+                        logger.info(f"💰 [LOOT] No items to drop from {target_npc}")
+                    break
 
         logger.info(f"✅ [COMBAT] Attack processing complete. Damage: {damage}, Target: {target_npc}")
 
