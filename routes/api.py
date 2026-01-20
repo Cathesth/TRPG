@@ -351,34 +351,59 @@ async def update_profile(
     if not db_user:
         return JSONResponse({"success": False, "error": "사용자를 찾을 수 없습니다."}, status_code=404)
 
-    # 1. 비밀번호 변경 (값이 있고, 빈 문자열이 아닐 때만 실행)
+    # 1. 비밀번호 변경 (기존 로직 유지)
     if password and password.strip():
         if len(password) > 72:
             return JSONResponse({"success": False, "error": "비밀번호는 72자 이내여야 합니다."}, status_code=400)
-
         if password != confirm_password:
             return JSONResponse({"success": False, "error": "비밀번호가 일치하지 않습니다."}, status_code=400)
-
         try:
             db_user.password_hash = pwd_context.hash(password)
         except Exception as e:
             return JSONResponse({"success": False, "error": f"비밀번호 처리 중 오류: {str(e)}"}, status_code=500)
 
-    # 2. 이메일 업데이트
+    # 2. 이메일 업데이트 (기존 로직 유지)
     if email is not None:
         db_user.email = email
 
-    # 3. 프로필 사진 업로드 처리
+    # 3. 프로필 사진 업로드 처리 (S3 저장 방식으로 변경)
     if avatar and avatar.filename:
         try:
+            # [수정] 로컬 파일 저장이 아닌 S3 업로드로 변경하여 배포 후에도 이미지 유지
+            from core.s3_client import get_s3_client  # 필요한 시점에 임포트
+
+            s3 = get_s3_client()
+            # S3 세션이 초기화되지 않았을 경우 안전장치
+            if not s3._session:
+                await s3.initialize()
+
             file_ext = Path(avatar.filename).suffix
             new_filename = f"{user.id}_{uuid.uuid4()}{file_ext}"
-            save_path = f"static/avatars/{new_filename}"
 
-            with open(save_path, "wb") as buffer:
-                shutil.copyfileobj(avatar.file, buffer)
+            # S3 버킷 내 저장 경로 (static/avatars 대신 avatars/ 폴더 사용 권장)
+            s3_key = f"avatars/{new_filename}"
 
-            db_user.avatar_url = f"/{save_path}"
+            # 업로드할 파일 내용 읽기
+            content = await avatar.read()
+
+            # S3에 파일 업로드
+            async with s3._session.client(
+                    's3',
+                    endpoint_url=s3.endpoint,
+                    region_name=s3.region,
+                    use_ssl=s3.use_ssl
+            ) as client:
+                await client.put_object(
+                    Bucket=s3.bucket,
+                    Key=s3_key,
+                    Body=content,
+                    ContentType=avatar.content_type or 'image/png'
+                )
+
+            # [중요] DB에는 프록시 URL 저장
+            # app.py에 있는 '/image/serve/{path}' 라우트가 S3 이미지를 대신 가져와 보여줍니다.
+            db_user.avatar_url = f"/image/serve/{s3_key}"
+
         except Exception as e:
             return JSONResponse({"success": False, "error": f"이미지 업로드 실패: {str(e)}"}, status_code=500)
 
