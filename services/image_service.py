@@ -34,6 +34,14 @@ class ImageService:
 
         self.together_url = "https://api.together.xyz/v1/images/generations"
 
+        # [수정] 프롬프트 템플릿 강화 (NPC/적: 초상화, 아이템: 아이콘)
+        self.prompts = {
+            "npc": "pixel art portrait of {description}, face focused, 8-bit style, retro rpg character profile, high quality, detailed face, isolated background",
+            "enemy": "pixel art portrait of {description}, face focused, 8-bit style, retro rpg enemy profile, menacing, high quality, isolated background",
+            "background": "pixel art landscape of {description}, 8-bit, retro rpg style, detailed environment, atmospheric, 16:9 aspect ratio",
+            "item": "single pixel art icon of {description}, 8-bit, retro rpg item, centered, white background, high quality, game sprite"
+        }
+
         if not self.google_key or not self.together_key:
             logger.warning("⚠️ 키 설정 확인 필요: GOOGLE_API_KEY 또는 TOGETHER_API_KEY 부재")
             self._is_available = False
@@ -53,11 +61,14 @@ class ImageService:
     async def _optimize_prompt(self, user_description: str, image_type: str) -> str:
         """Gemini: 한글 -> 영어 프롬프트 최적화"""
         try:
+            # [수정] 이미지 타입별 스타일 가이드 세분화
             style_guide = ""
-            if image_type == "npc" or image_type == "enemy":
-                style_guide = "Style: High quality 8-bit pixel art character sprite, isolated on white background, clean lines, retro RPG aesthetic."
+            if image_type in ["npc", "enemy"]:
+                style_guide = "Style: High quality 8-bit pixel art character portrait, face focused, isolated on white background."
+            elif image_type == "item":
+                style_guide = "Style: High quality 8-bit pixel art item icon, centered, isolated on white background."
             elif image_type == "background":
-                style_guide = "Style: High quality 8-bit pixel art landscape, detailed environment, atmospheric lighting, retro RPG background, 16:9 aspect ratio."
+                style_guide = "Style: High quality 8-bit pixel art landscape, detailed environment, atmospheric lighting, 16:9 aspect ratio."
 
             instruction = f"""
             You are a prompt engineer for FLUX.1.
@@ -77,7 +88,7 @@ class ImageService:
             )
 
             optimized = response.text.strip()
-            logger.info(f"🔄 [Prompt] 번역 완료: {optimized[:50]}...")
+            logger.info(f"🔄 [Prompt] 번역 완료 ({image_type}): {optimized[:50]}...")
             return optimized
 
         except Exception as e:
@@ -93,7 +104,7 @@ class ImageService:
             final_prompt = await self._optimize_prompt(description, image_type)
 
             # 2. [1순위] Flux 모델 시도
-            logger.info(f"🎨 [Image] Flux 생성 시도...")
+            logger.info(f"🎨 [Image] Flux 생성 시도... ({image_type})")
             image_data = await self._call_together_api_with_retry(final_prompt, self.flux_model)
 
             # 3. [2순위] 실패 시 SDXL 모델 시도 (Fallback)
@@ -106,6 +117,7 @@ class ImageService:
                 return None
 
             # 4. S3 업로드
+            # 폴더 구조: ai-images/시나리오ID/타입/파일명
             image_url = await self._upload_to_s3(image_data, image_type, scenario_id, target_id)
 
             return {

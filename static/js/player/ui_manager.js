@@ -1,4 +1,9 @@
 // ui_manager.js - 화면 렌더링 및 UI 제어
+function getImageUrl(url) {
+    if (!url) return '';
+    // 이미지를 백엔드 프록시 태워서 가져옴
+    return `/image/serve/${encodeURIComponent(url)}`;
+}
 
 function scrollToBottom(smooth = true) {
     const chatLog = document.getElementById('chat-log');
@@ -253,11 +258,12 @@ function resetGameUI() {
     lucide.createIcons();
 }
 
+// [수정] 스탯 업데이트 함수 (이미지 연동)
 function updateStats(statsData) {
     const statsArea = document.getElementById('player-stats-area');
     if (!statsArea) return;
 
-    // 스탯 표시 로직 (픽셀 아트 스타일)
+    // 스탯 아이콘/색상 설정
     const statConfig = {
         'hp': { icon: 'heart', color: 'text-red-400', isBar: true, max: 'max_hp', type: 'hp' },
         'mp': { icon: 'zap', color: 'text-blue-400', isBar: true, max: 'max_mp', type: 'mp' },
@@ -273,9 +279,9 @@ function updateStats(statsData) {
         </div>
         <div class="space-y-3">`;
 
+    // 1. 기본 스탯 (HP, MP 등) 렌더링
     for (const [k, v] of Object.entries(statsData)) {
-        // world_state와 내부 플래그 필터링
-        if (k !== 'inventory' && k !== 'world_state' && !k.startsWith('max_') && !k.startsWith('npc_appeared_') && !k.startsWith('_')) {
+        if (k !== 'inventory' && k !== 'world_state' && k !== 'npcs' && !k.startsWith('max_') && !k.startsWith('npc_appeared_') && !k.startsWith('_')) {
             const config = statConfig[k.toLowerCase()] || { icon: 'circle', color: 'text-gray-400' };
 
             if (config.isBar) {
@@ -303,6 +309,7 @@ function updateStats(statsData) {
     }
     html += '</div>';
 
+    // 2. 인벤토리 렌더링 (이미지 지원)
     if (statsData.inventory && statsData.inventory.length > 0) {
         html += `
         <div class="border-t-4 border-rpg-700 pt-3 mt-3">
@@ -310,16 +317,68 @@ function updateStats(statsData) {
                 <i data-lucide="backpack" class="w-3 h-3"></i>INVENTORY
             </div>
             <div class="flex flex-wrap gap-1">`;
+
         for (const item of statsData.inventory) {
-            html += `<span class="bg-rpg-800 px-2 py-1 rounded-none text-[10px] text-indigo-300 pixel-border flex items-center gap-1 font-dot">
-                <i data-lucide="box" class="w-2.5 h-2.5"></i>${item}
-            </span>`;
+            // item이 객체이고 image가 있으면 이미지 아이콘 표시
+            if (typeof item === 'object' && item.image) {
+                html += `
+                <div class="group relative bg-rpg-800 border-2 border-gray-600 w-10 h-10 flex items-center justify-center cursor-help hover:border-yellow-400 transition-colors">
+                    <img src="${getImageUrl(item.image)}" class="w-full h-full object-cover pixel-avatar" alt="${item.name}">
+                    <span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black border border-white text-[10px] whitespace-nowrap hidden group-hover:block z-20 font-dot">
+                        ${item.name}
+                    </span>
+                </div>`;
+            } else {
+                // 이미지가 없거나 문자열이면 기존 텍스트 방식
+                const itemName = typeof item === 'string' ? item : item.name;
+                html += `<span class="bg-rpg-800 px-2 py-1 rounded-none text-[10px] text-indigo-300 pixel-border flex items-center gap-1 font-dot">
+                    <i data-lucide="box" class="w-2.5 h-2.5"></i>${itemName}
+                </span>`;
+            }
         }
         html += '</div></div>';
     }
     html += '</div>';
 
     statsArea.innerHTML = html;
+
+    // 3. [신규] NPC 상태창 업데이트 (초상화 지원)
+    // 주의: HTML에 id="npc-status-area"인 요소가 있어야 함 (기본 템플릿에 있음)
+    const npcArea = document.getElementById('npc-status-area');
+    if (npcArea && statsData.npcs && Array.isArray(statsData.npcs)) {
+        let npcHtml = '<div class="grid grid-cols-4 gap-2">';
+
+        statsData.npcs.forEach(npc => {
+            const hasImage = npc.image && npc.image.length > 0;
+            // 적은 빨간 테두리, 아군은 초록 테두리
+            const borderClass = npc.isEnemy ? 'border-red-500 shadow-[0_0_5px_rgba(255,0,0,0.5)]' : 'border-green-500 shadow-[0_0_5px_rgba(0,255,0,0.5)]';
+
+            npcHtml += `
+            <div class="flex flex-col items-center group relative">
+                <div class="w-12 h-12 bg-rpg-900 border-2 ${borderClass} overflow-hidden mb-1 relative transition-transform hover:scale-110 cursor-help">
+                    ${hasImage
+                        ? `<img src="${getImageUrl(npc.image)}" class="w-full h-full object-cover pixel-avatar" alt="${npc.name}">`
+                        : `<div class="w-full h-full flex items-center justify-center text-gray-600"><i data-lucide="${npc.isEnemy ? 'skull' : 'user'}" class="w-6 h-6"></i></div>`
+                    }
+                </div>
+                <span class="text-[9px] text-gray-400 truncate w-full text-center font-dot bg-black/50 px-1 rounded">${npc.name}</span>
+
+                <div class="absolute bottom-full mb-2 hidden group-hover:block z-50 w-40 bg-rpg-800 border-2 border-white p-2 text-[10px] shadow-xl">
+                    <div class="font-bold text-white mb-1 border-b border-gray-600 pb-1">${npc.name}</div>
+                    <div class="text-gray-300 leading-tight">${npc.description || '정보 없음'}</div>
+                    ${npc.hp ? `<div class="mt-1 text-red-400">HP: ${npc.hp}</div>` : ''}
+                </div>
+            </div>`;
+        });
+        npcHtml += '</div>';
+
+        if(statsData.npcs.length === 0) {
+            npcArea.innerHTML = '<div class="text-gray-500 text-xs text-center py-2">주변에 아무도 없습니다.</div>';
+        } else {
+            npcArea.innerHTML = npcHtml;
+        }
+    }
+
     lucide.createIcons();
 }
 
