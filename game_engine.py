@@ -900,36 +900,24 @@ def rule_node(state: PlayerState):
             npcs_data = scenario_data.get('npcs', [])
 
             # npcs가 딕셔너리 형태일 수도 있으므로 안전하게 처리
-            npc_list = []
             if isinstance(npcs_data, dict):
-                # 딕셔너리인 경우: {"1": {...}, "2": {...}} 형태
-                npc_list = list(npcs_data.values())
-                logger.info(f"💰 [LOOT] NPCs data is dict, converted to list: {len(npc_list)} NPCs")
-            elif isinstance(npcs_data, list):
-                # 리스트인 경우: [{...}, {...}] 형태
-                npc_list = npcs_data
-            else:
-                logger.warning(f"⚠️ [LOOT] Unexpected npcs_data type: {type(npcs_data)}")
+                npcs_data = list(npcs_data.values())
 
             # 해당 NPC의 drop_items 확인
             dropped_items = []
-            for npc_data in npc_list:
+            for npc_data in npcs_data:
                 if not isinstance(npc_data, dict):
                     continue
 
-                npc_name_in_data = npc_data.get('name', '')
-
-                # NPC 이름이 정확히 일치하는지 확인
-                if npc_name_in_data == target_npc:
+                if npc_data.get('name') == target_npc:
                     drop_items = npc_data.get('drop_items', [])
 
                     if drop_items and isinstance(drop_items, list):
                         # 아이템 드랍 처리
                         for item_name in drop_items:
-                            if isinstance(item_name, str) and item_name:
-                                world_state._add_item(item_name)
-                                dropped_items.append(item_name)
-                                logger.info(f"💰 [LOOT] {target_npc} dropped item: '{item_name}'")
+                            world_state._add_item(item_name)
+                            dropped_items.append(item_name)
+                            logger.info(f"💰 [LOOT] {target_npc} dropped item: '{item_name}'")
 
                         # player_vars의 inventory도 동기화
                         state['player_vars']['inventory'] = world_state.player["inventory"].copy()
@@ -938,10 +926,6 @@ def rule_node(state: PlayerState):
                     else:
                         logger.info(f"💰 [LOOT] No items to drop from {target_npc}")
                     break
-
-            # NPC를 찾지 못한 경우 로그
-            if not dropped_items and npc_list:
-                logger.warning(f"⚠️ [LOOT] NPC '{target_npc}' not found in scenario npcs data for loot drop")
 
             # system_message에 전리품 정보 추가
             if dropped_items:
@@ -1454,69 +1438,6 @@ def npc_node(state: PlayerState):
         logger.info(f"⚔️ [COMBAT] Result: {combat_result}")
 
         # ========================================
-        # 💰 [전리품 시스템] NPC HP가 0 이하가 되어 status='dead'로 변경된 경우 drop_items 처리
-        # ========================================
-        npc_state_after = world_state.get_npc_state(target_npc)
-        if npc_state_after and npc_state_after.get('status') == 'dead':
-            logger.info(f"💀 [LOOT] {target_npc} has died, checking for loot...")
-
-            # 시나리오에서 NPC 데이터 조회
-            scenario_data = get_scenario_by_id(scenario_id)
-            npcs_data = scenario_data.get('npcs', [])
-
-            # npcs가 딕셔너리 형태일 수도 있으므로 안전하게 처리
-            npc_list = []
-            if isinstance(npcs_data, dict):
-                # 딕셔너리인 경우: {"1": {...}, "2": {...}} 형태
-                npc_list = list(npcs_data.values())
-                logger.info(f"💰 [LOOT] NPCs data is dict, converted to list: {len(npc_list)} NPCs")
-            elif isinstance(npcs_data, list):
-                # 리스트인 경우: [{...}, {...}] 형태
-                npc_list = npcs_data
-            else:
-                logger.warning(f"⚠️ [LOOT] Unexpected npcs_data type: {type(npcs_data)}")
-
-            # 해당 NPC의 drop_items 확인
-            dropped_items = []
-            for npc_data in npc_list:
-                if not isinstance(npc_data, dict):
-                    continue
-
-                npc_name_in_data = npc_data.get('name', '')
-
-                # NPC 이름이 정확히 일치하는지 확인
-                if npc_name_in_data == target_npc:
-                    drop_items = npc_data.get('drop_items', [])
-
-                    if drop_items and isinstance(drop_items, list):
-                        # 아이템 드랍 처리
-                        for item_name in drop_items:
-                            if isinstance(item_name, str) and item_name:
-                                world_state._add_item(item_name)
-                                dropped_items.append(item_name)
-                                logger.info(f"💰 [LOOT] {target_npc} dropped item: '{item_name}'")
-
-                        # player_vars의 inventory도 동기화
-                        state['player_vars']['inventory'] = world_state.player["inventory"].copy()
-
-                        logger.info(f"💰 [LOOT] Total items dropped from {target_npc}: {len(drop_items)}")
-                    else:
-                        logger.info(f"💰 [LOOT] No items to drop from {target_npc}")
-                    break
-
-            # NPC를 찾지 못한 경우 로그
-            if not dropped_items and npc_list:
-                logger.warning(f"⚠️ [LOOT] NPC '{target_npc}' not found in scenario npcs data for loot drop")
-
-            # system_message에 전리품 정보 추가
-            if dropped_items:
-                items_text = ', '.join(dropped_items)
-                combat_result += f"\n💰 전투 승리! [{items_text}]을(를) 획득했습니다!"
-
-                # narrative_history에 기록
-                world_state.add_narrative_event(f"{target_npc} 처치 후 전리품 [{items_text}] 획득")
-
-        # ========================================
         # 💥 작업 2: 플레이어 HP 동기화 - WorldState의 HP를 player_vars에 강제 동기화
         # ========================================
         world_state_hp = world_state.player.get("hp", 100)
@@ -1534,13 +1455,7 @@ def npc_node(state: PlayerState):
         # ========================================
         state['player_vars']['hp'] = world_state.player["hp"]
         logger.info(f"💾 [FINAL HP SYNC] Final Player HP sync before save: {world_state.player['hp']}")
-        logger.info(f"💾 [DB PRE-SAVE] Final Player HP in state (rule_node): {state['player_vars']['hp']}")
-
-        # ✅ 작업 1: attack 의도 시 stuck_count 증가 (장면 이동 없음)
-        old_stuck_count = state.get('stuck_count', 0)
-        state['stuck_count'] = old_stuck_count + 1
-        world_state.stuck_count = state['stuck_count']
-        logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (attack intent)")
+        logger.info(f"💾 [DB PRE-SAVE] Final Player HP in state (npc_node): {state['player_vars']['hp']}")
 
         # (h) world_state 갱신
         state['world_state'] = world_state.to_dict()
@@ -1548,302 +1463,247 @@ def npc_node(state: PlayerState):
         # NPC 대사는 생성하지 않음 (공격 결과만 표시)
         state['npc_output'] = ""
 
+        # (i) 죽은 NPC 확인 및 대사 차단
+        npc_state = world_state.get_npc_state(target_npc)
+        if npc_state and npc_state.get('status') == 'dead':
+            logger.info(f"💀 [COMBAT] {target_npc} is dead, blocking NPC dialogue")
+
+            # ========================================
+            # 💰 NPC 드랍 아이템 시스템
+            # ========================================
+            # 시나리오에서 NPC 데이터 조회
+            scenario_data = get_scenario_by_id(scenario_id)
+            npcs_data = scenario_data.get('npcs', [])
+
+            # 해당 NPC의 drop_items 확인
+            for npc_data in npcs_data:
+                if npc_data.get('name') == target_npc:
+                    drop_items = npc_data.get('drop_items', [])
+
+                    if drop_items and isinstance(drop_items, list):
+                        # 아이템 드랍 처리
+                        for item_name in drop_items:
+                            world_state._add_item(item_name)
+                            logger.info(f"💰 [LOOT] {target_npc} dropped item: '{item_name}'")
+
+                        # system_message에 전리품 정보 추가
+                        items_text = ', '.join(drop_items)
+                        loot_message = f"\n💰 전리품: {target_npc}에게서 [{items_text}]을(를) 획득했습니다!"
+                        state['system_message'] += loot_message
+
+                        # narrative_history에 기록
+                        world_state.add_narrative_event(f"{target_npc} 처치 후 전리품 [{items_text}] 획득")
+
+                        logger.info(f"💰 [LOOT] Total items dropped from {target_npc}: {len(drop_items)}")
+                    else:
+                        logger.info(f"💰 [LOOT] No items to drop from {target_npc}")
+                    break
+
         logger.info(f"✅ [COMBAT] Attack processing complete. Damage: {damage}, Target: {target_npc}")
 
         return state
 
     # ========================================
-    # 🗑️ 아이템 버리기 의도 처리 (item_action)
+    # 기존 로직 (chat/investigate/defend 등)
     # ========================================
-    if state['parsed_intent'] == 'item_action':
-        logger.info(f"🎒 [ITEM_ACTION] Item action intent detected in rule_node")
 
-        # 유저 입력에서 아이템 이름 추출
-        player_vars = state.get('player_vars', {})
-        inventory = player_vars.get('inventory', [])
-
-        # 버리기 키워드 확인
-        discard_keywords = ['버리', '버려', '버린', '던져', '던지', '버렸', '폐기', '제거']
-        is_discard_action = any(kw in user_action for kw in discard_keywords)
-
-        # ✅ 줍기 키워드 확인
-        pickup_keywords = ['줍', '습득', '챙긴', '획득', '가져', '집어', '주워']
-        is_pickup_action = any(kw in user_action for kw in pickup_keywords)
-
-        if is_discard_action:
-            # 인벤토리에서 아이템 찾기
-            item_to_remove = None
-            for item in inventory:
-                if str(item) in user_action:
-                    item_to_remove = item
-                    break
-
-            if item_to_remove:
-                # WorldState에서 아이템 제거
-                world_state._remove_item(item_to_remove)
-
-                # player_vars에서도 제거 (동기화)
-                if item_to_remove in player_vars.get('inventory', []):
-                    player_vars['inventory'].remove(item_to_remove)
-
-                # 시스템 메시지
-                sys_msg.append(f"🗑️ '{item_to_remove}'을(를) 버렸습니다.")
-
-                # 서사 이벤트 기록
-                world_state.add_narrative_event(f"플레이어가 '{item_to_remove}'을(를) 버림")
-
-                logger.info(f"🗑️ [ITEM_ACTION] Item removed: '{item_to_remove}'")
-            else:
-                sys_msg.append("⚠️ 버릴 아이템을 찾을 수 없습니다.")
-                logger.warning(f"⚠️ [ITEM_ACTION] Item not found in inventory. User input: '{user_action}'")
-
-        elif is_pickup_action:
-            # ✅ [아이템 줍기 로직] 시나리오에서 현재 씬의 아이템 찾기
-            scenario_data = get_scenario_by_id(scenario_id)
-            items_registry = scenario_data.get('items', [])
-
-            # 유저 입력에서 아이템 이름 추출 시도
-            item_to_pickup = None
-            for item_data in items_registry:
-                if isinstance(item_data, dict):
-                    item_name = item_data.get('name', '')
-                    if item_name and item_name in user_action:
-                        item_to_pickup = item_name
-                        break
-
-            if item_to_pickup:
-                # WorldState에 아이템 추가
-                world_state._add_item(item_to_pickup)
-
-                # player_vars에도 동기화
-                state['player_vars']['inventory'] = world_state.player["inventory"].copy()
-
-                # 시스템 메시지
-                sys_msg.append(f"📦 '{item_to_pickup}'을(를) 주웠습니다!")
-
-                # 서사 이벤트 기록
-                world_state.add_narrative_event(f"플레이어가 '{item_to_pickup}'을(를) 획득함")
-
-                logger.info(f"📦 [ITEM_ACTION] Item picked up: '{item_to_pickup}'")
-            else:
-                sys_msg.append("⚠️ 주울 수 있는 아이템이 보이지 않습니다.")
-                logger.warning(f"⚠️ [ITEM_ACTION] No item found to pick up. User input: '{user_action}'")
-
-        # system_message 설정
-        state['system_message'] = " | ".join(sys_msg)
-
-        # stuck_count 증가 (장면 전환 없음)
+    # ✅ 작업 1: stuck_count 증가 로직을 조기 리턴 전에 이동
+    if user_input:
         old_stuck_count = state.get('stuck_count', 0)
         state['stuck_count'] = old_stuck_count + 1
-        logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (item_action)")
+        logger.info(f"🔄 [STUCK] Player stuck in scene '{curr_scene_id}' | Intent: {parsed_intent} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
 
-        # world_state 갱신
+        # ✅ 작업 4: investigate 의도일 때 서사 기록
+        if parsed_intent == 'investigate':
+            world_state.add_narrative_event(
+                f"유저가 주변을 조사하며 '{user_input[:30]}...'을(를) 확인함"
+            )
+        # 다른 의도일 때도 기록 (defend 등)
+        elif parsed_intent in ['defend']:
+            world_state.add_narrative_event(
+                f"유저가 '{user_input[:30]}...'을(를) 시도함"
+            )
+
+    # ✅ 작업 1: NPC 대사 생성은 'chat' 의도일 때만 실행
+    if parsed_intent != 'chat':
+        state['npc_output'] = ""
+        # ✅ [작업 3] 백엔드 위치 데이터 강제 동기화 - DB 저장 전 최신 위치를 world_state에 덮어씌움
+        world_state.location = state.get("current_scene_id", world_state.location)
+        world_state.stuck_count = state.get("stuck_count", 0)
         state['world_state'] = world_state.to_dict()
+        logger.info(f"🔄 [SYNC] Location synchronized in npc_node (early return): world_state.location = {world_state.location}, stuck_count = {world_state.stuck_count}")
+        return
 
+    # 기존 NPC 대화 로직
+    curr_id = state['current_scene_id']
+    all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
+    curr_scene = all_scenes.get(curr_id)
+    npc_names = curr_scene.get('npcs', []) if curr_scene else []
+
+    # [추가] 인벤토리 검증: 아이템 사용 시도 감지
+    item_keywords = ['사용', '쓴다', '쏜다', '던진다', '먹는다', '마신다', '착용', '장착', '입는다',
+                     'use', 'shoot', 'throw', 'eat', 'drink', 'wear', '뿌린다', '흔든다', '꺼낸다']
+
+    if any(keyword in user_input.lower() for keyword in item_keywords):
+        player_inventory = state.get('player_vars', {}).get('inventory', [])
+        has_item = False
+
+        for item in player_inventory:
+            if item.lower() in user_input.lower():
+                has_item = True
+                break
+
+        if not has_item:
+            rejection_messages = [
+                "주머니를 더듬어 보았지만 찾을 수 없습니다.",
+                "소지품을 확인해보니 그것은 가지고 있지 않습니다.",
+                "당신은 그 물건을 가지고 있지 않습니다.",
+                "손을 뻗었지만 허공만 움켜쥐게 됩니다. 그것은 당신에게 없는 것입니다."
+            ]
+            state['npc_output'] = random.choice(rejection_messages)
+            logger.info(f"🚫 [INVENTORY CHECK] Item not found in inventory. User input: {user_input}")
+            return state
+
+    # 기존 NPC 대화 로직
+    if not npc_names:
+        state['npc_output'] = ""
         return state
 
-    # ✅ 작업 2: investigate 의도 처리 - Scene Rule에서 스탯 변동 패싱 및 적용
-    if state['parsed_intent'] == 'investigate':
-        logger.info(f"🔍 [INVESTIGATE] Processing scene rule for investigation action")
+    target_npc_name = npc_names[0]
+    npc_info = {"name": target_npc_name, "role": "Unknown", "personality": "보통"}
 
-        # 현재 장면의 rule 필드 가져오기
-        scene_rule = curr_scene.get('rule', '') if curr_scene else ''
+    for npc in get_scenario_by_id(scenario_id).get('npcs', []):
+        if npc.get('name') == target_npc_name:
+            npc_info['role'] = npc.get('role', 'Unknown')
+            npc_info['personality'] = npc.get('personality', '보통')
+            npc_info['dialogue_style'] = npc.get('dialogue_style', '')
+            break
 
-        if scene_rule:
-            # 정규표현식으로 스탯 변동 패턴 추출: "Sanity -5", "HP +10", "Radiation +5" 등
-            # 패턴: (스탯명) (부호)(숫자)
-            stat_pattern = re.compile(r'(Sanity|HP|Gold|Radiation|sanity|hp|gold|radiation)\s*([+-]\d+)', re.IGNORECASE)
-            matches = stat_pattern.findall(scene_rule)
+    history = state.get('history', [])
+    history_context = "\n".join(history[-3:]) if history else "대화 시작"
 
-            if matches:
-                effects = []
-                for stat_name, value_str in matches:
-                    stat_name_lower = stat_name.lower()
-                    value = int(value_str)  # +5 또는 -5 형태를 정수로 변환
+    # [추가] 현재 장면의 transitions_hints와 stuck_level 추출
+    transitions_list = []
+    if curr_scene:
+        for t in curr_scene.get('transitions', []):
+            trigger = t.get('trigger', '알 수 없음')
+            transitions_list.append(trigger)
 
-                    effects.append({
-                        "target": stat_name_lower,
-                        "operation": "add",
-                        "value": value
-                    })
+    transitions_hints = ", ".join(transitions_list) if transitions_list else "힌트 없음"
+    stuck_level = state.get('stuck_count', 0)
 
-                    logger.info(f"📋 [RULE PARSED] {stat_name}: {value_str}")
+    # YAML에서 프롬프트 로드
+    prompts = load_player_prompts()
+    prompt_template = prompts.get('npc_dialogue', '')
 
-                # WorldState에 효과 적용
-                if effects:
-                    world_state.update_state(effects)
+    # ✅ WorldState 컨텍스트 추가
+    world_context = world_state.get_llm_context()
 
-                    # player_vars에도 동기화
-                    for eff in effects:
-                        key = eff["target"]
-                        val = eff["value"]
+    if prompt_template:
+        scenario = get_scenario_by_id(scenario_id)
+        player_status = format_player_status(scenario, state.get('player_vars', {}))
 
-                        current_val = state['player_vars'].get(key, 0)
-                        if not isinstance(current_val, (int, float)):
-                            current_val = 0
+        # [수정] WorldState 컨텍스트를 프롬프트에 포함
+        prompt = f"""{world_context}
 
-                        new_val = current_val + val
-                        state['player_vars'][key] = new_val
-
-                        # 시스템 메시지에 추가
-                        if val > 0:
-                            sys_msg.append(f"{key.upper()} +{val}")
-                        else:
-                            sys_msg.append(f"{key.upper()} {val}")
-
-                    # 서사 이벤트 기록
-                    stat_changes = ", ".join([f"{e['target']} {e['value']:+d}" for e in effects])
-                    world_state.add_narrative_event(
-                        f"조사 과정에서 상태 변화 발생: {stat_changes}"
-                    )
-                    logger.info(f"✅ [INVESTIGATE] Applied {len(effects)} stat changes from scene rule")
-            else:
-                logger.info(f"📋 [RULE PARSED] No stat changes found in scene rule")
-        else:
-            logger.info(f"📋 [RULE] No rule field found in current scene")
-
-        # investigate는 장면 전환이 없으므로 stuck_count 증가
-        if user_action:
-            old_stuck_count = state.get('stuck_count', 0)
-            state['stuck_count'] = old_stuck_count + 1
-            logger.info(f"🔄 [INVESTIGATE] stuck_count: {old_stuck_count} -> {state['stuck_count']}")
-
-    elif state['parsed_intent'] == 'transition' and 0 <= idx < len(transitions):
-        trans = transitions[idx]
-        effects = trans.get('effects', [])
-        next_id = trans.get('target_scene_id')
-        trigger_used = trans.get('trigger', 'unknown')
-
-        logger.info(f"🎯 [TRANSITION] Attempting transition to: {next_id}")
-
-        # ✅ 효과 적용을 WorldState로 일원화
-        if effects:
-            world_state.update_state(effects)
-            # 효과가 player_vars에도 반영되도록 동기화
-            for eff in effects:
-                if isinstance(eff, dict):
-                    key = eff.get("target", "").lower()
-                    operation = eff.get("operation", "add")
-                    raw_val = eff.get("value", 0)
-
-                    # 아이템 효과
-                    if operation in ["gain_item", "lose_item"]:
-                        item_name = str(raw_val)
-                        inventory = state['player_vars'].get('inventory', [])
-                        if not isinstance(inventory, list):
-                            inventory = []
-
-                        if operation == "gain_item":
-                            if item_name not in inventory:
-                                inventory.append(item_name)
-                            sys_msg.append(f"📦 획득: {item_name}")
-                        elif operation == "lose_item":
-                            if item_name in inventory:
-                                inventory.remove(item_name)
-                            sys_msg.append(f"🗑️ 사용: {item_name}")
-
-                        state['player_vars']['inventory'] = inventory
-                        continue
-
-                    # 수치 효과
-                    val = 0
-                    if isinstance(raw_val, (int, float)):
-                        val = int(raw_val)
-                    elif isinstance(raw_val, str):
-                        if raw_val.isdigit() or (raw_val.startswith('-') and raw_val[1:].isdigit()):
-                            val = int(raw_val)
-
-                    if key:
-                        current_val = state['player_vars'].get(key, 0)
-                        if not isinstance(current_val, (int, float)):
-                            current_val = 0
-
-                        if operation == "add":
-                            new_val = current_val + val
-                            if val > 0:
-                                sys_msg.append(f"{key.upper()} +{val}")
-                            else:
-                                sys_msg.append(f"{key.upper()} {val}")
-                        elif operation == "subtract":
-                            new_val = max(0, current_val - abs(val))
-                            sys_msg.append(f"{key.upper()} -{abs(val)}")
-                        elif operation == "set":
-                            new_val = val
-                            sys_msg.append(f"{key.upper()} = {val}")
-                        else:
-                            new_val = current_val
-
-                        state['player_vars'][key] = new_val
-
-        # 씬 이동
-        if next_id:
-            # ✅ [작업 1-2] 장면 전환 성공 시 내러티브 기록의 from_scene은 반드시 actual_current_location 사용
-            from_scene = actual_current_location
-            logger.info(f"🔄 [TRANSITION] Using actual_current_location '{from_scene}' as from_scene for narrative")
-
-            state['current_scene_id'] = next_id
-            world_state.location = next_id
-
-            # ✅ 작업 2: 장면 전환 성공 시 이전 씬의 출력 필드 명시적으로 제거
-            state['npc_output'] = ''
-            state['narrator_output'] = ''
-            logger.info("🧹 [TRANSITION CLEANUP] Cleared output fields after scene transition")
-
-            # ✅ [작업 4] 실제 이동이 일어난 경우에만 내러티브 기록 (from_scene != next_id)
-            if from_scene != next_id:
-                world_state.add_narrative_event(
-                    f"유저가 '{trigger_used}'을(를) 통해 [{from_scene}]에서 [{next_id}]로 이동함"
-                )
-                logger.info(f"📖 [NARRATIVE] Recorded transition: [{from_scene}] -> [{next_id}] via '{trigger_used}'")
-            else:
-                logger.info(f"📖 [NARRATIVE] Skipped recording - same scene: [{from_scene}] == [{next_id}]")
-
-            # ✅ 작업 2: 장면 전환 성공 시 stuck_count 초기화
-            old_stuck_count = state.get('stuck_count', 0)
-            state['stuck_count'] = 0
-            logger.info(f"✅ [MOVE SUCCESS] {from_scene} -> {next_id} | stuck_count: {old_stuck_count} -> 0")
-        else:
-            # target_scene_id가 없는 경우 (비정상)
-            state['stuck_count'] = state.get('stuck_count', 0) + 1
-            logger.warning(f"⚠️ [TRANSITION FAILED] No target_scene_id | stuck_count: {state['stuck_count']}")
-
-            # ✅ 작업 3: 장면 전환 실패 시 서사 기록
-            if user_action:
-                world_state.add_narrative_event(
-                    f"유저가 '{user_action[:30]}...'을(를) 시도했으나 아무 일도 일어나지 않음"
-                )
+{prompt_template.format(
+            player_status=player_status,
+            npc_name=npc_info['name'],
+            npc_role=npc_info['role'],
+            npc_personality=npc_info['personality'],
+            history_context=history_context,
+            user_input=user_input,
+            transitions_hints=transitions_hints,
+            stuck_level=stuck_level
+        )}"""
     else:
-        # ✅ 작업 3: 장면 전환 실패 (씬 유지) 시 stuck_count 증가 및 서사 기록
-        if user_action:
-            old_stuck_count = state.get('stuck_count', 0)
-            state['stuck_count'] = old_stuck_count + 1
-            logger.info(f"🔄 [STUCK] Player stuck in scene '{actual_current_location}' | Intent: {state['parsed_intent']} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+        # 폴백 프롬프트 (YAML 로드 실패 시)
+        logger.warning("⚠️ Failed to load npc_dialogue from YAML, using fallback")
+        prompt = f"""{world_context}
 
-            # 서사 이벤트 기록
-            world_state.add_narrative_event(
-                f"유저가 '{user_action[:30]}...'을(를) 시도했으나 장면 전환 없이 현재 위치에 머뭄"
-            )
-        else:
-            logger.debug(f"⏸️ [NO INPUT] No user input, stuck_count unchanged: {state.get('stuck_count', 0)}")
+당신은 텍스트 RPG의 NPC입니다.
+이름: {npc_info['name']}, 역할: {npc_info['role']}, 성격: {npc_info['personality']}
+플레이어: "{user_input}"
+NPC로서 1-2문장으로 응답하세요."""
 
-    # 엔딩 체크
-    if state['current_scene_id'] in all_endings:
-        ending = all_endings[state['current_scene_id']]
-        state['parsed_intent'] = 'ending'
-        state['narrator_output'] = f"""
-        <div class="my-8 p-8 border-2 border-yellow-500/50 bg-gradient-to-b from-yellow-900/40 to-black rounded-xl text-center fade-in shadow-2xl relative overflow-hidden">
-            <h3 class="text-3xl font-black text-yellow-400 mb-4 tracking-[0.2em] uppercase drop-shadow-md">🎉 ENDING 🎉</h3>
-            <div class="w-16 h-1 bg-yellow-500 mx-auto mb-6 rounded-full"></div>
-            <div class="text-2xl font-bold text-white mb-4 drop-shadow-sm">"{ending.get('title')}"</div>
-            <p class="text-gray-200 leading-relaxed text-lg serif-font">
-                {ending.get('description')}
-            </p>
-        </div>
-        """
+    try:
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+        llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
+        response = llm.invoke(prompt).content.strip()
 
-    state['system_message'] = " | ".join(sys_msg)
+        # [추가] 응답 검증 - 사용자 입력을 그대로 반복하는 경우 LLM으로 재생성
+        normalized_input = user_input.lower().replace(" ", "")
+        normalized_response = response.lower().replace(" ", "")
 
-    # 멱살 잡고 위치 강제 동기화
+        if normalized_input in normalized_response and len(normalized_response) < len(normalized_input) + 10:
+            # 사용자 입력을 단순 반복한 경우 폴백 프롬프트로 재시도
+            logger.warning(f"⚠️ NPC response too similar to user input, retrying with fallback prompt")
+            fallback_template = prompts.get('npc_fallback', '')
+            if fallback_template:
+                fallback_prompt = fallback_template.format(
+                    npc_name=npc_info['name'],
+                    npc_role=npc_info['role'],
+                    user_input=user_input
+                )
+                response = llm.invoke(fallback_prompt).content.strip()
+
+        state['npc_output'] = response
+
+        # ✅ 작업 2: NPC 대화 서사 요약 및 기록 - LLM을 활용하여 대화 핵심 내용 요약
+        try:
+            # 대화 요약 프롬프트 생성
+            summary_prompt = f"""다음 대화를 한 문장으로 간결하게 요약하세요:
+플레이어: "{user_input}"
+NPC ({target_npc_name}): "{response}"
+
+요약 형식: "플레이어가 [NPC]에게 [행동/요청]했고, NPC는 [반응]함"
+예시: "플레이어가 노인 J에게 술집을 불태우겠다고 협박하며 지도를 요구했고, 노인은 겁에 질려 반응함"
+
+요약:"""
+
+            summary_llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
+            conversation_summary = summary_llm.invoke(summary_prompt).content.strip()
+
+            # 요약이 너무 길면 잘라내기
+            if len(conversation_summary) > 100:
+                conversation_summary = conversation_summary[:97] + "..."
+
+            world_state.add_narrative_event(conversation_summary)
+            logger.info(f"📖 [NPC DIALOGUE] Summary added to narrative: {conversation_summary}")
+
+        except Exception as summary_error:
+            # 요약 실패 시 간단한 템플릿 사용
+            logger.warning(f"⚠️ Failed to generate conversation summary: {summary_error}")
+            fallback_summary = f"플레이어가 '{target_npc_name}'와 대화함 (주제: {user_input[:20]}...)"
+            world_state.add_narrative_event(fallback_summary)
+
+        if 'history' not in state: state['history'] = []
+        state['history'].append(f"User: {user_input}")
+        state['history'].append(f"NPC({target_npc_name}): {response}")
+
+        logger.info(f"💬 [NPC] {target_npc_name}: {response}")
+
+    except Exception as e:
+        logger.error(f"NPC generation error: {e}")
+        # 에러 시에도 LLM으로 간단한 응답 생성 시도
+        try:
+            fallback_template = prompts.get('npc_fallback', '')
+            if fallback_template:
+                fallback_prompt = fallback_template.format(
+                    npc_name=npc_info['name'],
+                    npc_role=npc_info['role'],
+                    user_input=user_input
+                )
+                api_key = os.getenv("OPENROUTER_API_KEY")
+                llm = get_cached_llm(api_key=api_key, model_name='openai/gpt-3.5-turbo', streaming=False)
+                state['npc_output'] = llm.invoke(fallback_prompt).content.strip()
+            else:
+                state['npc_output'] = ""
+        except Exception:
+            state['npc_output'] = ""
+
+    # ✅ 작업 3: 백엔드 위치 데이터 강제 동기화 - DB 저장 전 최신 위치를 world_state에 덮어씌움
     world_state.location = state.get("current_scene_id", world_state.location)
     world_state.stuck_count = state.get("stuck_count", 0)
 
@@ -1855,22 +1715,23 @@ def npc_node(state: PlayerState):
 
     if final_scene_id != final_ws_location:
         logger.error(
-            f"❌ [FINAL SYNC ERROR] Mismatch detected before save! "
+            f"❌ [NPC_NODE FINAL SYNC ERROR] Mismatch detected before save! "
             f"state['current_scene_id']: '{final_scene_id}' vs world_state.location: '{final_ws_location}'"
         )
         # 강제로 world_state.location을 current_scene_id로 동기화 (state를 진실로 간주)
         world_state.location = final_scene_id
-        logger.info(f"🔧 [FINAL SYNC FIX] Forced world_state.location = '{final_scene_id}'")
+        logger.info(f"🔧 [NPC_NODE FINAL SYNC FIX] Forced world_state.location = '{final_scene_id}'")
 
     # Assert: 최종 일치 확인
     assert state['current_scene_id'] == world_state.location, (
-        f"[CRITICAL] Final location mismatch! "
+        f"[CRITICAL] NPC_NODE final location mismatch! "
         f"state: {state['current_scene_id']}, world_state: {world_state.location}"
     )
-    logger.info(f"✅ [FINAL ASSERT] Location verified: state['current_scene_id'] == world_state.location == '{world_state.location}'")
+    logger.info(f"✅ [NPC_NODE FINAL ASSERT] Location verified: state['current_scene_id'] == world_state.location == '{world_state.location}'")
 
-    # ✅ WorldState 스냅샷 저장 (위치 동기화 후 저장)
+    # WorldState 스냅샷 저장 (위치 동기화 후 저장)
     state['world_state'] = world_state.to_dict()
+    logger.info(f"🔄 [SYNC] Location synchronized in npc_node: world_state.location = {world_state.location}, stuck_count = {world_state.stuck_count}")
     logger.info(f"💾 [DB SNAPSHOT] Saved final state to DB with location: {world_state.location}")
 
     return state
