@@ -1965,8 +1965,11 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     if curr_scene:
         scene_title = curr_scene.get('title', curr_id)
         scene_type = curr_scene.get('type', 'normal')
-        npc_names = curr_scene.get('npcs', [])
-        enemy_names = curr_scene.get('enemies', [])
+        # ✅ NPC/Enemy 리스트 정규화: dict -> str
+        raw_npcs = curr_scene.get('npcs', [])
+        raw_enemies = curr_scene.get('enemies', [])
+        npc_names = [n.get('name') if isinstance(n, dict) else n for n in raw_npcs]
+        enemy_names = [e.get('name') if isinstance(e, dict) else e for e in raw_enemies]
 
     # ========================================
     # 💀 작업 2: 죽은 NPC 상태 정보 수집 (환각 방지)
@@ -1983,6 +1986,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 dead_npcs.append(npc_name)
 
         if dead_npcs:
+            # ✅ dead_npcs는 이미 문자열 리스트이므로 안전하게 join
             dead_list = ", ".join(dead_npcs)
             npc_status_context = f"""
 ⚠️ **[CRITICAL INSTRUCTION - NPC STATUS]**
