@@ -325,7 +325,7 @@ def intent_parser_node(state: PlayerState):
     """
     [계층형 파서로 업그레이드]
     우선순위:
-    1. 하드코딩 필터 (따옴표, 완전 일치, 인벤토리 검증)
+    1. 하드코딩 필터 (따옴표, 완전 일치만)
     2. LLM 의도 분류 (intent_classifier)
     3. Fast-Track 폴백
     """
@@ -339,7 +339,6 @@ def intent_parser_node(state: PlayerState):
     logger.info("🧹 [CLEANUP] Output fields cleared for new turn")
 
     # 🔍 [SESSION ISOLATION] WorldState 로컬 인스턴스 생성
-    # ✅ [C] from_dict_new 제거 - 존재하지 않는 메서드 호출 방지
     session_id = state.get('scenario_id', 'unknown')
     wsm = WorldState()
     ws_dict = state.get('world_state') or {}
@@ -415,10 +414,9 @@ def intent_parser_node(state: PlayerState):
     enemy_names = curr_scene.get('enemies', [])
 
     # =============================================================================
-    # [작업 1] 하드코딩 기반 고우선순위 필터링
+    # [작업 1] 하드코딩 기반 고우선순위 필터링 (최소화)
     # =============================================================================
 
-    # ✅ [작업 2] 하드코드 필터 시작 시 대상 장면 ID 로그 출력
     logger.info(f"🎯 [HARDCODE FILTER START] Filtering based on scene: '{curr_scene_id}' | Total transitions: {len(transitions)}")
 
     # 1-1. 따옴표 감지 -> 무조건 'chat' (대사/대화)
@@ -441,76 +439,6 @@ def intent_parser_node(state: PlayerState):
             state['parsed_intent'] = 'transition'
             return state
 
-    # 1-3. 아이템 버리기 키워드 감지 -> 'item_action'으로 분류
-    item_discard_keywords = ['버리', '버려', '버린', '던져', '던지', '버렸', '폐기', '제거']
-    if any(kw in user_input for kw in item_discard_keywords):
-        # 인벤토리 확인
-        player_vars = state.get('player_vars', {})
-        inventory = player_vars.get('inventory', [])
-
-        # 유저 입력에서 아이템 이름 추출 시도
-        item_found_in_inventory = False
-        for item in inventory:
-            if str(item) in user_input:
-                item_found_in_inventory = True
-                break
-
-        if item_found_in_inventory:
-            logger.info(f"🗑️ [HARDCODE FILTER] 아이템 버리기 감지 -> 'item_action' 분류 (scene: '{curr_scene_id}')")
-            state['parsed_intent'] = 'item_action'
-            return state
-        else:
-            logger.info(f"⚠️ [HARDCODE FILTER] 아이템 버리기 시도했으나 인벤토리에 없음 -> 'chat' (scene: '{curr_scene_id}')")
-            state['parsed_intent'] = 'chat'
-            state['system_message'] = "⚠️ 버릴 수 있는 아이템이 인벤토리에 없습니다."
-            return state
-
-    # 1-4. 아이템 사용 키워드 감지 + 인벤토리 검증
-    item_use_keywords = ['사용', '쓰', '뿌리', '던지', '먹', '마시', '착용', '장착']
-    if any(kw in user_input for kw in item_use_keywords):
-        # 인벤토리 확인
-        player_vars = state.get('player_vars', {})
-        inventory = player_vars.get('inventory', [])
-
-        # 유저 입력에서 아이템 이름 추출 시도 (간단한 휴리스틱)
-        has_item_in_inventory = False
-        extracted_item = None
-
-        # 인벤토리에 있는 아이템이 입력에 포함되어 있는지 확인
-        for item in inventory:
-            if str(item) in user_input:
-                has_item_in_inventory = True
-                extracted_item = item
-                break
-
-        # transitions에 아이템 사용이 필요한 경우 확인
-        for trans in transitions:
-            trigger = trans.get('trigger', '').strip().lower()
-            # trigger에 아이템 이름이 있는지 확인
-            for item in inventory:
-                if str(item).lower() in trigger:
-                    has_item_in_inventory = True
-                    break
-
-        # 아이템 사용 시도인데 인벤토리에 없으면 chat으로 거부
-        if not has_item_in_inventory and inventory != None:  # 인벤토리가 비어있지 않은 경우에만
-            # transitions에서 필요한 아이템 추출 시도
-            required_items = []
-            for trans in transitions:
-                trigger_text = trans.get('trigger', '')
-                # 간단한 패턴으로 아이템 추출 (개선 가능)
-                for word in trigger_text.split():
-                    if word and word not in ['을', '를', '사용', '던지', '뿌리']:
-                        if word not in [str(i) for i in inventory]:
-                            required_items.append(word)
-
-            if required_items:
-                logger.info(f"🚫 [HARDCODE FILTER] 인벤토리에 없는 아이템 사용 시도 -> 'chat' 강제 분류 (scene: '{curr_scene_id}')")
-                state['parsed_intent'] = 'chat'
-                state['system_message'] = f"⚠️ 인벤토리에 필요한 아이템이 없습니다."
-                return state
-
-    # ✅ [작업 2] 하드코드 필터 종료 로그
     logger.info(f"🎯 [HARDCODE FILTER END] No hardcode match found in scene '{curr_scene_id}', proceeding to LLM classifier")
 
     # =============================================================================
@@ -518,7 +446,7 @@ def intent_parser_node(state: PlayerState):
     # =============================================================================
 
     try:
-        # transitions 목록을 문자열로 포맷팅 - 강조된 섹션으로 변경
+        # transitions 목록을 문자열로 포맷팅
         transitions_list = ""
         if transitions:
             transitions_list += "📋 **[AVAILABLE ACTIONS - 이것들이 다음 장면으로 이동 가능한 정답입니다]**\n"
@@ -536,7 +464,6 @@ def intent_parser_node(state: PlayerState):
         intent_classifier_template = prompts.get('intent_classifier', '')
 
         if not intent_classifier_template:
-            # 프롬프트 로드 실패 시 기존 Fast-Track 방식 사용
             logger.warning("⚠️ intent_classifier prompt not found, falling back to fast-track")
             return _fast_track_intent_parser(state, user_input, curr_scene, get_scenario_by_id(scenario_id), endings)
 
@@ -563,7 +490,6 @@ def intent_parser_node(state: PlayerState):
         logger.info(f"🤖 [INTENT CLASSIFIER] Raw response: {response}")
 
         # JSON 파싱 시도
-        # JSON이 마크다운 코드블록에 싸여있을 수 있으므로 추출
         json_match = re.search(r'\{.*}', response, re.DOTALL)
         if json_match:
             json_str = json_match.group(0)
@@ -574,8 +500,20 @@ def intent_parser_node(state: PlayerState):
             confidence = intent_result.get('confidence', 0.0)
             reasoning = intent_result.get('reasoning', '')
             target_npc = intent_result.get('target_npc', None)
+            item_name = intent_result.get('item_name', None)  # 📦 [NEW] LLM이 추출한 아이템 이름
 
             logger.info(f"🎯 [INTENT] Type: {intent_type}, Confidence: {confidence:.2f}, Reasoning: {reasoning}")
+
+            # 📦 [NEW] item_name 저장 (LLM 데이터 캡처)
+            if item_name:
+                if '_internal_flags' not in state:
+                    state['_internal_flags'] = {}
+                state['_internal_flags']['item_name'] = item_name
+                logger.info(f"📦 [ITEM SYSTEM] Item name extracted by LLM: '{item_name}'")
+            else:
+                # item_name이 없으면 초기화
+                if '_internal_flags' in state:
+                    state['_internal_flags'].pop('item_name', None)
 
             # target_npc 저장
             if target_npc:
@@ -608,42 +546,33 @@ def intent_parser_node(state: PlayerState):
                 return state
 
             elif intent_type == 'attack':
-                # ✅ 작업 1: attack 의도를 무조건 보존 (transition으로 강제 변환 금지)
                 state['parsed_intent'] = 'attack'
-                # ✅ 작업 1: target_npc를 state에 반드시 저장
                 if target_npc:
                     state['target_npc'] = target_npc
                     logger.info(f"🎯 [ATTACK] Target NPC saved: '{target_npc}'")
                 else:
-                    # ========================================
-                    # 💡 작업 4: target_npc 추출 보강 - 자동 타겟팅
-                    # ========================================
-                    # target_npc가 없으면 현재 씬의 NPC/적 목록에서 추출 시도
+                    # target_npc 추출 보강 - 자동 타겟팅
                     npc_list = npc_names + enemy_names
 
-                    # 1차: user_input에서 NPC 이름 직접 매칭
                     for npc_name in npc_list:
                         if npc_name in user_input or npc_name.replace(' ', '').lower() in user_input.lower().replace(' ', ''):
                             state['target_npc'] = npc_name
                             logger.info(f"🎯 [ATTACK] Target extracted from input: '{npc_name}'")
                             break
 
-                    # 2차: WorldState.find_npc_key 활용 (퍼지 매칭)
                     if not state.get('target_npc'):
-                        wsm = WorldState()
+                        wsm_temp = WorldState()
                         if state.get('world_state'):
-                            wsm.from_dict(state['world_state'])
+                            wsm_temp.from_dict(state['world_state'])
 
                         for word in user_input.split():
-                            potential_target = wsm.find_npc_key(word)
+                            potential_target = wsm_temp.find_npc_key(word)
                             if potential_target and potential_target in npc_list:
                                 state['target_npc'] = potential_target
                                 logger.info(f"🎯 [ATTACK] Target found via find_npc_key: '{potential_target}'")
                                 break
 
-                    # 3차: 자동 타겟팅 - 현재 씬의 첫 번째 NPC/적 선택
                     if not state.get('target_npc') and npc_list:
-                        # 우선순위: enemies > npcs
                         if enemy_names:
                             state['target_npc'] = enemy_names[0]
                             logger.info(f"🎯 [ATTACK] Auto-targeting first enemy: '{enemy_names[0]}'")
@@ -651,7 +580,6 @@ def intent_parser_node(state: PlayerState):
                             state['target_npc'] = npc_names[0]
                             logger.info(f"🎯 [ATTACK] Auto-targeting first NPC: '{npc_names[0]}'")
 
-                    # 4차: 여전히 못찾으면 경고
                     if not state.get('target_npc'):
                         state['target_npc'] = ''
                         logger.warning(f"⚠️ [ATTACK] No target found in input: '{user_input}'")
@@ -663,12 +591,17 @@ def intent_parser_node(state: PlayerState):
                 state['parsed_intent'] = 'defend'
                 return state
 
+            elif intent_type == 'item_action':
+                # 📦 [NEW] item_action 의도 처리
+                state['parsed_intent'] = 'item_action'
+                logger.info(f"📦 [INTENT] Item action detected, item_name: '{item_name}'")
+                return state
+
             else:  # chat
                 state['parsed_intent'] = 'chat'
                 return state
 
         else:
-            # JSON 파싱 실패 시 폴백
             logger.warning("⚠️ Failed to parse JSON from intent classifier, falling back to fast-track")
             return _fast_track_intent_parser(state, user_input, curr_scene, scenario, endings)
 
@@ -992,67 +925,77 @@ def rule_node(state: PlayerState):
     if state['parsed_intent'] == 'item_action':
         logger.info(f"🎒 [ITEM_ACTION] Item action intent detected in rule_node")
 
-        # 유저 입력에서 아이템 이름 추출
         player_vars = state.get('player_vars', {})
         inventory = player_vars.get('inventory', [])
 
-        # 버리기 키워드 확인
+        # 📦 [NEW] LLM이 추출한 item_name을 최우선으로 사용
+        item_name = state.get('_internal_flags', {}).get('item_name', None)
+
+        if not item_name:
+            # 폴백: user_input에서 명사 추출 (방어적 처리)
+            logger.warning(f"⚠️ [ITEM_ACTION] No item_name from LLM, fallback to user_input parsing")
+
+            # 시나리오의 아이템 목록에서 매칭 시도
+            scenario_data = get_scenario_by_id(scenario_id)
+            available_items = scenario_data.get('items', [])
+
+            for item_data in available_items:
+                if isinstance(item_data, dict):
+                    item_candidate = item_data.get('name', '')
+                    if item_candidate and item_candidate in user_input:
+                        item_name = item_candidate
+                        logger.info(f"📦 [ITEM SYSTEM] Item name extracted from user_input: '{item_name}'")
+                        break
+
+            # 인벤토리에서도 매칭 시도
+            if not item_name:
+                for inv_item in inventory:
+                    if str(inv_item) in user_input:
+                        item_name = inv_item
+                        logger.info(f"📦 [ITEM SYSTEM] Item name extracted from inventory: '{item_name}'")
+                        break
+
+        if not item_name:
+            logger.warning(f"⚠️ [ITEM_ACTION] Failed to extract item_name. User input: '{user_input}'")
+            sys_msg.append(f"⚠️ 아이템 이름을 인식할 수 없습니다.")
+            state['system_message'] = " | ".join(sys_msg)
+            state['world_state'] = world_state.to_dict()
+            return state
+
+        logger.info(f"📦 [ITEM SYSTEM] Processing item action for: '{item_name}'")
+
+        # 버리기/줍기 판단 (LLM 추론 활용)
         discard_keywords = ['버리', '버려', '버린', '던져', '던지', '버렸', '폐기', '제거', '내려놓']
         is_discard_action = any(kw in user_input for kw in discard_keywords)
 
-        # ✅ 줍기 키워드 확인
         pickup_keywords = ['줍', '습득', '챙긴', '획득', '가져', '집어', '주워', '얻', '가방에']
         is_pickup_action = any(kw in user_input for kw in pickup_keywords)
 
         if is_discard_action:
-            # 인벤토리에서 아이템 찾기
-            item_to_remove = None
-            for item in inventory:
-                if str(item) in user_input:
-                    item_to_remove = item
-                    break
-
-            if item_to_remove:
-                # WorldState에서 아이템 제거
-                world_state._remove_item(item_to_remove)
-
-                # player_vars 동기화 강제
+            # 버리기 처리
+            if item_name in inventory or str(item_name) in [str(i) for i in inventory]:
+                world_state._remove_item(item_name)
                 state['player_vars']['inventory'] = list(world_state.player['inventory'])
 
-                sys_msg.append(f"🗑️ [{item_to_remove}]을(를) 버렸습니다.")
-                world_state.add_narrative_event(f"플레이어가 [{item_to_remove}]을(를) 버림")
-                logger.info(f"📦 [ITEM SYSTEM] Item discarded: {item_to_remove}")
+                sys_msg.append(f"🗑️ [{item_name}]을(를) 버렸습니다.")
+                world_state.add_narrative_event(f"플레이어가 [{item_name}]을(를) 버림")
+                logger.info(f"📦 [ITEM SYSTEM] Item discarded: {item_name}")
             else:
-                sys_msg.append(f"⚠️ 버릴 아이템을 찾을 수 없습니다.")
-                logger.warning(f"⚠️ [ITEM_ACTION] No matching item found in inventory for discard")
+                sys_msg.append(f"⚠️ [{item_name}]이(가) 인벤토리에 없습니다.")
+                logger.warning(f"⚠️ [ITEM_ACTION] Item not found in inventory for discard: {item_name}")
 
         elif is_pickup_action:
-            # 유저 입력에서 아이템 이름 추출 (간단한 휴리스틱)
-            # 시나리오의 item_registry에서 아이템 목록 확인
-            scenario_data = get_scenario_by_id(scenario_id)
-            available_items = scenario_data.get('items', [])
+            # 줍기 처리
+            world_state._add_item(item_name)
+            state['player_vars']['inventory'] = list(world_state.player['inventory'])
 
-            item_to_add = None
-            for item_data in available_items:
-                if isinstance(item_data, dict):
-                    item_name = item_data.get('name', '')
-                    if item_name and item_name in user_input:
-                        item_to_add = item_name
-                        break
-
-            if item_to_add:
-                # WorldState에 아이템 추가
-                world_state._add_item(item_to_add)
-
-                # player_vars 동기화 강제
-                state['player_vars']['inventory'] = list(world_state.player['inventory'])
-
-                sys_msg.append(f"📦 [{item_to_add}]을(를) 획득했습니다!")
-                world_state.add_narrative_event(f"플레이어가 [{item_to_add}]을(를) 습득함")
-                logger.info(f"📦 [ITEM SYSTEM] Item acquired: {item_to_add}")
-            else:
-                sys_msg.append(f"⚠️ 줍을 아이템을 찾을 수 없습니다.")
-                logger.warning(f"⚠️ [ITEM_ACTION] No matching item found in scenario for pickup")
+            sys_msg.append(f"📦 [{item_name}]을(를) 획득했습니다!")
+            world_state.add_narrative_event(f"플레이어가 [{item_name}]을(를) 습득함")
+            logger.info(f"📦 [ITEM SYSTEM] Item acquired: {item_name}")
+        else:
+            # 사용 처리 (transition으로 처리되어야 하는 경우가 많음)
+            logger.info(f"📦 [ITEM SYSTEM] Item use action detected, but should be handled by transition")
+            sys_msg.append(f"⚠️ [{item_name}]을(를) 어떻게 사용하시겠습니까?")
 
         # system_message 저장
         state['system_message'] = " | ".join(sys_msg)
