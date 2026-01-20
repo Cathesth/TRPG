@@ -662,6 +662,16 @@
                     setImageGenState({ isLoading: false, result: null });
                 }
             };
+
+            // [추가] 이미지 URL 처리 헬퍼 함수
+            const getImageUrl = (url) => {
+                if (!url) return '';
+                // http로 시작하면 외부 링크(예: placeholder, fallback)이므로 그대로 사용
+                if (url.startsWith('http') || url.startsWith('https')) return url;
+                // 그 외엔 내부 S3 경로이므로 프록시 엔드포인트 사용
+                return `/image/serve/${url}`;
+            };
+
             const loadPreset = (preset) => {
                 if(!confirm("현재 내용이 사라집니다. 적용하시겠습니까?")) return;
                 try {
@@ -926,9 +936,14 @@
                                                 <div className="mt-3 p-3 bg-[#0B0B19] border border-[#4A4A6A]">
                                                     <div className="text-[10px] text-[#6A6A8A] mb-2 font-bold">생성된 이미지</div>
                                                     <img 
-                                                        src={imageGenState.result.image_url} 
-                                                        alt="Generated" 
+                                                        src={getImageUrl(imageGenState.result.image_url)}
+                                                        alt="Generated"
                                                         className="w-full h-32 object-cover border border-[#4A4A6A]"
+                                                        onError={(e) => {
+                                                            // 로드 실패 시 대체 이미지
+                                                            e.target.onerror = null;
+                                                            e.target.src = "https://placehold.co/600x400/1a1a1a/666666?text=Image+Load+Error";
+                                                        }}
                                                     />
                                                     <div className="text-[10px] text-[#6A6A8A] mt-2">
                                                         {imageGenState.result.description}

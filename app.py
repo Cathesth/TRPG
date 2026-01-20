@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, Depends, APIRouter
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, RedirectResponse
+from fastapi.responses import Response, RedirectResponse, StreamingResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
@@ -200,6 +200,37 @@ async def health_check():
 @app.get("/")
 async def root():
     return RedirectResponse(url="/views/main") # 또는 index.html 경로
+
+
+@app.get("/image/serve/{file_path:path}")
+async def serve_image(file_path: str):
+    """
+    내부 S3/MinIO에 저장된 이미지를 백엔드가 읽어서 브라우저에 전달합니다.
+    사용법: <img src="/image/serve/폴더/파일명.png">
+    """
+    from core.s3_client import get_s3_client
+    s3 = get_s3_client()
+
+    # 버킷 이름 가져오기 (S3Client 구현에 따라 다를 수 있어 안전하게 처리)
+    bucket_name = getattr(s3, 'bucket_name', os.getenv("S3_BUCKET_NAME", "trpg-studio"))
+
+    try:
+        # S3에서 파일 스트림 가져오기 (aiobotocore 사용 가정)
+        # 만약 s3.client가 동기(boto3)라면 await를 제거하고 실행해야 하지만,
+        # initialize()가 async인 것으로 보아 비동기 클라이언트일 확률이 높습니다.
+        response = await s3.client.get_object(Bucket=bucket_name, Key=file_path)
+
+        async def stream_generator():
+            async for chunk in response['Body']:
+                yield chunk
+
+        return StreamingResponse(
+            stream_generator(),
+            media_type=response.get('ContentType', 'image/png')
+        )
+    except Exception as e:
+        logger.error(f"❌ [Image Serve] 이미지 로드 실패 ({file_path}): {e}")
+        return Response(status_code=404)
 
 
 if __name__ == '__main__':
