@@ -119,10 +119,13 @@ class WorldState:
             "custom_stats": {}  # 시나리오별 커스텀 스탯
         }
 
+        # D. Item Registry (아이템 도감/레지스트리)
+        self.item_registry: Dict[str, Any] = {}  # { "item_name": Item 객체 또는 dict }
+
         # 상태 변경 히스토리 (디버깅용)
         self.history: List[Dict[str, Any]] = []
 
-        # D. Narrative History (서사 기억 시스템)
+        # E. Narrative History (서사 기억 시스템)
         self.narrative_history: List[str] = []
         self.max_narrative_history = 10  # 슬라이딩 윈도우 크기
 
@@ -179,6 +182,29 @@ class WorldState:
         Args:
             scenario_data: 시나리오 JSON 데이터
         """
+        # ========================================
+        # 아이템 레지스트리 로딩 (최우선)
+        # ========================================
+        items_data = scenario_data.get('items', [])
+        for item_data in items_data:
+            if isinstance(item_data, dict):
+                item_name = item_data.get('name')
+                if item_name:
+                    self.item_registry[item_name] = item_data
+
+        logger.info(f"📦 [ITEM SYSTEM] Loaded {len(self.item_registry)} items into registry")
+
+        # ========================================
+        # 초기 인벤토리 로딩
+        # ========================================
+        initial_inventory = scenario_data.get('initial_state', {}).get('inventory', [])
+        if initial_inventory and isinstance(initial_inventory, list):
+            self.player['inventory'] = initial_inventory.copy()
+            logger.info(f"🎒 [ITEM SYSTEM] Initial inventory loaded: {self.player['inventory']}")
+        else:
+            self.player['inventory'] = []
+            logger.info(f"🎒 [ITEM SYSTEM] No initial inventory found")
+
         # [변경] 플레이어 초기 스탯 설정 - player_vars로 이동
         # player_state의 player_vars가 플레이어 스탯을 관리함
 
@@ -238,7 +264,7 @@ class WorldState:
                 "flags": {}
             }
 
-        logger.info(f"🌍 [WORLD STATE] Initialized with {len(self.npcs)} NPCs")
+        logger.info(f"🌍 [WORLD STATE] Initialized with {len(self.npcs)} NPCs, {len(self.item_registry)} items in registry")
 
     # ========================================
     # 2. 상태 업데이트 (핵심 로직)
@@ -369,24 +395,48 @@ class WorldState:
             target[stat_name] = max(0, target[stat_name])
 
     def _add_item(self, item: Union[str, List[str]]):
-        """아이템 추가"""
+        """아이템 추가 (레지스트리 참조 및 상세 로그)"""
         if isinstance(item, str):
             if item not in self.player["inventory"]:
                 self.player["inventory"].append(item)
+                # 레지스트리 참조하여 상세 로그
+                item_info = self.item_registry.get(item)
+                if item_info:
+                    desc = item_info.get('description', 'N/A')
+                    logger.info(f"📦 [ITEM SYSTEM] Added '{item}' to inventory - {desc}")
+                else:
+                    logger.info(f"📦 [ITEM SYSTEM] Added '{item}' to inventory (not in registry)")
         elif isinstance(item, list):
             for i in item:
                 if i not in self.player["inventory"]:
                     self.player["inventory"].append(i)
+                    item_info = self.item_registry.get(i)
+                    if item_info:
+                        desc = item_info.get('description', 'N/A')
+                        logger.info(f"📦 [ITEM SYSTEM] Added '{i}' to inventory - {desc}")
+                    else:
+                        logger.info(f"📦 [ITEM SYSTEM] Added '{i}' to inventory (not in registry)")
 
     def _remove_item(self, item: Union[str, List[str]]):
-        """아이템 제거"""
+        """아이템 제거 (레지스트리 참조 및 상세 로그)"""
         if isinstance(item, str):
             if item in self.player["inventory"]:
                 self.player["inventory"].remove(item)
+                # 레지스트리 참조하여 상세 로그
+                item_info = self.item_registry.get(item)
+                if item_info:
+                    logger.info(f"🗑️ [ITEM SYSTEM] Removed '{item}' from inventory")
+                else:
+                    logger.info(f"🗑️ [ITEM SYSTEM] Removed '{item}' from inventory (not in registry)")
         elif isinstance(item, list):
             for i in item:
                 if i in self.player["inventory"]:
                     self.player["inventory"].remove(i)
+                    item_info = self.item_registry.get(i)
+                    if item_info:
+                        logger.info(f"🗑️ [ITEM SYSTEM] Removed '{i}' from inventory")
+                    else:
+                        logger.info(f"🗑️ [ITEM SYSTEM] Removed '{i}' from inventory (not in registry)")
 
     def _update_npc_state(self, npc_name: str, effect: Dict[str, Any]):
         """NPC 상태 업데이트"""
@@ -581,7 +631,8 @@ class WorldState:
             "npcs": self.npcs,
             "history": self.history,
             "narrative_history": self.narrative_history,
-            "player": self.player  # player 데이터도 직렬화
+            "player": self.player,  # player 데이터도 직렬화
+            "item_registry": self.item_registry  # 아이템 레지스트리 직렬화
         }
 
     def from_dict(self, data: Dict[str, Any]):
@@ -594,6 +645,9 @@ class WorldState:
         self.history = data.get("history", [])
         self.narrative_history = data.get("narrative_history", [])
 
+        # 아이템 레지스트리 복원
+        self.item_registry = data.get("item_registry", {})
+
         # ✅ 작업 1: player 데이터 병합 - 기존 데이터 유지하며 업데이트
         if "player" in data:
             saved_player = data["player"]
@@ -601,7 +655,7 @@ class WorldState:
             self.player.update(saved_player)
             logger.info(f"🔄 [PLAYER RESTORE] Player data merged from saved state (HP: {self.player.get('hp', 'N/A')})")
 
-        logger.info(f"WorldState restored from saved data (Turn: {self.turn_count})")
+        logger.info(f"WorldState restored from saved data (Turn: {self.turn_count}, Items in registry: {len(self.item_registry)})")
 
     def _get_snapshot(self) -> Dict[str, Any]:
         """현재 상태 스냅샷 (히스토리용)"""
