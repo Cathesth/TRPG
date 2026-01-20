@@ -1,24 +1,28 @@
 // ui_manager.js - 화면 렌더링 및 UI 제어
 
-// [추가] 이미지 URL 헬퍼 함수
+// [헬퍼] 이미지 URL 변환 (백엔드 프록시 사용)
 function getImageUrl(url) {
     if (!url) return '';
-    // 이미지를 백엔드 프록시 태워서 가져옴
     return `/image/serve/${encodeURIComponent(url)}`;
 }
 
-// [추가] 배경 이미지 변경 함수
+// [수정] 배경 이미지 변경 함수 (프리로딩 적용으로 깜빡임 방지)
 function updateBackgroundImage(url) {
     if (!url) return;
 
-    // 프록시 URL로 변환
     const proxyUrl = getImageUrl(url);
 
-    // body의 배경 이미지 변경 (어둡게 처리된 오버레이 유지)
-    document.body.style.backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('${proxyUrl}')`;
-    document.body.style.backgroundSize = 'cover';
-    document.body.style.backgroundPosition = 'center';
-    document.body.style.backgroundAttachment = 'fixed';
+    // 이미지를 미리 로드하여 캐시에 담음
+    const img = new Image();
+    img.src = proxyUrl;
+
+    img.onload = () => {
+        document.body.style.backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('${proxyUrl}')`;
+        document.body.style.backgroundSize = 'cover';
+        document.body.style.backgroundPosition = 'center';
+        document.body.style.backgroundAttachment = 'fixed';
+        document.body.style.transition = 'background-image 0.5s ease-in-out'; // 부드러운 전환 효과
+    };
 }
 
 function scrollToBottom(smooth = true) {
@@ -68,7 +72,8 @@ function disableGameUI() {
 // 픽셀 아트 블록 게이지 생성 함수
 function createBlockGauge(current, max, type = 'hp') {
     const segments = 10; // 10개의 블록
-    const filled = Math.ceil((current / max) * segments);
+    const safeMax = max > 0 ? max : 100; // 0으로 나누기 방지
+    const filled = Math.min(Math.max(Math.ceil((current / safeMax) * segments), 0), segments);
     const className = type === 'hp' ? 'filled-hp' : 'filled-sanity';
 
     let html = '<div class="block-gauge">';
@@ -245,24 +250,7 @@ function resetGameUI() {
     }
 
     // 디버그 영역 초기화
-    const npcStatusArea = document.getElementById('npc-status-area');
-    const worldStateArea = document.getElementById('world-state-area');
-
-    if (npcStatusArea) {
-        npcStatusArea.innerHTML = `
-            <div class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
-                NPC 데이터 없음
-            </div>
-        `;
-    }
-
-    if (worldStateArea) {
-        worldStateArea.innerHTML = `
-            <div class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
-                World State 데이터 없음
-            </div>
-        `;
-    }
+    showEmptyDebugState();
 
     // 상태 초기화
     isGameEnded = false;
@@ -274,7 +262,7 @@ function resetGameUI() {
     lucide.createIcons();
 }
 
-// [수정] 스탯 업데이트 함수 (이미지 연동)
+// [수정] 스탯 업데이트 함수 (이미지 에러 처리 및 골드 강조 강화)
 function updateStats(statsData) {
     const statsArea = document.getElementById('player-stats-area');
     if (!statsArea) return;
@@ -284,7 +272,7 @@ function updateStats(statsData) {
         'hp': { icon: 'heart', color: 'text-red-400', isBar: true, max: 'max_hp', type: 'hp' },
         'mp': { icon: 'zap', color: 'text-blue-400', isBar: true, max: 'max_mp', type: 'mp' },
         'sanity': { icon: 'brain', color: 'text-purple-400', isBar: true, max: 100, type: 'sanity' },
-        'gold': { icon: 'coins', color: 'text-yellow-400' }
+        // gold는 별도 처리
     };
 
     let html = `
@@ -295,11 +283,12 @@ function updateStats(statsData) {
         </div>
         <div class="space-y-3">`;
 
-    // 1. 기본 스탯 (HP, MP 등) 렌더링
+    // 1. 기본 스탯 (HP, MP, Sanity) 렌더링
     for (const [k, v] of Object.entries(statsData)) {
-        if (k !== 'inventory' && k !== 'world_state' && k !== 'npcs' && !k.startsWith('max_') && !k.startsWith('npc_appeared_') && !k.startsWith('_')) {
-            const config = statConfig[k.toLowerCase()] || { icon: 'circle', color: 'text-gray-400' };
+        if (k === 'gold' || k === 'inventory' || k === 'world_state' || k === 'npcs' || k.startsWith('max_') || k.startsWith('npc_appeared_') || k.startsWith('_')) continue;
 
+        const config = statConfig[k.toLowerCase()];
+        if (config) {
             if (config.isBar) {
                 let maxVal = typeof config.max === 'string' ? (statsData[config.max] || 100) : 100;
                 html += `
@@ -313,19 +302,32 @@ function updateStats(statsData) {
                     ${createBlockGauge(v, maxVal, config.type || 'hp')}
                 </div>`;
             } else {
+                // 기타 스탯 (Str, Int 등)
                 html += `
                 <div class="flex justify-between items-center border-b-2 border-rpg-700 py-2">
-                    <span class="text-xs ${config.color} flex items-center gap-1 font-dot font-bold">
-                        <i data-lucide="${config.icon}" class="w-4 h-4"></i>${k.toUpperCase()}
+                    <span class="text-xs text-gray-400 flex items-center gap-1 font-dot font-bold">
+                        <i data-lucide="circle" class="w-3 h-3"></i>${k.toUpperCase()}
                     </span>
                     <span class="text-white font-bold text-sm font-pixel">${v}</span>
                 </div>`;
             }
         }
     }
-    html += '</div>';
 
-    // 2. 인벤토리 렌더링 (이미지 지원)
+    // [신규] 골드 별도 표시
+    if (statsData.gold !== undefined) {
+        html += `
+        <div class="flex justify-between items-center bg-yellow-900/20 border border-yellow-700/50 p-2 mt-2 rounded">
+            <span class="text-xs text-yellow-400 flex items-center gap-1 font-dot font-bold">
+                <i data-lucide="coins" class="w-4 h-4"></i>GOLD
+            </span>
+            <span class="text-yellow-300 font-bold text-sm font-pixel">${statsData.gold} G</span>
+        </div>`;
+    }
+
+    html += '</div>'; // End space-y-3
+
+    // 2. 인벤토리 렌더링 (이미지 지원 + 에러 핸들링)
     if (statsData.inventory && statsData.inventory.length > 0) {
         html += `
         <div class="border-t-4 border-rpg-700 pt-3 mt-3">
@@ -339,7 +341,13 @@ function updateStats(statsData) {
             if (typeof item === 'object' && item.image) {
                 html += `
                 <div class="group relative bg-rpg-800 border-2 border-gray-600 w-10 h-10 flex items-center justify-center cursor-help hover:border-yellow-400 transition-colors">
-                    <img src="${getImageUrl(item.image)}" class="w-full h-full object-cover pixel-avatar" alt="${item.name}">
+                    <img src="${getImageUrl(item.image)}"
+                         class="w-full h-full object-cover pixel-avatar"
+                         alt="${item.name}"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div class="hidden w-full h-full items-center justify-center bg-rpg-800">
+                        <i data-lucide="box" class="w-4 h-4 text-gray-400"></i>
+                    </div>
                     <span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black border border-white text-[10px] whitespace-nowrap hidden group-hover:block z-20 font-dot">
                         ${item.name}
                     </span>
@@ -358,8 +366,7 @@ function updateStats(statsData) {
 
     statsArea.innerHTML = html;
 
-    // 3. [신규] NPC 상태창 업데이트 (초상화 지원)
-    // 주의: HTML에 id="npc-status-area"인 요소가 있어야 함 (기본 템플릿에 있음)
+    // 3. NPC 상태창 업데이트 (초상화 지원 + 에러 핸들링)
     const npcArea = document.getElementById('npc-status-area');
     if (npcArea && statsData.npcs && Array.isArray(statsData.npcs)) {
         let npcHtml = '<div class="grid grid-cols-4 gap-2">';
@@ -368,13 +375,20 @@ function updateStats(statsData) {
             const hasImage = npc.image && npc.image.length > 0;
             // 적은 빨간 테두리, 아군은 초록 테두리
             const borderClass = npc.isEnemy ? 'border-red-500 shadow-[0_0_5px_rgba(255,0,0,0.5)]' : 'border-green-500 shadow-[0_0_5px_rgba(0,255,0,0.5)]';
+            const iconType = npc.isEnemy ? 'skull' : 'user';
 
             npcHtml += `
             <div class="flex flex-col items-center group relative">
                 <div class="w-12 h-12 bg-rpg-900 border-2 ${borderClass} overflow-hidden mb-1 relative transition-transform hover:scale-110 cursor-help">
                     ${hasImage
-                        ? `<img src="${getImageUrl(npc.image)}" class="w-full h-full object-cover pixel-avatar" alt="${npc.name}">`
-                        : `<div class="w-full h-full flex items-center justify-center text-gray-600"><i data-lucide="${npc.isEnemy ? 'skull' : 'user'}" class="w-6 h-6"></i></div>`
+                        ? `<img src="${getImageUrl(npc.image)}"
+                                class="w-full h-full object-cover pixel-avatar"
+                                alt="${npc.name}"
+                                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                           <div class="hidden w-full h-full items-center justify-center text-gray-600 bg-rpg-900 absolute top-0 left-0">
+                                <i data-lucide="${iconType}" class="w-6 h-6"></i>
+                           </div>`
+                        : `<div class="w-full h-full flex items-center justify-center text-gray-600"><i data-lucide="${iconType}" class="w-6 h-6"></i></div>`
                     }
                 </div>
                 <span class="text-[9px] text-gray-400 truncate w-full text-center font-dot bg-black/50 px-1 rounded">${npc.name}</span>
@@ -382,14 +396,14 @@ function updateStats(statsData) {
                 <div class="absolute bottom-full mb-2 hidden group-hover:block z-50 w-40 bg-rpg-800 border-2 border-white p-2 text-[10px] shadow-xl">
                     <div class="font-bold text-white mb-1 border-b border-gray-600 pb-1">${npc.name}</div>
                     <div class="text-gray-300 leading-tight">${npc.description || '정보 없음'}</div>
-                    ${npc.hp ? `<div class="mt-1 text-red-400">HP: ${npc.hp}</div>` : ''}
+                    ${npc.hp ? `<div class="mt-1 text-red-400 font-bold">HP: ${npc.hp}</div>` : ''}
                 </div>
             </div>`;
         });
         npcHtml += '</div>';
 
         if(statsData.npcs.length === 0) {
-            npcArea.innerHTML = '<div class="text-gray-500 text-xs text-center py-2">주변에 아무도 없습니다.</div>';
+            npcArea.innerHTML = '<div class="text-gray-500 text-xs text-center py-2 font-dot">주변에 아무도 없습니다.</div>';
         } else {
             npcArea.innerHTML = npcHtml;
         }
@@ -435,7 +449,7 @@ function showToast(message, type = 'info') {
     toast.className = `fixed bottom-4 right-4 z-[100] ${bgColor} border px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3`;
     toast.innerHTML = `
         <i data-lucide="${icon}" class="w-5 h-5"></i>
-        <span class="font-medium">${message}</span>
+        <span class="font-medium font-dot">${message}</span>
     `;
 
     document.body.appendChild(toast);
@@ -458,7 +472,6 @@ function editScenario(filename) {
 function openScenesView() {
     if (isScenarioLoaded) {
         isInternalNavigation = true;
-        // ✅ [FIX 3-2] 내부 네비게이션 플래그를 sessionStorage에 저장
         sessionStorage.setItem(NAVIGATION_FLAG_KEY, 'true');
         window.location.href = '/views/scenes';
     }
@@ -549,7 +562,7 @@ function updateModelVersions() {
         modelVersionSelect.appendChild(option);
     });
 
-    // 이전에 저장된 모델 버전 복원
+    // 이전에 저장된 모델 버전 복원 (값이 현재 목록에 있을 때만)
     const savedModelVersion = sessionStorage.getItem(MODEL_VERSION_KEY);
     if (savedModelVersion && Array.from(modelVersionSelect.options).some(opt => opt.value === savedModelVersion)) {
         modelVersionSelect.value = savedModelVersion;

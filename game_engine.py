@@ -5,7 +5,7 @@ import os
 import re
 import difflib
 import yaml
-from typing import TypedDict, List, Dict, Any
+from typing import TypedDict, List, Dict, Any, Optional, Generator
 from langgraph.graph import StateGraph, END
 from llm_factory import LLMFactory
 from dotenv import load_dotenv
@@ -1386,7 +1386,7 @@ def npc_node(state: PlayerState):
         if not target_npc:
             # 현재 씬의 NPC/적 목록
             all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
-            curr_scene = all_scenes.get(curr_scene_id)
+            curr_scene = all_scenes.get(curr_id)
 
             if curr_scene:
                 npc_list = curr_scene.get('npcs', []) + curr_scene.get('enemies', [])
