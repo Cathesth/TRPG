@@ -406,6 +406,8 @@ class WorldState:
                     logger.info(f"📦 [ITEM SYSTEM] Added '{item}' to inventory - {desc}")
                 else:
                     logger.info(f"📦 [ITEM SYSTEM] Added '{item}' to inventory (not in registry)")
+            else:
+                logger.debug(f"📦 [ITEM SYSTEM] '{item}' already in inventory, skipping")
         elif isinstance(item, list):
             for i in item:
                 if i not in self.player["inventory"]:
@@ -416,6 +418,8 @@ class WorldState:
                         logger.info(f"📦 [ITEM SYSTEM] Added '{i}' to inventory - {desc}")
                     else:
                         logger.info(f"📦 [ITEM SYSTEM] Added '{i}' to inventory (not in registry)")
+                else:
+                    logger.debug(f"📦 [ITEM SYSTEM] '{i}' already in inventory, skipping")
 
     def _remove_item(self, item: Union[str, List[str]]):
         """아이템 제거 (레지스트리 참조 및 상세 로그)"""
@@ -428,6 +432,8 @@ class WorldState:
                     logger.info(f"🗑️ [ITEM SYSTEM] Removed '{item}' from inventory")
                 else:
                     logger.info(f"🗑️ [ITEM SYSTEM] Removed '{item}' from inventory (not in registry)")
+            else:
+                logger.warning(f"⚠️ [ITEM SYSTEM] Cannot remove '{item}' - not in inventory")
         elif isinstance(item, list):
             for i in item:
                 if i in self.player["inventory"]:
@@ -437,6 +443,8 @@ class WorldState:
                         logger.info(f"🗑️ [ITEM SYSTEM] Removed '{i}' from inventory")
                     else:
                         logger.info(f"🗑️ [ITEM SYSTEM] Removed '{i}' from inventory (not in registry)")
+                else:
+                    logger.warning(f"⚠️ [ITEM SYSTEM] Cannot remove '{i}' - not in inventory")
 
     def _update_npc_state(self, npc_name: str, effect: Dict[str, Any]):
         """NPC 상태 업데이트"""
