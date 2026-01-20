@@ -20,7 +20,8 @@ game_router = APIRouter(prefix="/game", tags=["game"])
 MAX_RETRIES = 2
 
 
-def enrich_world_state(world_state: dict, player_state: dict, scenario: dict = None, db_session: GameSession = None) -> dict:
+def enrich_world_state(world_state: dict, player_state: dict, scenario: dict = None,
+                       db_session: GameSession = None) -> dict:
     """
     World State를 완전하게 보강하는 공통 함수
 
@@ -36,7 +37,8 @@ def enrich_world_state(world_state: dict, player_state: dict, scenario: dict = N
     enriched = world_state.copy() if world_state else {}
 
     # 1. location 및 current_scene_id 동기화
-    location = enriched.get('location') or player_state.get('current_scene_id') or (db_session.current_scene_id if db_session else '')
+    location = enriched.get('location') or player_state.get('current_scene_id') or (
+        db_session.current_scene_id if db_session else '')
     enriched['location'] = location
     enriched['current_scene_id'] = location
 
@@ -76,9 +78,9 @@ def enrich_world_state(world_state: dict, player_state: dict, scenario: dict = N
 
 @game_router.get('/session_state')
 async def get_session_state(
-    session_id: str = Query(..., description="세션 ID"),
-    db: Session = Depends(get_db),
-    user: CurrentUser = Depends(get_current_user_optional)
+        session_id: str = Query(..., description="세션 ID"),
+        db: Session = Depends(get_db),
+        user: CurrentUser = Depends(get_current_user_optional)
 ):
     """
     프론트엔드가 서버의 최신 세션 상태를 조회하는 API
@@ -321,6 +323,7 @@ async def game_act_stream(
         # JSON 파싱 실패 시 에러 반환
         def error_gen():
             yield f"data: {json.dumps({'type': 'error', 'content': 'Invalid request format'})}\n\n"
+
         return StreamingResponse(error_gen(), media_type='text/event-stream')
 
     # ✅ [중요] 세션 ID와 시나리오 ID 검증 로직
@@ -364,7 +367,8 @@ async def game_act_stream(
                     if 'world_state' in restored_state:
                         wsm.from_dict(restored_state['world_state'])
                         turn_count = restored_state.get('world_state', {}).get('turn_count', 0)
-                        logger.info(f"🔍 [SESSION ISOLATION] Restored WorldState for session: {session_id}, turn: {turn_count}")
+                        logger.info(
+                            f"🔍 [SESSION ISOLATION] Restored WorldState for session: {session_id}, turn: {turn_count}")
                     else:
                         logger.warning(f"⚠️ [WORLD INIT] world_state missing in restored_state")
 
@@ -387,6 +391,7 @@ async def game_act_stream(
         if not game_state.state or not game_state.game_graph:
             def error_gen():
                 yield f"data: {json.dumps({'type': 'error', 'content': '세션을 찾을 수 없습니다. 시나리오를 다시 로드해주세요.'})}\n\n"
+
             return StreamingResponse(error_gen(), media_type='text/event-stream')
 
     if not game_state.state or not game_state.game_graph:
@@ -486,7 +491,8 @@ async def game_act_stream(
                 # ✅ [치명적 버그 수정] LangGraph가 생성한 world_state를 절대 덮어쓰지 않음
                 # processed_state에 이미 world_state가 있으면 그대로 사용
                 if 'world_state' in processed_state:
-                    logger.info(f"✅ [WORLD STATE] Using LangGraph-generated world_state (turn: {processed_state.get('world_state', {}).get('turn_count', 'N/A')})")
+                    logger.info(
+                        f"✅ [WORLD STATE] Using LangGraph-generated world_state (turn: {processed_state.get('world_state', {}).get('turn_count', 'N/A')})")
                 else:
                     logger.warning(f"⚠️ [WORLD STATE] LangGraph did not return world_state!")
 
@@ -526,7 +532,8 @@ async def game_act_stream(
                 'player_state': processed_state,
                 'world_state': processed_state.get('world_state'),
                 'current_scene_id': processed_state.get('current_scene_id'),
-                'turn_count': processed_state.get('world_state', {}).get('turn_count', 0) if isinstance(processed_state.get('world_state'), dict) else 0,
+                'turn_count': processed_state.get('world_state', {}).get('turn_count', 0) if isinstance(
+                    processed_state.get('world_state'), dict) else 0,
                 'scenario_id': scenario_id
             }
             background_tasks.add_task(save_to_redis_async, session_id, cache_data)
@@ -548,22 +555,48 @@ async def game_act_stream(
                 sys_html = f"<div class='text-xs text-indigo-400 mb-2 border-l-2 border-indigo-500 pl-2'>🚀 {sys_msg}</div>"
                 yield f"data: {json.dumps({'type': 'prefix', 'content': sys_html})}\n\n"
 
-            # B. NPC 대화 (NPC 이름 표시)
+            # B. NPC 대화 (NPC 이름 및 초상화 표시)
             if npc_say:
-                # 현재 씬에서 NPC 이름 가져오기
                 curr_scene_id = processed_state['current_scene_id']
                 all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
                 curr_scene = all_scenes.get(curr_scene_id)
                 npc_names = curr_scene.get('npcs', []) if curr_scene else []
-                npc_name = npc_names[0] if npc_names else "NPC"
+
+                npc_name_str = "NPC"
+                npc_image_url = ""
+
+                # NPC 이름 및 이미지 URL 추출
+                if npc_names:
+                    first_npc = npc_names[0]
+                    if isinstance(first_npc, dict):
+                        npc_name_str = first_npc.get('name', 'NPC')
+                        npc_image_url = first_npc.get('image', '')
+                    else:
+                        npc_name_str = first_npc
+
+                # 이미지 태그 생성 (이미지가 있을 경우에만)
+                img_tag = ""
+                if npc_image_url:
+                    import urllib.parse
+                    # URL 안전하게 인코딩 (필요시)
+                    safe_url = urllib.parse.quote(npc_image_url, safe=':/')
+                    # 프록시 경로를 사용하거나 원본 URL 사용 (여기서는 프록시 경로 가정)
+                    img_tag = f"""
+                    <div class="w-12 h-12 rounded-none border-2 border-yellow-400 bg-rpg-900 overflow-hidden shrink-0 mr-3 shadow-md">
+                        <img src="/image/serve/{safe_url}" class="w-full h-full object-cover pixel-avatar">
+                    </div>
+                    """
 
                 npc_html = f"""
-                <div class='bg-gradient-to-r from-yellow-900/30 to-yellow-800/20 p-4 rounded-lg border-l-4 border-yellow-500 mb-4 shadow-lg'>
-                    <div class='flex items-center gap-2 mb-2'>
-                        <i data-lucide="message-circle" class="w-4 h-4 text-yellow-400"></i>
-                        <span class='text-yellow-400 font-bold text-sm uppercase tracking-wide'>{npc_name}</span>
+                <div class='bg-gradient-to-r from-yellow-900/30 to-yellow-800/20 p-4 rounded-lg border-l-4 border-yellow-500 mb-4 shadow-lg flex items-start'>
+                    {img_tag}
+                    <div class="flex-1">
+                        <div class='flex items-center gap-2 mb-2'>
+                            <i data-lucide="message-circle" class="w-4 h-4 text-yellow-400"></i>
+                            <span class='text-yellow-400 font-bold text-sm uppercase tracking-wide'>{npc_name_str}</span>
+                        </div>
+                        <div class='text-gray-200 leading-relaxed pl-6'>{npc_say}</div>
                     </div>
-                    <div class='text-gray-200 leading-relaxed pl-6'>{npc_say}</div>
                 </div>
                 """
                 yield f"data: {json.dumps({'type': 'prefix', 'content': npc_html})}\n\n"
@@ -616,12 +649,28 @@ async def game_act_stream(
 
             # ✅ [수정 3] World State 전송 시 processed_state의 world_state를 그대로 사용
             world_state_data = processed_state.get('world_state', {})
+
+            # 1-1. 배경 이미지 확인 및 전송
+            current_loc = processed_state.get('current_scene_id')
+            if current_loc:
+                bg_image_url = ""
+                # 시나리오에서 현재 씬의 background_image 찾기
+                for scene in scenario.get('scenes', []):
+                    if scene.get('scene_id') == current_loc:
+                        bg_image_url = scene.get('background_image', '')
+                        break
+
+                # 배경 이미지가 있으면 클라이언트로 전송
+                if bg_image_url:
+                    yield f"data: {json.dumps({'type': 'bg_update', 'content': bg_image_url})}\n\n"
+
             if world_state_data:
                 # World State에 씬 정보 추가
                 world_state_with_scene = world_state_data.copy()
 
                 # [FIX] 현재 위치는 player_state의 current_scene_id를 우선적으로 사용 (더 정확함)
-                location_scene_id = processed_state.get('current_scene_id') or world_state_with_scene.get('location', '')
+                location_scene_id = processed_state.get('current_scene_id') or world_state_with_scene.get('location',
+                                                                                                          '')
 
                 # 디버그 로그
                 logger.info(
@@ -684,7 +733,8 @@ async def game_act_stream(
                         'relationship': 50,
                         'emotion': 'neutral',
                         'location': '알 수 없음',
-                        'is_hostile': npc.get('isEnemy', False)
+                        'is_hostile': npc.get('isEnemy', False),
+                        'image': npc.get('image', None)  # [추가] 이미지 속성
                     }
 
             # WorldState의 NPC 정보로 업데이트
@@ -714,10 +764,12 @@ async def game_act_stream(
                             'relationship': npc_state.get('relationship', 50),
                             'emotion': npc_state.get('emotion', 'neutral'),
                             'location': npc_state.get('location', '알 수 없음'),
-                            'is_hostile': npc_state.get('is_hostile', False)
+                            'is_hostile': npc_state.get('is_hostile', False),
+                            'image': npc_state.get('image', None)
                         }
 
             # 현재 씬의 NPC 위치 정보 업데이트
+            # [FIX] unhashable type: 'dict' 에러 수정 및 이미지 연동
             all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
             for scene_id, scene in all_scenes.items():
                 scene_title = scene.get('title', scene_id)
@@ -728,8 +780,13 @@ async def game_act_stream(
                     # entity가 dict면 name 추출, 문자열이면 그대로 사용
                     entity_name = entity.get('name') if isinstance(entity, dict) else entity
 
-                    if entity_name in all_scenario_npcs and all_scenario_npcs[entity_name]['location'] == '알 수 없음':
-                        all_scenario_npcs[entity_name]['location'] = scene_title
+                    if entity_name in all_scenario_npcs:
+                        if all_scenario_npcs[entity_name]['location'] == '알 수 없음':
+                            all_scenario_npcs[entity_name]['location'] = scene_title
+
+                        # [중요] 씬 데이터에 이미지가 있다면 상태 정보에 반영 (이미지 연동)
+                        if isinstance(entity, dict) and entity.get('image'):
+                            all_scenario_npcs[entity_name]['image'] = entity['image']
 
             # 전체 NPC 정보 전송
             if all_scenario_npcs:
@@ -826,7 +883,9 @@ async def get_game_session_data(
                         'relationship': 50,
                         'emotion': 'neutral',
                         'location': '알 수 없음',
-                        'is_hostile': npc.get('isEnemy', False)
+                        'is_hostile': npc.get('isEnemy', False),
+                        # [추가] 이미지 속성
+                        'image': npc.get('image', None)
                     }
 
         # WorldState의 NPC 정보로 업데이트
@@ -856,7 +915,8 @@ async def get_game_session_data(
                         'relationship': npc_state.get('relationship', 50),
                         'emotion': npc_state.get('emotion', 'neutral'),
                         'location': npc_state.get('location', '알 수 없음'),
-                        'is_hostile': npc_state.get('is_hostile', False)
+                        'is_hostile': npc_state.get('is_hostile', False),
+                        'image': npc_state.get('image', None)
                     }
 
         # 현재 씬의 NPC 위치 정보 업데이트
@@ -864,15 +924,19 @@ async def get_game_session_data(
             all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
             for scene_id, scene in all_scenes.items():
                 scene_title = scene.get('title', scene_id)
-                # npcs와 enemies 리스트 합치기
+                # [FIX] unhashable type: 'dict' 해결
                 scene_entities = scene.get('npcs', []) + scene.get('enemies', [])
 
                 for entity in scene_entities:
-                    # entity가 dict면 name 추출, 문자열이면 그대로 사용
                     entity_name = entity.get('name') if isinstance(entity, dict) else entity
 
-                    if entity_name in all_scenario_npcs and all_scenario_npcs[entity_name]['location'] == '알 수 없음':
-                        all_scenario_npcs[entity_name]['location'] = scene_title
+                    if entity_name in all_scenario_npcs:
+                        if all_scenario_npcs[entity_name]['location'] == '알 수 없음':
+                            all_scenario_npcs[entity_name]['location'] = scene_title
+
+                        # [중요] 씬 데이터에 이미지가 있다면 상태 정보에 반영 (이미지 연동)
+                        if isinstance(entity, dict) and entity.get('image'):
+                            all_scenario_npcs[entity_name]['image'] = entity['image']
 
         # World State에 씬 정보 추가
         world_state_with_scene = game_session.world_state.copy() if game_session.world_state else {}
@@ -890,7 +954,8 @@ async def get_game_session_data(
 
         # ✅ [작업 2] 세션 조회 API 데이터 정합성 보강 - player_state의 데이터를 world_state에 강제 덮어쓰기
         world_state_with_scene['location'] = game_session.current_scene_id
-        world_state_with_scene['stuck_count'] = game_session.player_state.get('stuck_count', 0) if game_session.player_state else 0
+        world_state_with_scene['stuck_count'] = game_session.player_state.get('stuck_count',
+                                                                              0) if game_session.player_state else 0
         world_state_with_scene['turn_count'] = game_session.turn_count
 
         location_scene_title = ''

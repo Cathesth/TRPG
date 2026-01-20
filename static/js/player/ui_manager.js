@@ -1,8 +1,24 @@
 // ui_manager.js - 화면 렌더링 및 UI 제어
+
+// [추가] 이미지 URL 헬퍼 함수
 function getImageUrl(url) {
     if (!url) return '';
     // 이미지를 백엔드 프록시 태워서 가져옴
     return `/image/serve/${encodeURIComponent(url)}`;
+}
+
+// [추가] 배경 이미지 변경 함수
+function updateBackgroundImage(url) {
+    if (!url) return;
+
+    // 프록시 URL로 변환
+    const proxyUrl = getImageUrl(url);
+
+    // body의 배경 이미지 변경 (어둡게 처리된 오버레이 유지)
+    document.body.style.backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('${proxyUrl}')`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundPosition = 'center';
+    document.body.style.backgroundAttachment = 'fixed';
 }
 
 function scrollToBottom(smooth = true) {
@@ -559,3 +575,4 @@ window.showToast = showToast;
 window.editScenario = editScenario;
 window.openScenesView = openScenesView;
 window.updateModelVersions = updateModelVersions;
+window.updateBackgroundImage = updateBackgroundImage;
