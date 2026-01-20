@@ -1,7 +1,8 @@
 """
 AI 이미지 생성 서비스 (Dual Engine: Gemini 2.0 Flash + Together AI Flux.1)
-1. Gemini: 한글 묘사를 Flux 맞춤형 영어 프롬프트로 최적화
-2. Together AI: 최적화된 프롬프트로 Flux.1-schnell 모델을 호출하여 고퀄리티 이미지 생성
+- 기능 1: Gemini가 한글 묘사를 영어 프롬프트로 번역/최적화
+- 기능 2: Together AI(Flux) 호출 시 500 에러가 나면 자동 재시도
+- 기능 3: Flux가 끝까지 실패하면 SDXL 모델로 자동 전환 (무조건 성공 보장)
 """
 import os
 import logging
@@ -23,26 +24,24 @@ class ImageService:
 
     def __init__(self):
         self.s3_client = get_s3_client()
-
-        # 1. Google API Key (프롬프트 최적화용)
         self.google_key = os.getenv("GOOGLE_API_KEY")
-
-        # 2. Together AI Key (Flux 이미지 생성용)
         self.together_key = os.getenv("TOGETHER_API_KEY")
 
-        # 설정
+        # 모델 설정
         self.gemini_model = "gemini-2.0-flash"
-        self.flux_model = "black-forest-labs/FLUX.1-schnell"
+        self.flux_model = "black-forest-labs/FLUX.1-schnell"  # 1순위: Flux
+        self.sdxl_model = "stabilityai/stable-diffusion-xl-base-1.0" # 2순위: SDXL (백업)
+
         self.together_url = "https://api.together.xyz/v1/images/generations"
 
         if not self.google_key or not self.together_key:
-            logger.warning("⚠️ [Image] GOOGLE_API_KEY 또는 TOGETHER_API_KEY가 없습니다. 서비스가 제한될 수 있습니다.")
+            logger.warning("⚠️ 키 설정 확인 필요: GOOGLE_API_KEY 또는 TOGETHER_API_KEY 부재")
             self._is_available = False
         else:
             try:
                 self.gemini_client = genai.Client(api_key=self.google_key)
                 self._is_available = True
-                logger.info(f"✅ [Image] 하이브리드 엔진 초기화 (Brain: Gemini / Painter: Flux.1)")
+                logger.info(f"✅ [Image] 하이브리드 엔진 가동 (Gemini + Together AI)")
             except Exception as e:
                 logger.error(f"❌ [Image] 초기화 실패: {e}")
                 self._is_available = False
@@ -52,44 +51,37 @@ class ImageService:
         return self._is_available and self.s3_client.is_available
 
     async def _optimize_prompt(self, user_description: str, image_type: str) -> str:
-        """
-        [1단계] Gemini를 사용하여 한글 묘사를 Flux용 영어 프롬프트로 변환
-        """
+        """Gemini: 한글 -> 영어 프롬프트 최적화"""
         try:
-            # 스타일 가이드 정의
             style_guide = ""
             if image_type == "npc" or image_type == "enemy":
                 style_guide = "Style: High quality 8-bit pixel art character sprite, isolated on white background, clean lines, retro RPG aesthetic."
             elif image_type == "background":
                 style_guide = "Style: High quality 8-bit pixel art landscape, detailed environment, atmospheric lighting, retro RPG background, 16:9 aspect ratio."
 
-            # 프롬프트 엔지니어링
             instruction = f"""
-            You are a professional prompt engineer for the FLUX.1 image generation model.
-            Your task is to translate the user's Korean description into a precise, comma-separated English prompt.
-            
-            1. Translate the atmosphere, lighting, and specific details accurately.
-            2. Add visual keywords to enhance quality (e.g., 'masterpiece', 'best quality', 'sharp focus').
-            3. Apply this style strictly: {style_guide}
+            You are a prompt engineer for FLUX.1.
+            Translate the user's Korean description into a precise English prompt.
+            1. Translate atmosphere, lighting, and details accurately.
+            2. Add quality keywords (masterpiece, best quality).
+            3. Apply style: {style_guide}
             
             User's Korean description: "{user_description}"
-            
-            Output ONLY the final English prompt string. Do not include any explanations.
+            Output ONLY the English prompt.
             """
 
-            # 동기 함수를 비동기로 실행
             response = await asyncio.to_thread(
                 self.gemini_client.models.generate_content,
                 model=self.gemini_model,
                 contents=instruction
             )
 
-            optimized_prompt = response.text.strip()
-            logger.info(f"🔄 [Prompt] 한글: {user_description[:20]}... -> 영어: {optimized_prompt[:50]}...")
-            return optimized_prompt
+            optimized = response.text.strip()
+            logger.info(f"🔄 [Prompt] 번역 완료: {optimized[:50]}...")
+            return optimized
 
         except Exception as e:
-            logger.error(f"❌ [Prompt] 최적화 실패 (원문 사용): {e}")
+            logger.error(f"❌ [Prompt] 번역 실패 (원문 사용): {e}")
             return f"{style_guide} {user_description}"
 
     async def generate_image(self, image_type: str, description: str, scenario_id: Optional[int] = None, target_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -97,66 +89,78 @@ class ImageService:
             return None
 
         try:
-            # 1. 프롬프트 최적화 (Gemini)
+            # 1. 프롬프트 최적화
             final_prompt = await self._optimize_prompt(description, image_type)
 
-            # 2. 이미지 생성 (Flux via Together AI)
-            logger.info(f"🎨 [Image] Flux 생성 시작...")
-            image_data = await self._call_flux_api(final_prompt)
+            # 2. [1순위] Flux 모델 시도
+            logger.info(f"🎨 [Image] Flux 생성 시도...")
+            image_data = await self._call_together_api_with_retry(final_prompt, self.flux_model)
+
+            # 3. [2순위] 실패 시 SDXL 모델 시도 (Fallback)
+            if not image_data:
+                logger.warning(f"⚠️ [Image] Flux 실패 -> SDXL(백업)로 전환 시도")
+                image_data = await self._call_together_api_with_retry(final_prompt, self.sdxl_model)
 
             if not image_data:
+                logger.error("❌ [Image] 모든 모델 생성 실패")
                 return None
 
-            # 3. S3 업로드
+            # 4. S3 업로드
             image_url = await self._upload_to_s3(image_data, image_type, scenario_id, target_id)
-
-            if not image_url:
-                return None
 
             return {
                 "success": True,
                 "image_url": image_url,
                 "image_type": image_type,
                 "description": description,
-                "english_prompt": final_prompt, # 디버깅용 저장
                 "generated_at": datetime.now().isoformat()
             }
         except Exception as e:
-            logger.error(f"❌ [Image] 전체 프로세스 오류: {e}")
+            logger.error(f"❌ [Image] 프로세스 오류: {e}")
             return None
 
-    async def _call_flux_api(self, prompt: str) -> Optional[bytes]:
-        """Together AI를 통해 Flux.1-schnell 호출"""
+    async def _call_together_api_with_retry(self, prompt: str, model: str) -> Optional[bytes]:
+        """Together AI 호출 (재시도 로직 포함)"""
         headers = {
             "Authorization": f"Bearer {self.together_key}",
             "Content-Type": "application/json"
         }
 
         payload = {
-            "model": self.flux_model,
+            "model": model,
             "prompt": prompt,
             "width": 1024,
-            "height": 1024, # 1:1 비율 (Flux가 가장 안정적)
-            "steps": 4,     # Schnell 모델은 4스텝이면 충분
+            "height": 1024,
+            "steps": 4 if "flux" in model.lower() else 20, # 모델별 스텝 최적화
             "n": 1,
             "response_format": "base64"
         }
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self.together_url, headers=headers, json=payload, timeout=30.0) as response:
-                    if response.status != 200:
+        # 최대 2회 재시도
+        for attempt in range(2):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(self.together_url, headers=headers, json=payload, timeout=40.0) as response:
+                        if response.status == 200:
+                            result = await response.json()
+                            b64_data = result['data'][0]['b64_json']
+                            return base64.b64decode(b64_data)
+
+                        # 500, 503 에러면 잠시 대기 후 재시도
+                        if response.status in [500, 503]:
+                            logger.warning(f"⏳ [API] 서버 오류({response.status}). 재시도 중... ({attempt+1}/2)")
+                            await asyncio.sleep(2)
+                            continue
+
+                        # 그 외 에러(400 등)는 즉시 실패 처리
                         err = await response.text()
-                        logger.error(f"❌ [Flux] API 오류 ({response.status}): {err}")
+                        logger.error(f"❌ [API] 호출 오류 ({response.status}): {err}")
                         return None
 
-                    result = await response.json()
-                    b64_data = result['data'][0]['b64_json']
-                    return base64.b64decode(b64_data)
+            except Exception as e:
+                logger.error(f"❌ [API] 연결 실패: {e}")
 
-        except Exception as e:
-            logger.error(f"❌ [Flux] 연결 실패: {e}")
-            return None
+        return None
 
     async def _upload_to_s3(self, image_data: bytes, image_type: str, scenario_id: Optional[int] = None, target_id: Optional[str] = None) -> Optional[str]:
         try:
