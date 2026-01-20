@@ -10,13 +10,14 @@ class GlobalVariable(BaseModel):
     type: str = Field(default="int", description="int, boolean, string")
 
 
-class Item(BaseModel):
-    name: str = Field(description="Unique item name")
-    description: str = Field(description="Item flavor text")
-    is_key_item: bool = Field(default=False, description="If true, critical for progression")
+# --- Logic Components (Effect를 Item보다 먼저 정의) ---
 
+class Effect(BaseModel):
+    target: str = Field(description="Variable name OR Item name")
+    type: str = Field(description="'variable' or 'item'")
+    operation: str = Field(description="add, subtract, set, gain_item, lose_item")
+    value: Any
 
-# --- Logic Components ---
 
 class Condition(BaseModel):
     target: str = Field(description="Variable name OR Item name")
@@ -25,11 +26,16 @@ class Condition(BaseModel):
     value: Any = Field(description="Comparison value (e.g., 50, true)")
 
 
-class Effect(BaseModel):
-    target: str = Field(description="Variable name OR Item name")
-    type: str = Field(description="'variable' or 'item'")
-    operation: str = Field(description="add, subtract, set, gain_item, lose_item")
-    value: Any
+# --- Item Definition (Effect 참조 가능) ---
+
+class Item(BaseModel):
+    name: str = Field(description="Unique item name")
+    description: str = Field(description="Item flavor text")
+    is_key_item: bool = Field(default=False, description="If true, critical for progression")
+    # ✅ 아이템 사용 시 발동할 효과 정의
+    effects: List[Effect] = Field(default=[], description="Effects triggered when item is used")
+    # ✅ 아이템 사용 가능 여부
+    usable: bool = Field(default=True, description="Whether this item can be used by the player")
 
 
 # --- Scene Components (CHANGED) ---
