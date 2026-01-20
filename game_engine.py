@@ -1952,8 +1952,16 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     if curr_scene:
         scene_title = curr_scene.get('title', curr_id)
         scene_type = curr_scene.get('type', 'normal')
-        npc_names = curr_scene.get('npcs', [])
-        enemy_names = curr_scene.get('enemies', [])
+
+        # 🔴 [CRITICAL] NPC 이름 정규화: 딕셔너리면 name 필드 추출
+        raw_npcs = curr_scene.get('npcs', [])
+        npc_names = [n.get('name') if isinstance(n, dict) else n for n in raw_npcs]
+
+        # 🔴 [CRITICAL] 적 이름 정규화: 딕셔너리면 name 필드 추출
+        raw_enemies = curr_scene.get('enemies', [])
+        enemy_names = [e.get('name') if isinstance(e, dict) else e for e in raw_enemies]
+
+        logger.info(f"🎬 [SCENE INFO] NPCs: {npc_names}, Enemies: {enemy_names}")
 
     # ========================================
     # 💀 작업 2: 죽은 NPC 상태 정보 수집 (환각 방지)
@@ -1965,6 +1973,10 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
         dead_npcs = []
         for npc_name in all_npc_names:
+            # 🔴 [SAFETY] NPC 이름이 None이거나 빈 문자열이면 스킵
+            if not npc_name:
+                continue
+
             npc_state = world_state.get_npc_state(npc_name)
             if npc_state and npc_state.get('status') == 'dead':
                 dead_npcs.append(npc_name)

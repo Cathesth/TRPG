@@ -634,7 +634,27 @@ class WorldState:
     # ========================================
 
     def get_npc_state(self, npc_name: str) -> Optional[Dict[str, Any]]:
-        """NPC 상태 조회"""
+        """
+        NPC 상태 조회
+
+        Args:
+            npc_name: NPC 이름 (문자열) 또는 딕셔너리 (name 필드 추출)
+
+        Returns:
+            NPC 상태 딕셔너리 또는 None
+        """
+        # 🔴 [CRITICAL] 방어적 타입 체크: npc_name이 딕셔너리면 name 필드 추출
+        if isinstance(npc_name, dict):
+            npc_name = npc_name.get('name', '')
+            if not npc_name:
+                logger.warning(f"⚠️ [NPC STATE] Dict passed without 'name' field: {npc_name}")
+                return None
+
+        # 문자열이 아닌 경우 추가 방어
+        if not isinstance(npc_name, str):
+            logger.warning(f"⚠️ [NPC STATE] Invalid npc_name type: {type(npc_name)}")
+            return None
+
         return self.npcs.get(npc_name)
 
     def set_npc_state(self, npc_name: str, state_data: Dict[str, Any]):
