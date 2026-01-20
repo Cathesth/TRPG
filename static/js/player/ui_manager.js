@@ -483,6 +483,15 @@ function updateModelVersions() {
 
     const provider = providerSelect.value;
 
+    // 🔒 [CRITICAL] 허용된 모델 리스트 (화이트리스트)
+    const allowedModels = [
+        'openai/google/gemini-2.0-flash-001',           // Gemini 2.0 Flash
+        'openai/anthropic/claude-3.5-sonnet',          // Claude 3.5 Sonnet
+        'openai/openai/gpt-4o',                        // GPT-4o
+        'openai/tngtech/deepseek-r1t2-chimera:free',  // R1 Chimera (Free)
+        'openai/meta-llama/llama-3.1-405b-instruct:free' // Llama 3.1 405B
+    ];
+
     // 기본 옵션 지우기
     modelVersionSelect.innerHTML = '';
 
@@ -554,18 +563,44 @@ function updateModelVersions() {
             options = [{ value: 'openai/tngtech/deepseek-r1t2-chimera:free', label: 'R1 Chimera (Free) ⭐' }];
     }
 
-    // 옵션 추가
+    // 🎨 옵션 추가 (잠금 처리 적용)
     options.forEach(opt => {
         const option = document.createElement('option');
         option.value = opt.value;
-        option.textContent = opt.label;
+
+        // 🔒 허용 여부 확인
+        const isAllowed = allowedModels.includes(opt.value);
+
+        if (isAllowed) {
+            // ✅ 활성화된 모델 (정상 표시)
+            option.textContent = opt.label;
+            option.disabled = false;
+            option.style.color = '#e2e8f0'; // 밝은 회색 (원래 색상)
+            option.style.cursor = 'pointer';
+        } else {
+            // 🔒 비활성화된 모델 (잠금 처리)
+            option.textContent = `🔒 ${opt.label}`;
+            option.disabled = true;
+            option.style.color = '#6b7280'; // 어두운 회색
+            option.style.cursor = 'not-allowed';
+            option.style.opacity = '0.5';
+        }
+
         modelVersionSelect.appendChild(option);
     });
 
-    // 이전에 저장된 모델 버전 복원 (값이 현재 목록에 있을 때만)
+    // 이전에 저장된 모델 버전 복원 (허용된 모델이고 현재 목록에 있을 때만)
     const savedModelVersion = sessionStorage.getItem(MODEL_VERSION_KEY);
-    if (savedModelVersion && Array.from(modelVersionSelect.options).some(opt => opt.value === savedModelVersion)) {
+    if (savedModelVersion &&
+        allowedModels.includes(savedModelVersion) &&
+        Array.from(modelVersionSelect.options).some(opt => opt.value === savedModelVersion && !opt.disabled)) {
         modelVersionSelect.value = savedModelVersion;
+    } else {
+        // 저장된 모델이 없거나 비활성화된 경우, 첫 번째 활성화된 모델 선택
+        const firstEnabledOption = Array.from(modelVersionSelect.options).find(opt => !opt.disabled);
+        if (firstEnabledOption) {
+            modelVersionSelect.value = firstEnabledOption.value;
+        }
     }
 
     // 제공사 선택 저장
