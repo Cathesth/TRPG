@@ -183,6 +183,16 @@ class WorldState:
             scenario_data: 시나리오 JSON 데이터
         """
         # ========================================
+        # 🔧 [FIX] 중첩된 scenario 구조 즉시 unwrap
+        # ========================================
+        max_unwrap_depth = 10
+        unwrap_count = 0
+        while 'scenario' in scenario_data and isinstance(scenario_data['scenario'], dict) and unwrap_count < max_unwrap_depth:
+            logger.info(f"📦 [ITEM SYSTEM] Unwrapping nested 'scenario' key (depth: {unwrap_count + 1})")
+            scenario_data = scenario_data['scenario']
+            unwrap_count += 1
+
+        # ========================================
         # 아이템 레지스트리 로딩 (최우선)
         # ========================================
         items_data = scenario_data.get('items', [])
@@ -195,22 +205,39 @@ class WorldState:
         logger.info(f"📦 [ITEM SYSTEM] Loaded {len(self.item_registry)} items into registry")
 
         # ========================================
-        # 초기 인벤토리 로딩 - 정확한 경로 사용
+        # 초기 인벤토리 로딩 - 방어적 다중 경로 탐색
         # ========================================
-        # 🔧 [FIX] 경로 수정: scenario_data['initial_state']['inventory']를 정확히 참조
-        initial_state = scenario_data.get('initial_state', {})
+        # 🔧 [FIX] 여러 경로를 시도하여 인벤토리 찾기
+        initial_inventory = []
 
+        # 경로 1: scenario_data['initial_state']['inventory'] (최우선)
+        initial_state = scenario_data.get('initial_state', {})
         if isinstance(initial_state, dict):
             initial_inventory = initial_state.get('inventory', [])
-        else:
-            initial_inventory = []
+            if initial_inventory:
+                logger.info(f"🎒 [ITEM SYSTEM] Found inventory in initial_state: {initial_inventory}")
 
+        # 경로 2: scenario_data['player_status']['inventory'] (하위 호환)
+        if not initial_inventory:
+            player_status = scenario_data.get('player_status', {})
+            if isinstance(player_status, dict):
+                initial_inventory = player_status.get('inventory', [])
+                if initial_inventory:
+                    logger.info(f"🎒 [ITEM SYSTEM] Found inventory in player_status: {initial_inventory}")
+
+        # 경로 3: scenario_data['inventory'] (직접 경로)
+        if not initial_inventory:
+            initial_inventory = scenario_data.get('inventory', [])
+            if initial_inventory:
+                logger.info(f"🎒 [ITEM SYSTEM] Found inventory at root level: {initial_inventory}")
+
+        # 최종 인벤토리 설정
         if initial_inventory and isinstance(initial_inventory, list):
             self.player['inventory'] = initial_inventory.copy()
             logger.info(f"🎒 [ITEM SYSTEM] Initial inventory loaded: {self.player['inventory']}")
         else:
             self.player['inventory'] = []
-            logger.info(f"🎒 [ITEM SYSTEM] No initial inventory found")
+            logger.info(f"🎒 [ITEM SYSTEM] No initial inventory found, using empty list")
 
         # [변경] 플레이어 초기 스탯 설정 - player_vars로 이동
         # player_state의 player_vars가 플레이어 스탯을 관리함
