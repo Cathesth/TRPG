@@ -204,21 +204,30 @@ async def root():
 
 @app.get("/image/serve/{file_path:path}")
 async def serve_image(file_path: str):
-    """
-    내부 S3/MinIO에 저장된 이미지를 백엔드가 읽어서 브라우저에 전달합니다.
-    사용법: <img src="/image/serve/폴더/파일명.png">
-    """
     from core.s3_client import get_s3_client
-    s3 = get_s3_client()
+    import urllib.parse
 
-    # 버킷 이름 가져오기 (S3Client 구현에 따라 다를 수 있어 안전하게 처리)
-    bucket_name = getattr(s3, 'bucket_name', os.getenv("S3_BUCKET_NAME", "trpg-studio"))
+    s3 = get_s3_client()
+    # Railway 환경변수에서 버킷 이름 가져오기
+    bucket_name = os.getenv("S3_BUCKET_NAME", "trpg-studio")
 
     try:
-        # S3에서 파일 스트림 가져오기 (aiobotocore 사용 가정)
-        # 만약 s3.client가 동기(boto3)라면 await를 제거하고 실행해야 하지만,
-        # initialize()가 async인 것으로 보아 비동기 클라이언트일 확률이 높습니다.
-        response = await s3.client.get_object(Bucket=bucket_name, Key=file_path)
+        real_key = file_path
+
+        # 만약 DB에 "http://minio:9000/버킷명/폴더/파일.png" 처럼 전체 주소가 저장되어 있다면?
+        if "://" in file_path:
+            parsed = urllib.parse.urlparse(file_path)
+            # 경로에서 앞부분 슬래시 제거 ('/버킷명/폴더/파일.png' -> '버킷명/폴더/파일.png')
+            full_path = parsed.path.lstrip('/')
+
+            # 경로가 버킷명으로 시작하면 잘라냄 (S3 Client는 Key만 원하므로)
+            if full_path.startswith(f"{bucket_name}/"):
+                real_key = full_path.replace(f"{bucket_name}/", "", 1)
+            else:
+                real_key = full_path
+
+        # S3에서 파일 데이터 스트리밍으로 가져오기
+        response = await s3.client.get_object(Bucket=bucket_name, Key=real_key)
 
         async def stream_generator():
             async for chunk in response['Body']:
@@ -229,7 +238,8 @@ async def serve_image(file_path: str):
             media_type=response.get('ContentType', 'image/png')
         )
     except Exception as e:
-        logger.error(f"❌ [Image Serve] 이미지 로드 실패 ({file_path}): {e}")
+        # 로그에 자세한 에러를 남겨서 디버깅을 돕습니다.
+        logger.error(f"❌ [Image Serve] 실패: {e} (Input: {file_path}, Key: {real_key})")
         return Response(status_code=404)
 
 
