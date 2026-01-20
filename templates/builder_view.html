@@ -282,7 +282,7 @@
             // Modals & Misc
             const [modals, setModals] = useState({
                 npcGen: false, npcList: false,
-                itemGen: false, itemList: false, // [추가] 아이템 모달
+                itemList: false, // itemGen 삭제됨
                 presetLoad: false, scenarioList: false, imageGen: false
             });
             const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
@@ -491,7 +491,7 @@
             // [추가] 이미지 URL 헬퍼
             const getImageUrl = (url) => {
                 if (!url) return '';
-                if (url.startsWith('http') || url.startsWith('https')) return `/image/serve/${encodeURIComponent(url)}`;
+                // 이미지를 백엔드 프록시 태워서 가져옴 (인코딩 필수)
                 return `/image/serve/${encodeURIComponent(url)}`;
             };
 
@@ -599,6 +599,34 @@
                 } catch(e) { showToast("프리셋 오류", "error"); }
             };
 
+            // [메시지 수신 핸들러 추가 - 중요!]
+            useEffect(() => {
+                const handleMessage = (event) => {
+                    if (event.data.type === 'ADD_NPC') {
+                        const entity = event.data.payload;
+                        if (entity.isEnemy) setGlobalEnemies(prev => [...prev, entity]);
+                        else setGlobalNpcs(prev => [...prev, entity]);
+                        showToast(`${entity.name} 추가됨`, "success");
+                    }
+                    if (event.data.type === 'ADD_ITEM') {
+                        const item = event.data.payload;
+                        setGlobalItems(prev => [...prev, item]);
+                        showToast(`${item.name} 아이템 추가됨`, "success");
+                    }
+                    if (event.data.type === 'GENERATOR_READY') {
+                        const iframe = document.querySelector('iframe');
+                        if (iframe) {
+                            iframe.contentWindow.postMessage({
+                                type: 'SCENARIO_INFO',
+                                payload: { title: nodes[0].data.label || '제목 없음' }
+                            }, '*');
+                        }
+                    }
+                };
+                window.addEventListener('message', handleMessage);
+                return () => window.removeEventListener('message', handleMessage);
+            }, [nodes]);
+
             return (
                 <div className="flex h-screen overflow-hidden text-sm font-sans"
                      onMouseUp={handleMouseUp} onMouseMove={handleMouseMove} onClick={handleCanvasClick}
@@ -635,8 +663,15 @@
                             <button onClick={() => setModals(m => ({ ...m, npcGen: true }))} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#00FFFF]"><Icon name="user-plus"/> NPC 생성</button>
                             <button onClick={async () => { try { const res = await fetch('/api/npc/list'); const data = await res.json(); setDbNpcList(data); setModals(m=>({...m, npcList:true})); } catch(e){} }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs"><Icon name="users"/> NPC 불러오기</button>
 
-                            {/* [추가] 아이템 관련 버튼 */}
-                            <button onClick={() => setModals(m => ({ ...m, itemGen: true }))} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#FFD700] mt-2"><Icon name="package-plus"/> 아이템 생성</button>
+                            {/* [수정] 아이템 생성: NPC 모달을 재활용하고 탭 전환 신호를 보냄 */}
+                            <button onClick={() => {
+                                setModals(m => ({ ...m, npcGen: true }));
+                                setTimeout(() => {
+                                    const iframe = document.querySelector('iframe');
+                                    if(iframe) iframe.contentWindow.postMessage({ type: 'SWITCH_TAB', tab: 'item' }, '*');
+                                }, 500);
+                            }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#FFD700] mt-2"><Icon name="package-plus"/> 아이템 생성</button>
+
                             <button onClick={async () => { try { const res = await fetch('/api/item/list'); const data = await res.json(); setDbItemList(data); setModals(m=>({...m, itemList:true})); } catch(e){} }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs"><Icon name="package"/> 아이템 불러오기</button>
 
                             <div className="h-px bg-[#4A4A6A] my-2"></div>
@@ -646,7 +681,9 @@
                                 <button onClick={redo} className="pixel-btn flex-1 py-2 text-[#6A6A8A]" title="다시하기"><Icon name="redo-2"/></button>
                             </div>
                             <button onClick={async () => { try { const res = await fetch('/api/presets'); const data = await res.json(); setPresetList(data); setModals(m=>({...m, presetLoad:true})); } catch(e){} }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2"><Icon name="folder-open"/> 프리셋 로드</button>
-                            <button onClick={async () => { try { const res = await fetch('/api/scenarios/data?filter=my'); const data = await res.json(); setUserScenarios(data); setModals(m=>({...m, scenarioList:true})); } catch(e){} }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2"><Icon name="file-edit"/> 시나리오 로드</button>
+
+                            {/* [수정] 시나리오 목록 불러오기 */}
+                            <button onClick={async () => { try { const res = await fetch('/api/scenarios/data?filter=my'); const data = await res.json(); setUserScenarios(data); setModals(m=>({...m, scenarioList:true})); } catch(e){ showToast("목록 로드 실패", "error"); } }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2"><Icon name="file-edit"/> 시나리오 로드</button>
                         </div>
                         <div className="p-4 border-t-2 border-[#4A4A6A] bg-[#0B0B19]">
                             <div className="mb-3">
@@ -921,13 +958,17 @@
 
                     <Modal isOpen={modals.scenarioList} title="시나리오 불러오기" onClose={() => setModals(m=>({...m, scenarioList:false}))}>
                          <div className="space-y-2">
-                            {userScenarios.map(s => (
-                                <div key={s.id} onClick={() => window.location.href=`/views/scenes/edit/${s.filename}` }
-                                     className="p-4 bg-[#0B0B19] border border-[#4A4A6A] hover:border-[#00FFFF] cursor-pointer group transition-all">
-                                    <div className="font-bold text-[#FFFACD] group-hover:text-white">{s.title}</div>
-                                    <div className="text-xs text-[#6A6A8A] mt-1 truncate">{s.prologue}</div>
-                                </div>
-                            ))}
+                            {userScenarios.length === 0 ? (
+                                <div className="text-center text-gray-500 py-4">저장된 시나리오가 없습니다.</div>
+                            ) : (
+                                userScenarios.map(s => (
+                                    <div key={s.id} onClick={() => window.location.href=`/views/scenes/edit/${s.filename}` }
+                                         className="p-4 bg-[#0B0B19] border border-[#4A4A6A] hover:border-[#00FFFF] cursor-pointer group transition-all">
+                                        <div className="font-bold text-[#FFFACD] group-hover:text-white">{s.title || '제목 없음'}</div>
+                                        <div className="text-xs text-[#6A6A8A] mt-1 truncate">{s.prologue}</div>
+                                    </div>
+                                ))
+                            )}
                          </div>
                     </Modal>
 
@@ -946,65 +987,12 @@
                         </div>
                     </Modal>
 
-                    {/* Audit Result Modal */}
-                    {auditState.isOpen && (
-                        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4">
-                            <div className="pixel-box w-full max-w-3xl bg-[#131320] border-2 border-[#4A4A6A] max-h-[80vh] flex flex-col">
-                                <div className="p-4 border-b-2 border-[#4A4A6A] bg-[#1A0B2E] flex justify-between items-center">
-                                    <h3 className="text-[#FFFACD] flex items-center gap-2 font-bold"><Icon name="brain-circuit"/> AI 검수 리포트</h3>
-                                    <button onClick={() => setAuditState(p => ({...p, isOpen: false}))} className="text-[#6A6A8A] hover:text-white"><Icon name="x"/></button>
-                                </div>
-                                <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
-                                    {auditState.isLoading ? (
-                                        <div className="text-center py-12 text-[#6A6A8A] font-bold animate-pulse">논리적 결함을 분석 중입니다...</div>
-                                    ) : (
-                                        <div className="space-y-4">
-                                            {auditState.results?.issues.length === 0 ? (
-                                                <div className="text-center py-8">
-                                                    <div className="text-[#10b981] text-lg mb-2 font-bold">완벽합니다!</div>
-                                                    <p className="text-sm text-[#E0E0E0]">발견된 서사적 오류가 없습니다.</p>
-                                                </div>
-                                            ) : (
-                                                auditState.results?.issues.map((issue, idx) => (
-                                                    <div key={idx} className="bg-[#0B0B19] border border-[#4A4A6A] p-4">
-                                                        <div className="flex justify-between mb-2">
-                                                            <span className="text-[10px] bg-[#4A4A6A] px-2 py-1 text-white">{issue.scene_id}</span>
-                                                            <span className={`text-[10px] px-2 py-1 font-bold ${issue.severity==='error'?'text-[#FF007F] border border-[#FF007F]':'text-[#f59e0b] border border-[#f59e0b]'}`}>{issue.severity}</span>
-                                                        </div>
-                                                        <div className="grid md:grid-cols-2 gap-4 text-xs">
-                                                            <div className="text-[#f59e0b] p-2 border border-[#f59e0b]/30 bg-[#f59e0b]/10">
-                                                                <div className="font-bold mb-1">문제점 (Problem)</div>{issue.message}
-                                                            </div>
-                                                            <div className="text-[#10b981] p-2 border border-[#10b981]/30 bg-[#10b981]/10">
-                                                                <div className="font-bold mb-1">제안 (Suggestion)</div>{issue.suggestion}
-                                                            </div>
-                                                        </div>
-                                                        <button onClick={() => applySuggestion(issue)} className="pixel-btn w-full mt-3 py-2 text-xs flex justify-center gap-2"><Icon name="pen-tool" size={12}/> 수정 제안 반영</button>
-                                                    </div>
-                                                ))
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
+                    {/* Unified Generator Modal (NPC + Item) */}
                     {modals.npcGen && (
                         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 p-4">
                             <div className="bg-[#131320] w-full max-w-4xl h-[85vh] pixel-box flex flex-col">
                                 <div className="p-2 border-b-2 border-[#4A4A6A] flex justify-end"><button onClick={() => setModals(m=>({...m, npcGen:false}))}><Icon name="x"/></button></div>
-                                <iframe src="/builder/npc-generator" className="w-full h-full border-none" title="NPC Gen"></iframe>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* [추가] 아이템 생성 모달 (iframe) */}
-                    {modals.itemGen && (
-                        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 p-4">
-                            <div className="bg-[#131320] w-full max-w-4xl h-[85vh] pixel-box flex flex-col">
-                                <div className="p-2 border-b-2 border-[#4A4A6A] flex justify-end"><button onClick={() => setModals(m=>({...m, itemGen:false}))}><Icon name="x"/></button></div>
-                                <iframe src="/builder/item-generator" className="w-full h-full border-none" title="Item Gen"></iframe>
+                                <iframe src="/builder/npc-generator" className="w-full h-full border-none" title="Asset Gen"></iframe>
                             </div>
                         </div>
                     )}

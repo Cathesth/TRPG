@@ -205,57 +205,46 @@ async def root():
 @app.get("/image/serve/{file_path:path}")
 async def serve_image(file_path: str):
     from core.s3_client import get_s3_client
-    from fastapi.responses import Response, StreamingResponse
+    from fastapi.responses import Response
     import urllib.parse
     import botocore.exceptions
 
     s3 = get_s3_client()
-    # 환경변수 버킷명 (기본값 주의)
-    bucket_name = os.getenv("S3_BUCKET_NAME", "trpg-studio")
+
+    # S3 세션이 초기화되지 않았으면 초기화
+    if not s3._session:
+        await s3.initialize()
+
+    # 환경변수 또는 S3 클라이언트 설정에서 버킷명 가져오기
+    bucket_name = s3.bucket
 
     try:
-        # 1. URL 디코딩 (예: %2F -> /)
+        # 1. URL 디코딩 및 키 파싱
         decoded_path = urllib.parse.unquote(file_path)
-
-        # 2. 경로 파싱 로직 (여기가 핵심)
         real_key = decoded_path
 
-        # 만약 http://... 로 시작하는 전체 URL이 들어왔다면?
         if "://" in decoded_path:
             parsed = urllib.parse.urlparse(decoded_path)
-            # 앞의 슬래시 제거
             full_path = parsed.path.lstrip('/')
-
-            # 경로가 "버킷명/폴더/파일" 구조인지 확인
             if full_path.startswith(f"{bucket_name}/"):
-                # 버킷명 부분을 잘라내고 뒤에 키만 남김
                 real_key = full_path.replace(f"{bucket_name}/", "", 1)
             else:
                 real_key = full_path
 
-        # [디버깅 로그] 이 로그를 꼭 확인해야 합니다!
-        logger.info(f"🔍 [Image Debug] 요청 원문: {file_path}")
-        logger.info(f"🔍 [Image Debug] 추출된 Bucket: {bucket_name}")
-        logger.info(f"🔍 [Image Debug] 추출된 Key: {real_key}")
-
-        # 3. S3 요청
-        response = await s3.client.get_object(Bucket=bucket_name, Key=real_key)
-
-        async def stream_generator():
-            async for chunk in response['Body']:
-                yield chunk
-
-        return StreamingResponse(
-            stream_generator(),
-            media_type=response.get('ContentType', 'image/png')
-        )
-
-    except s3.client.exceptions.NoSuchKey:
-        logger.error(f"❌ [Image Serve] S3에 파일 없음 (NoSuchKey): Bucket={bucket_name}, Key={real_key}")
-        return Response(status_code=404)
+        # 2. S3 클라이언트 컨텍스트 생성 후 파일 읽기
+        # (중요: stream 대신 read()로 메모리에 로드하여 연결 끊김 방지)
+        async with s3._session.client(
+                's3',
+                endpoint_url=s3.endpoint,
+                region_name=s3.region,
+                use_ssl=s3.use_ssl
+        ) as client:
+            response = await client.get_object(Bucket=bucket_name, Key=real_key)
+            content = await response['Body'].read()
+            return Response(content=content, media_type=response.get('ContentType', 'image/png'))
 
     except Exception as e:
-        logger.error(f"❌ [Image Serve] 에러 발생: {str(e)}")
+        logger.error(f"❌ [Image Serve] 에러: {str(e)} (Key: {real_key if 'real_key' in locals() else file_path})")
         return Response(status_code=404)
 
 
