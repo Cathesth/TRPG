@@ -1620,3 +1620,31 @@ async def restore_history(scenario_id: int, history_id: int, user: CurrentUser =
     undo_redo_status = HistoryService.get_undo_redo_status(scenario_id, user.id)
     return {"success": True, "scenario": restored_data, "mermaid_code": mermaid_code,
             "undo_redo_status": undo_redo_status}
+
+
+@api_router.get('/item/list')
+async def get_item_list(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """사용자가 생성한 아이템 목록 조회"""
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "로그인이 필요합니다."}, status_code=401)
+    try:
+        # type이 'item'인 것만 조회
+        items = db.query(CustomNPC).filter(
+            CustomNPC.author_id == user.id,
+            CustomNPC.type == 'item'
+        ).order_by(CustomNPC.created_at.desc()).all()
+
+        results = []
+        for item in items:
+            data = item.data if item.data else {}
+            results.append({
+                "id": item.id,
+                "name": item.name,
+                "type": data.get('type', 'ITEM'),
+                "description": data.get('description', ''),
+                "data": data
+            })
+        return results
+    except Exception as e:
+        logger.error(f"Item List Error: {e}")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
