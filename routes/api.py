@@ -51,6 +51,12 @@ print(f"👉 DEBUG: KAKAO_CLIENT_ID = [{os.getenv('KAKAO_CLIENT_ID')}]")
 print(f"👉 DEBUG: KAKAO_CLIENT_SECRET = [{os.getenv('KAKAO_CLIENT_SECRET')}]")
 print("=========================================")
 
+# [👇 추가할 코드] 변수가 없으면 서버를 켜지 말고 에러를 띄워라! (확인용)
+if not os.getenv('KAKAO_CLIENT_ID'):
+    raise RuntimeError("🚨 [CRITICAL ERROR] KAKAO_CLIENT_ID 환경 변수가 없습니다! Railway 변수 설정을 확인하세요.")
+
+if not os.getenv('KAKAO_CLIENT_ID').strip(): # 공백 체크
+    raise RuntimeError("🚨 [CRITICAL ERROR] KAKAO_CLIENT_ID 값이 비어있습니다!")
 
 # .env 파일을 읽기 위한 설정
 config = Config('.env')
