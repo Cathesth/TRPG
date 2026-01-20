@@ -1,5 +1,10 @@
 import os
 import logging
+from dotenv import load_dotenv
+
+# [핵심 수정] 환경 변수를 가장 먼저 로드해야 다른 파일들이 이 변수를 쓸 수 있습니다.
+load_dotenv()
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Depends, APIRouter
 from fastapi.staticfiles import StaticFiles
@@ -8,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, RedirectResponse, StreamingResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from dotenv import load_dotenv
+
 
 from config import LOG_FORMAT, LOG_DATE_FORMAT, get_full_version
 from models import create_tables
@@ -21,9 +26,6 @@ from models import Base, engine # DB 모델 초기화용
 from services.mermaid_service import MermaidService
 from core.state import GameState
 from routes.auth import get_current_user_optional, CurrentUser
-
-# 환경 변수 로드
-load_dotenv()
 
 # 로깅 설정
 logging.basicConfig(
