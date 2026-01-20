@@ -721,9 +721,15 @@ async def game_act_stream(
             all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
             for scene_id, scene in all_scenes.items():
                 scene_title = scene.get('title', scene_id)
-                for npc_name in scene.get('npcs', []) + scene.get('enemies', []):
-                    if npc_name in all_scenario_npcs and all_scenario_npcs[npc_name]['location'] == '알 수 없음':
-                        all_scenario_npcs[npc_name]['location'] = scene_title
+                # npcs와 enemies 리스트 합치기
+                scene_entities = scene.get('npcs', []) + scene.get('enemies', [])
+
+                for entity in scene_entities:
+                    # entity가 dict면 name 추출, 문자열이면 그대로 사용
+                    entity_name = entity.get('name') if isinstance(entity, dict) else entity
+
+                    if entity_name in all_scenario_npcs and all_scenario_npcs[entity_name]['location'] == '알 수 없음':
+                        all_scenario_npcs[entity_name]['location'] = scene_title
 
             # 전체 NPC 정보 전송
             if all_scenario_npcs:
@@ -858,9 +864,15 @@ async def get_game_session_data(
             all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
             for scene_id, scene in all_scenes.items():
                 scene_title = scene.get('title', scene_id)
-                for npc_name in scene.get('npcs', []) + scene.get('enemies', []):
-                    if npc_name in all_scenario_npcs and all_scenario_npcs[npc_name]['location'] == '알 수 없음':
-                        all_scenario_npcs[npc_name]['location'] = scene_title
+                # npcs와 enemies 리스트 합치기
+                scene_entities = scene.get('npcs', []) + scene.get('enemies', [])
+
+                for entity in scene_entities:
+                    # entity가 dict면 name 추출, 문자열이면 그대로 사용
+                    entity_name = entity.get('name') if isinstance(entity, dict) else entity
+
+                    if entity_name in all_scenario_npcs and all_scenario_npcs[entity_name]['location'] == '알 수 없음':
+                        all_scenario_npcs[entity_name]['location'] = scene_title
 
         # World State에 씬 정보 추가
         world_state_with_scene = game_session.world_state.copy() if game_session.world_state else {}
