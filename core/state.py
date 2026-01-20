@@ -403,9 +403,9 @@ class WorldState:
                 item_info = self.item_registry.get(item)
                 if item_info:
                     desc = item_info.get('description', 'N/A')
-                    logger.info(f"📦 [ITEM SYSTEM] Added '{item}' to inventory - {desc}")
+                    logger.info(f"📦 [ITEM SYSTEM] Item gained: {item} - {desc}")
                 else:
-                    logger.info(f"📦 [ITEM SYSTEM] Added '{item}' to inventory (not in registry)")
+                    logger.info(f"📦 [ITEM SYSTEM] Item gained: {item} (not in registry)")
             else:
                 logger.debug(f"📦 [ITEM SYSTEM] '{item}' already in inventory, skipping")
         elif isinstance(item, list):
@@ -415,17 +415,17 @@ class WorldState:
                     item_info = self.item_registry.get(i)
                     if item_info:
                         desc = item_info.get('description', 'N/A')
-                        logger.info(f"📦 [ITEM SYSTEM] Added '{i}' to inventory - {desc}")
+                        logger.info(f"📦 [ITEM SYSTEM] Item gained: {i} - {desc}")
                     else:
-                        logger.info(f"📦 [ITEM SYSTEM] Added '{i}' to inventory (not in registry)")
+                        logger.info(f"📦 [ITEM SYSTEM] Item gained: {i} (not in registry)")
                 else:
                     logger.debug(f"📦 [ITEM SYSTEM] '{i}' already in inventory, skipping")
 
-        # ✅ player_vars와 동기화 (UI 및 LLM 컨텍스트 일치)
+        # ✅ player_vars와 동기화 (UI 및 LLM 컨텍스트 일치) - 필수!
         if not hasattr(self, 'player_vars'):
             self.player_vars = {}
         self.player_vars['inventory'] = self.player["inventory"].copy()
-        logger.info(f"📦 [ITEM SYSTEM] Synced inventory to player_vars: {len(self.player['inventory'])} items")
+        logger.info(f"📦 [ITEM SYSTEM] Synced inventory to player_vars: {len(self.player['inventory'])} items total")
 
     def _remove_item(self, item: Union[str, List[str]]):
         """아이템 제거 (레지스트리 참조 및 상세 로그) + player_vars 동기화"""
@@ -924,7 +924,7 @@ class WorldState:
 
                 # 플레이어 사망 체크
                 if new_player_hp <= 0:
-                    result_text += "\n💀 당신은 치명상을 입고 쓰러졌습니다..."
+                    result_text += "\n💀 당신은 치명상을 입고 쓰러졌습니다."
                     logger.critical(f"💀 [PLAYER DEATH] Player HP reached 0")
 
                     # 서사 이벤트 기록
