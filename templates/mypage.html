@@ -137,24 +137,28 @@
 
         /* [수정] 카드 스타일 조정 (정사각형 비율, 크기 축소) */
         #my-scenario-grid .scenario-card-base {
-            width: 100% !important;
-            aspect-ratio: 1 / 1.1 !important; /* 약간 세로 직사각형 (너무 길지 않게) */
-            display: flex !important;
-            flex-direction: column !important;
+        width: 100% !important;
+        /* aspect-ratio 삭제: 고정 비율 대신 내용물에 맞춰 늘어나게 함 */
+        height: auto !important;
+        min-height: 24rem !important; /* 최소 높이 보장 */
+        display: flex !important;
+        flex-direction: column !important;
         }
 
         #my-scenario-grid .card-image-wrapper {
-            height: 55% !important; /* 이미지 영역 비율 확대 */
+            /* 높이 % 대신 고정값(rem) 사용하여 이미지 공간 확보 */
+            height: 12rem !important;
+            flex-shrink: 0 !important; /* 이미지가 찌그러지지 않게 고정 */
         }
 
         #my-scenario-grid .card-content {
-            padding: 1rem !important; /* 패딩 축소 */
+            padding: 1rem !important;
             flex: 1 !important;
             display: flex !important;
             flex-direction: column !important;
             justify-content: space-between !important;
+            min-height: 0; /* 내부 스크롤/넘침 방지용 */
         }
-
         /* 제목 한 줄 처리 */
         #my-scenario-grid .card-title {
             white-space: nowrap !important;

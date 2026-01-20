@@ -895,26 +895,26 @@ def list_scenarios(
         # [버튼 구성]
         if is_owner:
             buttons_html = f"""
-            <div class="flex items-center gap-2 mt-auto pt-3 border-t border-white/10">
-                <button onclick="playScenario('{fid}', this)" class="flex-1 py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
-                    <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
-                </button>
-                <button onclick="editScenario('{fid}', this)" class="p-2 rounded-lg bg-transparent hover:bg-white/10 text-gray-400 hover:text-[#38bdf8] transition-colors" title="수정">
-                    <i data-lucide="edit" class="w-4 h-4"></i>
-                </button>
-                <button onclick="deleteScenario('{fid}', this)" class="p-2 rounded-lg bg-transparent hover:bg-red-500/10 text-gray-400 hover:text-red-500 transition-colors" title="삭제">
-                    <i data-lucide="trash" class="w-4 h-4"></i>
-                </button>
-            </div>
-            """
+                    <div class="flex flex-wrap items-center gap-2 mt-auto pt-3 border-t border-white/10 shrink-0">
+                        <button onclick="playScenario('{fid}', this)" class="flex-1 py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs min-w-[80px]">
+                            <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
+                        </button>
+                        <button onclick="editScenario('{fid}', this)" class="p-2 rounded-lg bg-transparent hover:bg-white/10 text-gray-400 hover:text-[#38bdf8] transition-colors" title="수정">
+                            <i data-lucide="edit" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="deleteScenario('{fid}', this)" class="p-2 rounded-lg bg-transparent hover:bg-red-500/10 text-gray-400 hover:text-red-500 transition-colors" title="삭제">
+                            <i data-lucide="trash" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    """
         else:
             buttons_html = f"""
-            <div class="mt-auto pt-3 border-t border-white/10">
-                <button onclick="playScenario('{fid}', this)" class="w-full py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
-                    <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY NOW
-                </button>
-            </div>
-            """
+                    <div class="mt-auto pt-3 border-t border-white/10 shrink-0">
+                        <button onclick="playScenario('{fid}', this)" class="w-full py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
+                            <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY NOW
+                        </button>
+                    </div>
+                    """
 
         # [카드 HTML 조립]
         # 핵심 수정: h-full -> flex-1 (내용물이 남은 공간만 차지하도록 변경하여 넘침 방지)
