@@ -399,6 +399,12 @@ class WorldState:
         if isinstance(item, str):
             if item not in self.player["inventory"]:
                 self.player["inventory"].append(item)
+
+                # ✅ [동기화] player_vars에도 즉시 반영 (UI 및 LLM 컨텍스트 동기화)
+                if hasattr(self, 'player_vars'):
+                    self.player_vars['inventory'] = list(self.player["inventory"])
+                    logger.info(f"🔄 [ITEM SYNC] player_vars['inventory'] synchronized after adding '{item}'")
+
                 # 레지스트리 참조하여 상세 로그
                 item_info = self.item_registry.get(item)
                 if item_info:
@@ -412,6 +418,11 @@ class WorldState:
             for i in item:
                 if i not in self.player["inventory"]:
                     self.player["inventory"].append(i)
+
+                    # ✅ [동기화] player_vars에도 즉시 반영
+                    if hasattr(self, 'player_vars'):
+                        self.player_vars['inventory'] = list(self.player["inventory"])
+
                     item_info = self.item_registry.get(i)
                     if item_info:
                         desc = item_info.get('description', 'N/A')
@@ -426,6 +437,12 @@ class WorldState:
         if isinstance(item, str):
             if item in self.player["inventory"]:
                 self.player["inventory"].remove(item)
+
+                # ✅ [동기화] player_vars에도 즉시 반영 (UI 및 LLM 컨텍스트 동기화)
+                if hasattr(self, 'player_vars'):
+                    self.player_vars['inventory'] = list(self.player["inventory"])
+                    logger.info(f"🔄 [ITEM SYNC] player_vars['inventory'] synchronized after removing '{item}'")
+
                 # 레지스트리 참조하여 상세 로그
                 item_info = self.item_registry.get(item)
                 if item_info:
@@ -438,6 +455,11 @@ class WorldState:
             for i in item:
                 if i in self.player["inventory"]:
                     self.player["inventory"].remove(i)
+
+                    # ✅ [동기화] player_vars에도 즉시 반영
+                    if hasattr(self, 'player_vars'):
+                        self.player_vars['inventory'] = list(self.player["inventory"])
+
                     item_info = self.item_registry.get(i)
                     if item_info:
                         logger.info(f"🗑️ [ITEM SYSTEM] Removed '{i}' from inventory")

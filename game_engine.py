@@ -778,6 +778,9 @@ def rule_node(state: PlayerState):
     curr_scene_id = state['current_scene_id']
     prev_scene_id = state.get('previous_scene_id')
 
+    # ✅ NameError 해결: user_input 변수 초기화 (함수 시작 부분에서)
+    user_input = state.get('user_input', state.get('last_user_input', '')).strip()
+
     all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
     all_endings = {e['ending_id']: e for e in get_scenario_by_id(scenario_id).get('endings', [])}
 
@@ -826,7 +829,7 @@ def rule_node(state: PlayerState):
         state['stuck_count'] = 0
         logger.info(f"🔧 [STUCK_COUNT] Initialized to 0")
 
-    user_action = state.get('last_user_input', '').strip()
+    user_action = user_input  # state.get('last_user_input', '').strip() 대신 user_input 사용
     logger.info(f"🎬 [APPLY_EFFECTS] Scene before transition: {actual_current_location}, Intent: {state['parsed_intent']}, Transition index: {idx}")
 
     # ========================================
@@ -988,10 +991,10 @@ def rule_node(state: PlayerState):
         return state
 
     # ========================================
-    # 🗑️ 아이템 버리기 의도 처리 (item_action)
+    # 🗑️ 아이템 조작 의도 처리 (item_action)
     # ========================================
     if state['parsed_intent'] == 'item_action':
-        logger.info(f"🎒 [ITEM_ACTION] Item action intent detected in npc_node")
+        logger.info(f"🎒 [ITEM_ACTION] Item action intent detected in rule_node")
 
         # 유저 입력에서 아이템 이름 추출
         player_vars = state.get('player_vars', {})
@@ -1002,10 +1005,8 @@ def rule_node(state: PlayerState):
         is_discard_action = any(kw in user_input for kw in discard_keywords)
 
         # ✅ 줍기 키워드 확인
-        pickup_keywords = ['줍', '습득', '챙긴', '획득', '가져', '집어', '주워']
+        pickup_keywords = ['줍', '습득', '챙긴', '획득', '가져', '집어', '주워', '얻']
         is_pickup_action = any(kw in user_input for kw in pickup_keywords)
-
-        sys_msg = []
 
         if is_discard_action:
             # 인벤토리에서 아이템 찾기
@@ -1020,8 +1021,7 @@ def rule_node(state: PlayerState):
                 world_state._remove_item(item_to_remove)
 
                 # player_vars에서도 제거 (동기화)
-                if item_to_remove in player_vars.get('inventory', []):
-                    player_vars['inventory'].remove(item_to_remove)
+                state['player_vars']['inventory'] = world_state.player["inventory"].copy()
 
                 # 시스템 메시지
                 sys_msg.append(f"🗑️ '{item_to_remove}'을(를) 버렸습니다.")
@@ -1072,7 +1072,7 @@ def rule_node(state: PlayerState):
         # stuck_count 증가 (장면 전환 없음)
         old_stuck_count = state.get('stuck_count', 0)
         state['stuck_count'] = old_stuck_count + 1
-        logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (item_action in npc_node)")
+        logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (item_action in rule_node)")
 
         # world_state 갱신
         world_state.location = state.get("current_scene_id", world_state.location)
@@ -1556,10 +1556,10 @@ def npc_node(state: PlayerState):
         return state
 
     # ========================================
-    # 🗑️ 아이템 버리기 의도 처리 (item_action)
+    # 🗑️ 아이템 조작 의도 처리 (item_action)
     # ========================================
     if state['parsed_intent'] == 'item_action':
-        logger.info(f"🎒 [ITEM_ACTION] Item action intent detected in npc_node")
+        logger.info(f"🎒 [ITEM_ACTION] Item action intent detected in rule_node")
 
         # 유저 입력에서 아이템 이름 추출
         player_vars = state.get('player_vars', {})
@@ -1570,10 +1570,8 @@ def npc_node(state: PlayerState):
         is_discard_action = any(kw in user_input for kw in discard_keywords)
 
         # ✅ 줍기 키워드 확인
-        pickup_keywords = ['줍', '습득', '챙긴', '획득', '가져', '집어', '주워']
+        pickup_keywords = ['줍', '습득', '챙긴', '획득', '가져', '집어', '주워', '얻']
         is_pickup_action = any(kw in user_input for kw in pickup_keywords)
-
-        sys_msg = []
 
         if is_discard_action:
             # 인벤토리에서 아이템 찾기
@@ -1588,8 +1586,7 @@ def npc_node(state: PlayerState):
                 world_state._remove_item(item_to_remove)
 
                 # player_vars에서도 제거 (동기화)
-                if item_to_remove in player_vars.get('inventory', []):
-                    player_vars['inventory'].remove(item_to_remove)
+                state['player_vars']['inventory'] = world_state.player["inventory"].copy()
 
                 # 시스템 메시지
                 sys_msg.append(f"🗑️ '{item_to_remove}'을(를) 버렸습니다.")
@@ -1640,7 +1637,7 @@ def npc_node(state: PlayerState):
         # stuck_count 증가 (장면 전환 없음)
         old_stuck_count = state.get('stuck_count', 0)
         state['stuck_count'] = old_stuck_count + 1
-        logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (item_action in npc_node)")
+        logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (item_action in rule_node)")
 
         # world_state 갱신
         world_state.location = state.get("current_scene_id", world_state.location)
@@ -1892,15 +1889,18 @@ def check_npc_appearance(state: PlayerState) -> str:
         return ""
 
     scenario = get_scenario_by_id(scenario_id)
-    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
-    curr_scene = all_scenes.get(curr_id)
-    if not curr_scene: return ""
+    if not scenario:
+        return ""
+
+    prologue_text = scenario.get('prologue', scenario.get('prologue_text', ''))
+    if not prologue_text:
+        return ""
 
     # [FIX] NPC와 적을 모두 처리
-    npc_names = curr_scene.get('npcs', [])
-    enemy_names = curr_scene.get('enemies', [])
-    scene_type = curr_scene.get('type', 'normal')
-    scene_title = curr_scene.get('title', 'Untitled')
+    npc_names = scenario.get('npcs', [])
+    enemy_names = scenario.get('enemies', [])
+    scene_type = scenario.get('type', 'normal')
+    scene_title = scenario.get('title', 'Untitled')
 
     if not npc_names and not enemy_names: return ""
 
