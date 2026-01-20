@@ -95,29 +95,19 @@ intent_classifier: |
      - 인벤토리에 없는 아이템을 사용하려는 경우 (거부 메시지 생성용)
      - 따옴표가 포함된 대사
   
-  3. **item_action** - 아이템 줍기/획득 🆕 [investigate와 구분!]
-     - "줍는다", "획득한다", "챙긴다", "가져간다", "집어든다", "주워담는다" 등
-     - 바닥이나 주변에 있는 아이템을 인벤토리에 추가하는 행동
-     - ⚠️ **중요**: "소금을 살펴본다"는 investigate, "소금을 줍는다"는 item_action입니다
-     - 예시:
-       * "칼을 줍는다" → item_action
-       * "소금을 챙긴다" → item_action
-       * "검을 주워담는다" → item_action
-       * "물약을 확인한다" → investigate (조사만 함)
-  
-  4. **investigate** - 주변 조사/탐색
+  3. **investigate** - 주변 조사/탐색
      - "살펴본다", "찾는다", "조사한다", "뒤진다", "확인한다" 등
      - 전투 중 약점 찾기 시도
      - 🎯 [우선순위] <mark> 태그 요소를 "조사"하는 경우 investigate 우선
-     - ⚠️ 단순히 "본다"는 것과 "줍는다"/"사용한다"는 구분하세요
+     - ⚠️ 단순히 "본다"는 것과 "사용한다"는 구분하세요
   
-  5. **attack** - 전투/폭력 행동 (공격) ⚔️ [최우선 판정!]
+  4. **attack** - 전투/폭력 행동 (공격) ⚔️ [최우선 판정!]
      - 폭력/공격 동사가 포함된 모든 입력
      - "공격", "때린다", "싸운다", "죽인다", "찌른다", "벤다", "쏜다" 등
      - 대상 NPC를 target_npc 필드에 명시 (등장 NPC 목록에서 정확히 매칭)
      - **대화처럼 보여도 폭력 동사가 있으면 attack입니다**
   
-  6. **defend** - 전투 행동 (방어)
+  5. **defend** - 전투 행동 (방어)
      - 전투 장면에서 방어/회피
      - "막는다", "피한다", "숨는다" 등
   
@@ -136,7 +126,7 @@ intent_classifier: |
   
   **응답 형식 (JSON) - 반드시 이 형식을 정확히 따르세요:**
   {{
-    "intent": "transition|chat|item_action|investigate|attack|defend",
+    "intent": "transition|chat|investigate|attack|defend",
     "transition_index": 0,
     "confidence": 0.85,
     "target_npc": "노인 J",
@@ -145,15 +135,12 @@ intent_classifier: |
   
   **중요:**
   - transition의 경우 반드시 가장 유사한 항목의 인덱스를 반환하세요
-  - **item_action의 경우 대상 아이템 이름을 reasoning에 명시하세요** 🆕
   - **attack의 경우 반드시 target_npc를 등장 NPC 목록({npc_list}, {enemy_list})에서 정확히 매칭하여 반환하세요**
   - target_npc가 없거나 매칭 불가하면 null로 설정하고 reasoning에 명시하세요
   - confidence는 0.0~1.0 사이의 값
   - 반드시 유효한 JSON만 반환하세요 (코드펜스 없이)
   - 인벤토리에 없는 아이템 사용 시도는 반드시 reasoning에 명시하세요
   - NPC와의 대화/협박/설득은 반드시 'chat'으로 분류하세요
-  - **"줍는다", "챙긴다", "획득한다" 등의 키워드는 반드시 item_action으로 분류하세요** 🆕
-  - investigate와 item_action을 혼동하지 마세요 (조사 vs 줍기)
   - investigate와 transition을 혼동하지 마세요 (조사 vs 사용/이동)
   - **폭력 동사가 있으면 무조건 'attack'입니다**
 
