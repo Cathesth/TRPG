@@ -421,11 +421,11 @@ class WorldState:
                 else:
                     logger.debug(f"📦 [ITEM SYSTEM] '{i}' already in inventory, skipping")
 
-        # ✅ player_vars와 동기화 (UI 및 LLM 컨텍스트 일치) - 필수!
-        if not hasattr(self, 'player_vars'):
-            self.player_vars = {}
-        self.player_vars['inventory'] = self.player["inventory"].copy()
-        logger.info(f"📦 [ITEM SYSTEM] Synced inventory to player_vars: {len(self.player['inventory'])} items total")
+        # ✅ [FIX] player_vars와 동기화 (UI 및 LLM 컨텍스트 일치) - 필수!
+        # WorldState 인스턴스가 player_vars를 직접 관리하지 않으므로
+        # 이 메서드를 호출하는 곳에서 동기화를 수행해야 함
+        # 하지만 일관성을 위해 여기서도 로그를 남김
+        logger.info(f"📦 [ITEM SYSTEM] Inventory updated: {len(self.player['inventory'])} items total")
 
     def _remove_item(self, item: Union[str, List[str]]):
         """아이템 제거 (레지스트리 참조 및 상세 로그) + player_vars 동기화"""
@@ -452,11 +452,8 @@ class WorldState:
                 else:
                     logger.warning(f"⚠️ [ITEM SYSTEM] Cannot remove '{i}' - not in inventory")
 
-        # ✅ player_vars와 동기화 (UI 및 LLM 컨텍스트 일치)
-        if not hasattr(self, 'player_vars'):
-            self.player_vars = {}
-        self.player_vars['inventory'] = self.player["inventory"].copy()
-        logger.info(f"🗑️ [ITEM SYSTEM] Synced inventory to player_vars: {len(self.player['inventory'])} items")
+        # ✅ [FIX] player_vars와 동기화 로그
+        logger.info(f"🗑️ [ITEM SYSTEM] Inventory updated: {len(self.player['inventory'])} items remaining")
 
     def _update_npc_state(self, npc_name: str, effect: Dict[str, Any]):
         """NPC 상태 업데이트"""
