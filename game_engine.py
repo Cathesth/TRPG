@@ -36,24 +36,38 @@ def get_scenario_by_id(scenario_id: int) -> Dict[str, Any]:
         if scenario:
             scenario_data = scenario.data
 
-            # [Fix] 중첩된 scenario 구조 처리
-            if 'scenario' in scenario_data and isinstance(scenario_data['scenario'], dict):
+            # [Fix] 중첩된 scenario 구조를 완전히 언래핑 (재귀적 처리)
+            max_unwrap_depth = 10  # 무한 루프 방지
+            unwrap_count = 0
+            while 'scenario' in scenario_data and isinstance(scenario_data['scenario'], dict) and unwrap_count < max_unwrap_depth:
+                logger.info(f"📦 [SCENARIO UNWRAP] Unwrapping nested 'scenario' key (depth: {unwrap_count + 1})")
                 scenario_data = scenario_data['scenario']
+                unwrap_count += 1
+
+            # [Fix] initial_state와 scenes가 같은 레벨에 있는지 검증
+            if 'initial_state' in scenario_data or 'scenes' in scenario_data:
+                logger.info(f"✅ [SCENARIO STRUCTURE] Verified: initial_state and scenes are at the same level")
+            else:
+                logger.warning(f"⚠️ [SCENARIO STRUCTURE] Missing initial_state or scenes at top level")
 
             # [Fix] 필수 키가 없으면 기본값 설정
             if 'scenes' not in scenario_data:
                 scenario_data['scenes'] = []
             if 'endings' not in scenario_data:
                 scenario_data['endings'] = []
+            if 'initial_state' not in scenario_data:
+                scenario_data['initial_state'] = {}
+                logger.warning(f"⚠️ [SCENARIO] Missing initial_state, using empty dict")
 
             _scenario_cache[scenario_id] = scenario_data
+            logger.info(f"📦 [SCENARIO CACHE] Cached scenario {scenario_id} with {len(scenario_data.get('scenes', []))} scenes")
             return scenario_data
         else:
             logger.error(f"❌ Scenario not found: {scenario_id}")
-            return {'scenes': [], 'endings': []}
+            return {'scenes': [], 'endings': [], 'initial_state': {}}
     except Exception as e:
         logger.error(f"❌ Failed to load scenario {scenario_id}: {e}")
-        return {'scenes': [], 'endings': []}
+        return {'scenes': [], 'endings': [], 'initial_state': {}}
     finally:
         db.close()
 
@@ -1027,18 +1041,42 @@ def rule_node(state: PlayerState):
                 logger.warning(f"⚠️ [ITEM_ACTION] No matching item found in inventory for discard")
 
         elif is_pickup_action:
-            # 유저 입력에서 아이템 이름 추출 (간단한 휴리스틱)
-            # 시나리오의 item_registry에서 아이템 목록 확인
+            # 🔧 [FIX] 아이템 줍기 로직 개선: 레지스트리에 없어도 이름 자체로 추가
             scenario_data = get_scenario_by_id(scenario_id)
             available_items = scenario_data.get('items', [])
 
             item_to_add = None
+
+            # 1단계: 레지스트리에서 아이템 찾기
             for item_data in available_items:
                 if isinstance(item_data, dict):
                     item_name = item_data.get('name', '')
                     if item_name and item_name in user_input:
                         item_to_add = item_name
+                        logger.info(f"📦 [ITEM SYSTEM] Found item in registry: {item_name}")
                         break
+
+            # 2단계: 레지스트리에 없으면 유저 입력에서 명사 추출 (휴리스틱)
+            if not item_to_add:
+                # 간단한 패턴 매칭: "XXX를 줍는다", "XXX 습득", "XXX 챙긴다" 등
+                import re
+
+                # 조사(을/를/이/가)를 기준으로 아이템 이름 추출
+                patterns = [
+                    r'(.+?)(?:을|를|이|가)\s*(?:줍|습득|챙기|획득|가져|집어|주워)',
+                    r'(?:줍|습득|챙기|획득|가져|집어|주워)\s*(.+?)(?:을|를|이|가)?',
+                ]
+
+                for pattern in patterns:
+                    match = re.search(pattern, user_input)
+                    if match:
+                        potential_item = match.group(1).strip()
+                        # 불필요한 조사 제거
+                        potential_item = re.sub(r'[을를이가는]$', '', potential_item)
+                        if potential_item and len(potential_item) >= 2:
+                            item_to_add = potential_item
+                            logger.info(f"📦 [ITEM SYSTEM] Extracted item name from input: '{item_to_add}'")
+                            break
 
             if item_to_add:
                 # WorldState에 아이템 추가
@@ -1051,8 +1089,9 @@ def rule_node(state: PlayerState):
                 world_state.add_narrative_event(f"플레이어가 [{item_to_add}]을(를) 습득함")
                 logger.info(f"📦 [ITEM SYSTEM] Item acquired: {item_to_add}")
             else:
-                sys_msg.append(f"⚠️ 줍을 아이템을 찾을 수 없습니다.")
-                logger.warning(f"⚠️ [ITEM_ACTION] No matching item found in scenario for pickup")
+                # 아이템을 찾을 수 없을 때
+                sys_msg.append(f"⚠️ 주변에서 줍을 수 있는 물건을 찾을 수 없습니다.")
+                logger.warning(f"⚠️ [ITEM_ACTION] Could not extract item name from input: '{user_input}'")
 
         # system_message 저장
         state['system_message'] = " | ".join(sys_msg)
