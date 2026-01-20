@@ -1,5 +1,8 @@
 // ui_manager.js - 화면 렌더링 및 UI 제어
 
+// ===== 이전 스탯 저장 (플로팅 텍스트용) =====
+let lastStats = {};
+
 // [헬퍼] 이미지 URL 변환 (백엔드 프록시 사용)
 function getImageUrl(url) {
     if (!url) return '';
@@ -292,7 +295,7 @@ function updateStats(statsData) {
             if (config.isBar) {
                 let maxVal = typeof config.max === 'string' ? (statsData[config.max] || 100) : 100;
                 html += `
-                <div class="mb-3">
+                <div class="mb-3 gauge-container" data-stat-type="${k.toLowerCase()}">
                     <div class="flex justify-between items-center mb-2">
                         <span class="text-xs ${config.color} flex items-center gap-1 font-dot font-bold">
                             <i data-lucide="${config.icon}" class="w-4 h-4"></i>${k.toUpperCase()}
@@ -366,6 +369,45 @@ function updateStats(statsData) {
 
     statsArea.innerHTML = html;
 
+    // ===== 🎬 애니메이션 처리: 스탯 변경 감지 및 글리치/플로팅 효과 =====
+    // 이전 스탯과 비교하여 변동이 있으면 애니메이션 트리거
+    const trackedStats = ['hp', 'sanity', 'mp']; // 추적할 스탯 목록
+
+    trackedStats.forEach(statKey => {
+        const currentValue = statsData[statKey];
+        const previousValue = lastStats[statKey];
+
+        // 값이 변경되었는지 확인 (이전 값이 있고, 현재 값과 다를 때)
+        if (previousValue !== undefined && currentValue !== previousValue) {
+            const delta = currentValue - previousValue;
+            const container = statsArea.querySelector(`[data-stat-type="${statKey}"]`);
+
+            if (container) {
+                const gauge = container.querySelector('.block-gauge');
+
+                // 1. 글리치 효과 적용
+                if (gauge) {
+                    gauge.classList.add('gauge-glitch');
+
+                    // 1초 후 글리치 클래스 제거
+                    setTimeout(() => {
+                        gauge.classList.remove('gauge-glitch');
+                    }, 600);
+                }
+
+                // 2. 플로팅 텍스트 생성
+                createFloatingText(container, delta);
+            }
+        }
+    });
+
+    // 현재 스탯을 lastStats에 저장 (다음 비교를 위해)
+    lastStats = {
+        hp: statsData.hp,
+        sanity: statsData.sanity,
+        mp: statsData.mp
+    };
+
     // 3. NPC 상태창 업데이트 (초상화 지원 + 에러 핸들링)
     const npcArea = document.getElementById('npc-status-area');
     if (npcArea && statsData.npcs && Array.isArray(statsData.npcs)) {
@@ -412,199 +454,33 @@ function updateStats(statsData) {
     lucide.createIcons();
 }
 
-function openLoadModal() {
-    const modal = document.getElementById('load-modal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        modal.style.display = 'flex';
-        const sortSelect = document.getElementById('scenario-sort');
-        const sortValue = sortSelect ? sortSelect.value : 'newest';
-        htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, {target: '#scenario-list-container', swap: 'innerHTML'});
-    }
-}
+// ===== 🎨 플로팅 텍스트 생성 함수 =====
+function createFloatingText(container, delta) {
+    if (delta === 0) return; // 변동이 없으면 스킵
 
-function closeLoadModal() {
-    const modal = document.getElementById('load-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.style.display = 'none';
-    }
-}
+    const floatingText = document.createElement('div');
+    floatingText.className = 'floating-text';
 
-function reloadScenarioList() {
-    const sortSelect = document.getElementById('scenario-sort');
-    const sortValue = sortSelect ? sortSelect.value : 'newest';
-    htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, {target: '#scenario-list-container', swap: 'innerHTML'});
-}
-
-function showToast(message, type = 'info') {
-    const bgColor = type === 'success' ? 'bg-green-900/90 border-green-500/30 text-green-100' :
-                   type === 'error' ? 'bg-red-900/90 border-red-500/30 text-red-100' :
-                   'bg-blue-900/90 border-blue-500/30 text-blue-100';
-
-    const icon = type === 'success' ? 'check-circle' :
-                type === 'error' ? 'alert-circle' : 'info';
-
-    const toast = document.createElement('div');
-    toast.className = `fixed bottom-4 right-4 z-[100] ${bgColor} border px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3`;
-    toast.innerHTML = `
-        <i data-lucide="${icon}" class="w-5 h-5"></i>
-        <span class="font-medium font-dot">${message}</span>
-    `;
-
-    document.body.appendChild(toast);
-    lucide.createIcons();
-
-    setTimeout(() => {
-        toast.style.transition = 'opacity 0.3s, transform 0.3s';
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateY(10px)';
-        setTimeout(() => toast.remove(), 300);
-    }, 3000);
-}
-
-function editScenario(filename) {
-    closeLoadModal();
-    isInternalNavigation = true;
-    window.location.href = `/views/scenes/edit/${filename}`;
-}
-
-function openScenesView() {
-    if (isScenarioLoaded) {
-        isInternalNavigation = true;
-        sessionStorage.setItem(NAVIGATION_FLAG_KEY, 'true');
-        window.location.href = '/views/scenes';
-    }
-}
-
-function updateModelVersions() {
-    const providerSelect = document.getElementById('provider-select');
-    const modelVersionSelect = document.getElementById('model-version-select');
-
-    const provider = providerSelect.value;
-
-    // 🔒 [CRITICAL] 허용된 모델 리스트 (화이트리스트)
-    const allowedModels = [
-        'openai/google/gemini-2.0-flash-001',           // Gemini 2.0 Flash
-        'openai/anthropic/claude-3.5-sonnet',          // Claude 3.5 Sonnet
-        'openai/openai/gpt-4o',                        // GPT-4o
-        'openai/tngtech/deepseek-r1t2-chimera:free',  // R1 Chimera (Free)
-        'openai/meta-llama/llama-3.1-405b-instruct:free' // Llama 3.1 405B
-    ];
-
-    // 기본 옵션 지우기
-    modelVersionSelect.innerHTML = '';
-
-    // 제공사에 따른 모델 버전 추가
-    let options = [];
-    switch (provider) {
-        case 'google':
-            options = [
-                { value: 'openai/google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash (1M)' },
-                { value: 'openai/google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite (1M)' },
-                { value: 'openai/google/gemini-2.5-flash', label: 'Gemini 2.5 Flash (1M)' },
-                { value: 'openai/google/gemini-3-flash-preview', label: 'Gemini 3 Flash Preview (1M)' },
-                { value: 'openai/google/gemini-3-pro-preview', label: 'Gemini 3 Pro Preview (1M)' }
-            ];
-            break;
-        case 'anthropic':
-            options = [
-                { value: 'openai/anthropic/claude-3.5-haiku', label: 'Claude 3.5 Haiku (200K)' },
-                { value: 'openai/anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet (200K)' },
-                { value: 'openai/anthropic/claude-sonnet-4', label: 'Claude Sonnet 4 (200K)' },
-                { value: 'openai/anthropic/claude-haiku-4.5', label: 'Claude Haiku 4.5 (200K)' },
-                { value: 'openai/anthropic/claude-sonnet-4.5', label: 'Claude Sonnet 4.5 (200K)' },
-                { value: 'openai/anthropic/claude-opus-4.5', label: 'Claude Opus 4.5 (200K)' }
-            ];
-            break;
-        case 'openai':
-            options = [
-                { value: 'openai/openai/gpt-4o-mini', label: 'GPT-4o Mini (128K)' },
-                { value: 'openai/openai/gpt-4o', label: 'GPT-4o (128K)' },
-                { value: 'openai/openai/gpt-5-mini', label: 'GPT-5 Mini (1M)' },
-                { value: 'openai/openai/gpt-5.2', label: 'GPT-5.2 (1M)' }
-            ];
-            break;
-        case 'deepseek':
-            options = [
-                { value: 'openai/tngtech/deepseek-r1t2-chimera:free', label: 'R1 Chimera (Free) ⭐' },
-                { value: 'openai/deepseek/deepseek-chat-v3-0324', label: 'DeepSeek Chat V3 (128K)' },
-                { value: 'openai/deepseek/deepseek-v3.2', label: 'DeepSeek V3.2 (128K)' }
-            ];
-            break;
-        case 'meta':
-            options = [
-                { value: 'openai/meta-llama/llama-3.1-8b-instruct', label: 'Llama 3.1 8B (128K)' },
-                { value: 'openai/meta-llama/llama-3.1-405b-instruct:free', label: 'Llama 3.1 405B (Free) ⭐' },
-                { value: 'openai/meta-llama/llama-3.1-405b-instruct', label: 'Llama 3.1 405B (128K)' },
-                { value: 'openai/meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 70B (Free) ⭐' },
-                { value: 'openai/meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B (128K)' }
-            ];
-            break;
-        case 'xai':
-            options = [
-                { value: 'openai/x-ai/grok-code-fast-1', label: 'Grok Code Fast 1 (128K)' },
-                { value: 'openai/x-ai/grok-4-fast', label: 'Grok 4 Fast 128K' },
-                { value: 'openai/x-ai/grok-vision-1', label: 'Grok Vision 1 (128K)' }
-            ];
-            break;
-        case 'mistral':
-            options = [
-                { value: 'openai/mistralai/mistral-7b-instruct', label: 'Mistral 7B Instruct (32K)' },
-                { value: 'openai/mistralai/mixtral-8x7b-instruct', label: 'Mixtral 8x7B Instruct (32K)' }
-            ];
-            break;
-        case 'xiaomi':
-            options = [
-                { value: 'openai/xiaomi/minicpm-v-2.6-instruct', label: 'MiniCPM V 2.6 Instruct (32K)' }
-            ];
-            break;
-        default:
-            options = [{ value: 'openai/tngtech/deepseek-r1t2-chimera:free', label: 'R1 Chimera (Free) ⭐' }];
-    }
-
-    // 🎨 옵션 추가 (잠금 처리 적용)
-    options.forEach(opt => {
-        const option = document.createElement('option');
-        option.value = opt.value;
-
-        // 🔒 허용 여부 확인
-        const isAllowed = allowedModels.includes(opt.value);
-
-        if (isAllowed) {
-            // ✅ 활성화된 모델 (정상 표시)
-            option.textContent = opt.label;
-            option.disabled = false;
-            option.style.color = '#e2e8f0'; // 밝은 회색 (원래 색상)
-            option.style.cursor = 'pointer';
-        } else {
-            // 🔒 비활성화된 모델 (잠금 처리)
-            option.textContent = `🔒 ${opt.label}`;
-            option.disabled = true;
-            option.style.color = '#6b7280'; // 어두운 회색
-            option.style.cursor = 'not-allowed';
-            option.style.opacity = '0.5';
-        }
-
-        modelVersionSelect.appendChild(option);
-    });
-
-    // 이전에 저장된 모델 버전 복원 (허용된 모델이고 현재 목록에 있을 때만)
-    const savedModelVersion = sessionStorage.getItem(MODEL_VERSION_KEY);
-    if (savedModelVersion &&
-        allowedModels.includes(savedModelVersion) &&
-        Array.from(modelVersionSelect.options).some(opt => opt.value === savedModelVersion && !opt.disabled)) {
-        modelVersionSelect.value = savedModelVersion;
+    // 대미지(음수) vs 회복(양수) 구분
+    if (delta < 0) {
+        floatingText.classList.add('damage');
+        floatingText.textContent = delta.toString(); // "-13" 형태
     } else {
-        // 저장된 모델이 없거나 비활성화된 경우, 첫 번째 활성화된 모델 선택
-        const firstEnabledOption = Array.from(modelVersionSelect.options).find(opt => !opt.disabled);
-        if (firstEnabledOption) {
-            modelVersionSelect.value = firstEnabledOption.value;
-        }
+        floatingText.classList.add('heal');
+        floatingText.textContent = '+' + delta.toString(); // "+5" 형태
     }
 
-    // 제공사 선택 저장
-    sessionStorage.setItem(MODEL_PROVIDER_KEY, provider);
+    // 게이지 오른쪽 위에 배치
+    const rect = container.getBoundingClientRect();
+    floatingText.style.left = (rect.right - 20) + 'px';
+    floatingText.style.top = (rect.top + 10) + 'px';
+
+    document.body.appendChild(floatingText);
+
+    // 애니메이션 종료 후 요소 제거
+    setTimeout(() => {
+        floatingText.remove();
+    }, 1200); // floatUp 애니메이션과 동일한 시간
 }
 
 // 외부에서 접근 가능하도록 window 객체에 할당
@@ -616,6 +492,7 @@ window.showEmptyDebugState = showEmptyDebugState;
 window.restoreChatLog = restoreChatLog;
 window.resetGameUI = resetGameUI;
 window.updateStats = updateStats;
+window.createFloatingText = createFloatingText;
 window.openLoadModal = openLoadModal;
 window.closeLoadModal = closeLoadModal;
 window.reloadScenarioList = reloadScenarioList;

@@ -155,6 +155,119 @@
             box-shadow: 0 0 4px #00FFFF;
         }
 
+        /* ===== 글리치(Glitch) 효과 ===== */
+        @keyframes glitch {
+            0%, 100% {
+                transform: translate(0, 0);
+                filter: brightness(1);
+            }
+            10% {
+                transform: translate(-2px, 0);
+                filter: brightness(1.3) hue-rotate(5deg);
+            }
+            20% {
+                transform: translate(2px, 0);
+                filter: brightness(0.8) hue-rotate(-5deg);
+            }
+            30% {
+                transform: translate(-1px, 1px);
+                filter: brightness(1.2);
+            }
+            40% {
+                transform: translate(1px, -1px);
+                filter: brightness(0.9);
+            }
+            50% {
+                transform: translate(-2px, 0);
+                opacity: 0.9;
+            }
+            60% {
+                transform: translate(2px, 0);
+                opacity: 1;
+            }
+            70% {
+                transform: translate(-1px, 0);
+                filter: brightness(1.1);
+            }
+            80% {
+                transform: translate(1px, 0);
+                filter: brightness(1);
+            }
+            90% {
+                transform: translate(0, -1px);
+                filter: brightness(0.95);
+            }
+        }
+
+        .gauge-glitch {
+            animation: glitch 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        .gauge-glitch .block-gauge-segment {
+            border-color: #FFFACD !important;
+            box-shadow: 0 0 8px currentColor !important;
+        }
+
+        /* ===== 플로팅 수치(Floating Damage/Heal) 애니메이션 ===== */
+        @keyframes floatUp {
+            0% {
+                transform: translateY(0) scale(0.8);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+                transform: translateY(-5px) scale(1.2);
+            }
+            50% {
+                opacity: 1;
+                transform: translateY(-20px) scale(1);
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-40px) scale(0.9);
+            }
+        }
+
+        .floating-text {
+            position: absolute;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 14px;
+            font-weight: bold;
+            pointer-events: none;
+            z-index: 100;
+            text-shadow:
+                2px 2px 0 #000,
+                -2px -2px 0 #000,
+                2px -2px 0 #000,
+                -2px 2px 0 #000;
+            animation: floatUp 1.2s cubic-bezier(0.33, 1, 0.68, 1) forwards;
+        }
+
+        .floating-text.damage {
+            color: #FF007F;
+            text-shadow:
+                2px 2px 0 #000,
+                -2px -2px 0 #000,
+                2px -2px 0 #000,
+                -2px 2px 0 #000,
+                0 0 8px #FF007F;
+        }
+
+        .floating-text.heal {
+            color: #00FFFF;
+            text-shadow:
+                2px 2px 0 #000,
+                -2px -2px 0 #000,
+                2px -2px 0 #000,
+                -2px 2px 0 #000,
+                0 0 8px #00FFFF;
+        }
+
+        /* 게이지 컨테이너에 relative 포지셔닝 */
+        .gauge-container {
+            position: relative;
+        }
+
         /* Pixelated Avatar */
         .pixel-avatar {
             image-rendering: pixelated;
@@ -212,7 +325,7 @@
         }
 
         .fade-in { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1, transform: translateY(0); } }
 
         .streaming-cursor { animation: blink 1s step-end infinite; color: #00FFFF; }
         @keyframes blink { 50% { opacity: 0; } }
