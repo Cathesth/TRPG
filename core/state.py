@@ -395,7 +395,7 @@ class WorldState:
             target[stat_name] = max(0, target[stat_name])
 
     def _add_item(self, item: Union[str, List[str]]):
-        """아이템 추가 (레지스트리 참조 및 상세 로그) + player_vars 동기화"""
+        """아이템 추가 (레지스트리 참조 및 상세 로그)"""
         if isinstance(item, str):
             if item not in self.player["inventory"]:
                 self.player["inventory"].append(item)
@@ -421,13 +421,8 @@ class WorldState:
                 else:
                     logger.debug(f"📦 [ITEM SYSTEM] '{i}' already in inventory, skipping")
 
-        # ✅ player_vars와 동기화 (UI 및 LLM 컨텍스트 강제 일치)
-        self.player_vars = getattr(self, 'player_vars', {})
-        self.player_vars['inventory'] = list(self.player["inventory"])
-        logger.info(f"📦 [ITEM SYSTEM] Inventory synced: {self.player['inventory']}")
-
     def _remove_item(self, item: Union[str, List[str]]):
-        """아이템 제거 (레지스트리 참조 및 상세 로그) + player_vars 동기화"""
+        """아이템 제거 (레지스트리 참조 및 상세 로그)"""
         if isinstance(item, str):
             if item in self.player["inventory"]:
                 self.player["inventory"].remove(item)
@@ -450,11 +445,6 @@ class WorldState:
                         logger.info(f"🗑️ [ITEM SYSTEM] Removed '{i}' from inventory (not in registry)")
                 else:
                     logger.warning(f"⚠️ [ITEM SYSTEM] Cannot remove '{i}' - not in inventory")
-
-        # ✅ player_vars와 동기화 (UI 및 LLM 컨텍스트 강제 일치)
-        self.player_vars = getattr(self, 'player_vars', {})
-        self.player_vars['inventory'] = list(self.player["inventory"])
-        logger.info(f"📦 [ITEM SYSTEM] Inventory synced: {self.player['inventory']}")
 
     def _update_npc_state(self, npc_name: str, effect: Dict[str, Any]):
         """NPC 상태 업데이트"""
