@@ -59,6 +59,7 @@ class NPC(BaseModel):
     description: str = Field(description="Visual description")
     image_prompt: Optional[str] = Field(None, description="Prompt for generating NPC portrait")
     dialogue_style: str = Field(description="How they speak")
+    drop_items: List[str] = Field(default=[], description="Items dropped when this NPC dies (loot)")
 
 
 class Scene(BaseModel):

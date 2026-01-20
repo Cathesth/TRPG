@@ -434,26 +434,28 @@ class WorldState:
     def _add_item(self, item: Union[str, List[str]]):
         """
         아이템 추가 (레지스트리 기반)
-        레지스트리에 등록된 아이템인지 확인하고, 경고 로그 출력
+        레지스트리에 등록된 아이템인지 확인하고, 상세 정보를 로그에 남김
         """
         if isinstance(item, str):
             if item not in self.player["inventory"]:
                 self.player["inventory"].append(item)
-                # 레지스트리 확인 및 로깅
+                # 레지스트리 확인 및 상세 로깅
                 if item in self.item_registry:
                     item_info = self.item_registry[item]
-                    logger.info(f"✅ [INVENTORY] Added item '{item}' (registered: {item_info.get('description', 'No description')})")
+                    description = item_info.get('description', '설명 없음')
+                    logger.info(f"📦 [ITEM SYSTEM] Item gained: {item} | Description: {description}")
                 else:
-                    logger.warning(f"⚠️ [INVENTORY] Added item '{item}' but it's NOT in item_registry (레지스트리에 미등록)")
+                    logger.warning(f"📦 [ITEM SYSTEM] Item gained: {item} (⚠️ NOT in item_registry)")
         elif isinstance(item, list):
             for i in item:
                 if i not in self.player["inventory"]:
                     self.player["inventory"].append(i)
                     if i in self.item_registry:
                         item_info = self.item_registry[i]
-                        logger.info(f"✅ [INVENTORY] Added item '{i}' (registered: {item_info.get('description', 'No description')})")
+                        description = item_info.get('description', '설명 없음')
+                        logger.info(f"📦 [ITEM SYSTEM] Item gained: {i} | Description: {description}")
                     else:
-                        logger.warning(f"⚠️ [INVENTORY] Added item '{i}' but it's NOT in item_registry")
+                        logger.warning(f"📦 [ITEM SYSTEM] Item gained: {i} (⚠️ NOT in item_registry)")
 
     def _remove_item(self, item: Union[str, List[str]]):
         """아이템 제거"""
