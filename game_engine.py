@@ -253,12 +253,9 @@ def get_npc_weakness_hint(scenario: Dict[str, Any], enemy_names: List[str]) -> s
     weakness_hints = prompts.get('weakness_hints', {})
     npcs = scenario.get('npcs', [])
 
-    # 🔴 [CRITICAL] enemy_names 리스트 정규화: 딕셔너리면 name 필드 추출
-    normalized_enemies = [e.get('name') if isinstance(e, dict) else e for e in enemy_names]
-
     for npc in npcs:
         npc_name = npc.get('name', '')
-        if npc_name in normalized_enemies:
+        if npc_name in enemy_names:
             weakness = npc.get('weakness', npc.get('약점', ''))
             if weakness:
                 weakness_lower = weakness.lower()
@@ -1251,9 +1248,8 @@ def rule_node(state: PlayerState):
 def npc_node(state: PlayerState):
     """NPC 대화 (이동 아닐 때만 발동)"""
 
-    # ✅ [FIX] 변수 미정의 해결: user_input과 curr_id를 최상단에 선언
+    # ✅ [FIX] 변수 미정의 해결: user_input을 최상단에 선언
     user_input = state.get('last_user_input', '').strip()
-    curr_id = state.get('current_scene_id', '')
 
     # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
     if 'stuck_count' not in state:
@@ -1956,16 +1952,8 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     if curr_scene:
         scene_title = curr_scene.get('title', curr_id)
         scene_type = curr_scene.get('type', 'normal')
-
-        # 🔴 [CRITICAL] NPC 이름 정규화: 딕셔너리면 name 필드 추출
-        raw_npcs = curr_scene.get('npcs', [])
-        npc_names = [n.get('name') if isinstance(n, dict) else n for n in raw_npcs]
-
-        # 🔴 [CRITICAL] 적 이름 정규화: 딕셔너리면 name 필드 추출
-        raw_enemies = curr_scene.get('enemies', [])
-        enemy_names = [e.get('name') if isinstance(e, dict) else e for e in raw_enemies]
-
-        logger.info(f"🎬 [SCENE INFO] NPCs: {npc_names}, Enemies: {enemy_names}")
+        npc_names = curr_scene.get('npcs', [])
+        enemy_names = curr_scene.get('enemies', [])
 
     # ========================================
     # 💀 작업 2: 죽은 NPC 상태 정보 수집 (환각 방지)
@@ -1977,10 +1965,6 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
         dead_npcs = []
         for npc_name in all_npc_names:
-            # 🔴 [SAFETY] NPC 이름이 None이거나 빈 문자열이면 스킵
-            if not npc_name:
-                continue
-
             npc_state = world_state.get_npc_state(npc_name)
             if npc_state and npc_state.get('status') == 'dead':
                 dead_npcs.append(npc_name)
