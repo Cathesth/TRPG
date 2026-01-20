@@ -205,28 +205,40 @@ async def root():
 @app.get("/image/serve/{file_path:path}")
 async def serve_image(file_path: str):
     from core.s3_client import get_s3_client
+    from fastapi.responses import Response, StreamingResponse
     import urllib.parse
+    import botocore.exceptions
 
     s3 = get_s3_client()
-    # Railway 환경변수에서 버킷 이름 가져오기
+    # 환경변수 버킷명 (기본값 주의)
     bucket_name = os.getenv("S3_BUCKET_NAME", "trpg-studio")
 
     try:
-        real_key = file_path
+        # 1. URL 디코딩 (예: %2F -> /)
+        decoded_path = urllib.parse.unquote(file_path)
 
-        # 만약 DB에 "http://minio:9000/버킷명/폴더/파일.png" 처럼 전체 주소가 저장되어 있다면?
-        if "://" in file_path:
-            parsed = urllib.parse.urlparse(file_path)
-            # 경로에서 앞부분 슬래시 제거 ('/버킷명/폴더/파일.png' -> '버킷명/폴더/파일.png')
+        # 2. 경로 파싱 로직 (여기가 핵심)
+        real_key = decoded_path
+
+        # 만약 http://... 로 시작하는 전체 URL이 들어왔다면?
+        if "://" in decoded_path:
+            parsed = urllib.parse.urlparse(decoded_path)
+            # 앞의 슬래시 제거
             full_path = parsed.path.lstrip('/')
 
-            # 경로가 버킷명으로 시작하면 잘라냄 (S3 Client는 Key만 원하므로)
+            # 경로가 "버킷명/폴더/파일" 구조인지 확인
             if full_path.startswith(f"{bucket_name}/"):
+                # 버킷명 부분을 잘라내고 뒤에 키만 남김
                 real_key = full_path.replace(f"{bucket_name}/", "", 1)
             else:
                 real_key = full_path
 
-        # S3에서 파일 데이터 스트리밍으로 가져오기
+        # [디버깅 로그] 이 로그를 꼭 확인해야 합니다!
+        logger.info(f"🔍 [Image Debug] 요청 원문: {file_path}")
+        logger.info(f"🔍 [Image Debug] 추출된 Bucket: {bucket_name}")
+        logger.info(f"🔍 [Image Debug] 추출된 Key: {real_key}")
+
+        # 3. S3 요청
         response = await s3.client.get_object(Bucket=bucket_name, Key=real_key)
 
         async def stream_generator():
@@ -237,9 +249,13 @@ async def serve_image(file_path: str):
             stream_generator(),
             media_type=response.get('ContentType', 'image/png')
         )
+
+    except s3.client.exceptions.NoSuchKey:
+        logger.error(f"❌ [Image Serve] S3에 파일 없음 (NoSuchKey): Bucket={bucket_name}, Key={real_key}")
+        return Response(status_code=404)
+
     except Exception as e:
-        # 로그에 자세한 에러를 남겨서 디버깅을 돕습니다.
-        logger.error(f"❌ [Image Serve] 실패: {e} (Input: {file_path}, Key: {real_key})")
+        logger.error(f"❌ [Image Serve] 에러 발생: {str(e)}")
         return Response(status_code=404)
 
 
