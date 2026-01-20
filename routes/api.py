@@ -89,7 +89,11 @@ oauth.register(
     api_base_url='https://kapi.kakao.com/v2/user/me',
     access_token_url='https://kauth.kakao.com/oauth/token',
     authorize_url='https://kauth.kakao.com/oauth/authorize',
-    client_kwargs={'scope': 'account_email profile_nickname'}
+    client_kwargs={
+        'scope': 'account_email profile_nickname',
+        # [핵심 해결책] ID와 비밀번호를 Body에 담아서 보내라는 설정입니다.
+        'token_endpoint_auth_method': 'client_secret_post',
+    }
 )
 
 # 변경: schemes=["bcrypt", "sha256_crypt", "pbkdf2_sha256"] -> 예전 형식도 인식 가능
