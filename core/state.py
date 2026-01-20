@@ -195,9 +195,16 @@ class WorldState:
         logger.info(f"📦 [ITEM SYSTEM] Loaded {len(self.item_registry)} items into registry")
 
         # ========================================
-        # 초기 인벤토리 로딩
+        # 초기 인벤토리 로딩 - 정확한 경로 사용
         # ========================================
-        initial_inventory = scenario_data.get('initial_state', {}).get('inventory', [])
+        # 🔧 [FIX] 경로 수정: scenario_data['initial_state']['inventory']를 정확히 참조
+        initial_state = scenario_data.get('initial_state', {})
+
+        if isinstance(initial_state, dict):
+            initial_inventory = initial_state.get('inventory', [])
+        else:
+            initial_inventory = []
+
         if initial_inventory and isinstance(initial_inventory, list):
             self.player['inventory'] = initial_inventory.copy()
             logger.info(f"🎒 [ITEM SYSTEM] Initial inventory loaded: {self.player['inventory']}")
@@ -421,10 +428,8 @@ class WorldState:
                 else:
                     logger.debug(f"📦 [ITEM SYSTEM] '{i}' already in inventory, skipping")
 
-        # ✅ [FIX] player_vars와 동기화 (UI 및 LLM 컨텍스트 일치) - 필수!
-        # WorldState 인스턴스가 player_vars를 직접 관리하지 않으므로
-        # 이 메서드를 호출하는 곳에서 동기화를 수행해야 함
-        # 하지만 일관성을 위해 여기서도 로그를 남김
+        # ✅ [CRITICAL] player_vars와 동기화 강제 - 호출하는 곳에서 반드시 수행해야 함
+        # 예: state['player_vars']['inventory'] = list(world_state.player['inventory'])
         logger.info(f"📦 [ITEM SYSTEM] Inventory updated: {len(self.player['inventory'])} items total")
 
     def _remove_item(self, item: Union[str, List[str]]):
@@ -452,7 +457,8 @@ class WorldState:
                 else:
                     logger.warning(f"⚠️ [ITEM SYSTEM] Cannot remove '{i}' - not in inventory")
 
-        # ✅ [FIX] player_vars와 동기화 로그
+        # ✅ [CRITICAL] player_vars와 동기화 강제 - 호출하는 곳에서 반드시 수행해야 함
+        # 예: state['player_vars']['inventory'] = list(world_state.player['inventory'])
         logger.info(f"🗑️ [ITEM SYSTEM] Inventory updated: {len(self.player['inventory'])} items remaining")
 
     def _update_npc_state(self, npc_name: str, effect: Dict[str, Any]):
