@@ -167,20 +167,26 @@ def format_player_status(scenario: Dict[str, Any], player_vars: Dict[str, Any] =
         elif isinstance(value, str):
             status_lines.append(f"- {key}: {value}")
 
-    # [레지스트리 기반 인벤토리 출력] 아이템 이름과 설명을 함께 표시
+    # ✅ [레지스트리 기반 인벤토리 출력] 아이템 이름, 설명, 사용 가능 여부를 함께 표시
     if inventory and isinstance(inventory, list) and len(inventory) > 0:
         status_lines.append(f"- 🎒 소지품 (인벤토리):")
 
         # world_state가 있으면 레지스트리에서 상세 정보 조회
         if world_state and hasattr(world_state, 'item_registry'):
             for item_name in inventory:
+                # ✅ 방어적 코딩: get()으로 레지스트리에 없는 아이템도 처리
                 item_details = world_state.item_registry.get(item_name)
                 if item_details:
                     description = item_details.get('description', '설명 없음')
-                    status_lines.append(f"    • {item_name}: {description}")
+                    usable = item_details.get('usable', True)
+                    usable_text = "예" if usable else "아니오"
+                    # ✅ 형식: "- [아이템명]: [상세설명] (사용가능: 예/아니오)"
+                    status_lines.append(f"    • [{item_name}]: {description} (사용가능: {usable_text})")
+                    logger.debug(f"[INVENTORY DISPLAY] {item_name} - {description} (usable: {usable})")
                 else:
-                    # 레지스트리에 없는 아이템은 이름만 표시
-                    status_lines.append(f"    • {item_name}")
+                    # 레지스트리에 없는 아이템은 이름만 표시 + 경고 로그
+                    status_lines.append(f"    • [{item_name}] (레지스트리 정보 없음)")
+                    logger.warning(f"⚠️ [INVENTORY] Item '{item_name}' not found in item_registry")
         else:
             # world_state가 없으면 이름만 나열 (기존 방식)
             items_str = ', '.join([str(item) for item in inventory])
@@ -819,6 +825,70 @@ def rule_node(state: PlayerState):
 
     user_action = state.get('last_user_input', '').strip()
     logger.info(f"🎬 [APPLY_EFFECTS] Scene before transition: {actual_current_location}, Intent: {state['parsed_intent']}, Transition index: {idx}")
+
+    # ========================================
+    # 🗑️ 아이템 버리기 로직 (chat 의도이지만 아이템 버리기 키워드 감지)
+    # ========================================
+    discard_keywords = ['버린다', '버려', '버릴', '버리자', '버림', '버렸다', '버리고',
+                        '폐기', '버리는', '던져버', '버리기', 'discard', 'throw away', 'drop']
+
+    if state['parsed_intent'] == 'chat' and any(kw in user_action for kw in discard_keywords):
+        player_inventory = state.get('player_vars', {}).get('inventory', [])
+
+        if player_inventory:
+            # 버릴 아이템 찾기
+            discarded_item = None
+            for item_name in player_inventory:
+                if item_name in user_action:
+                    discarded_item = item_name
+                    break
+
+            if discarded_item:
+                # ✅ WorldState와 player_vars 양쪽에서 제거
+                if discarded_item in player_inventory:
+                    player_inventory.remove(discarded_item)
+                    state['player_vars']['inventory'] = player_inventory
+
+                    # WorldState 동기화
+                    world_state.player['inventory'] = player_inventory
+                    world_state._remove_item(discarded_item)
+
+                    # ✅ 레지스트리에서 아이템 정보 조회
+                    item_details = world_state.get_item_details(discarded_item)
+                    if item_details:
+                        description = item_details.get('description', '설명 없음')
+                        sys_msg.append(f"🗑️ '{discarded_item}' ({description})을(를) 버렸습니다.")
+                        logger.info(f"🗑️ [ITEM DISCARD] '{discarded_item}' discarded (from registry: {description})")
+                    else:
+                        sys_msg.append(f"🗑️ '{discarded_item}'을(를) 버렸습니다.")
+                        logger.warning(f"🗑️ [ITEM DISCARD] '{discarded_item}' not in registry")
+
+                    # 서사 이벤트 기록
+                    world_state.add_narrative_event(f"플레이어가 '{discarded_item}'을(를) 버렸습니다.")
+                    logger.info(f"📖 [ITEM SYSTEM] Item discard recorded: {discarded_item}")
+
+                    # 나레이션 생성
+                    state['narrator_output'] = f"당신은 '{discarded_item}'을(를) 더 이상 쓸모없다고 판단하여 버렸습니다."
+                    state['system_message'] = " | ".join(sys_msg)
+
+                    # stuck_count 증가 (아이템 버리는 것은 장면 전환이 아님)
+                    old_stuck_count = state.get('stuck_count', 0)
+                    state['stuck_count'] = old_stuck_count + 1
+                    logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (item discard)")
+
+                    # world_state 저장
+                    state['world_state'] = world_state.to_dict()
+                    return state
+            else:
+                # 버릴 아이템을 찾지 못함
+                sys_msg.append("⚠️ 버릴 아이템을 명확히 지정해주세요.")
+                state['system_message'] = " | ".join(sys_msg)
+                logger.info(f"⚠️ [ITEM DISCARD] No item specified in discard attempt: {user_action}")
+        else:
+            # 인벤토리가 비어있음
+            sys_msg.append("⚠️ 인벤토리가 비어있습니다.")
+            state['system_message'] = " | ".join(sys_msg)
+            logger.info(f"⚠️ [ITEM DISCARD] Attempted to discard but inventory is empty")
 
     # ========================================
     # ⚔️ 작업 1 & 3: attack 의도 처리 (전투 로직 주입 + 시체 확인)
