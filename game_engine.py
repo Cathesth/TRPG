@@ -253,9 +253,12 @@ def get_npc_weakness_hint(scenario: Dict[str, Any], enemy_names: List[str]) -> s
     weakness_hints = prompts.get('weakness_hints', {})
     npcs = scenario.get('npcs', [])
 
+    # 🔴 [CRITICAL] enemy_names 리스트 정규화: 딕셔너리면 name 필드 추출
+    normalized_enemies = [e.get('name') if isinstance(e, dict) else e for e in enemy_names]
+
     for npc in npcs:
         npc_name = npc.get('name', '')
-        if npc_name in enemy_names:
+        if npc_name in normalized_enemies:
             weakness = npc.get('weakness', npc.get('약점', ''))
             if weakness:
                 weakness_lower = weakness.lower()
@@ -1248,8 +1251,9 @@ def rule_node(state: PlayerState):
 def npc_node(state: PlayerState):
     """NPC 대화 (이동 아닐 때만 발동)"""
 
-    # ✅ [FIX] 변수 미정의 해결: user_input을 최상단에 선언
+    # ✅ [FIX] 변수 미정의 해결: user_input과 curr_id를 최상단에 선언
     user_input = state.get('last_user_input', '').strip()
+    curr_id = state.get('current_scene_id', '')
 
     # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
     if 'stuck_count' not in state:

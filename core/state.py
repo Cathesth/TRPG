@@ -197,10 +197,10 @@ class WorldState:
         # ========================================
         # 초기 인벤토리 로딩 - 정확한 경로 사용
         # ========================================
-        # 🔧 [FIX] 경로 수정: scenario_data['initial_state']['inventory']를 정확히 참조
         initial_state = scenario_data.get('initial_state', {})
 
-        if isinstance(initial_state, dict):
+        # 🔴 [FIX] 인벤토리 세이프가드 강화
+        if isinstance(initial_state, dict) and initial_state:
             initial_inventory = initial_state.get('inventory', [])
         else:
             initial_inventory = []
@@ -209,8 +209,9 @@ class WorldState:
             self.player['inventory'] = initial_inventory.copy()
             logger.info(f"🎒 [ITEM SYSTEM] Initial inventory loaded: {self.player['inventory']}")
         else:
+            # 명확히 빈 리스트로 초기화
             self.player['inventory'] = []
-            logger.info(f"🎒 [ITEM SYSTEM] No initial inventory found")
+            logger.warning(f"⚠️ [ITEM SYSTEM] No initial inventory - initialized to empty list")
 
         # [변경] 플레이어 초기 스탯 설정 - player_vars로 이동
         # player_state의 player_vars가 플레이어 스탯을 관리함
@@ -239,31 +240,56 @@ class WorldState:
             for scene in scenes_data:
                 scene_npcs = scene.get('npcs', [])
                 scene_enemies = scene.get('enemies', [])
-                if npc_name in scene_npcs or npc_name in scene_enemies:
+
+                # 🔴 [CRITICAL] NPC/Enemy 리스트 정규화 (딕셔너리 처리)
+                normalized_npcs = [n.get('name') if isinstance(n, dict) else n for n in scene_npcs]
+                normalized_enemies = [e.get('name') if isinstance(e, dict) else e for e in scene_enemies]
+
+                if npc_name in normalized_npcs or npc_name in normalized_enemies:
                     npc_location = scene.get('scene_id')
                     break
 
-            # 🔴 FIX: HP 값을 정수로 강제 변환 (문자열 방지)
+            # 🔴 [CRITICAL] HP/Stats 보정 강화 - 빈 문자열, None, 잘못된 값 처리
             npc_hp_raw = npc.get('hp', 100)
             npc_max_hp_raw = npc.get('max_hp', npc_hp_raw)
+            npc_attack_raw = npc.get('attack', 10)
 
+            # HP 처리: 빈 문자열이나 None은 100으로
             try:
-                npc_hp = int(npc_hp_raw)
+                if npc_hp_raw == "" or npc_hp_raw is None:
+                    npc_hp = 100
+                else:
+                    npc_hp = int(float(npc_hp_raw))
             except (ValueError, TypeError):
-                logger.warning(f"Invalid HP value for NPC '{npc_name}': {npc_hp_raw}, using default 100")
+                logger.warning(f"⚠️ [NPC INIT] Invalid HP value for NPC '{npc_name}': {npc_hp_raw}, using default 100")
                 npc_hp = 100
 
+            # Max HP 처리
             try:
-                npc_max_hp = int(npc_max_hp_raw)
+                if npc_max_hp_raw == "" or npc_max_hp_raw is None:
+                    npc_max_hp = npc_hp
+                else:
+                    npc_max_hp = int(float(npc_max_hp_raw))
             except (ValueError, TypeError):
-                logger.warning(f"Invalid max_hp value for NPC '{npc_name}': {npc_max_hp_raw}, using HP value {npc_hp}")
+                logger.warning(f"⚠️ [NPC INIT] Invalid max_hp value for NPC '{npc_name}': {npc_max_hp_raw}, using HP value {npc_hp}")
                 npc_max_hp = npc_hp
+
+            # Attack 처리
+            try:
+                if npc_attack_raw == "" or npc_attack_raw is None:
+                    npc_attack = 10
+                else:
+                    npc_attack = int(float(npc_attack_raw))
+            except (ValueError, TypeError):
+                logger.warning(f"⚠️ [NPC INIT] Invalid attack value for NPC '{npc_name}': {npc_attack_raw}, using default 10")
+                npc_attack = 10
 
             # NPC 초기 상태 설정
             self.npcs[npc_name] = {
                 "status": "alive",
                 "hp": npc_hp,
                 "max_hp": npc_max_hp,
+                "attack": npc_attack,
                 "emotion": "neutral",
                 "relationship": 50,
                 "is_hostile": npc.get('isEnemy', False),
