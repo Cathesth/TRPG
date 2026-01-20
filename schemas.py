@@ -14,6 +14,8 @@ class Item(BaseModel):
     name: str = Field(description="Unique item name")
     description: str = Field(description="Item flavor text")
     is_key_item: bool = Field(default=False, description="If true, critical for progression")
+    effects: List[Effect] = Field(default=[], description="Effects triggered when item is used")
+    usable: bool = Field(default=True, description="Whether this item can be used by the player")
 
 
 # --- Logic Components ---

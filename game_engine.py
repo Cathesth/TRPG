@@ -126,10 +126,11 @@ def normalize_text(text: str) -> str:
     return text.lower().replace(" ", "")
 
 
-def format_player_status(scenario: Dict[str, Any], player_vars: Dict[str, Any] = None) -> str:
+def format_player_status(scenario: Dict[str, Any], player_vars: Dict[str, Any] = None, world_state = None) -> str:
     """
-    플레이어 현재 상태를 포맷팅 (인벤토리 포함)
+    플레이어 현재 상태를 포맷팅 (인벤토리 포함 - 레지스트리 기반)
     player_vars가 제공되면 실제 플레이어 상태를 사용, 없으면 초기 상태 사용
+    world_state가 제공되면 아이템 레지스트리에서 상세 정보 조회
     """
     if player_vars:
         # 실제 플레이어 상태 사용
@@ -166,10 +167,24 @@ def format_player_status(scenario: Dict[str, Any], player_vars: Dict[str, Any] =
         elif isinstance(value, str):
             status_lines.append(f"- {key}: {value}")
 
-    # 인벤토리는 마지막에 추가 (강조)
-    if inventory and isinstance(inventory, list):
-        items_str = ', '.join([str(item) for item in inventory])
-        status_lines.append(f"- 🎒 소지품 (인벤토리): [{items_str}]")
+    # [레지스트리 기반 인벤토리 출력] 아이템 이름과 설명을 함께 표시
+    if inventory and isinstance(inventory, list) and len(inventory) > 0:
+        status_lines.append(f"- 🎒 소지품 (인벤토리):")
+
+        # world_state가 있으면 레지스트리에서 상세 정보 조회
+        if world_state and hasattr(world_state, 'item_registry'):
+            for item_name in inventory:
+                item_details = world_state.item_registry.get(item_name)
+                if item_details:
+                    description = item_details.get('description', '설명 없음')
+                    status_lines.append(f"    • {item_name}: {description}")
+                else:
+                    # 레지스트리에 없는 아이템은 이름만 표시
+                    status_lines.append(f"    • {item_name}")
+        else:
+            # world_state가 없으면 이름만 나열 (기존 방식)
+            items_str = ', '.join([str(item) for item in inventory])
+            status_lines.append(f"    [{items_str}]")
     else:
         status_lines.append(f"- 🎒 소지품 (인벤토리): [비어 있음]")
 
