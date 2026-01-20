@@ -46,6 +46,11 @@ from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
 
+print("=========================================")
+print(f"👉 DEBUG: KAKAO_CLIENT_ID = [{os.getenv('KAKAO_CLIENT_ID')}]")
+print(f"👉 DEBUG: KAKAO_CLIENT_SECRET = [{os.getenv('KAKAO_CLIENT_SECRET')}]")
+print("=========================================")
+
 
 # .env 파일을 읽기 위한 설정
 config = Config('.env')
