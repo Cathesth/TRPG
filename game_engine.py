@@ -2251,8 +2251,8 @@ def create_game_graph():
     # 라우팅 함수: 의도에 따라 rule_engine 또는 npc_actor로 분기
     def route_action(state):
         intent = state.get('parsed_intent')
-        # ✅ 작업 3: attack 의도를 rule_engine으로 라우팅
-        if intent in ['transition', 'ending', 'investigate', 'attack']:
+        # ✅ item_action 의도를 rule_engine으로 라우팅 추가
+        if intent in ['transition', 'ending', 'investigate', 'attack', 'item_action']:
             return "rule_engine"
         else:
             return "npc_actor"
