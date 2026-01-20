@@ -248,8 +248,23 @@ class WorldState:
 
         logger.info(f"✅ [ITEM REGISTRY] Total {len(self.item_registry)} items registered successfully")
 
-        # [변경] 플레이어 초기 스탯 설정 - player_vars로 이동
-        # player_state의 player_vars가 플레이어 스탯을 관리함
+        # ✅ 초기 인벤토리 로드 (initial_state.inventory)
+        initial_state = scenario_data.get('initial_state', {})
+        initial_inventory = initial_state.get('inventory', [])
+
+        if initial_inventory:
+            logger.info(f"🎒 [INITIAL INVENTORY] Loading {len(initial_inventory)} items from initial_state")
+            for item_name in initial_inventory:
+                if item_name not in self.player["inventory"]:
+                    self.player["inventory"].append(item_name)
+                    if item_name in self.item_registry:
+                        item_info = self.item_registry[item_name]
+                        description = item_info.get('description', '설명 없음')
+                        logger.info(f"[ITEM SYSTEM] Initial item added: '{item_name}' | {description}")
+                    else:
+                        logger.warning(f"[ITEM SYSTEM] Initial item '{item_name}' NOT in registry (storing name only)")
+        else:
+            logger.info(f"🎒 [INITIAL INVENTORY] No initial items found in scenario")
 
         # 시작 위치 설정
         start_scene_id = scenario_data.get('start_scene_id')
@@ -297,14 +312,24 @@ class WorldState:
                 logger.warning(f"Invalid max_hp value for NPC '{npc_name}': {npc_max_hp_raw}, using HP value {npc_hp}")
                 npc_max_hp = npc_hp
 
-            # ✅ drop_items 추출 및 레지스트리 확인
-            drop_items = npc.get('drop_items', [])
+            # ✅ drop_items 추출 및 파싱 (문자열 -> 리스트 변환)
+            drop_items_raw = npc.get('drop_items', [])
+            drop_items = []
+
+            if isinstance(drop_items_raw, str):
+                # 문자열인 경우 쉼표로 분리하여 리스트로 변환
+                drop_items = [item.strip() for item in drop_items_raw.split(',') if item.strip()]
+                logger.info(f"[ITEM SYSTEM] NPC '{npc_name}' drop_items parsed from string: {drop_items}")
+            elif isinstance(drop_items_raw, list):
+                drop_items = drop_items_raw
+                logger.info(f"[ITEM SYSTEM] NPC '{npc_name}' drop_items loaded as list: {drop_items}")
+
             if drop_items:
                 logger.info(f"💰 [NPC LOOT] '{npc_name}' has drop_items: {drop_items}")
-                # 드롭 아이템이 레지스트리에 있는지 검증
+                # 드롭 아이템이 레지스트리에 있는지 검증 (없어도 문자열로 저장)
                 for drop_item in drop_items:
                     if drop_item not in self.item_registry:
-                        logger.warning(f"⚠️ [NPC LOOT] Drop item '{drop_item}' from NPC '{npc_name}' NOT in item_registry")
+                        logger.warning(f"⚠️ [NPC LOOT] Drop item '{drop_item}' from NPC '{npc_name}' NOT in item_registry (will store as string)")
 
             # NPC 초기 상태 설정
             self.npcs[npc_name] = {
