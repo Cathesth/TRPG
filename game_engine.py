@@ -1756,18 +1756,15 @@ def check_npc_appearance(state: PlayerState) -> str:
         return ""
 
     scenario = get_scenario_by_id(scenario_id)
-    if not scenario:
-        return ""
-
-    prologue_text = scenario.get('prologue', scenario.get('prologue_text', ''))
-    if not prologue_text:
-        return ""
+    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
+    curr_scene = all_scenes.get(curr_id)
+    if not curr_scene: return ""
 
     # [FIX] NPC와 적을 모두 처리
-    npc_names = curr_id.get('npcs', [])
-    enemy_names = curr_id.get('enemies', [])
-    scene_type = curr_id.get('type', 'normal')
-    scene_title = curr_id.get('title', 'Untitled')
+    npc_names = curr_scene.get('npcs', [])
+    enemy_names = curr_scene.get('enemies', [])
+    scene_type = curr_scene.get('type', 'normal')
+    scene_title = curr_scene.get('title', 'Untitled')
 
     if not npc_names and not enemy_names: return ""
 
