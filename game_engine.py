@@ -321,7 +321,7 @@ def check_victory_condition(user_input: str, scenario: Dict[str, Any], curr_scen
     return False
 
 
-def intent_parser_node(state: PlayerState):
+def intent_parser_node(state: PlayerState) -> PlayerState:
     """
     [계층형 파서로 업그레이드]
     우선순위:
@@ -410,8 +410,9 @@ def intent_parser_node(state: PlayerState):
     transitions = curr_scene.get('transitions', [])
     scene_type = curr_scene.get('type', 'normal')
     scene_title = curr_scene.get('title', 'Untitled')
-    npc_names = curr_scene.get('npcs', [])
-    enemy_names = curr_scene.get('enemies', [])
+    # [FIX] 데이터 정규화: dict/str 모두 처리
+    npc_names = [n.get('name') if isinstance(n, dict) else n for n in curr_scene.get('npcs', [])]
+    enemy_names = [e.get('name') if isinstance(e, dict) else e for e in curr_scene.get('enemies', [])]
 
     # =============================================================================
     # [작업 1] 하드코딩 기반 고우선순위 필터링 (최소화)
