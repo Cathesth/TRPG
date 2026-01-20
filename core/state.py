@@ -181,25 +181,66 @@ class WorldState:
         시나리오 데이터로부터 초기 상태를 설정
 
         Args:
-            scenario_data: 시나리오 JSON 데이터
+            scenario_data: 시나리오 JSON 데이터 (DB에서 로드)
         """
-        # ✅ 아이템 레지스트리 구축 (시나리오의 items 정의 기반)
+        # 🔴 DB 정합성: 중첩된 scenario 구조 처리
+        if 'scenario' in scenario_data and isinstance(scenario_data['scenario'], dict):
+            scenario_data = scenario_data['scenario']
+            logger.info("📦 [DB STRUCTURE] Unwrapped nested 'scenario' key from DB data")
+
+        # ✅ 아이템 레지스트리 구축 (schemas.Item 객체로 변환)
+        from schemas import Item, Effect  # 순환 참조 방지를 위해 함수 내 import
+
+        # ✅ 중요: Railway DB 구조에 맞춰 items 경로 수정
+        # 구조: scenario_data['scenario']['items'] 또는 scenario_data['items']
         items_data = scenario_data.get('items', [])
-        for item in items_data:
-            if isinstance(item, dict):
-                item_name = item.get('name')
-                if item_name:
-                    # 아이템 객체를 레지스트리에 저장
+
+        if not items_data:
+            logger.warning("⚠️ [ITEM REGISTRY] No items found in scenario_data['items']")
+        else:
+            logger.info(f"📦 [ITEM REGISTRY] Found {len(items_data)} items in scenario data")
+
+        for item_raw in items_data:
+            if isinstance(item_raw, dict):
+                item_name = item_raw.get('name')
+                if not item_name:
+                    logger.warning(f"⚠️ [ITEM REGISTRY] Item without name skipped: {item_raw}")
+                    continue
+
+                try:
+                    # 🔴 Effect 리스트를 Pydantic 객체로 변환
+                    effects_raw = item_raw.get('effects', [])
+                    effects_obj = []
+                    if isinstance(effects_raw, list):
+                        for eff in effects_raw:
+                            if isinstance(eff, dict):
+                                effects_obj.append(Effect(**eff))
+
+                    # Item 객체 생성
+                    item_obj = Item(
+                        name=item_name,
+                        description=item_raw.get('description', '설명 없음'),
+                        is_key_item=item_raw.get('is_key_item', False),
+                        effects=effects_obj,
+                        usable=item_raw.get('usable', True)
+                    )
+
+                    # ✅ 레지스트리에 dict 형태로 저장 (직렬화 편의성)
+                    self.item_registry[item_name] = item_obj.model_dump()
+                    logger.info(f"📋 [ITEM REGISTRY] Registered: '{item_name}' | usable={item_obj.usable} | effects={len(item_obj.effects)} | is_key={item_obj.is_key_item}")
+
+                except Exception as e:
+                    logger.error(f"❌ [ITEM REGISTRY] Failed to register item '{item_name}': {e}")
+                    # 폴백: 기본 dict로 등록
                     self.item_registry[item_name] = {
                         'name': item_name,
-                        'description': item.get('description', '설명 없음'),
-                        'is_key_item': item.get('is_key_item', False),
-                        'effects': item.get('effects', []),
-                        'usable': item.get('usable', True)
+                        'description': item_raw.get('description', '설명 없음'),
+                        'is_key_item': item_raw.get('is_key_item', False),
+                        'effects': [],
+                        'usable': True
                     }
-                    logger.info(f"📋 [ITEM REGISTRY] Registered item: '{item_name}'")
 
-        logger.info(f"📦 [ITEM REGISTRY] Initialized with {len(self.item_registry)} items")
+        logger.info(f"📦 [ITEM REGISTRY] {len(self.item_registry)} items registered from DB scenario")
 
         # [변경] 플레이어 초기 스탯 설정 - player_vars로 이동
         # player_state의 player_vars가 플레이어 스탯을 관리함
@@ -393,26 +434,28 @@ class WorldState:
     def _add_item(self, item: Union[str, List[str]]):
         """
         아이템 추가 (레지스트리 기반)
-        레지스트리에 등록된 아이템인지 확인하고, 경고 로그 출력
+        레지스트리에 등록된 아이템인지 확인하고, 상세 정보를 로그에 남김
         """
         if isinstance(item, str):
             if item not in self.player["inventory"]:
                 self.player["inventory"].append(item)
-                # 레지스트리 확인 및 로깅
+                # 레지스트리 확인 및 상세 로깅
                 if item in self.item_registry:
                     item_info = self.item_registry[item]
-                    logger.info(f"✅ [INVENTORY] Added item '{item}' (registered: {item_info.get('description', 'No description')})")
+                    description = item_info.get('description', '설명 없음')
+                    logger.info(f"📦 [ITEM SYSTEM] Item gained: {item} | Description: {description}")
                 else:
-                    logger.warning(f"⚠️ [INVENTORY] Added item '{item}' but it's NOT in item_registry (레지스트리에 미등록)")
+                    logger.warning(f"📦 [ITEM SYSTEM] Item gained: {item} (⚠️ NOT in item_registry)")
         elif isinstance(item, list):
             for i in item:
                 if i not in self.player["inventory"]:
                     self.player["inventory"].append(i)
                     if i in self.item_registry:
                         item_info = self.item_registry[i]
-                        logger.info(f"✅ [INVENTORY] Added item '{i}' (registered: {item_info.get('description', 'No description')})")
+                        description = item_info.get('description', '설명 없음')
+                        logger.info(f"📦 [ITEM SYSTEM] Item gained: {i} | Description: {description}")
                     else:
-                        logger.warning(f"⚠️ [INVENTORY] Added item '{i}' but it's NOT in item_registry")
+                        logger.warning(f"📦 [ITEM SYSTEM] Item gained: {i} (⚠️ NOT in item_registry)")
 
     def _remove_item(self, item: Union[str, List[str]]):
         """아이템 제거"""
@@ -943,6 +986,44 @@ class WorldState:
         return new_hp
 
     # ========================================
+    # 7. 아이템 레지스트리 헬퍼 메서드
+    # ========================================
+
+    def get_item_details(self, item_name: str) -> Optional[Dict[str, Any]]:
+        """
+        아이템 레지스트리에서 아이템 상세 정보 조회
+
+        Args:
+            item_name: 아이템 이름
+
+        Returns:
+            아이템 정보 딕셔너리 또는 None
+        """
+        return self.item_registry.get(item_name)
+
+    def get_stat(self, stat_name: str) -> Any:
+        """
+        플레이어 스탯 조회 (player 및 custom_stats 포함)
+
+        Args:
+            stat_name: 스탯 이름
+
+        Returns:
+            스탯 값 또는 None
+        """
+        stat_name_lower = stat_name.lower()
+
+        # 기본 스탯 확인
+        if stat_name_lower in self.player:
+            return self.player[stat_name_lower]
+
+        # 커스텀 스탯 확인
+        if stat_name_lower in self.player.get("custom_stats", {}):
+            return self.player["custom_stats"][stat_name_lower]
+
+        return None
+
+    # ========================================
     # 6. LLM 컨텍스트 생성 (get_llm_context)
     # ========================================
 
@@ -952,6 +1033,7 @@ class WorldState:
         - 플레이어 현재 스탯
         - NPC 생존 상태
         - 최근 서사 이벤트 (최근 5개)
+        - 인벤토리 (레지스트리 기반 상세 정보 포함)
 
         LLM은 이 정보를 토대로 무시할 수 없으며
         서사 생성 시 반드시 이 데이터를 기준으로 작성해야 함
@@ -968,10 +1050,24 @@ class WorldState:
         for key, value in self.player.get("custom_stats", {}).items():
             lines.append(f"- {key}: {value}")
 
+        # ✅ 인벤토리 출력 (레지스트리 기반 - 설명 포함)
         if self.player["inventory"]:
-            lines.append(f"- 보유중: {', '.join(self.player['inventory'])}")
+            lines.append("\n[소지 아이템]")
+            for item_name in self.player["inventory"]:
+                # 레지스트리에서 아이템 정보 조회
+                if item_name in self.item_registry:
+                    item_info = self.item_registry[item_name]
+                    description = item_info.get('description', '설명 없음')
+                    usable = item_info.get('usable', True)
+                    usable_text = "(사용 가능)" if usable else "(사용 불가)"
+                    lines.append(f"  - {item_name}: {description} {usable_text}")
+                else:
+                    # 레지스트리에 없는 아이템은 경고와 함께 이름만 표시
+                    lines.append(f"  - {item_name}: (레지스트리 정보 없음)")
+                    logger.warning(f"⚠️ [LLM CONTEXT] Item '{item_name}' in inventory but not in registry")
         else:
-            lines.append("- 보유중: 없음")
+            lines.append("\n[소지 아이템]")
+            lines.append("  - 없음")
 
         # NPC 생존 상태 (핵심만 표시 - 환각 방지)
         if self.npcs:
