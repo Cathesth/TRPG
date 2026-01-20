@@ -1012,7 +1012,7 @@ def rule_node(state: PlayerState):
                     operation = eff.get("operation", "add")
                     raw_val = eff.get("value", 0)
 
-                    # 아이템 효과
+                    # ✅ [레지스트리 기반 아이템 효과 처리]
                     if operation in ["gain_item", "lose_item"]:
                         item_name = str(raw_val)
                         inventory = state['player_vars'].get('inventory', [])
@@ -1022,13 +1022,41 @@ def rule_node(state: PlayerState):
                         if operation == "gain_item":
                             if item_name not in inventory:
                                 inventory.append(item_name)
-                            sys_msg.append(f"📦 획득: {item_name}")
+
+                                # ✅ 레지스트리에서 아이템 정보 조회 및 로깅
+                                item_details = world_state.get_item_details(item_name)
+                                if item_details:
+                                    description = item_details.get('description', '설명 없음')
+                                    sys_msg.append(f"📦 획득: {item_name} ({description})")
+                                    logger.info(f"✅ [ITEM GAIN] '{item_name}' acquired (from registry: {description})")
+                                else:
+                                    sys_msg.append(f"📦 획득: {item_name}")
+                                    logger.warning(f"⚠️ [ITEM GAIN] '{item_name}' not in registry")
+                            else:
+                                logger.debug(f"[ITEM GAIN] '{item_name}' already in inventory, skipped")
+
                         elif operation == "lose_item":
                             if item_name in inventory:
                                 inventory.remove(item_name)
-                            sys_msg.append(f"🗑️ 사용: {item_name}")
+
+                                # ✅ 레지스트리에서 아이템 정보 조회 및 로깅
+                                item_details = world_state.get_item_details(item_name)
+                                if item_details:
+                                    description = item_details.get('description', '설명 없음')
+                                    sys_msg.append(f"🗑️ 사용: {item_name} ({description})")
+                                    logger.info(f"✅ [ITEM LOSE] '{item_name}' removed (from registry: {description})")
+                                else:
+                                    sys_msg.append(f"🗑️ 사용: {item_name}")
+                                    logger.warning(f"⚠️ [ITEM LOSE] '{item_name}' not in registry")
+                            else:
+                                logger.debug(f"[ITEM LOSE] '{item_name}' not in inventory, skipped")
 
                         state['player_vars']['inventory'] = inventory
+
+                        # ✅ WorldState의 인벤토리도 동기화
+                        world_state.player['inventory'] = inventory
+                        logger.debug(f"💾 [INVENTORY SYNC] world_state.player['inventory'] synchronized: {inventory}")
+
                         continue
 
                     # 수치 효과
