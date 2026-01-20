@@ -441,7 +441,31 @@ def intent_parser_node(state: PlayerState):
             state['parsed_intent'] = 'transition'
             return state
 
-    # 1-3. 아이템 사용 키워드 감지 + 인벤토리 검증
+    # 1-3. 아이템 버리기 키워드 감지 -> 'item_action'으로 분류
+    item_discard_keywords = ['버리', '버려', '버린', '던져', '던지', '버렸', '폐기', '제거']
+    if any(kw in user_input for kw in item_discard_keywords):
+        # 인벤토리 확인
+        player_vars = state.get('player_vars', {})
+        inventory = player_vars.get('inventory', [])
+
+        # 유저 입력에서 아이템 이름 추출 시도
+        item_found_in_inventory = False
+        for item in inventory:
+            if str(item) in user_input:
+                item_found_in_inventory = True
+                break
+
+        if item_found_in_inventory:
+            logger.info(f"🗑️ [HARDCODE FILTER] 아이템 버리기 감지 -> 'item_action' 분류 (scene: '{curr_scene_id}')")
+            state['parsed_intent'] = 'item_action'
+            return state
+        else:
+            logger.info(f"⚠️ [HARDCODE FILTER] 아이템 버리기 시도했으나 인벤토리에 없음 -> 'chat' (scene: '{curr_scene_id}')")
+            state['parsed_intent'] = 'chat'
+            state['system_message'] = "⚠️ 버릴 수 있는 아이템이 인벤토리에 없습니다."
+            return state
+
+    # 1-4. 아이템 사용 키워드 감지 + 인벤토리 검증
     item_use_keywords = ['사용', '쓰', '뿌리', '던지', '먹', '마시', '착용', '장착']
     if any(kw in user_input for kw in item_use_keywords):
         # 인벤토리 확인
@@ -922,6 +946,60 @@ def rule_node(state: PlayerState):
         state['npc_output'] = ""
 
         logger.info(f"✅ [COMBAT] Attack processing complete. Damage: {damage}, Target: {target_npc}")
+
+        return state
+
+    # ========================================
+    # 🗑️ 아이템 버리기 의도 처리 (item_action)
+    # ========================================
+    if state['parsed_intent'] == 'item_action':
+        logger.info(f"🗑️ [ITEM_ACTION] Item discard/use intent detected in rule_node")
+
+        # 유저 입력에서 아이템 이름 추출
+        player_vars = state.get('player_vars', {})
+        inventory = player_vars.get('inventory', [])
+
+        # 버리기 키워드 확인
+        discard_keywords = ['버리', '버려', '버린', '던져', '던지', '버렸', '폐기', '제거']
+        is_discard_action = any(kw in user_action for kw in discard_keywords)
+
+        if is_discard_action:
+            # 인벤토리에서 아이템 찾기
+            item_to_remove = None
+            for item in inventory:
+                if str(item) in user_action:
+                    item_to_remove = item
+                    break
+
+            if item_to_remove:
+                # WorldState에서 아이템 제거
+                world_state._remove_item(item_to_remove)
+
+                # player_vars에서도 제거 (동기화)
+                if item_to_remove in player_vars.get('inventory', []):
+                    player_vars['inventory'].remove(item_to_remove)
+
+                # 시스템 메시지
+                sys_msg.append(f"🗑️ '{item_to_remove}'을(를) 버렸습니다.")
+
+                # 서사 이벤트 기록
+                world_state.add_narrative_event(f"플레이어가 '{item_to_remove}'을(를) 버림")
+
+                logger.info(f"🗑️ [ITEM_ACTION] Item removed: '{item_to_remove}'")
+            else:
+                sys_msg.append("⚠️ 버릴 아이템을 찾을 수 없습니다.")
+                logger.warning(f"⚠️ [ITEM_ACTION] Item not found in inventory. User input: '{user_action}'")
+
+        # system_message 설정
+        state['system_message'] = " | ".join(sys_msg)
+
+        # stuck_count 증가 (장면 전환 없음)
+        old_stuck_count = state.get('stuck_count', 0)
+        state['stuck_count'] = old_stuck_count + 1
+        logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (item_action)")
+
+        # world_state 갱신
+        state['world_state'] = world_state.to_dict()
 
         return state
 
