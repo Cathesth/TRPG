@@ -395,16 +395,10 @@ class WorldState:
             target[stat_name] = max(0, target[stat_name])
 
     def _add_item(self, item: Union[str, List[str]]):
-        """아이템 추가 (레지스트리 참조 및 상세 로그)"""
+        """아이템 추가 (레지스트리 참조 및 상세 로그) + player_vars 동기화"""
         if isinstance(item, str):
             if item not in self.player["inventory"]:
                 self.player["inventory"].append(item)
-
-                # ✅ [동기화] player_vars에도 즉시 반영 (UI 및 LLM 컨텍스트 동기화)
-                if hasattr(self, 'player_vars'):
-                    self.player_vars['inventory'] = list(self.player["inventory"])
-                    logger.info(f"🔄 [ITEM SYNC] player_vars['inventory'] synchronized after adding '{item}'")
-
                 # 레지스트리 참조하여 상세 로그
                 item_info = self.item_registry.get(item)
                 if item_info:
@@ -418,11 +412,6 @@ class WorldState:
             for i in item:
                 if i not in self.player["inventory"]:
                     self.player["inventory"].append(i)
-
-                    # ✅ [동기화] player_vars에도 즉시 반영
-                    if hasattr(self, 'player_vars'):
-                        self.player_vars['inventory'] = list(self.player["inventory"])
-
                     item_info = self.item_registry.get(i)
                     if item_info:
                         desc = item_info.get('description', 'N/A')
@@ -432,17 +421,16 @@ class WorldState:
                 else:
                     logger.debug(f"📦 [ITEM SYSTEM] '{i}' already in inventory, skipping")
 
+        # ✅ player_vars와 동기화 (UI 및 LLM 컨텍스트 강제 일치)
+        self.player_vars = getattr(self, 'player_vars', {})
+        self.player_vars['inventory'] = list(self.player["inventory"])
+        logger.info(f"📦 [ITEM SYSTEM] Inventory synced: {self.player['inventory']}")
+
     def _remove_item(self, item: Union[str, List[str]]):
-        """아이템 제거 (레지스트리 참조 및 상세 로그)"""
+        """아이템 제거 (레지스트리 참조 및 상세 로그) + player_vars 동기화"""
         if isinstance(item, str):
             if item in self.player["inventory"]:
                 self.player["inventory"].remove(item)
-
-                # ✅ [동기화] player_vars에도 즉시 반영 (UI 및 LLM 컨텍스트 동기화)
-                if hasattr(self, 'player_vars'):
-                    self.player_vars['inventory'] = list(self.player["inventory"])
-                    logger.info(f"🔄 [ITEM SYNC] player_vars['inventory'] synchronized after removing '{item}'")
-
                 # 레지스트리 참조하여 상세 로그
                 item_info = self.item_registry.get(item)
                 if item_info:
@@ -455,11 +443,6 @@ class WorldState:
             for i in item:
                 if i in self.player["inventory"]:
                     self.player["inventory"].remove(i)
-
-                    # ✅ [동기화] player_vars에도 즉시 반영
-                    if hasattr(self, 'player_vars'):
-                        self.player_vars['inventory'] = list(self.player["inventory"])
-
                     item_info = self.item_registry.get(i)
                     if item_info:
                         logger.info(f"🗑️ [ITEM SYSTEM] Removed '{i}' from inventory")
@@ -467,6 +450,11 @@ class WorldState:
                         logger.info(f"🗑️ [ITEM SYSTEM] Removed '{i}' from inventory (not in registry)")
                 else:
                     logger.warning(f"⚠️ [ITEM SYSTEM] Cannot remove '{i}' - not in inventory")
+
+        # ✅ player_vars와 동기화 (UI 및 LLM 컨텍스트 강제 일치)
+        self.player_vars = getattr(self, 'player_vars', {})
+        self.player_vars['inventory'] = list(self.player["inventory"])
+        logger.info(f"📦 [ITEM SYSTEM] Inventory synced: {self.player['inventory']}")
 
     def _update_npc_state(self, npc_name: str, effect: Dict[str, Any]):
         """NPC 상태 업데이트"""
