@@ -1517,8 +1517,11 @@ async def save_draft(scenario_id: int, request: Request, user: CurrentUser = Dep
     success, error = DraftService.save_draft(scenario_id, user.id, data)
     if not success: return JSONResponse({"success": False, "error": error}, status_code=400)
 
-    # 자동 히스토리 추가
-    HistoryService.add_snapshot(scenario_id, user.id, data, "Draft 저장")
+    # 자동 히스토리 추가 (성공 시에만)
+    history_success, history_error = HistoryService.add_history(scenario_id, user.id, "draft_save", "Draft 저장", data)
+    if not history_success:
+        logger.warning(f"History save failed: {history_error}")
+    
     return {"success": True, "message": "Draft가 저장되었습니다."}
 
 
