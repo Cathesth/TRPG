@@ -218,15 +218,21 @@ def format_player_status(scenario: Dict[str, Any], player_vars: Dict[str, Any] =
 
     # 인벤토리는 마지막에 추가 (강조)
     if inventory and isinstance(inventory, list):
-        # [NEW] 아이템 이미지 URL 포함
-        items_with_images = []
+        # [NEW] 아이템 이미지를 HTML 태그로 포함
+        items_html_list = []
         for item in inventory:
             item_name = str(item)
             item_img_url = get_minio_url('items', item_name)
-            items_with_images.append(f"{item_name} (이미지: {item_img_url})")
+            # 아이템 아이콘 + 이름 형태로 구성
+            items_html_list.append(
+                f'<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-800/50 rounded border border-gray-600">'
+                f'<img src="{item_img_url}" class="w-5 h-5 rounded" onerror="this.style.display=\'none\'">'
+                f'<span class="text-sm">{item_name}</span>'
+                f'</span>'
+            )
 
-        items_str = ', '.join(items_with_images)
-        status_lines.append(f"- 🎒 소지품 (인벤토리): [{items_str}]")
+        items_html = ' '.join(items_html_list)
+        status_lines.append(f"- 🎒 소지품 (인벤토리): {items_html}")
     else:
         status_lines.append(f"- 🎒 소지품 (인벤토리): [비어 있음]")
 
