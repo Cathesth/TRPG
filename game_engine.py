@@ -941,6 +941,10 @@ def rule_node(state: PlayerState):
         if world_state.player['hp'] <= 0:
             logger.warning(f"💀 [INSTANT DEATH] Player HP is {world_state.player['hp']} after attack - triggering immediate death routing")
 
+            # ✅ [사망 장소 기록] 엔딩으로 이동하기 전에 현재 씬 ID를 death_location_id에 저장
+            state['death_location_id'] = curr_scene_id
+            logger.info(f"💀 [DEATH LOCATION] Saved death location: {curr_scene_id}")
+
             # 1. 연결된 패배 엔딩 탐색
             death_ending_found = False
             death_keywords = ['사망', '패배', '실패', 'ending', 'dead', 'defeat', '죽음', '게임오버']
@@ -956,17 +960,8 @@ def rule_node(state: PlayerState):
                     world_state.location = target_id
                     state['parsed_intent'] = 'ending'
 
-                    # 엔딩 설명 추가
-                    if target_id in all_endings:
-                        ending = all_endings[target_id]
-                        state['narrator_output'] = f"""
-                        <div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl">
-                            <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase">💀 GAME OVER 💀</h3>
-                            <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
-                            <div class="text-2xl font-bold text-white mb-4">"{ending.get('title')}"</div>
-                            <p class="text-gray-200 leading-relaxed text-lg">{ending.get('description')}</p>
-                        </div>
-                        """
+                    # ✅ [HTML 제거] narrator_node에서 LLM이 생성하도록 변경
+                    state['narrator_output'] = ""
 
                     death_ending_found = True
                     world_state.add_narrative_event(f"플레이어 사망 (전투 중) - [{target_id}] 엔딩으로 즉시 이동")
@@ -982,15 +977,8 @@ def rule_node(state: PlayerState):
                 world_state.location = first_ending_id
                 state['parsed_intent'] = 'ending'
 
-                ending = all_endings[first_ending_id]
-                state['narrator_output'] = f"""
-                <div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl">
-                    <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase">💀 GAME OVER 💀</h3>
-                    <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
-                    <div class="text-2xl font-bold text-white mb-4">"{ending.get('title')}"</div>
-                    <p class="text-gray-200 leading-relaxed text-lg">{ending.get('description')}</p>
-                </div>
-                """
+                # ✅ [HTML 제거] narrator_node에서 LLM이 생성하도록 변경
+                state['narrator_output'] = ""
 
                 death_ending_found = True
                 world_state.add_narrative_event(f"플레이어 사망 (전투 중) - 폴백 엔딩 [{first_ending_id}]로 즉시 이동")
@@ -1021,6 +1009,42 @@ def rule_node(state: PlayerState):
 
         # NPC 대사는 생성하지 않음 (공격 결과만 표시)
         state['npc_output'] = ""
+
+        # (i) 죽은 NPC 확인 및 대사 차단
+        npc_state = world_state.get_npc_state(target_npc)
+        if npc_state and npc_state.get('status') == 'dead':
+            logger.info(f"💀 [COMBAT] {target_npc} is dead, blocking NPC dialogue")
+
+            # ========================================
+            # 💰 NPC 드랍 아이템 시스템
+            # ========================================
+            # 시나리오에서 NPC 데이터 조회
+            scenario_data = get_scenario_by_id(scenario_id)
+            npcs_data = scenario_data.get('npcs', [])
+
+            # 해당 NPC의 drop_items 확인
+            for npc_data in npcs_data:
+                if npc_data.get('name') == target_npc:
+                    drop_items = npc_data.get('drop_items', [])
+
+                    if drop_items and isinstance(drop_items, list):
+                        # 아이템 드랍 처리
+                        for item_name in drop_items:
+                            world_state._add_item(item_name)
+                            logger.info(f"💰 [LOOT] {target_npc} dropped item: '{item_name}'")
+
+                        # system_message에 전리품 정보 추가
+                        items_text = ', '.join(drop_items)
+                        loot_message = f"\n💰 전리품: {target_npc}에게서 [{items_text}]을(를) 획득했습니다!"
+                        state['system_message'] += loot_message
+
+                        # narrative_history에 기록
+                        world_state.add_narrative_event(f"{target_npc} 처치 후 전리품 [{items_text}] 획득")
+
+                        logger.info(f"💰 [LOOT] Total items dropped from target_npc: {len(drop_items)}")
+                    else:
+                        logger.info(f"💰 [LOOT] No items to drop from {target_npc}")
+                    break
 
         logger.info(f"✅ [COMBAT] Attack processing complete. Damage: {damage}, Target: {target_npc}")
 
@@ -1596,6 +1620,10 @@ def npc_node(state: PlayerState):
         if world_state.player['hp'] <= 0:
             logger.warning(f"💀 [INSTANT DEATH] Player HP is {world_state.player['hp']} after attack - triggering immediate death routing")
 
+            # ✅ [사망 장소 기록] 엔딩으로 이동하기 전에 현재 씬 ID를 death_location_id에 저장
+            state['death_location_id'] = curr_scene_id
+            logger.info(f"💀 [DEATH LOCATION] Saved death location: {curr_scene_id}")
+
             # 1. 연결된 패배 엔딩 탐색
             death_ending_found = False
             death_keywords = ['사망', '패배', '실패', 'ending', 'dead', 'defeat', '죽음', '게임오버']
@@ -1611,17 +1639,8 @@ def npc_node(state: PlayerState):
                     world_state.location = target_id
                     state['parsed_intent'] = 'ending'
 
-                    # 엔딩 설명 추가
-                    if target_id in all_endings:
-                        ending = all_endings[target_id]
-                        state['narrator_output'] = f"""
-                        <div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl">
-                            <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase">💀 GAME OVER 💀</h3>
-                            <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
-                            <div class="text-2xl font-bold text-white mb-4">"{ending.get('title')}"</div>
-                            <p class="text-gray-200 leading-relaxed text-lg">{ending.get('description')}</p>
-                        </div>
-                        """
+                    # ✅ [HTML 제거] narrator_node에서 LLM이 생성하도록 변경
+                    state['narrator_output'] = ""
 
                     death_ending_found = True
                     world_state.add_narrative_event(f"플레이어 사망 (전투 중) - [{target_id}] 엔딩으로 즉시 이동")
@@ -1637,15 +1656,8 @@ def npc_node(state: PlayerState):
                 world_state.location = first_ending_id
                 state['parsed_intent'] = 'ending'
 
-                ending = all_endings[first_ending_id]
-                state['narrator_output'] = f"""
-                <div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl">
-                    <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase">💀 GAME OVER 💀</h3>
-                    <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
-                    <div class="text-2xl font-bold text-white mb-4">"{ending.get('title')}"</div>
-                    <p class="text-gray-200 leading-relaxed text-lg">{ending.get('description')}</p>
-                </div>
-                """
+                # ✅ [HTML 제거] narrator_node에서 LLM이 생성하도록 변경
+                state['narrator_output'] = ""
 
                 death_ending_found = True
                 world_state.add_narrative_event(f"플레이어 사망 (전투 중) - 폴백 엔딩 [{first_ending_id}]로 즉시 이동")
@@ -2217,6 +2229,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     나레이션 모드:
     [MODE 1] 씬 유지 + 의도별 분기 (investigate/attack/defend/chat/near_miss)
     [MODE 2] 씬 변경 -> 장면 묘사
+    [MODE 3] 사망 시퀀스 -> 죽어가는 장소 묘사 + 엔딩 연출
     """
     # [NEW] user_id 추출 (함수 인자 또는 state에서)
     if not user_id:
@@ -2236,6 +2249,70 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     world_state = WorldState()
     if 'world_state' in state and state['world_state']:
         world_state.from_dict(state['world_state'])
+
+    # ========================================
+    # 💀 [MODE 3] 사망 시퀀스 처리 - death_location_id가 존재하는 경우
+    # ========================================
+    death_location_id = state.get('death_location_id')
+
+    if death_location_id and parsed_intent == 'ending':
+        logger.info(f"💀 [DEATH SEQUENCE] Death location detected: {death_location_id}, current ending: {curr_id}")
+
+        # 사망한 장소의 정보 가져오기
+        death_scene = all_scenes.get(death_location_id)
+        death_scene_title = death_scene.get('title', death_location_id) if death_scene else death_location_id
+        death_scene_desc = death_scene.get('description', '') if death_scene else ''
+
+        # 현재 엔딩 정보 가져오기
+        ending_info = all_endings.get(curr_id, {})
+        ending_title = ending_info.get('title', '끝')
+        ending_desc = ending_info.get('description', '')
+
+        # 플레이어 상태 정보
+        player_status = format_player_status(scenario, state.get('player_vars', {}))
+
+        # YAML에서 사망 시퀀스 프롬프트 로드
+        prompts = load_player_prompts()
+        death_sequence_template = prompts.get('death_sequence', '')
+
+        if not death_sequence_template:
+            logger.error("⚠️ [DEATH SEQUENCE] 'death_sequence' prompt not found in prompt_player.yaml")
+            yield "치명상을 입었습니다. 의식이 흐려집니다..."
+            return
+
+        death_sequence_prompt = death_sequence_template.format(
+            death_scene_title=death_scene_title,
+            death_scene_desc=death_scene_desc,
+            player_status=player_status,
+            ending_title=ending_title,
+            ending_desc=ending_desc
+        )
+
+        try:
+            api_key = os.getenv("OPENROUTER_API_KEY")
+            model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+            llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
+
+            logger.info(f"💀 [DEATH SEQUENCE] Generating death narrative for location: {death_location_id}")
+
+            # 사망 시퀀스 나레이션 생성
+            for chunk in _stream_and_track(llm, death_sequence_prompt, user_id, model_name):
+                yield chunk
+
+            # 사망 장소 ID 제거 (한 번만 사용)
+            state['death_location_id'] = None
+            logger.info(f"💀 [DEATH SEQUENCE] Death sequence narration complete")
+
+            return
+
+        except Exception as e:
+            logger.error(f"💀 [DEATH SEQUENCE] Error generating death narrative: {e}")
+            # 폴백: 간단한 사망 묘사
+            yield f"\n\n당신은 {death_scene_title}에서 마지막 숨을 거두었습니다...\n\n"
+            yield f"**{ending_title}**\n\n{ending_desc}"
+
+            state['death_location_id'] = None
+            return
 
     # ========================================
     # 현재 씬 정보 추출 (scene_title, scene_type, npc_names, enemy_names)
