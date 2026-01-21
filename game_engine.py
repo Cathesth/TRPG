@@ -15,6 +15,31 @@ from core.state import WorldState
 from langchain_community.callbacks import get_openai_callback
 from services.user_service import UserService
 
+# =============================================================================
+# [NEW] MinIO 이미지 URL 생성 유틸리티
+# =============================================================================
+def get_minio_url(category: str, filename: str) -> str:
+    """
+    MinIO 이미지 URL 생성
+    category: backgrounds, npcs, enemies, items
+    filename: 이미지 파일명 (확장자 제외 시 .png 자동 추가)
+    """
+    minio_endpoint = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+    minio_bucket = os.getenv("MINIO_BUCKET", "trpg-assets")
+    minio_use_ssl = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
+
+    protocol = "https" if minio_use_ssl else "http"
+
+    # 파일명에 확장자가 없으면 .png 추가
+    if '.' not in filename:
+        filename = f"{filename}.png"
+
+    # 파일명 URL 인코딩 (한글 등 특수문자 처리)
+    from urllib.parse import quote
+    encoded_filename = quote(filename, safe='')
+
+    return f"{protocol}://{minio_endpoint}/{minio_bucket}/{category}/{encoded_filename}"
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -193,7 +218,14 @@ def format_player_status(scenario: Dict[str, Any], player_vars: Dict[str, Any] =
 
     # 인벤토리는 마지막에 추가 (강조)
     if inventory and isinstance(inventory, list):
-        items_str = ', '.join([str(item) for item in inventory])
+        # [NEW] 아이템 이미지 URL 포함
+        items_with_images = []
+        for item in inventory:
+            item_name = str(item)
+            item_img_url = get_minio_url('items', item_name)
+            items_with_images.append(f"{item_name} (이미지: {item_img_url})")
+
+        items_str = ', '.join(items_with_images)
         status_lines.append(f"- 🎒 소지품 (인벤토리): [{items_str}]")
     else:
         status_lines.append(f"- 🎒 소지품 (인벤토리): [비어 있음]")
@@ -2337,6 +2369,13 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         # =============================================================================
     # [MODE 2] 씬 변경됨 -> 장면 묘사
     # =============================================================================
+    # [NEW] 배경 이미지 출력 (MinIO)
+    if curr_scene:
+        background_image = curr_scene.get('background_image', '')
+        if background_image:
+            bg_url = get_minio_url('backgrounds', background_image)
+            yield f'<div class="mb-4"><img src="{bg_url}" class="w-full h-48 object-cover rounded-lg" onerror="this.style.display=\'none\'"></div>'
+
     scene_desc = curr_scene.get('description', '')  # <--- scene_desc 변수 선언 추가
 
     npc_intro = check_npc_appearance(state)
