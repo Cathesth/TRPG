@@ -18,8 +18,9 @@ templates = Jinja2Templates(directory="templates")
 
 
 @views_router.get("/", response_class=HTMLResponse)
-async def index(request: Request, user=Depends(get_current_user_optional)):
+async def index(request: Request):
     """메인 페이지"""
+    user = get_current_user_optional(request)
     return templates.TemplateResponse("index.html", {
         "request": request,
         "version": get_full_version(),
@@ -30,10 +31,18 @@ async def index(request: Request, user=Depends(get_current_user_optional)):
 @views_router.get("/login", response_class=HTMLResponse)
 async def view_login(request: Request):
     """로그인 페이지"""
+    # 사용자 로그인 상태 확인
+    user = get_current_user_optional(request)
+    
+    # URL 파라미터 또는 비로그인 상태일 때만 모달 표시
+    show_login_param = request.query_params.get("show_login") == "true"
+    show_login = show_login_param and not (user and user.is_authenticated)
+    
     return templates.TemplateResponse("index.html", {
         "request": request,
         "version": get_full_version(),
-        "show_login": True
+        "user": user,
+        "show_login": show_login
     })
 
 
