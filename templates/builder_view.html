@@ -85,6 +85,11 @@
             transform: translate(2px, 2px);
             box-shadow: none;
         }
+        .pixel-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: grayscale(100%);
+        }
 
         .pixel-input {
             background: #050510;
@@ -144,6 +149,16 @@
             { id: "openai/tngtech/deepseek-r1t2-chimera:free", name: "R1 Chimera (Free)", provider: "DeepSeek" },
             { id: "openai/meta-llama/llama-3.1-405b-instruct", name: "Llama 3.1 405B", provider: "Meta" },
         ];
+
+        // [NEW] 모델별 비용 가중치 (1K 토큰 당 Credit)
+        const MODEL_COST_RATES = {
+            "openai/google/gemini-2.0-flash-001": 1.0,
+            "openai/anthropic/claude-3.5-sonnet": 60.0,
+            "openai/openai/gpt-4o": 25.0,
+            "openai/tngtech/deepseek-r1t2-chimera:free": 0,
+            "openai/meta-llama/llama-3.1-405b-instruct": 0,
+            "default": 1.5
+        };
 
         const Icon = React.memo(({ name, size = 18, className = "" }) => {
             const ref = useRef(null);
@@ -314,7 +329,8 @@
             const [modals, setModals] = useState({
                 npcGen: false, npcList: false,
                 itemList: false,
-                presetLoad: false, scenarioList: false, imageGen: false
+                presetLoad: false, scenarioList: false, imageGen: false,
+                noToken: false // [NEW] 잔액 부족 경고 모달
             });
             const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
             const [auditState, setAuditState] = useState({ isOpen: false, isLoading: false, results: null, targetNodeId: null });
@@ -328,8 +344,53 @@
             const [selectedModel, setSelectedModel] = useState('openai/tngtech/deepseek-r1t2-chimera:free');
             const [history, setHistory] = useState({ past: [], future: [] });
 
+            // [NEW] 토큰 잔액 상태
+            const [tokenBalance, setTokenBalance] = useState(0);
+
             // [추가] 마우스 오버 미리보기 상태
             const [hoverPreview, setHoverPreview] = useState({ show: false, x: 0, y: 0, url: '', name: '' });
+
+            // [MODIFIED] 예상 생성 비용 계산 (모델별 요율 적용 + 잔액 부족 시각화)
+            const estimatedCost = useMemo(() => {
+                const rate = MODEL_COST_RATES[selectedModel] !== undefined
+                             ? MODEL_COST_RATES[selectedModel]
+                             : MODEL_COST_RATES['default'];
+
+                // 무료 모델은 0 CR
+                if (rate === 0) return 0;
+
+                // 기본 계산식: (노드 수 * 20) + 100 (Gemini 2.0 기준)
+                // 여기에 모델별 가중치(rate)를 곱함
+                const baseCost = (nodes.length * 20) + 100;
+                return Math.floor(baseCost * rate);
+            }, [nodes, selectedModel]);
+
+            // [NEW] 잔액 부족 여부 (UI 표기용)
+            const isAffordable = useMemo(() => {
+                return tokenBalance >= estimatedCost;
+            }, [tokenBalance, estimatedCost]);
+
+            // [NEW] 토큰 잔액 조회 함수
+            const fetchTokenBalance = async () => {
+                try {
+                    const res = await fetch('/api/auth/me'); // 간단 체크용
+                    // 실제 잔액은 /api/user/status 또는 /auth/api/user/status
+                    const statusRes = await fetch('/auth/api/user/status');
+                    if(statusRes.ok) {
+                        const data = await statusRes.json();
+                        if(data.status === 'success') {
+                            setTokenBalance(data.token_balance);
+                        }
+                    }
+                } catch(e) {
+                    console.error("Token fetch failed", e);
+                }
+            };
+
+            // Effect: 컴포넌트 마운트 시 토큰 조회
+            useEffect(() => {
+                fetchTokenBalance();
+            }, []);
 
             const pushHistory = useCallback(() => {
                 setHistory(curr => ({
@@ -403,6 +464,12 @@
             };
 
             const generateImage = async (imageType, description) => {
+                // [NEW] 잔액 확인 (이미지 생성 비용 약 50)
+                if (tokenBalance < 50) {
+                    setModals(m => ({ ...m, noToken: true }));
+                    return;
+                }
+
                 setImageGenState({ isLoading: true, result: null });
                 try {
                     const res = await fetch('/api/image/generate', {
@@ -420,6 +487,8 @@
                     if (json.success && json.data) {
                         setImageGenState({ isLoading: false, result: json.data });
                         showToast("이미지 생성 완료!", "success");
+                        // [NEW] 성공 시 잔액 갱신
+                        fetchTokenBalance();
 
                         if (selectedNodeId) {
                             setNodes(prev => prev.map(n => {
@@ -561,6 +630,12 @@
                 } catch(e) { showToast("반영 실패", "error"); }
             };
             const generateNewScenario = async () => {
+                // [NEW] 잔액 확인 (예상 비용보다 적으면 경고)
+                if (tokenBalance < estimatedCost) {
+                    setModals(m => ({ ...m, noToken: true }));
+                    return;
+                }
+
                 if (nodes.length < 2) return showToast("최소 2개의 노드 필요", "error");
                 setIsGenerating(true);
                 try {
@@ -569,6 +644,10 @@
                         body: JSON.stringify({ nodes, edges, npcs: [...globalNpcs, ...globalEnemies], items: globalItems, model: selectedModel, title: nodes[0].data.label })
                     });
                     const json = await res.json();
+
+                    // [NEW] 성공 시 잔액 갱신
+                    fetchTokenBalance();
+
                     if(json.filename) window.location.href = `/views/scenes/edit/${json.filename}`;
                     else throw new Error(json.error);
                 } catch(e) { showToast(e.message, "error"); setIsGenerating(false); }
@@ -665,8 +744,13 @@
                         </div>
                         <div className="p-4 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
                             <div className="text-[10px] text-[#6A6A8A] mb-1 font-bold">노드 생성</div>
-                            <button onClick={() => addNode('scene')} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs"><Icon name="plus-square"/> Scene 추가</button>
-                            <button onClick={() => addNode('ending')} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#FF007F]"><Icon name="flag"/> Ending 추가</button>
+                            {/* [MODIFIED] 씬/엔딩 추가 버튼에 예상 비용 표기 */}
+                            <button onClick={() => addNode('scene')} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs hover:text-[#00FFFF]">
+                                <Icon name="plus-square"/> Scene 추가 <span className="text-[10px] opacity-70">(+10 CR)</span>
+                            </button>
+                            <button onClick={() => addNode('ending')} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#FF007F] hover:text-[#FF4081]">
+                                <Icon name="flag"/> Ending 추가 <span className="text-[10px] opacity-70">(+10 CR)</span>
+                            </button>
 
                             <div className="h-px bg-[#4A4A6A] my-2"></div>
                             <div className="text-[10px] text-[#6A6A8A] mb-1 font-bold">에셋 관리</div>
@@ -693,6 +777,17 @@
                             <button onClick={async () => { try { const res = await fetch('/api/scenarios/data?filter=my'); const data = await res.json(); setUserScenarios(data); setModals(m=>({...m, scenarioList:true})); } catch(e){} }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2"><Icon name="file-edit"/> 시나리오 로드</button>
                         </div>
                         <div className="p-4 border-t-2 border-[#4A4A6A] bg-[#0B0B19]">
+                            {/* 토큰 잔액 표시 영역 */}
+                            <div className="flex items-center justify-between mb-3 px-3 py-2 bg-[#1A0B2E] border border-[#FFD700] rounded text-[#FFD700]">
+                                <div className="flex items-center gap-2">
+                                    <Icon name="coins" size={14} className="text-yellow-400" />
+                                    <span className="font-bold text-xs">BALANCE</span>
+                                </div>
+                                <span className="font-mono font-bold text-sm tracking-wide">
+                                    {tokenBalance.toLocaleString()} CR
+                                </span>
+                            </div>
+
                             <div className="mb-3">
                                 <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">AI 모델 선택</label>
                                 <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
@@ -705,8 +800,28 @@
                             <button onClick={() => runAiAudit(null)} className="pixel-btn w-full mb-3 py-3 text-xs flex items-center justify-center gap-2 border-[#6366f1] text-[#6366f1] hover:text-white hover:bg-[#6366f1]">
                                 <Icon name="brain-circuit"/> 전체 스토리 검수
                             </button>
+
                             {!isEditMode ? (
-                                <button onClick={generateNewScenario} className="pixel-btn w-full py-3 flex items-center justify-center gap-2 bg-[#00FFFF]/10 text-[#00FFFF] border-[#00FFFF]"><Icon name="play"/> 게임 시작</button>
+                                <>
+                                    {/* [NEW] 예상 소모 비용 표기 (잔액 부족 시 붉은색 및 경고 효과) */}
+                                    <div className="mb-2 text-right">
+                                        <span className="text-[10px] text-[#6A6A8A] mr-1">예상 소모:</span>
+                                        <span className={`text-xs font-bold ${isAffordable ? 'text-[#FFD700]' : 'text-[#FF007F] animate-pulse'}`}>
+                                            {estimatedCost.toLocaleString()} CR
+                                        </span>
+                                    </div>
+                                    {/* [MODIFIED] 버튼 명칭 수정 및 잔액 부족 시 비활성화 스타일 적용 */}
+                                    <button
+                                        onClick={generateNewScenario}
+                                        disabled={!isAffordable || isGenerating}
+                                        className={`pixel-btn w-full py-3 flex items-center justify-center gap-2
+                                            ${isAffordable
+                                                ? 'bg-[#00FFFF]/10 text-[#00FFFF] border-[#00FFFF] hover:bg-[#00FFFF]/20'
+                                                : 'bg-[#FF007F]/10 text-[#FF007F] border-[#FF007F] cursor-not-allowed opacity-50'}`}
+                                    >
+                                        <Icon name="wand-2"/> {isAffordable ? "시나리오 생성" : "잔액 부족"}
+                                    </button>
+                                </>
                             ) : (
                                 <div className="space-y-2">
                                     <button onClick={saveDraft} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-[#6366f1]"><Icon name="save"/> 임시 저장</button>
@@ -879,7 +994,7 @@
                                                   value={node.data.ai_note || ''} readOnly></textarea>
                                     </div>
 
-                                    {/* [수정됨] AI 이미지 생성 및 미리보기 패널 */}
+                                    {/* AI 이미지 생성 및 미리보기 패널 */}
                                     <div className="mt-4 pt-4 border-t-2 border-[#4A4A6A]">
                                         <label className="text-[10px] text-[#6A6A8A] block mb-1 flex items-center gap-1 font-bold">
                                             <Icon name="image" size={12}/> AI 이미지 생성
@@ -1017,7 +1132,7 @@
                                                 />
                                             </div>
 
-                                            {/* 5. 생성 버튼 */}
+                                            {/* 5. 생성 버튼 (잔액 확인 로직 포함) */}
                                             <button
                                                 onClick={() => {
                                                     const desc = document.getElementById('imageDescriptionInput').value;
@@ -1036,7 +1151,7 @@
                                                         생성 중...
                                                     </>
                                                 ) : (
-                                                    <><Icon name="sparkles" size={12}/> 이미지 생성</>
+                                                    <><Icon name="sparkles" size={12}/> 이미지 생성 (50 CR)</>
                                                 )}
                                             </button>
                                         </div>
@@ -1130,6 +1245,45 @@
                             ))}
                         </div>
                     </Modal>
+
+                    {/* [NEW] 잔액 부족 경고 모달 */}
+                    {modals.noToken && (
+                        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-fade-in p-4">
+                            <div className="pixel-box w-full max-w-md bg-[#131320] border-2 border-[#FF007F] shadow-[0_0_20px_rgba(255,0,127,0.3)]">
+                                <div className="p-4 bg-[#1A0B2E] border-b-2 border-[#4A4A6A] flex justify-between items-center">
+                                    <h3 className="text-[#FF007F] font-bold flex items-center gap-2">
+                                        <Icon name="alert-triangle" size={18}/> WARNING: LOW POWER
+                                    </h3>
+                                    <button onClick={() => setModals(m => ({...m, noToken: false}))} className="text-[#6A6A8A] hover:text-white"><Icon name="x"/></button>
+                                </div>
+                                <div className="p-8 text-center">
+                                    <div className="mb-6 relative inline-block">
+                                        <Icon name="coins" size={48} className="text-[#FFD700] animate-bounce"/>
+                                        <div className="absolute -bottom-2 -right-2 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-white">!</div>
+                                    </div>
+                                    <h4 className="text-xl font-bold text-white mb-2">크레딧이 부족합니다!</h4>
+                                    <p className="text-gray-400 text-sm mb-6 leading-relaxed">
+                                        작업을 수행하기 위한 에너지가 부족합니다.<br/>
+                                        충전 후 다시 시도해주세요.
+                                    </p>
+                                    <div className="bg-[#0B0B19] border border-[#4A4A6A] p-3 rounded mb-6 flex justify-between items-center">
+                                        <span className="text-xs text-[#6A6A8A]">현재 잔액</span>
+                                        <span className="text-[#FFD700] font-mono font-bold text-lg">{tokenBalance.toLocaleString()} CR</span>
+                                    </div>
+                                    <div className="flex gap-2 justify-center">
+                                        <button onClick={() => window.open('/views/mypage', '_blank')}
+                                                className="pixel-btn bg-[#FFD700] text-black border-[#E0E0E0] hover:bg-[#E6C200] hover:text-black hover:border-white font-bold py-2 px-6 flex items-center gap-2">
+                                            <Icon name="zap" size={16}/> 충전하러 가기
+                                        </button>
+                                        <button onClick={() => setModals(m => ({...m, noToken: false}))}
+                                                className="pixel-btn py-2 px-4 text-[#6A6A8A] border-[#4A4A6A]">
+                                            닫기
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Unified Generator Modal (NPC + Item) */}
                     {modals.npcGen && (

@@ -83,7 +83,13 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="min-h-screen text-white p-6">
+<body class="min-h-screen text-white p-6 relative">
+
+<!-- [NEW] 토큰 표시기 (우측 상단) -->
+<div id="token-display" class="absolute top-4 right-4 flex items-center gap-2 bg-gray-900/80 px-3 py-1.5 rounded border border-yellow-500/50 text-yellow-400 text-xs shadow-lg animate-fade-in">
+    <i class="fas fa-coins text-yellow-500"></i>
+    <span id="token-balance">Loading...</span>
+</div>
 
 <div class="max-w-xl mx-auto">
     <div id="scenario-info" class="mb-4 text-xs text-gray-500 text-right">
@@ -106,8 +112,9 @@
         <label class="block text-xs text-indigo-300 mb-2 font-bold"><i class="fas fa-robot mr-1"></i>AI에게 요청할 내용</label>
         <div class="flex gap-2">
             <input type="text" id="ai-request-text" class="flex-1 bg-gray-900 border border-gray-700 rounded p-2 text-sm focus:border-indigo-500 outline-none transition-colors" placeholder="예: 전설의 녹슨 검, 비열한 고블린 상인">
-            <button onclick="generateWithAI()" id="btn-ai-gen" class="bg-indigo-600 hover:bg-indigo-500 px-4 rounded text-sm font-bold min-w-[70px] flex justify-center items-center transition-colors">
-                생성
+            <!-- [MODIFIED] 비용 표시 추가 -->
+            <button onclick="generateWithAI()" id="btn-ai-gen" class="bg-indigo-600 hover:bg-indigo-500 px-4 rounded text-xs font-bold min-w-[100px] flex justify-center items-center gap-1 transition-colors">
+                생성 <span class="opacity-70 font-normal">(~2 CR)</span>
             </button>
         </div>
         <p class="text-[10px] text-gray-500 mt-2">* 시나리오 분위기에 맞춰 자동으로 상세 설정을 채워줍니다.</p>
@@ -256,6 +263,25 @@
     let currentTab = 'npc';
     let scenarioInfo = { title: '', summary: '' };
 
+    // [NEW] 토큰 잔액 조회 함수
+    async function fetchTokenBalance() {
+        try {
+            const res = await fetch('/auth/api/user/status');
+            if(res.ok) {
+                const data = await res.json();
+                if(data.status === 'success') {
+                    const balance = data.token_balance.toLocaleString();
+                    document.getElementById('token-balance').textContent = `${balance} CR`;
+                }
+            } else {
+                document.getElementById('token-balance').textContent = "ERROR";
+            }
+        } catch(e) {
+            console.error("Token fetch failed", e);
+            document.getElementById('token-balance').textContent = "OFFLINE";
+        }
+    }
+
     window.addEventListener('message', (event) => {
         if (event.data.type === 'SCENARIO_INFO') {
             scenarioInfo = event.data.payload;
@@ -268,6 +294,8 @@
 
     window.onload = () => {
         if (window.parent) window.parent.postMessage({ type: 'GENERATOR_READY' }, '*');
+        // [NEW] 초기 잔액 조회
+        fetchTokenBalance();
     };
 
     function switchTab(tab) {
@@ -374,6 +402,9 @@
             }
 
             showMessage("AI 생성이 완료되었습니다. 수정 후 저장하세요.", "success");
+
+            // [NEW] 생성 성공 후 잔액 갱신
+            await fetchTokenBalance();
 
         } catch (e) {
             showMessage(`AI 생성 실패: ${e.message}`, 'error');
