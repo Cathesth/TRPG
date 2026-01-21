@@ -960,9 +960,6 @@ def rule_node(state: PlayerState):
                     world_state.location = target_id
                     state['parsed_intent'] = 'ending'
 
-                    # ✅ [HTML 제거] narrator_node에서 LLM이 생성하도록 변경
-                    state['narrator_output'] = ""
-
                     death_ending_found = True
                     world_state.add_narrative_event(f"플레이어 사망 (전투 중) - [{target_id}] 엔딩으로 즉시 이동")
                     logger.info(f"💀 [INSTANT DEATH] Immediately moved to ending: {target_id}")
@@ -977,9 +974,6 @@ def rule_node(state: PlayerState):
                 world_state.location = first_ending_id
                 state['parsed_intent'] = 'ending'
 
-                # ✅ [HTML 제거] narrator_node에서 LLM이 생성하도록 변경
-                state['narrator_output'] = ""
-
                 death_ending_found = True
                 world_state.add_narrative_event(f"플레이어 사망 (전투 중) - 폴백 엔딩 [{first_ending_id}]로 즉시 이동")
 
@@ -989,9 +983,13 @@ def rule_node(state: PlayerState):
                 state['player_vars']['is_game_over'] = True
                 state['parsed_intent'] = 'ending'
 
+            # ✅ [CRITICAL FIX] narrator_output을 설정하지 않음
+            # scene_stream_generator의 MODE 3가 전투 결과 → 사망 묘사 → 엔딩을 순서대로 출력하도록 함
+            # system_message의 전투 결과는 그대로 보존
+
             # 사망 상태 동기화 및 즉시 반환
             state['world_state'] = world_state.to_dict()
-            logger.info(f"💀 [INSTANT DEATH] Death routing complete - returning immediately")
+            logger.info(f"💀 [INSTANT DEATH] Death routing complete - scene_stream_generator will handle narration")
 
             # NPC 대사 차단 (엔딩 나레이션만 출력)
             state['npc_output'] = ""
@@ -1639,9 +1637,6 @@ def npc_node(state: PlayerState):
                     world_state.location = target_id
                     state['parsed_intent'] = 'ending'
 
-                    # ✅ [HTML 제거] narrator_node에서 LLM이 생성하도록 변경
-                    state['narrator_output'] = ""
-
                     death_ending_found = True
                     world_state.add_narrative_event(f"플레이어 사망 (전투 중) - [{target_id}] 엔딩으로 즉시 이동")
                     logger.info(f"💀 [INSTANT DEATH] Immediately moved to ending: {target_id}")
@@ -1656,9 +1651,6 @@ def npc_node(state: PlayerState):
                 world_state.location = first_ending_id
                 state['parsed_intent'] = 'ending'
 
-                # ✅ [HTML 제거] narrator_node에서 LLM이 생성하도록 변경
-                state['narrator_output'] = ""
-
                 death_ending_found = True
                 world_state.add_narrative_event(f"플레이어 사망 (전투 중) - 폴백 엔딩 [{first_ending_id}]로 즉시 이동")
 
@@ -1668,9 +1660,13 @@ def npc_node(state: PlayerState):
                 state['player_vars']['is_game_over'] = True
                 state['parsed_intent'] = 'ending'
 
+            # ✅ [CRITICAL FIX] narrator_output을 설정하지 않음
+            # scene_stream_generator의 MODE 3가 전투 결과 → 사망 묘사 → 엔딩을 순서대로 출력하도록 함
+            # system_message의 전투 결과는 그대로 보존
+
             # 사망 상태 동기화 및 즉시 반환
             state['world_state'] = world_state.to_dict()
-            logger.info(f"💀 [INSTANT DEATH] Death routing complete - returning immediately")
+            logger.info(f"💀 [INSTANT DEATH] Death routing complete - scene_stream_generator will handle narration")
 
             # NPC 대사 차단 (엔딩 나레이션만 출력)
             state['npc_output'] = ""
