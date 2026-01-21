@@ -412,6 +412,32 @@ function updateStats(statsData) {
     lucide.createIcons();
 }
 
+// Game Over 모달 표시 함수
+function showGameOverModal() {
+    const modal = document.getElementById('game-over-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+        disableGameUI();
+        console.log('💀 [GAME OVER] Modal displayed');
+    }
+}
+
+// Game Over 모달 닫기 및 재시작
+function closeGameOverModal() {
+    const modal = document.getElementById('game-over-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+    // 페이지 새로고침하여 초기 상태로 복귀
+    location.reload();
+}
+
+// 전역 함수로 노출
+window.showGameOverModal = showGameOverModal;
+window.closeGameOverModal = closeGameOverModal;
+
 function openLoadModal() {
     const modal = document.getElementById('load-modal');
     if (modal) {
