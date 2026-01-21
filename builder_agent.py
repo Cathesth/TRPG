@@ -852,6 +852,52 @@ def generate_scenario_from_graph(api_key, user_data, model_name=None, user_id=No
         raise e
 
 
+def generate_scene_content(scenario_title, scenario_summary, user_request="", model_name=None, user_id=None):
+    """
+    씬 내용 생성 (토큰 계산 포함)
+    """
+    if not model_name:
+        model_name = "gpt-4o-mini"
+
+    llm = LLMFactory.get_llm(model_name)
+    
+    # 씬 내용은 간단한 텍스트이므로 JSON 파서 없이 직접 생성
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "당신은 TRPG 시나리오 작가입니다. 요청에 따라 자연스러운 씬 묘사를 작성해주세요."),
+        ("user", f"시나리오 제목: {scenario_title}\n시나리오 배경: {scenario_summary}\n요청: {user_request}")
+    ])
+
+    chain = prompt | llm
+
+    try:
+        with get_openai_callback() as cb:
+            result = chain.invoke({})
+            scene_content = result.content.strip()
+
+            # 토큰 집계
+            prompt_tokens = cb.prompt_tokens
+            completion_tokens = cb.completion_tokens
+
+        # [과금]
+        if user_id:
+            total_tokens = prompt_tokens + completion_tokens
+            if total_tokens > 0:
+                cost = UserService.calculate_llm_cost(model_name, prompt_tokens, completion_tokens)
+                UserService.deduct_tokens(
+                    user_id=user_id,
+                    cost=cost,
+                    action_type="scene_gen",
+                    model_name=model_name,
+                    llm_tokens_used=total_tokens
+                )
+
+        return {"description": scene_content}
+
+    except Exception as e:
+        logger.error(f"Scene Generation failed: {e}")
+        return None
+
+
 def generate_single_npc(scenario_title, scenario_summary, user_request="", model_name=None, user_id=None):
     """
     단일 NPC 생성 (토큰 계산 포함)

@@ -505,15 +505,27 @@
                     const title = node.data.title || "제목 없음";
                     const prompt = `장르: ${genre}\n상황/제목: ${title}\n이전 상황과 연결되도록 자연스러운 TRPG 씬 묘사를 3줄 이내로 작성해줘.`;
 
-                    const res = await fetch('/api/ai/generate', {
+                    // 시작 노드에서 시나리오 정보 가져오기 (수정/신규 모드 공통)
+                    const startNode = nodes.find(n => n.id === 'start');
+                    const scenarioInfo = {
+                        title: startNode?.data?.label || '제목 없음',
+                        summary: startNode?.data?.background || '판타지'
+                    };
+
+                    const res = await fetch('/api/scene/generate', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ prompt: prompt, type: 'text' })
+                        body: JSON.stringify({ 
+                            scenario_title: scenarioInfo.title,
+                            scenario_summary: scenarioInfo.summary,
+                            request: prompt,
+                            model: selectedModel
+                        })
                     });
                     const data = await res.json();
 
-                    if (data.result) {
-                        updateNodeData(nodeId, node.type === 'start' ? 'prologue' : 'description', data.result);
+                    if (data.success && data.data) {
+                        updateNodeData(nodeId, node.type === 'start' ? 'prologue' : 'description', data.data.description || data.data.result || data.data);
                         fetchTokenBalance();
                         showToast("내용 생성 완료!", "success");
                     } else {
