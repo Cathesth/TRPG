@@ -16,6 +16,9 @@ from google import genai
 from google.genai import types
 
 from core.s3_client import get_s3_client
+# [NEW] 토큰 과금을 위한 모듈 임포트
+from services.user_service import UserService
+from config import TokenConfig
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +98,29 @@ class ImageService:
             logger.error(f"❌ [Prompt] 번역 실패 (원문 사용): {e}")
             return f"{style_guide} {user_description}"
 
-    async def generate_image(self, image_type: str, description: str, scenario_id: Optional[int] = None, target_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    async def generate_image(self, user_id: str, image_type: str, description: str, scenario_id: Optional[int] = None, target_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        이미지 생성 요청 (토큰 과금 포함)
+        :param user_id: 토큰을 차감할 사용자 ID (필수 추가됨)
+        """
         if not self.is_available:
+            return None
+
+        # [NEW] 토큰 차감 로직 (고정 비용)
+        # async 함수 내 동기 DB 호출이므로 트래픽이 많을 경우 주의 (필요시 executor 사용)
+        try:
+            cost = TokenConfig.COST_IMAGE_GENERATION
+            UserService.deduct_tokens(
+                user_id=user_id,
+                cost=cost,
+                action_type="image_generation",
+                model_name=self.flux_model
+            )
+        except ValueError as e:
+            logger.warning(f"🚫 이미지 생성 거부 (잔액 부족): {user_id} - {e}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ 토큰 처리 중 오류: {e}")
             return None
 
         try:
@@ -114,6 +138,7 @@ class ImageService:
 
             if not image_data:
                 logger.error("❌ [Image] 모든 모델 생성 실패")
+                # (선택) 실패 시 토큰 환불 로직을 여기에 추가 가능
                 return None
 
             # 4. S3 업로드
