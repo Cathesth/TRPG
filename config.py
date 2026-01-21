@@ -31,6 +31,14 @@ DEFAULT_CONFIG = {
     "model": "openai/tngtech/llama-3-8b-tool-v1"
 }
 
+# [FIX] 누락되었던 플레이어 기본 변수 설정 추가
+DEFAULT_PLAYER_VARS = {
+    "hp": 100,
+    "sanity": 100,
+    "inventory": [],
+    "gold": 0
+}
+
 
 # --- [NEW] 토큰 경제 시스템 설정 (1K 토큰 기준) ---
 class TokenConfig:
@@ -102,6 +110,6 @@ def get_git_commit_hash():
     return 'dev'
 
 
-# [FIX] app.py에서 호출하는 함수 추가
+# [FIX] app.py에서 호출하는 함수
 def get_full_version():
     return f"v{VERSION_NUMBER}-{get_git_commit_hash()}"
