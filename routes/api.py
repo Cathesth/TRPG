@@ -353,37 +353,59 @@ async def update_profile(
     if not db_user:
         return JSONResponse({"success": False, "error": "사용자를 찾을 수 없습니다."}, status_code=404)
 
-    # 1. 비밀번호 변경 (값이 있고, 빈 문자열이 아닐 때만 실행)
+    # 1. 비밀번호 변경 (기존 로직 유지)
     if password and password.strip():
         if len(password) > 72:
             return JSONResponse({"success": False, "error": "비밀번호는 72자 이내여야 합니다."}, status_code=400)
-
         if password != confirm_password:
             return JSONResponse({"success": False, "error": "비밀번호가 일치하지 않습니다."}, status_code=400)
-
         try:
             db_user.password_hash = pwd_context.hash(password)
         except Exception as e:
             return JSONResponse({"success": False, "error": f"비밀번호 처리 중 오류: {str(e)}"}, status_code=500)
 
-    # 2. 이메일 업데이트
+    # 2. 이메일 업데이트 (기존 로직 유지)
     if email is not None:
         db_user.email = email
 
-    # 3. 프로필 사진 업로드 처리
+    # 3. 프로필 사진 업로드 처리 (S3 저장 방식으로 변경)
     if avatar and avatar.filename:
         try:
+            # [수정] 로컬 파일 저장이 아닌 S3 업로드로 변경하여 배포 후에도 이미지 유지
+            from core.s3_client import get_s3_client  # 필요한 시점에 임포트
+
+            s3 = get_s3_client()
+            # S3 세션이 초기화되지 않았을 경우 안전장치
+            if not s3._session:
+                await s3.initialize()
+
             file_ext = Path(avatar.filename).suffix
             new_filename = f"{user.id}_{uuid.uuid4()}{file_ext}"
-            save_path = f"static/avatars/{new_filename}"
 
-            # 디렉토리 생성
-            os.makedirs("static/avatars", exist_ok=True)
+            # S3 버킷 내 저장 경로 (static/avatars 대신 avatars/ 폴더 사용 권장)
+            s3_key = f"avatars/{new_filename}"
 
-            with open(save_path, "wb") as buffer:
-                shutil.copyfileobj(avatar.file, buffer)
+            # 업로드할 파일 내용 읽기
+            content = await avatar.read()
 
-            db_user.avatar_url = f"/{save_path}"
+            # S3에 파일 업로드
+            async with s3._session.client(
+                    's3',
+                    endpoint_url=s3.endpoint,
+                    region_name=s3.region,
+                    use_ssl=s3.use_ssl
+            ) as client:
+                await client.put_object(
+                    Bucket=s3.bucket,
+                    Key=s3_key,
+                    Body=content,
+                    ContentType=avatar.content_type or 'image/png'
+                )
+
+            # [중요] DB에는 프록시 URL 저장
+            # app.py에 있는 '/image/serve/{path}' 라우트가 S3 이미지를 대신 가져와 보여줍니다.
+            db_user.avatar_url = f"/image/serve/{s3_key}"
+
         except Exception as e:
             return JSONResponse({"success": False, "error": f"이미지 업로드 실패: {str(e)}"}, status_code=500)
 
@@ -457,6 +479,7 @@ def get_billing_view():
     </div>
     <script>lucide.createIcons();</script>
     """
+
 
 
 # ==========================================
@@ -720,6 +743,49 @@ async def reset_build_progress():
         build_progress = {"status": "idle", "progress": 0}
     return {"success": True}
 
+# [1. 헬퍼 함수 추가] 잠금 버튼 HTML 생성기
+def _generate_lock_button(scenario_id: int, is_public: bool):
+    """
+    HTMX로 작동하는 잠금/해제 버튼 HTML을 반환합니다.
+    """
+    if is_public:
+        # 공개 상태 -> 비공개로 전환 버튼
+        return f"""
+        <button hx-post="/api/scenarios/{scenario_id}/toggle-public" 
+                hx-swap="outerHTML"
+                class="p-2 rounded-lg bg-transparent hover:bg-blue-500/10 text-blue-400 hover:text-blue-300 transition-colors" 
+                title="현재 공개됨 (클릭하여 비공개 전환)">
+            <i data-lucide="globe" class="w-4 h-4"></i>
+            <script>lucide.createIcons();</script>
+        </button>
+        """
+    else:
+        # 비공개 상태 -> 공개로 전환 버튼
+        return f"""
+        <button hx-post="/api/scenarios/{scenario_id}/toggle-public" 
+                hx-swap="outerHTML"
+                class="p-2 rounded-lg bg-transparent hover:bg-red-500/10 text-gray-500 hover:text-gray-300 transition-colors" 
+                title="현재 비공개 (클릭하여 공개 전환)">
+            <i data-lucide="lock" class="w-4 h-4"></i>
+            <script>lucide.createIcons();</script>
+        </button>
+        """
+
+# [2. API 엔드포인트 추가] 토글 요청 처리
+@api_router.post('/scenarios/{scenario_id}/toggle-public')
+async def toggle_scenario_public(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
+    if not user.is_authenticated:
+        return HTMLResponse("Login required", status_code=401)
+
+    success, msg, new_state = ScenarioService.toggle_public(scenario_id, user.id)
+
+    if not success:
+        # 에러 시 alert 띄우기 (HTMX 응답 헤더 활용 가능하지만, 간단히 기존 버튼 유지하며 로그)
+        return HTMLResponse(f"<script>alert('{msg}');</script>", status_code=400)
+
+    # 변경된 상태에 맞는 새로운 버튼 HTML 반환 (HTMX가 이 버튼으로 교체함)
+    return HTMLResponse(_generate_lock_button(scenario_id, new_state))
+
 
 # --- [MODIFIED] 시나리오 생성 API (토큰 과금 적용) ---
 class GenerateRequest(BaseModel):
@@ -918,9 +984,14 @@ def list_scenarios(
         """
 
         if is_owner:
-            buttons_html = f"""
-            <div class="flex items-center gap-2 mt-auto pt-3 border-t border-white/10">
-                <button onclick="playScenario('{fid}', this)" class="flex-1 py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
+            # 헬퍼 함수로 현재 상태에 맞는 버튼 생성
+            lock_btn = _generate_lock_button(s.id, s.is_public)
+
+            buttons_html = f"""          
+            <div class="flex flex-wrap items-center gap-2 mt-auto pt-3 border-t border-white/10 shrink-0">
+                {lock_btn}
+                
+                <button onclick="playScenario('{fid}', this)" class="flex-1 py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs min-w-[80px]">
                     <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
                 </button>
                 <button onclick="editScenario('{fid}', this)" class="p-2 rounded-lg bg-transparent hover:bg-white/10 text-gray-400 hover:text-[#38bdf8] transition-colors" title="수정">
@@ -933,12 +1004,12 @@ def list_scenarios(
             """
         else:
             buttons_html = f"""
-            <div class="mt-auto pt-3 border-t border-white/10">
-                <button onclick="playScenario('{fid}', this)" class="w-full py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
-                    <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY NOW
-                </button>
-            </div>
-            """
+                    <div class="mt-auto pt-3 border-t border-white/10 shrink-0">
+                        <button onclick="playScenario('{fid}', this)" class="w-full py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
+                            <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY NOW
+                        </button>
+                    </div>
+                    """
 
         card_html = f"""
         <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_style}">

@@ -197,10 +197,10 @@ class WorldState:
         # ========================================
         # 초기 인벤토리 로딩 - 정확한 경로 사용
         # ========================================
+        # 🔧 [FIX] 경로 수정: scenario_data['initial_state']['inventory']를 정확히 참조
         initial_state = scenario_data.get('initial_state', {})
 
-        # 🔴 [FIX] 인벤토리 세이프가드 강화
-        if isinstance(initial_state, dict) and initial_state:
+        if isinstance(initial_state, dict):
             initial_inventory = initial_state.get('inventory', [])
         else:
             initial_inventory = []
@@ -209,9 +209,8 @@ class WorldState:
             self.player['inventory'] = initial_inventory.copy()
             logger.info(f"🎒 [ITEM SYSTEM] Initial inventory loaded: {self.player['inventory']}")
         else:
-            # 명확히 빈 리스트로 초기화
             self.player['inventory'] = []
-            logger.warning(f"⚠️ [ITEM SYSTEM] No initial inventory - initialized to empty list")
+            logger.info(f"🎒 [ITEM SYSTEM] No initial inventory found")
 
         # [변경] 플레이어 초기 스탯 설정 - player_vars로 이동
         # player_state의 player_vars가 플레이어 스탯을 관리함
@@ -238,58 +237,61 @@ class WorldState:
             # NPC 위치 찾기
             npc_location = None
             for scene in scenes_data:
-                scene_npcs = scene.get('npcs', [])
-                scene_enemies = scene.get('enemies', [])
+                # [FIX] 데이터 정규화: dict/str 모두 처리
+                scene_npcs_raw = scene.get('npcs', [])
+                scene_enemies_raw = scene.get('enemies', [])
 
-                # 🔴 [CRITICAL] NPC/Enemy 리스트 정규화 (딕셔너리 처리)
-                normalized_npcs = [n.get('name') if isinstance(n, dict) else n for n in scene_npcs]
-                normalized_enemies = [e.get('name') if isinstance(e, dict) else e for e in scene_enemies]
+                scene_npcs = [n.get('name') if isinstance(n, dict) else n for n in scene_npcs_raw]
+                scene_enemies = [e.get('name') if isinstance(e, dict) else e for e in scene_enemies_raw]
 
-                if npc_name in normalized_npcs or npc_name in normalized_enemies:
+                if npc_name in scene_npcs or npc_name in scene_enemies:
                     npc_location = scene.get('scene_id')
                     break
 
-            # 🔴 [CRITICAL] HP/Stats 보정 강화 - 빈 문자열, None, 잘못된 값 처리
+            # 🔴 FIX: HP 값을 정수로 강제 변환 (문자열 방지)
             npc_hp_raw = npc.get('hp', 100)
             npc_max_hp_raw = npc.get('max_hp', npc_hp_raw)
-            npc_attack_raw = npc.get('attack', 10)
 
-            # HP 처리: 빈 문자열이나 None은 100으로
+            # HP가 빈 문자열일 경우 기본값 처리
+            if npc_hp_raw == "" or npc_hp_raw is None:
+                npc_hp_raw = 100
+            if npc_max_hp_raw == "" or npc_max_hp_raw is None:
+                npc_max_hp_raw = npc_hp_raw
+
             try:
-                if npc_hp_raw == "" or npc_hp_raw is None:
-                    npc_hp = 100
-                else:
-                    npc_hp = int(float(npc_hp_raw))
+                npc_hp = int(npc_hp_raw)
             except (ValueError, TypeError):
-                logger.warning(f"⚠️ [NPC INIT] Invalid HP value for NPC '{npc_name}': {npc_hp_raw}, using default 100")
+                logger.warning(f"Invalid HP value for NPC '{npc_name}': {npc_hp_raw}, using default 100")
                 npc_hp = 100
 
-            # Max HP 처리
             try:
-                if npc_max_hp_raw == "" or npc_max_hp_raw is None:
-                    npc_max_hp = npc_hp
-                else:
-                    npc_max_hp = int(float(npc_max_hp_raw))
+                npc_max_hp = int(npc_max_hp_raw)
             except (ValueError, TypeError):
-                logger.warning(f"⚠️ [NPC INIT] Invalid max_hp value for NPC '{npc_name}': {npc_max_hp_raw}, using HP value {npc_hp}")
+                logger.warning(f"Invalid max_hp value for NPC '{npc_name}': {npc_max_hp_raw}, using HP value {npc_hp}")
                 npc_max_hp = npc_hp
 
-            # Attack 처리
-            try:
-                if npc_attack_raw == "" or npc_attack_raw is None:
-                    npc_attack = 10
-                else:
-                    npc_attack = int(float(npc_attack_raw))
-            except (ValueError, TypeError):
-                logger.warning(f"⚠️ [NPC INIT] Invalid attack value for NPC '{npc_name}': {npc_attack_raw}, using default 10")
+            # 🔴 [FIX] 공격력 값을 정수로 강제 변환 (빈 값/잘못된 타입 방어)
+            npc_attack_raw = npc.get('attack', npc.get('공격력', 10))
+
+            if npc_attack_raw == "" or npc_attack_raw is None:
                 npc_attack = 10
+                logger.info(f"[NPC INIT] NPC '{npc_name}' has no attack value, using default: 10")
+            else:
+                try:
+                    npc_attack = int(npc_attack_raw)
+                    if npc_attack < 0:
+                        npc_attack = 10
+                        logger.warning(f"[NPC INIT] NPC '{npc_name}' has negative attack ({npc_attack_raw}), using default: 10")
+                except (ValueError, TypeError):
+                    npc_attack = 10
+                    logger.warning(f"[NPC INIT] Invalid attack value for NPC '{npc_name}': {npc_attack_raw}, using default: 10")
 
             # NPC 초기 상태 설정
             self.npcs[npc_name] = {
                 "status": "alive",
                 "hp": npc_hp,
                 "max_hp": npc_max_hp,
-                "attack": npc_attack,
+                "attack": npc_attack,  # 공격력 필드 추가
                 "emotion": "neutral",
                 "relationship": 50,
                 "is_hostile": npc.get('isEnemy', False),
@@ -660,25 +662,15 @@ class WorldState:
     # ========================================
 
     def get_npc_state(self, npc_name: str) -> Optional[Dict[str, Any]]:
-        """
-        NPC 상태 조회
-
-        Args:
-            npc_name: NPC 이름 (문자열) 또는 딕셔너리 (name 필드 추출)
-
-        Returns:
-            NPC 상태 딕셔너리 또는 None
-        """
-        # 🔴 [CRITICAL] 방어적 타입 체크: npc_name이 딕셔너리면 name 필드 추출
+        """NPC 상태 조회"""
+        # [FIX] 딕셔너리로 들어온 경우 name 키 추출
         if isinstance(npc_name, dict):
             npc_name = npc_name.get('name', '')
-            if not npc_name:
-                logger.warning(f"⚠️ [NPC STATE] Dict passed without 'name' field: {npc_name}")
-                return None
+            logger.warning(f"⚠️ [GET_NPC_STATE] Received dict instead of str, extracted name: '{npc_name}'")
 
-        # 문자열이 아닌 경우 추가 방어
-        if not isinstance(npc_name, str):
-            logger.warning(f"⚠️ [NPC STATE] Invalid npc_name type: {type(npc_name)}")
+        # 이름 추출 실패 시 None 반환 (시스템 다운 방지)
+        if not npc_name or not isinstance(npc_name, str):
+            logger.warning(f"⚠️ [GET_NPC_STATE] Invalid npc_name: {npc_name}, returning None")
             return None
 
         return self.npcs.get(npc_name)
@@ -912,6 +904,7 @@ class WorldState:
                 "emotion": "neutral",
                 "relationship": 50,
                 "is_hostile": False,
+                "attack": 10,  # 기본 공격력 추가
                 "flags": {}
             }
 
@@ -926,6 +919,11 @@ class WorldState:
             npc["status"] = "alive"
         if "is_hostile" not in npc:
             npc["is_hostile"] = False
+
+        # 🔴 [FIX] 공격력 필드 방어 - 빈 값이나 잘못된 타입 처리
+        if "attack" not in npc or npc["attack"] == "" or npc["attack"] is None:
+            npc["attack"] = 10  # 기본 공격력
+            logger.info(f"[COMBAT] NPC '{npc_key}' has no attack value, using default: 10")
 
         # 이미 죽은 NPC는 공격 불가
         if npc.get("status") == "dead":
@@ -960,7 +958,29 @@ class WorldState:
             # ========================================
             # 70% 확률로 반격
             if random.random() < 0.7:
-                counter_damage = random.randint(5, 15)
+                # 🔴 [FIX] NPC 공격력을 안전하게 가져오기 (빈 값 방어)
+                npc_attack_raw = npc.get("attack", 10)
+
+                # 공격력 값 검증 및 정수 변환
+                try:
+                    if npc_attack_raw == "" or npc_attack_raw is None:
+                        npc_attack = 10
+                        logger.warning(f"[COMBAT] NPC '{npc_key}' attack is empty, using default: 10")
+                    else:
+                        npc_attack = int(npc_attack_raw)
+                        if npc_attack < 0:
+                            npc_attack = 10
+                            logger.warning(f"[COMBAT] NPC '{npc_key}' attack is negative ({npc_attack_raw}), using default: 10")
+                except (ValueError, TypeError):
+                    npc_attack = 10
+                    logger.warning(f"[COMBAT] Invalid attack value for NPC '{npc_key}': {npc_attack_raw}, using default: 10")
+
+                # 반격 데미지 계산: NPC 공격력 ± 50% 랜덤 변동
+                damage_variance = int(npc_attack * 0.5)
+                counter_damage = random.randint(
+                    max(1, npc_attack - damage_variance),
+                    npc_attack + damage_variance
+                )
 
                 # 플레이어 HP 감소
                 player_hp = self.player.get("hp", 100)
@@ -968,7 +988,7 @@ class WorldState:
                 self.player["hp"] = new_player_hp
 
                 result_text += f"\n⚔️ {npc_key}의 반격! 플레이어가 {counter_damage} 피해를 입었습니다! (남은 HP: {new_player_hp})"
-                logger.info(f"💥 [COUNTER ATTACK] {npc_key} counter-attacked player: {counter_damage} damage (Player HP: {player_hp} -> {new_player_hp})")
+                logger.info(f"💥 [COUNTER ATTACK] {npc_key} (attack={npc_attack}) counter-attacked player: {counter_damage} damage (Player HP: {player_hp} -> {new_player_hp})")
                 logger.info(f"[SYNC CHECK] Player HP synced: {new_player_hp}")
 
                 # 플레이어 사망 체크

@@ -155,119 +155,6 @@
             box-shadow: 0 0 4px #00FFFF;
         }
 
-        /* ===== 글리치(Glitch) 효과 ===== */
-        @keyframes glitch {
-            0%, 100% {
-                transform: translate(0, 0);
-                filter: brightness(1);
-            }
-            10% {
-                transform: translate(-2px, 0);
-                filter: brightness(1.3) hue-rotate(5deg);
-            }
-            20% {
-                transform: translate(2px, 0);
-                filter: brightness(0.8) hue-rotate(-5deg);
-            }
-            30% {
-                transform: translate(-1px, 1px);
-                filter: brightness(1.2);
-            }
-            40% {
-                transform: translate(1px, -1px);
-                filter: brightness(0.9);
-            }
-            50% {
-                transform: translate(-2px, 0);
-                opacity: 0.9;
-            }
-            60% {
-                transform: translate(2px, 0);
-                opacity: 1;
-            }
-            70% {
-                transform: translate(-1px, 0);
-                filter: brightness(1.1);
-            }
-            80% {
-                transform: translate(1px, 0);
-                filter: brightness(1);
-            }
-            90% {
-                transform: translate(0, -1px);
-                filter: brightness(0.95);
-            }
-        }
-
-        .gauge-glitch {
-            animation: glitch 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-        }
-
-        .gauge-glitch .block-gauge-segment {
-            border-color: #FFFACD !important;
-            box-shadow: 0 0 8px currentColor !important;
-        }
-
-        /* ===== 플로팅 수치(Floating Damage/Heal) 애니메이션 ===== */
-        @keyframes floatUp {
-            0% {
-                transform: translateY(0) scale(0.8);
-                opacity: 0;
-            }
-            10% {
-                opacity: 1;
-                transform: translateY(-5px) scale(1.2);
-            }
-            50% {
-                opacity: 1;
-                transform: translateY(-20px) scale(1);
-            }
-            100% {
-                opacity: 0;
-                transform: translateY(-40px) scale(0.9);
-            }
-        }
-
-        .floating-text {
-            position: absolute;
-            font-family: 'Press Start 2P', monospace;
-            font-size: 14px;
-            font-weight: bold;
-            pointer-events: none;
-            z-index: 100;
-            text-shadow:
-                2px 2px 0 #000,
-                -2px -2px 0 #000,
-                2px -2px 0 #000,
-                -2px 2px 0 #000;
-            animation: floatUp 1.2s cubic-bezier(0.33, 1, 0.68, 1) forwards;
-        }
-
-        .floating-text.damage {
-            color: #FF007F;
-            text-shadow:
-                2px 2px 0 #000,
-                -2px -2px 0 #000,
-                2px -2px 0 #000,
-                -2px 2px 0 #000,
-                0 0 8px #FF007F;
-        }
-
-        .floating-text.heal {
-            color: #00FFFF;
-            text-shadow:
-                2px 2px 0 #000,
-                -2px -2px 0 #000,
-                2px -2px 0 #000,
-                -2px 2px 0 #000,
-                0 0 8px #00FFFF;
-        }
-
-        /* 게이지 컨테이너에 relative 포지셔닝 */
-        .gauge-container {
-            position: relative;
-        }
-
         /* Pixelated Avatar */
         .pixel-avatar {
             image-rendering: pixelated;
@@ -325,7 +212,7 @@
         }
 
         .fade-in { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1, transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
         .streaming-cursor { animation: blink 1s step-end infinite; color: #00FFFF; }
         @keyframes blink { 50% { opacity: 0; } }
@@ -402,6 +289,19 @@
         /* Dotted Divider */
         .pixel-divider {
             border-left: 2px dotted #4A4A6A;
+        }
+
+        /* Game Over Modal */
+        .game-over-container {
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 25px rgba(255, 0, 0, 0.5);
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 2s infinite;
+        }
+        @keyframes pulse-slow {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
         }
     </style>
 </head>
@@ -728,6 +628,34 @@
 
 <!-- 버전 표시 -->
 <div class="version-badge">v{{ version }}</div>
+
+<!-- 💀 Game Over 모달 -->
+<div id="game-over-modal" class="hidden fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-md">
+    <div class="game-over-container bg-red-950/90 border-4 border-red-500 rounded-none p-8 max-w-md w-full mx-4 pixel-border shadow-2xl animate-pulse-slow">
+        <!-- 해골 아이콘 -->
+        <div class="flex justify-center mb-4">
+            <i data-lucide="skull" class="w-20 h-20 text-red-500"></i>
+        </div>
+
+        <!-- 타이틀 -->
+        <h2 class="text-3xl font-black text-red-400 text-center mb-4 tracking-widest uppercase font-pixel">
+            GAME OVER
+        </h2>
+
+        <!-- 메시지 -->
+        <div class="text-gray-200 text-center mb-6 font-dot leading-relaxed">
+            <p class="text-lg mb-2">운명이 다했습니다.</p>
+            <p class="text-sm text-gray-400">당신의 여정은 여기서 끝을 맺습니다.</p>
+        </div>
+
+        <!-- 버튼 -->
+        <button onclick="closeGameOverModal()"
+                class="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-none font-bold flex items-center justify-center gap-2 transition-all hover:scale-105 shadow-lg border-2 border-red-400 font-dot">
+            <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+            다시 시작하기
+        </button>
+    </div>
+</div>
 
 </body>
 </html>
