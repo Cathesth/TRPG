@@ -3,7 +3,7 @@ import json
 import logging
 import time
 import threading
-import glob  # <--- 이 줄을 추가해주세요!
+import glob
 import shutil
 import uuid
 from core.state import WorldState
@@ -36,6 +36,7 @@ from services.history_service import HistoryService
 from services.npc_service import save_custom_npc
 from services.mermaid_service import MermaidService
 from services.image_service import get_image_service
+from services.preset_service import PresetService  # 누락된 임포트 추가
 
 # 인증 및 모델
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
@@ -53,15 +54,13 @@ print("=========================================")
 
 # [👇 추가할 코드] 변수가 없으면 서버를 켜지 말고 에러를 띄워라! (확인용)
 if not os.getenv('KAKAO_CLIENT_ID'):
-    raise RuntimeError("🚨 [CRITICAL ERROR] KAKAO_CLIENT_ID 환경 변수가 없습니다! Railway 변수 설정을 확인하세요.")
-
-if not os.getenv('KAKAO_CLIENT_ID').strip(): # 공백 체크
-    raise RuntimeError("🚨 [CRITICAL ERROR] KAKAO_CLIENT_ID 값이 비어있습니다!")
+    # 로컬 개발 환경 등에서 환경변수가 없을 때를 대비해 경고만 출력하고 넘어갈 수도 있음
+    logger.warning("🚨 [WARNING] KAKAO_CLIENT_ID 환경 변수가 없습니다! 소셜 로그인이 작동하지 않을 수 있습니다.")
+    # raise RuntimeError("🚨 [CRITICAL ERROR] KAKAO_CLIENT_ID 환경 변수가 없습니다! Railway 변수 설정을 확인하세요.")
 
 # .env 파일을 읽기 위한 설정
 config = Config('.env')
 oauth = OAuth(config)
-
 
 # 1. Google 등록
 oauth.register(
@@ -161,20 +160,22 @@ class ImageGenerateRequest(BaseModel):
     scenario_id: Optional[int] = None
     target_id: Optional[str] = None
 
+
 # [추가] 빌더에서 그래프 데이터(Nodes/Edges)를 직접 보내 검수 요청할 때 사용하는 모델
 class BuilderAuditRequest(BaseModel):
     scenario: Dict[str, Any]
     scene_id: Optional[str] = None  # None이면 전체 검수
     model: Optional[str] = None
 
+
 # ==========================================
 # [View 라우트] 마이페이지
 # ==========================================
 @mypage_router.get('/mypage', response_class=HTMLResponse)
 async def mypage_view(
-    request: Request,
-    user: CurrentUser = Depends(get_current_user_optional),
-    db: Session = Depends(get_db)
+        request: Request,
+        user: CurrentUser = Depends(get_current_user_optional),
+        db: Session = Depends(get_db)
 ):
     # 로그인 상태라면 DB에서 최신 정보를 가져와 덮어씌움
     if user.is_authenticated:
@@ -221,6 +222,7 @@ def header_profile_view(
         </button>
         <script>lucide.createIcons();</script>
         """
+
 
 # ==========================================
 # [추가] 마이페이지 서브 뷰 (회원정보, 결제, 시나리오 래퍼)
@@ -375,6 +377,9 @@ async def update_profile(
             new_filename = f"{user.id}_{uuid.uuid4()}{file_ext}"
             save_path = f"static/avatars/{new_filename}"
 
+            # 디렉토리 생성
+            os.makedirs("static/avatars", exist_ok=True)
+
             with open(save_path, "wb") as buffer:
                 shutil.copyfileobj(avatar.file, buffer)
 
@@ -457,7 +462,6 @@ def get_billing_view():
 # ==========================================
 # [API 라우트] 인증 (Auth) - 직접 구현으로 변경
 # ==========================================
-# [수정] routes/api.py -> register 함수 교체
 @api_router.post('/auth/register')
 async def register(data: AuthRequest, db: Session = Depends(get_db)):
     if not data.username or not data.password:
@@ -474,6 +478,10 @@ async def register(data: AuthRequest, db: Session = Depends(get_db)):
         # 비밀번호 해싱 (설정된 암호화 방식 사용)
         hashed_password = pwd_context.hash(data.password)
 
+        # [수정] UserService.create_user 내부에서 초기 토큰 지급을 처리하지만,
+        # 여기서는 User 모델을 직접 사용하므로 수동으로 설정 필요할 수 있음.
+        # 하지만 UserService.create_user와 일관성을 위해 모델 기본값(1000)을 믿거나 명시적으로 설정.
+        # models.py에서 default=1000이므로 별도 설정 불필요.
         new_user = User(
             id=data.username,
             password_hash=hashed_password,
@@ -488,6 +496,7 @@ async def register(data: AuthRequest, db: Session = Depends(get_db)):
         logger.error(f"Register Error: {e}")
         return JSONResponse({"success": False, "error": "회원가입 처리 중 오류가 발생했습니다."}, status_code=500)
 
+
 @api_router.post('/auth/login')
 async def login(request: Request, data: AuthRequest, db: Session = Depends(get_db)):
     if not data.username or not data.password:
@@ -499,11 +508,10 @@ async def login(request: Request, data: AuthRequest, db: Session = Depends(get_d
     if not user or not user.password_hash:
         return JSONResponse({"success": False, "error": "아이디 또는 비밀번호가 잘못되었습니다."}, status_code=401)
 
-        # 2. 비밀번호 검증 (이중 체크: Passlib -> Werkzeug)
+    # 2. 비밀번호 검증 (이중 체크: Passlib -> Werkzeug)
     verified = False
 
     # (A) Passlib 시도 (bcrypt 등 표준 해시)
-
     try:
         if pwd_context.verify(data.password, user.password_hash):
             verified = True
@@ -554,17 +562,8 @@ async def login_social(provider: str, request: Request):
     프론트엔드에서 '구글 로그인' 버튼 누르면 이 주소로 이동
     예: <a href="/api/auth/login/google">Google Login</a>
     """
-    # 각 플랫폼에 맞는 Redirect URI 생성
-    # 로컬 테스트 시 http인지 https인지 주의 (보통 로컬은 http)
-    # [수정 전 코드]
-    # redirect_uri = request.url_for('auth_callback', provider=provider)
-    #
-    # # 간혹 https/http 프로토콜 문제 발생 시 강제 변환 (배포 환경 고려)
-    # if "localhost" not in redirect_uri:
-    #     redirect_uri = str(redirect_uri).replace("http://", "https://")
-
     # [수정 후 코드] URL 객체를 문자열로 먼저 변환해야 합니다.
-    redirect_uri = str(request.url_for('auth_callback', provider=provider)) # <--- str()로 감싸서 문자열로 변환
+    redirect_uri = str(request.url_for('auth_callback', provider=provider))
 
     # 간혹 https/http 프로토콜 문제 발생 시 강제 변환 (배포 환경 고려)
     if "localhost" not in redirect_uri:
@@ -623,7 +622,6 @@ async def auth_callback(provider: str, request: Request, db: Session = Depends(g
     # ---------------------------------------------------------
 
     # 1. 이메일로 기존 유저 확인
-    # (기존 User 모델에 email 컬럼이 있다고 가정)
     existing_user = db.query(User).filter(User.email == email).first()
 
     if existing_user:
@@ -632,7 +630,7 @@ async def auth_callback(provider: str, request: Request, db: Session = Depends(g
         return RedirectResponse(url="/")  # 메인 페이지로 이동
 
     # 2. 가입된 유저가 없으면 '자동 회원가입' 진행
-    # 소셜 유저는 비밀번호가 없으므로 랜덤 생성하거나 비워둠 (여기서는 랜덤 해시 처리)
+    # 소셜 유저는 비밀번호가 없으므로 랜덤 생성하거나 비워둠
     import uuid
 
     # ID 충돌 방지를 위해 이메일을 ID로 쓰거나, 소셜 전용 prefix 붙임
@@ -650,7 +648,7 @@ async def auth_callback(provider: str, request: Request, db: Session = Depends(g
         id=new_user_id,
         password_hash=hashed_password,
         email=email,
-        # avatar_url 등 프로필 이미지도 여기서 저장 가능
+        # [수정] models.py에서 default=1000 토큰이 자동 할당됨
     )
 
     try:
@@ -723,6 +721,88 @@ async def reset_build_progress():
     return {"success": True}
 
 
+# --- [MODIFIED] 시나리오 생성 API (토큰 과금 적용) ---
+class GenerateRequest(BaseModel):
+    graph_data: Dict[str, Any]
+    model: str = "gpt-4o-mini"
+
+
+@api_router.post('/builder/generate')
+async def generate_scenario(request: GenerateRequest, user: CurrentUser = Depends(get_current_user)):
+    """
+    빌더 그래프 데이터를 기반으로 시나리오 생성 (토큰 차감 포함)
+    """
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
+
+    # 잔액 확인
+    balance = UserService.get_user_balance(user.id)
+    if balance <= 0:
+        return JSONResponse({"success": False, "error": "토큰이 부족합니다. 충전 후 이용해주세요."}, status_code=402)
+
+    global progress_data
+    progress_data = {"status": "starting", "message": "생성 작업 시작...", "percent": 0}
+
+    try:
+        # [수정] user.id를 전달하여 토큰 과금 수행
+        result = await run_in_threadpool(
+            generate_scenario_from_graph,
+            api_key="",
+            user_data=request.graph_data,
+            model_name=request.model,
+            user_id=user.id
+        )
+
+        progress_data = {"status": "complete", "message": "완료!", "percent": 100}
+
+        # 남은 잔액 조회
+        new_balance = UserService.get_user_balance(user.id)
+
+        return {"success": True, "data": result, "remaining_balance": new_balance}
+
+    except Exception as e:
+        logger.error(f"Generation error: {e}")
+        progress_data = {"status": "error", "message": str(e), "percent": 0}
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+# --- [MODIFIED] NPC 생성 API (Builder 내 - 토큰 과금 적용) ---
+class NpcGenRequest(BaseModel):
+    scenario_title: str
+    scenario_summary: str
+    user_request: str
+    model: str = "gpt-4o-mini"
+
+
+@api_router.post('/builder/generate-npc')
+async def generate_npc(request: NpcGenRequest, user: CurrentUser = Depends(get_current_user)):
+    """
+    단일 NPC 생성 (토큰 차감 포함)
+    """
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
+
+    try:
+        # [수정] user.id 전달
+        npc_data = await run_in_threadpool(
+            generate_single_npc,
+            scenario_title=request.scenario_title,
+            scenario_summary=request.scenario_summary,
+            user_request=request.user_request,
+            model_name=request.model,
+            user_id=user.id
+        )
+
+        if not npc_data:
+            return JSONResponse({"success": False, "error": "Failed to generate NPC"}, status_code=500)
+
+        return {"success": True, "data": npc_data}
+
+    except Exception as e:
+        logger.error(f"NPC Gen Error: {e}")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
 # [교체] routes/api.py -> list_scenarios 함수
 @api_router.get('/scenarios', response_class=HTMLResponse)
 def list_scenarios(
@@ -734,31 +814,21 @@ def list_scenarios(
         user: CurrentUser = Depends(get_current_user_optional),
         db: Session = Depends(get_db)
 ):
-    """
-    DB에서 시나리오를 조회하여 HTML 카드로 반환합니다.
-    - 메인화면: 기존 디자인 유지 (w-96, h-[26rem])
-    - 마이페이지: 잘림 방지 패치 (flex-1, 이미지 비율 조정)
-    """
-
-    # 1. DB 쿼리 생성
+    # (기존 코드 유지 - 검색 로직 등 포함된 버전)
     query = db.query(Scenario)
 
-    # 2. 필터링
     if filter == 'my':
         if not user.is_authenticated:
             return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
         query = query.filter(Scenario.author_id == user.id)
     elif filter == 'public':
         query = query.filter(Scenario.is_public == True)
-    # filter='all'은 전체 조회
-    elif filter == 'liked':  # [추가] 찜한 목록 필터
+    elif filter == 'liked':
         if not user.is_authenticated:
             return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
-        # ScenarioLike 테이블과 조인하여 내가 찜한 것만 가져옴
         query = query.join(ScenarioLike, Scenario.id == ScenarioLike.scenario_id) \
             .filter(ScenarioLike.user_id == user.id)
 
-    # 3. 정렬
     if sort == 'oldest':
         query = query.order_by(Scenario.created_at.asc())
     elif sort == 'name_asc':
@@ -766,49 +836,42 @@ def list_scenarios(
     else:
         query = query.order_by(Scenario.created_at.desc())
 
-    # 4. 데이터 조회
     if limit:
         query = query.limit(limit)
 
     scenarios = query.all()
 
-    # =========================================================================
-    # [추가] 검색 로직 시작
-    # DB에서 가져온 목록을 파이썬 레벨에서 검색어로 필터링합니다.
-    # =========================================================================
+    # 검색 필터링 (Python 레벨)
     if search:
         search_term = search.lower().strip()
         filtered_scenarios = []
         for s in scenarios:
-            # 데이터 파싱 (검색 대상을 확인하기 위해 미리 추출)
             s_data = s.data if isinstance(s.data, dict) else {}
             if 'scenario' in s_data: s_data = s_data['scenario']
-
             title = s.title or ""
-            # 설명 데이터 추출 (prologue 또는 desc)
             desc = s_data.get('prologue', s_data.get('desc', ''))
-
-            # 제목이나 설명에 검색어가 포함되어 있는지 확인
             if search_term in title.lower() or search_term in desc.lower():
                 filtered_scenarios.append(s)
-
-        # 필터링된 결과로 교체
         scenarios = filtered_scenarios
 
     if not scenarios:
-        if filter == 'liked': msg = "찜한 시나리오가 없습니다."
-        elif search: msg = "검색 결과가 없습니다."
-        elif filter == 'my': msg = "아직 생성한 시나리오가 없습니다."
-        else: msg = "등록된 시나리오가 없습니다."
-        return HTMLResponse(f'<div class="col-span-full text-center text-gray-500 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
+        if filter == 'liked':
+            msg = "찜한 시나리오가 없습니다."
+        elif search:
+            msg = "검색 결과가 없습니다."
+        elif filter == 'my':
+            msg = "아직 생성한 시나리오가 없습니다."
+        else:
+            msg = "등록된 시나리오가 없습니다."
+        return HTMLResponse(
+            f'<div class="col-span-full text-center text-gray-500 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
 
-    # 5. HTML 생성
+    # HTML 생성
     from datetime import datetime
     import time as time_module
     current_ts = time_module.time()
     NEW_THRESHOLD = 30 * 60
 
-    # [추가] 현재 유저가 찜한 시나리오 ID 목록 미리 조회 (성능 최적화)
     liked_scenario_ids = set()
     if user.is_authenticated:
         likes = db.query(ScenarioLike.scenario_id).filter(ScenarioLike.user_id == user.id).all()
@@ -826,7 +889,6 @@ def list_scenarios(
 
         author = s.author_id or "System"
         is_owner = (user.is_authenticated and s.author_id == user.id)
-        is_public = s.is_public
 
         created_ts = s.created_at.timestamp() if s.created_at else 0
         time_str = s.created_at.strftime('%Y-%m-%d') if s.created_at else "-"
@@ -836,30 +898,18 @@ def list_scenarios(
         is_new = (current_ts - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
-        # [디자인 분기 설정]
         if filter == 'my':
-            # [마이페이지 수정]
-            # 1. w-full aspect-square: 그리드에 맞춤
-            # 2. h-[45%]: 이미지 높이를 줄여 텍스트 공간 확보 (기존 55%)
-            # 3. p-4: 패딩을 살짝 줄여 내부 공간 확보 (기존 p-5)
             card_style = "w-full aspect-square"
             img_height = "h-[45%]"
             content_padding = "p-4"
         else:
-            # [메인화면 유지]
-            # 1. w-96 h-[26rem]: 기존 크기 유지
-            # 2. h-52: 이미지 높이 유지
-            # 3. p-5: 패딩 유지
             card_style = "w-96 h-[26rem] flex-shrink-0 snap-center"
             img_height = "h-52"
             content_padding = "p-5"
 
-        # [추가] 하트 아이콘 상태 결정
         is_liked = s.id in liked_scenario_ids
-        # 찜 상태면 빨간색 채움(fill-red-500), 아니면 흰색 테두리(text-white/70)
         heart_class = "fill-red-500 text-red-500" if is_liked else "text-white/70 hover:text-red-500"
 
-        # [추가] 하트 버튼 HTML
         like_btn = f"""
         <button onclick="toggleLike({s.id}, this); event.stopPropagation();" 
                 class="absolute top-2 right-2 p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all z-10">
@@ -867,7 +917,6 @@ def list_scenarios(
         </button>
         """
 
-        # [버튼 구성]
         if is_owner:
             buttons_html = f"""
             <div class="flex items-center gap-2 mt-auto pt-3 border-t border-white/10">
@@ -891,19 +940,15 @@ def list_scenarios(
             </div>
             """
 
-        # [카드 HTML 조립]
-        # 핵심 수정: h-full -> flex-1 (내용물이 남은 공간만 차지하도록 변경하여 넘침 방지)
         card_html = f"""
         <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_style}">
             <div class="relative {img_height} overflow-hidden bg-black shrink-0">
                 <img src="{img_src}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
-                
                 {like_btn}
                 <div class="absolute top-2 left-2 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-[#38bdf8] border border-[#38bdf8]/30">
                     Fantasy
                 </div>
             </div>
-
             <div class="{content_padding} flex-1 flex flex-col justify-between">
                 <div>
                     <div class="flex justify-between items-start mb-1">
@@ -915,7 +960,6 @@ def list_scenarios(
                     </div>
                     <p class="text-sm text-gray-400 line-clamp-2 leading-relaxed min-h-[3em]">{desc}</p>
                 </div>
-
                 {buttons_html}
             </div>
         </div>
@@ -926,9 +970,6 @@ def list_scenarios(
     return HTMLResponse(content=html)
 
 
-# =========================================================================
-# 찜목록 함수
-# =========================================================================
 @api_router.post('/scenarios/{scenario_id}/like')
 def toggle_like(
         scenario_id: int,
@@ -938,22 +979,22 @@ def toggle_like(
     if not user.is_authenticated:
         return JSONResponse({"success": False, "error": "로그인이 필요합니다."}, status_code=401)
 
-    # 이미 찜했는지 확인
     existing_like = db.query(ScenarioLike).filter(
         ScenarioLike.user_id == user.id,
         ScenarioLike.scenario_id == scenario_id
     ).first()
 
     if existing_like:
-        db.delete(existing_like)  # 이미 있으면 삭제 (찜 취소)
+        db.delete(existing_like)
         liked = False
     else:
         new_like = ScenarioLike(user_id=user.id, scenario_id=scenario_id)
-        db.add(new_like)  # 없으면 추가 (찜 하기)
+        db.add(new_like)
         liked = True
 
     db.commit()
     return {"success": True, "liked": liked}
+
 
 @api_router.get('/scenarios/data')
 async def get_scenarios_data(
@@ -971,7 +1012,7 @@ async def get_scenarios_data(
 async def load_scenario(
         filename: str = Form(...),
         user: CurrentUser = Depends(get_current_user_optional),
-        db: Session = Depends(get_db)  # ✅ DB 의존성 추가
+        db: Session = Depends(get_db)
 ):
     import uuid
     from core.state import WorldState
@@ -984,24 +1025,18 @@ async def load_scenario(
     scenario = result['scenario']
     start_id = pick_start_scene_id(scenario)
 
-    # ✅ 세션별 독립 인스턴스: 새로운 세션 ID 생성
     new_session_key = str(uuid.uuid4())
     logger.info(f"🆕 [LOAD_SCENARIO] Creating new session: {new_session_key}")
 
-    # ✅ WorldState 초기화 (세션별 독립 인스턴스)
     world_state_instance = WorldState()
     world_state_instance.reset()
     world_state_instance.initialize_from_scenario(scenario)
-    logger.info(f"🌍 [LOAD_SCENARIO] WorldState reset and initialized")
 
-    # ✅ GameState 초기화 (세션별 독립 인스턴스)
     game_state_instance = GameState()
     game_state_instance.config['title'] = scenario.get('title', 'Loaded')
 
-    # [경량화] scenario 전체 대신 scenario_id만 저장
     scenario_id = scenario.get('id', 0)
 
-    # ✅ player_state 생성 (세션 데이터로 반환)
     player_state = {
         "scenario_id": scenario_id,
         "current_scene_id": "prologue",
@@ -1020,16 +1055,14 @@ async def load_scenario(
         "model": "openai/tngtech/deepseek-r1t2-chimera:free",
         "_internal_flags": {},
         "stuck_count": 0,
-        "world_state": world_state_instance.to_dict()  # ✅ world_state 포함
+        "world_state": world_state_instance.to_dict()
     }
 
-    # ✅ GameState 직렬화 데이터 포함
     game_state_data = {
         "config": game_state_instance.config,
         "state": player_state
     }
 
-    # ✅ [핵심 수정] DB에 세션 저장 (순환 import 방지를 위해 지역 import)
     from routes.game import save_game_session
 
     try:
@@ -1037,15 +1070,11 @@ async def load_scenario(
         logger.info(f"✅ [LOAD_SCENARIO] Session persisted to DB: {saved_key} (scenario_id={scenario_id})")
     except Exception as e:
         logger.error(f"❌ [LOAD_SCENARIO] Failed to save session to DB: {e}")
-        # DB 저장 실패해도 클라이언트에는 세션 키 반환 (첫 턴에서 재시도)
         saved_key = new_session_key
 
-    logger.info(f"✅ [LOAD_SCENARIO] State initialized (session-independent)")
-
-    # ✅ 클라이언트에 세션 데이터 반환
     return {
         "success": True,
-        "session_key": saved_key,  # ✅ DB에 저장된 키 반환
+        "session_key": saved_key,
         "scenario_id": scenario_id,
         "game_state": game_state_data,
         "player_vars": result['player_vars'],
@@ -1098,35 +1127,36 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
 
     try:
         set_progress_callback(update_build_progress)
+
+        # [수정] user.id 전달하여 토큰 과금
+        user_id = user.id if user.is_authenticated else None
+
         scenario_json = await run_in_threadpool(
             generate_scenario_from_graph,
             api_key,
             react_flow_data,
-            model_name=selected_model
+            model_name=selected_model,
+            user_id=user_id  # 추가
         )
 
-        user_id = user.id if user.is_authenticated else None
         fid, error = ScenarioService.save_scenario(scenario_json, user_id=user_id)
 
         if error:
             update_build_progress(status="error", detail=f"저장 오류: {error}")
             return JSONResponse({"error": error}, status_code=500)
 
-        # ✅ 세션별 독립 인스턴스 생성
+        # 세션 초기화
         new_session_key = str(uuid.uuid4())
         game_state_instance = GameState()
         game_state_instance.config['title'] = scenario_json.get('title')
 
-        # [경량화] scenario 전체 대신 scenario_id만 저장
         scenario_id = scenario_json.get('id', 0)
         start_scene_id = pick_start_scene_id(scenario_json)
 
-        # WorldState 초기화
         world_state_instance = WorldState()
         world_state_instance.reset()
         world_state_instance.initialize_from_scenario(scenario_json)
 
-        # player_state 생성
         player_state = {
             "scenario_id": scenario_id,
             "current_scene_id": start_scene_id,
@@ -1147,7 +1177,6 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
             "stuck_count": 0
         }
 
-        # GameState 직렬화 데이터
         game_state_data = {
             "config": game_state_instance.config,
             "state": player_state
@@ -1172,14 +1201,22 @@ async def init_game(request: Request, user: CurrentUser = Depends(get_current_us
 # [API 라우트] NPC 관리
 # ==========================================
 @api_router.post('/npc/generate')
-async def generate_npc_api(data: NPCGenerateRequest):
+async def generate_npc_api(data: NPCGenerateRequest, user: CurrentUser = Depends(get_current_user)):
+    """
+    [수정] NPC 생성 API - 토큰 과금 적용 및 Auth 요구
+    """
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
+
     try:
+        # [수정] user.id 전달
         npc_data = await run_in_threadpool(
             generate_single_npc,
-            data.scenario_title,
-            data.scenario_summary,
-            data.request,
-            data.model
+            scenario_title=data.scenario_title,
+            scenario_summary=data.scenario_summary,
+            user_request=data.request,
+            model_name=data.model,
+            user_id=user.id
         )
         return {"success": True, "data": npc_data}
     except Exception as e:
@@ -1190,31 +1227,36 @@ async def generate_npc_api(data: NPCGenerateRequest):
 @api_router.post('/image/generate')
 async def generate_image_api(data: ImageGenerateRequest, user: CurrentUser = Depends(get_current_user)):
     """AI 이미지 생성 API (Nanobana 모델 사용)"""
+    # [추가] 로그인 체크
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
+
     try:
         image_service = get_image_service()
-        
+
         if not image_service.is_available:
             return JSONResponse({
-                "success": False, 
+                "success": False,
                 "error": "이미지 생성 서비스를 사용할 수 없습니다. 관리자에게 문의하세요."
             }, status_code=503)
-        
-        # 이미지 생성
+
+        # [수정] user.id 전달하여 토큰 과금
         result = await image_service.generate_image(
+            user_id=user.id,  # Added
             image_type=data.image_type,
             description=data.description,
             scenario_id=data.scenario_id,
             target_id=data.target_id
         )
-        
+
         if result:
             return {"success": True, "data": result}
         else:
             return JSONResponse({
                 "success": False,
-                "error": "이미지 생성에 실패했습니다. 다시 시도해주세요."
+                "error": "이미지 생성에 실패했습니다. (잔액 부족 또는 오류)"
             }, status_code=500)
-            
+
     except Exception as e:
         logger.error(f"Image Generation Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
@@ -1330,7 +1372,6 @@ async def load_preset_old(filename: str = Form(...), db: Session = Depends(get_d
     try:
         preset = db.query(Preset).filter(Preset.filename == filename).first()
         if not preset: return HTMLResponse('<div class="error">로드 실패</div>')
-        # 전역 game_state 제거 - 단순 성공 메시지만 반환
         return HTMLResponse(
             f'<div class="success">프리셋 로드 완료! "{preset.name}"</div><script>lucide.createIcons();</script>')
     except Exception as e:
