@@ -517,6 +517,9 @@ def finalize_build(state: BuilderState):
     raw_nodes = graph_data.get("nodes", [])
     raw_edges = graph_data.get("edges", [])
 
+    # blueprint 변수 선언 (오류 수정)
+    blueprint = state.get("blueprint", "")
+
     # 1. Start 노드 찾기
     start_node = next((n for n in raw_nodes if n.get("type") == "start"), None)
     if not start_node:
@@ -674,8 +677,8 @@ def finalize_build(state: BuilderState):
         base_data = generated_scene_map.get(old_id.lower() if old_id else "", {})
         llm_transitions = base_data.get("transitions", [])
 
-        # Blueprint에 연결된 타겟 목록 가져오기
-        blueprint_targets = blueprint.get('connections', {}).get(old_id, []) if old_id else []
+        # Blueprint는 문자열이므로 직접 connections을 추출할 수 없음 - 엣지 정보 사용
+        blueprint_targets = [edge.get("target") for edge in raw_edges if edge.get("source") == old_id] if old_id else []
 
         transitions = []
         for tgt_old in blueprint_targets:

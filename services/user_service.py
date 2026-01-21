@@ -121,6 +121,7 @@ class UserService:
 
             # 차감
             old_balance = user.token_balance
+            original_balance = old_balance  # 롤백을 위해 원본 잔액 저장
             user.token_balance -= cost
             new_balance = user.token_balance
 
@@ -145,9 +146,19 @@ class UserService:
 
         except ValueError as ve:
             db.rollback()
+            # 토큰 롤백 - 이미 차감된 토큰이 있다면 복원
+            if 'original_balance' in locals():
+                user.token_balance = locals()['original_balance']
+                db.commit()
+                logger.info(f"🔄 [TOKEN ROLLBACK] Tokens restored for user {user_id}: {user.token_balance}")
             raise ve
         except Exception as e:
             db.rollback()
+            # 토큰 롤백 - 이미 차감된 토큰이 있다면 복원
+            if 'original_balance' in locals():
+                user.token_balance = locals()['original_balance']
+                db.commit()
+                logger.info(f"🔄 [TOKEN ROLLBACK] Tokens restored for user {user_id}: {user.token_balance}")
             logger.error(f"❌ Token deduction error: {e}")
             raise e
         finally:
