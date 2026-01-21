@@ -399,7 +399,7 @@
                 npcGen: false, npcList: false,
                 itemList: false,
                 presetLoad: false, presetSave: false, scenarioList: false, imageGen: false,
-                noToken: false
+                noToken: false, auditApplied: false
             });
             const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
             const [auditState, setAuditState] = useState({ isOpen: false, isLoading: false, results: null, targetNodeId: null });
@@ -418,6 +418,17 @@
             const [tokenBalance, setTokenBalance] = useState(0);
             const [hoverPreview, setHoverPreview] = useState({ show: false, x: 0, y: 0, url: '', name: '' });
             const [loadingMessage, setLoadingMessage] = useState(getRandomLoadingMessage());
+
+            // 로딩 문구 3초마다 변경 타이머
+            useEffect(() => {
+                if (!isGenerating && !imageGenState.isLoading) return;
+                
+                const interval = setInterval(() => {
+                    setLoadingMessage(getRandomLoadingMessage());
+                }, 3000);
+                
+                return () => clearInterval(interval);
+            }, [isGenerating, imageGenState.isLoading]);
 
             const estimatedCost = useMemo(() => {
                 const rate = MODEL_COST_RATES[selectedModel] !== undefined
@@ -540,6 +551,11 @@
                         let loadedNodes = scen.nodes || [];
                         let loadedEdges = scen.edges || [];
 
+                        // NPC/적/아이템 데이터도 함께 로드
+                        if (scen.npcs) {
+                            setGlobalNpcs(scen.npcs.filter(n => !n.isEnemy) || []);
+                            setGlobalEnemies(scen.npcs.filter(n => n.isEnemy) || []);
+                        }
                         setGlobalItems(scen.items || []);
 
                         if ((!loadedNodes || loadedNodes.length === 0) && scen.scenes) {
@@ -963,10 +979,10 @@
                     return n;
                 }));
                 
-                // 더 명확한 적용 알림
+                // 적용 완료 모달창 표시
                 const targetNode = nodes.find(n => n.id === targetId || n.data.title === targetId);
                 const sceneTitle = targetNode?.data?.title || targetId;
-                showToast(`✅ AI 제안 적용 완료!\n"${sceneTitle}" 씬의 개선사항이 AI 노트에 추가되었습니다.`, "success");
+                setModals(m => ({ ...m, auditApplied: true, auditAppliedMessage: `"${sceneTitle}" 씬의 개선사항이 AI 노트에 추가되었습니다.` }));
             };
             const loadPreset = (preset) => {
                 if(!confirm("현재 내용이 사라집니다. 적용하시겠습니까?")) return;
@@ -974,6 +990,10 @@
                     let data = typeof preset.data === 'string' ? JSON.parse(preset.data) : preset.data;
                     pushHistory();
                     setNodes(data.nodes); setEdges(data.edges);
+                    // NPC/적/아이템 데이터도 함께 복원
+                    if(data.globalNpcs) setGlobalNpcs(data.globalNpcs);
+                    if(data.globalEnemies) setGlobalEnemies(data.globalEnemies);
+                    if(data.globalItems) setGlobalItems(data.globalItems);
                     setModals(m=>({...m, presetLoad:false})); showToast("프리셋 적용됨", "success");
                 } catch(e) { showToast("프리셋 오류", "error"); }
             };
@@ -1745,26 +1765,55 @@
                                 </div>
                                 <div className="p-8 text-center">
                                     <div className="mb-6 relative inline-block">
-                                        <Icon name="coins" size={48} className="text-[#FFD700] animate-bounce"/>
-                                        <div className="absolute -bottom-2 -right-2 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-white">!</div>
+                                        <div className="w-16 h-16 border-4 border-[#FF007F]/20 rounded-full animate-spin"></div>
+                                        <div className="absolute top-2 left-2 w-12 h-12 border-4 border-[#FF007F]/40 rounded-full animate-spin" style={{ animationDuration: '1.5s' }}></div>
+                                        <div className="absolute top-4 left-4 w-8 h-8 border-4 border-[#FF007F] rounded-full animate-spin" style={{ animationDuration: '2s' }}></div>
+                                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                                            <Icon name="battery-low" size={20} className="text-[#FF007F] animate-pulse"/>
+                                        </div>
                                     </div>
-                                    <h4 className="text-xl font-bold text-white mb-2">크레딧이 부족합니다!</h4>
-                                    <p className="text-gray-400 text-sm mb-6 leading-relaxed">
-                                        작업을 수행하기 위한 에너지가 부족합니다.<br/>
-                                        충전 후 다시 시도해주세요.
-                                    </p>
-                                    <div className="bg-[#0B0B19] border border-[#4A4A6A] p-3 rounded mb-6 flex justify-between items-center">
-                                        <span className="text-xs text-[#6A6A8A]">현재 잔액</span>
-                                        <span className="text-[#FFD700] font-mono font-bold text-lg">{tokenBalance.toLocaleString()} CR</span>
-                                    </div>
-                                    <div className="flex gap-2 justify-center">
-                                        <button onClick={() => window.open('/views/mypage', '_blank')}
-                                                className="pixel-btn bg-[#FFD700] text-black border-[#E0E0E0] hover:bg-[#E6C200] hover:text-black hover:border-white font-bold py-2 px-6 flex items-center gap-2">
+                                    <div className="text-[#FF007F] font-bold mb-4">⚡ 파워 부족 ⚡</div>
+                                    <div className="text-gray-400 mb-6">토큰 잔액이 부족하여 이 작업을 수행할 수 없습니다.<br/>충전 후 다시 시도해주세요.</div>
+                                    <div className="flex justify-center gap-3">
+                                        <a href="/billing" 
+                                            className="pixel-btn bg-[#FFD700] text-black border-[#E0E0E0] hover:bg-[#E6C200] hover:text-black hover:border-white font-bold py-2 px-6 flex items-center gap-2">
                                             <Icon name="zap" size={16}/> 충전하러 가기
-                                        </button>
+                                        </a>
                                         <button onClick={() => setModals(m => ({...m, noToken: false}))}
-                                                className="pixel-btn py-2 px-4 text-[#6A6A8A] border-[#4A4A6A]">
+                                                className="pixel-btn py-2 px-4 text-[#6A6A6A] border-[#4A4A6A]">
                                             닫기
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* AI Audit 적용 완료 모달 */}
+                    {modals.auditApplied && (
+                        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-fade-in p-4">
+                            <div className="pixel-box w-full max-w-md bg-[#131320] border-2 border-[#00FFFF] shadow-[0_0_20px_rgba(0,255,255,0.3)]">
+                                <div className="p-4 bg-[#1A0B2E] border-b-2 border-[#4A4A6A] flex justify-between items-center">
+                                    <h3 className="text-[#00FFFF] font-bold flex items-center gap-2">
+                                        <Icon name="check-circle" size={18}/> AI 제안 적용 완료
+                                    </h3>
+                                    <button onClick={() => setModals(m => ({...m, auditApplied: false}))} className="text-[#6A6A8A] hover:text-white"><Icon name="x"/></button>
+                                </div>
+                                <div className="p-8 text-center">
+                                    <div className="mb-6 relative inline-block">
+                                        <div className="w-16 h-16 border-4 border-[#00FFFF]/20 rounded-full animate-pulse"></div>
+                                        <div className="absolute top-2 left-2 w-12 h-12 border-4 border-[#00FFFF]/40 rounded-full animate-pulse" style={{ animationDuration: '1.5s' }}></div>
+                                        <div className="absolute top-4 left-4 w-8 h-8 border-4 border-[#00FFFF] rounded-full animate-pulse" style={{ animationDuration: '2s' }}></div>
+                                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                                            <Icon name="sparkles" size={20} className="text-[#00FFFF] animate-pulse"/>
+                                        </div>
+                                    </div>
+                                    <div className="text-[#00FFFF] font-bold mb-4">✨ 개선사항 적용 완료 ✨</div>
+                                    <div className="text-gray-300 mb-6">{modals.auditAppliedMessage}</div>
+                                    <div className="flex justify-center gap-3">
+                                        <button onClick={() => setModals(m => ({...m, auditApplied: false}))}
+                                                className="pixel-btn bg-[#00FFFF] text-black border-[#00FFFF] hover:bg-[#00CCCC] font-bold py-2 px-6 flex items-center gap-2">
+                                            <Icon name="check" size={16}/> 적용 완료
                                         </button>
                                     </div>
                                 </div>

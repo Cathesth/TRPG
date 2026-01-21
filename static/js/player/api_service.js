@@ -416,10 +416,7 @@ async function submitWithStreaming(actionText) {
                         // Game Engine의 스트리밍 타입 처리
                         switch (data.type) {
                             case 'prefix':
-                                // Check for background image in scene data
-                                if (data.background_image) {
-                                    currentContent += `<div class="mb-4 relative"><img src="${data.background_image}" alt="Scene Background" class="w-full h-48 object-cover rounded-lg border-2 border-gray-700" /></div>`;
-                                }
+                                // 배경 이미지는 bg_update 타입으로 별도 처리 - 채팅창에 표시 안 함
                                 currentContent += data.content;
                                 contentDiv.innerHTML = currentContent + '<span id="narrator-stream"></span><span class="streaming-cursor">▌</span>';
                                 break;
@@ -473,6 +470,12 @@ async function submitWithStreaming(actionText) {
                                 currentSessionKey = data.content;
                                 localStorage.setItem(SESSION_KEY_STORAGE, data.content);
                                 console.log('🔑 Session key saved:', data.content);
+                                break;
+                            case 'bg_update':
+                                // 배경 이미지 전체 화면으로 표시
+                                if (data.content) {
+                                    updateBackgroundImage(data.content);
+                                }
                                 break;
                             case 'session_id':
                                 currentSessionId = data.content;
