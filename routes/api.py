@@ -183,7 +183,11 @@ async def mypage_view(
         if db_user:
             user = db_user  # 템플릿에 전달할 user 객체를 DB 객체로 교체
 
-    return templates.TemplateResponse("mypage.html", {"request": request, "user": user})
+            # [추가] 사용자의 시나리오 통계 조회
+            stats = ScenarioService.get_user_statistics(user.id)
+
+    # [수정] stats 데이터를 템플릿 context에 포함하여 전달
+    return templates.TemplateResponse("mypage.html", {"request": request, "user": user, "stats": stats})
 
 
 # [추가] 메인화면 헤더 프로필 로드용 (HTMX)
@@ -791,7 +795,7 @@ def _generate_lock_button(scenario_id: int, is_public: bool):
             """
 
 
-# [2. API 엔드포인트 추가] 토글 요청 처리
+# [2. API 엔드포인트 수정] 토글 요청 처리 + 통계 숫자 실시간 업데이트
 @api_router.post('/scenarios/{scenario_id}/toggle-public')
 async def toggle_scenario_public(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
     if not user.is_authenticated:
@@ -800,11 +804,20 @@ async def toggle_scenario_public(scenario_id: int, user: CurrentUser = Depends(g
     success, msg, new_state = ScenarioService.toggle_public(scenario_id, user.id)
 
     if not success:
-        # 에러 시 alert 띄우기 (HTMX 응답 헤더 활용 가능하지만, 간단히 기존 버튼 유지하며 로그)
         return HTMLResponse(f"<script>alert('{msg}');</script>", status_code=400)
 
-    # 변경된 상태에 맞는 새로운 버튼 HTML 반환 (HTMX가 이 버튼으로 교체함)
-    return HTMLResponse(_generate_lock_button(scenario_id, new_state))
+    # 1. 바뀐 상태에 맞는 새로운 버튼 HTML 생성
+    button_html = _generate_lock_button(scenario_id, new_state)
+
+    # 2. [추가됨] 최신 통계(Private 개수) 다시 계산
+    stats = ScenarioService.get_user_statistics(user.id)
+
+    # 3. [추가됨] 통계 숫자 업데이트용 HTML (OOB Swap)
+    # id="stat-private-count"인 태그를 찾아서 이 내용으로 바꿔치기합니다.
+    stats_html = f'<span id="stat-private-count" hx-swap-oob="true" class="text-rpg-accent font-bold text-xl">{stats["private"]}</span>'
+
+    # 4. 버튼과 통계 HTML을 합쳐서 반환
+    return HTMLResponse(button_html + stats_html)
 
 
 # --- [MODIFIED] 시나리오 생성 API (토큰 과금 적용) ---

@@ -267,11 +267,12 @@
                     <div class="space-y-4">
                         <div class="flex justify-between items-center p-3 bg-rpg-900/50 rounded-lg border border-rpg-700/50">
                             <span class="text-gray-400 text-sm">Created Scenarios</span>
-                            <span class="text-white font-bold text-xl">12</span>
+                            <span class="text-white font-bold text-xl">{{ stats.total }}</span>
                         </div>
+
                         <div class="flex justify-between items-center p-3 bg-rpg-900/50 rounded-lg border border-rpg-700/50">
-                            <span class="text-gray-400 text-sm">Published</span>
-                            <span class="text-rpg-accent font-bold text-xl">3</span>
+                            <span class="text-gray-400 text-sm">Private Scenarios</span>
+                            <span id="stat-private-count" class="text-rpg-accent font-bold text-xl">{{ stats.private }}</span>
                         </div>
                     </div>
                 </div>
