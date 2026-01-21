@@ -274,7 +274,7 @@
         </div>
 
         <div class="container mx-auto px-8 mt-8">
-            <a href="/views/builder" class="block w-full bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 hover:border-rpg-accent rounded-xl p-6 text-center group transition-all shadow-lg hover:shadow-[0_0_20px_rgba(56,189,248,0.15)]">
+            <a href="#" onclick="checkLoginAndRedirect('/views/builder'); return false;" class="block w-full bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 hover:border-rpg-accent rounded-xl p-6 text-center group transition-all shadow-lg hover:shadow-[0_0_20px_rgba(56,189,248,0.15)]">
                 <div class="flex flex-col items-center justify-center gap-3">
                     <div class="p-3 bg-rpg-accent/10 rounded-full group-hover:scale-110 transition-transform ring-1 ring-rpg-accent/30">
                         <i data-lucide="plus" class="w-8 h-8 text-rpg-accent"></i>
@@ -722,6 +722,24 @@
             window.location.href = `/views/builder?scenario=${encodeURIComponent(filename)}`;
         };
 
+        // 로그인 체크 후 리다이렉트 또는 모달 표시
+        window.checkLoginAndRedirect = async function(targetUrl) {
+            try {
+                const res = await fetch('/api/user/status');
+                const data = await res.json();
+                if (data.success && data.user_id) {
+                    // 로그인 상태: 페이지 이동
+                    window.location.href = targetUrl;
+                } else {
+                    // 비로그인 상태: 로그인 모달 표시
+                    openModal('login-modal');
+                }
+            } catch(e) {
+                // 오류 시 로그인 모달 표시
+                openModal('login-modal');
+            }
+        };
+
         window.openModal = function(id) {
             const modal = document.getElementById(id);
             modal.classList.remove('opacity-0', 'pointer-events-none');
@@ -751,7 +769,13 @@
                     // 로그인 성공 시 show_login 파라미터 제거하고 리로드
                     const url = new URL(window.location);
                     url.searchParams.delete('show_login');
-                    window.location.href = url.toString();
+                    
+                    // 현재 페이지가 /login이면 메인으로, 아니면 현재 페이지 리로드
+                    if (window.location.pathname === '/login') {
+                        window.location.href = '/';
+                    } else {
+                        window.location.href = url.toString();
+                    }
                 } else {
                     alert(data.error);
                 }
