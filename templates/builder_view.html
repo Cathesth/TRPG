@@ -371,16 +371,22 @@
             }, [tokenBalance, estimatedCost]);
 
             // [NEW] 토큰 잔액 조회 함수
+            // =========================================================
+            // [수정] routes/api.py의 /api/user/status 엔드포인트에 맞춤
+            // =========================================================
             const fetchTokenBalance = async () => {
                 try {
-                    const res = await fetch('/api/auth/me'); // 간단 체크용
-                    // 실제 잔액은 /api/user/status 또는 /auth/api/user/status
-                    const statusRes = await fetch('/auth/api/user/status');
+                    // 1. 엔드포인트 변경: /api/user/status
+                    const statusRes = await fetch('/api/user/status');
+
                     if(statusRes.ok) {
                         const data = await statusRes.json();
-                        if(data.status === 'success') {
-                            setTokenBalance(data.token_balance);
+                        // 2. 응답 구조 변경: { success: true, balance: 1234, ... }
+                        if(data.success) {
+                            setTokenBalance(data.balance);
                         }
+                    } else {
+                        console.warn("Failed to fetch balance, status:", statusRes.status);
                     }
                 } catch(e) {
                     console.error("Token fetch failed", e);
