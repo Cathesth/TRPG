@@ -231,9 +231,15 @@ async def root():
 @app.get("/image/serve/{file_path:path}")
 async def serve_image(file_path: str):
     from core.s3_client import get_s3_client
-    from fastapi.responses import Response
+    from fastapi.responses import Response, FileResponse
     import urllib.parse
     import botocore.exceptions
+
+    # 0. 로컬 Static 파일인 경우 처리 (static/으로 시작하는 경우)
+    if file_path.startswith("static/") or file_path.startswith("/static/"):
+        local_path = file_path.lstrip("/")
+        if os.path.exists(local_path):
+            return FileResponse(local_path)
 
     s3 = get_s3_client()
 
@@ -249,28 +255,41 @@ async def serve_image(file_path: str):
         decoded_path = urllib.parse.unquote(file_path)
         real_key = decoded_path
 
+        # URL 형태인 경우 파싱 (http://... 또는 https://...)
         if "://" in decoded_path:
             parsed = urllib.parse.urlparse(decoded_path)
+            # path 부분만 사용 (예: /bucket-name/path/to/image.png)
             full_path = parsed.path.lstrip('/')
+            
+            # 버킷명이 경로 앞에 포함되어 있다면 제거
             if full_path.startswith(f"{bucket_name}/"):
                 real_key = full_path.replace(f"{bucket_name}/", "", 1)
             else:
                 real_key = full_path
+        
+        # 디버그 로그
+        # logger.info(f"🔍 [Image Serve] Request: {file_path} -> Decoded: {decoded_path} -> Key: {real_key}")
 
         # 2. S3 클라이언트 컨텍스트 생성 후 파일 읽기
-        # (중요: stream 대신 read()로 메모리에 로드하여 연결 끊김 방지)
         async with s3._session.client(
                 's3',
                 endpoint_url=s3.endpoint,
                 region_name=s3.region,
                 use_ssl=s3.use_ssl
         ) as client:
-            response = await client.get_object(Bucket=bucket_name, Key=real_key)
-            content = await response['Body'].read()
-            return Response(content=content, media_type=response.get('ContentType', 'image/png'))
+            try:
+                response = await client.get_object(Bucket=bucket_name, Key=real_key)
+                content = await response['Body'].read()
+                return Response(content=content, media_type=response.get('ContentType', 'image/png'))
+            except client.exceptions.NoSuchKey:
+                logger.warning(f"⚠️ [Image Serve] S3 Key Not Found: {real_key}")
+                return Response(status_code=404)
+            except Exception as e:
+                logger.error(f"❌ [Image Serve] S3 Error: {str(e)}")
+                return Response(status_code=500)
 
     except Exception as e:
-        logger.error(f"❌ [Image Serve] 에러: {str(e)} (Key: {real_key if 'real_key' in locals() else file_path})")
+        logger.error(f"❌ [Image Serve] General Error: {str(e)} (Path: {file_path})")
         return Response(status_code=404)
 
 

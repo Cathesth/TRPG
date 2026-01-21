@@ -67,6 +67,9 @@ class User(Base):
     # ▼ [추가] 사용자의 현재 보유 토큰 (기본값 1000)
     token_balance = Column(Integer, default=1000, nullable=False)
 
+    # ▼ [추가] 튜토리얼 완료 여부
+    tutorial_completed = Column(Boolean, default=False)
+
     created_at = Column(DateTime, default=datetime.now)
 
     # 관계 설정
@@ -317,6 +320,9 @@ def create_tables():
                 # [NEW] token_balance 추가
                 conn.execute(
                     text("ALTER TABLE users ADD COLUMN IF NOT EXISTS token_balance INTEGER DEFAULT 1000 NOT NULL"))
+                
+                # [NEW] tutorial_completed 추가
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS tutorial_completed BOOLEAN DEFAULT FALSE"))
 
                 conn.commit()
                 logger.info("✅ Checked/Added 'avatar_url', 'email', 'token_balance' columns to 'users' table.")

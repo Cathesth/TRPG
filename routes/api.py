@@ -592,16 +592,37 @@ async def get_current_user_info(user: CurrentUser = Depends(get_current_user_opt
 
 # [추가] 유저 잔액 조회 API
 @api_router.get('/user/status')
-async def get_user_status(user: CurrentUser = Depends(get_current_user)):
+async def get_user_status(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     if not user.is_authenticated:
         return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
 
-    balance = UserService.get_user_balance(user.id)
+    db_user = db.query(User).filter(User.id == user.id).first()
+    if not db_user:
+         return JSONResponse({"success": False, "error": "User not found"}, status_code=404)
+
     return {
         "success": True,
-        "username": user.id,
-        "balance": balance
+        "username": db_user.id,
+        "balance": db_user.token_balance,
+        "tutorial_completed": getattr(db_user, 'tutorial_completed', False),
+        "avatar_url": getattr(db_user, 'avatar_url', None)
     }
+
+
+@api_router.post('/user/tutorial/complete')
+async def complete_tutorial(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
+
+    db_user = db.query(User).filter(User.id == user.id).first()
+    if db_user:
+        if not getattr(db_user, 'tutorial_completed', False):
+            db_user.tutorial_completed = True
+            db.commit()
+            logger.info(f"User {user.id} completed tutorial.")
+        return {"success": True, "message": "Tutorial completed"}
+    
+    return JSONResponse({"success": False, "error": "User not found"}, status_code=404)
 
 
 # ---------------------------------------------------------
@@ -1890,3 +1911,124 @@ async def get_item_list(user: CurrentUser = Depends(get_current_user), db: Sessi
     except Exception as e:
         logger.error(f"Item List Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+# ==========================================
+# [API ?�우?? 관리자 기능 (?�나리오 ?�택�??�양)
+# ==========================================
+
+import json
+
+RIGHTS_FILE = "scenario_rights.json"
+
+def get_rights_holder():
+    if os.path.exists(RIGHTS_FILE):
+        try:
+            with open(RIGHTS_FILE, 'r') as f:
+                data = json.load(f)
+                return data.get('holder', '11')
+        except:
+            return '11'
+    return '11'
+
+def set_rights_holder(user_id):
+    with open(RIGHTS_FILE, 'w') as f:
+        json.dump({'holder': user_id}, f)
+
+
+@api_router.get('/admin/transfer_view', response_class=HTMLResponse)
+async def admin_transfer_view(request: Request, user: CurrentUser = Depends(get_current_user)):
+    # 11�??��? ?�인
+    if user.id != '11':
+         return HTMLResponse("<div class='p-4 text-red-500'>?�근 권한???�습?�다. (Only for 11)</div>")
+    
+    current_holder = get_rights_holder()
+    
+    html = f"""
+    <div class="fade-in">
+        <h2 class="text-xl font-bold text-yellow-400 mb-6 flex items-center gap-2">
+            <i data-lucide="crown" class="w-6 h-6"></i> Scenario Selection Rights
+        </h2>
+        
+        <div class="bg-rpg-800/80 p-6 rounded-2xl border border-yellow-500/30 mb-8">
+            <div class="text-gray-400 text-sm mb-2">?�재 권한 보유??/div>
+            <div class="text-2xl font-bold text-white flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-500">
+                    <i data-lucide="user" class="w-6 h-6"></i>
+                </div>
+                {current_holder}
+            </div>
+            <p class="mt-4 text-sm text-gray-500">
+                ?�나리오 ?�택권을 가�??��???메인 ?�면??추천 ?�나리오�??�정?????�습?�다. (?�정)
+            </p>
+        </div>
+
+        <div class="space-y-4">
+            <h3 class="text-lg font-bold text-white">권한 ?�양</h3>
+            <p class="text-xs text-gray-400">?�이?��? 검?�하??권한???�길 ?��?�??�택?�세??</p>
+            <div class="flex gap-2">
+                <input type="text" name="search" id="user-search" 
+                       placeholder="?��? ID 검??.." 
+                       class="flex-1 bg-rpg-900 border border-rpg-700 rounded-lg px-4 py-3 text-white focus:border-yellow-500 outline-none font-sans"
+                       hx-post="/api/admin/search_users" 
+                       hx-trigger="keyup changed delay:500ms" 
+                       hx-target="#user-search-results">
+            </div>
+            
+            <div id="user-search-results" class="space-y-2 mt-4 max-h-60 overflow-y-auto custom-scrollbar">
+                <!-- 검??결과 ?�시 ?�역 -->
+            </div>
+        </div>
+    </div>
+    <script>lucide.createIcons();</script>
+    """
+    return HTMLResponse(html)
+
+
+@api_router.post("/admin/search_users", response_class=HTMLResponse)
+async def search_users(request: Request, search: str = Form(None), db: Session = Depends(get_db)):
+    if not search:
+        return HTMLResponse('')
+    
+    # 본인 ?�외, 관리자(11) ?�외 검??
+    users = db.query(User).filter(
+        User.id.ilike(f"%{search}%"),
+        User.id != '11'
+    ).limit(5).all()
+    
+    if not users:
+        return HTMLResponse('<div class="text-gray-500 text-sm p-4 text-center">검??결과가 ?�습?�다.</div>')
+        
+    html = ""
+    for u in users:
+        html += f"""
+        <div class="flex items-center justify-between p-3 bg-rpg-900 rounded-lg border border-rpg-700 animate-fade-in">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs overflow-hidden">
+                    {f'<img src="{u.avatar_url}" class="w-full h-full object-cover">' if u.avatar_url else u.id[:2]}
+                </div>
+                <span class="font-bold">{u.id}</span>
+            </div>
+            <button class="px-3 py-1 bg-yellow-600 hover:bg-yellow-500 text-white text-xs font-bold rounded transition-colors"
+                    hx-post="/api/admin/transfer_rights"
+                    hx-vals='{{"target_user_id": "{u.id}"}}'
+                    hx-confirm="{u.id} ?�에�??�나리오 ?�택권을 ?�양?�시겠습?�까?">
+                ?�양?�기
+            </button>
+        </div>
+        """
+    return HTMLResponse(html)
+
+
+@api_router.post("/admin/transfer_rights")
+async def transfer_rights(target_user_id: str = Form(...), user: CurrentUser = Depends(get_current_user)):
+    # 11�??�용?�만 ?�행 가??
+    if user.id != '11':
+        return JSONResponse({"success": False, "error": "권한???�습?�다."}, status_code=403)
+        
+    set_rights_holder(target_user_id)
+    
+    return HTMLResponse(f"""
+        <script>
+            alert('{target_user_id} ?�에�?권한???�공?�으�??�양?�었?�니??');
+            htmx.ajax('GET', '/api/admin/transfer_view', '#main-content-area');
+        </script>
+    """)
