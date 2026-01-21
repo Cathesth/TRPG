@@ -266,12 +266,12 @@
                     </h3>
                     <div class="space-y-4">
                         <div class="flex justify-between items-center p-3 bg-rpg-900/50 rounded-lg border border-rpg-700/50">
-                            <span class="text-gray-400 text-sm">Created Scenarios</span>
+                            <span class="text-gray-400 text-sm">공개된 시나리오</span>
                             <span class="text-white font-bold text-xl">{{ stats.total }}</span>
                         </div>
 
                         <div class="flex justify-between items-center p-3 bg-rpg-900/50 rounded-lg border border-rpg-700/50">
-                            <span class="text-gray-400 text-sm">Private Scenarios</span>
+                            <span class="text-gray-400 text-sm">봉인된 시나리오</span>
                             <span id="stat-private-count" class="text-rpg-accent font-bold text-xl">{{ stats.private }}</span>
                         </div>
                     </div>
@@ -302,17 +302,17 @@
                             <button hx-get="/api/scenarios?filter=my&visibility=all"
                                     hx-target="#my-scenario-grid"
                                     onclick="updateFilterStyle(this)"
-                                    class="px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors">All</button>
+                                    class="px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors">전체</button>
 
                             <button hx-get="/api/scenarios?filter=my&visibility=public"
                                     hx-target="#my-scenario-grid"
                                     onclick="updateFilterStyle(this)"
-                                    class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Public</button>
+                                    class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">공개</button>
 
                             <button hx-get="/api/scenarios?filter=my&visibility=private"
                                     hx-target="#my-scenario-grid"
                                     onclick="updateFilterStyle(this)"
-                                    class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Private</button>
+                                    class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">비공개</button>
                         </div>
                     </div>
 
