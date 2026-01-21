@@ -185,12 +185,12 @@
                 <div style={{ left: node.x, top: node.y }}
                      onMouseDown={(e) => onMouseDown(e, node.id)}
                      onClick={handleBodyClick}
-                     className={`node-ui absolute w-[200px] flex flex-col group
+                     className={`node-ui absolute w-[200px] flex flex-col group select-none
                         ${isSelected ? 'selected' : ''}
                         ${isConnectSource ? 'connecting-source' : ''}
                         ${isCandidate ? 'connecting-target-candidate' : ''}`}>
 
-                    <div className="p-2 border-b-2 border-[#4A4A6A] bg-[#0B0B19] flex justify-between items-center cursor-grab active:cursor-grabbing">
+                    <div className="p-2 border-b-2 border-[#4A4A6A] bg-[#0B0B19] flex justify-between items-center cursor-grab active:cursor-grabbing select-none">
                         <span className="text-[10px] text-[#FFFACD] flex items-center gap-1 font-bold">
                             {node.type==='start' && <Icon name="settings" size={10}/>}
                             {node.type==='scene' && <Icon name="clapperboard" size={10}/>}
@@ -359,7 +359,7 @@
             const [modals, setModals] = useState({
                 npcGen: false, npcList: false,
                 itemList: false,
-                presetLoad: false, scenarioList: false, imageGen: false,
+                presetLoad: false, presetSave: false, scenarioList: false, imageGen: false,
                 noToken: false
             });
             const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
@@ -932,6 +932,32 @@
                     setModals(m=>({...m, presetLoad:false})); showToast("프리셋 적용됨", "success");
                 } catch(e) { showToast("프리셋 오류", "error"); }
             };
+            
+            const savePreset = async () => {
+                const presetName = prompt("프리셋 이름을 입력하세요:");
+                if (!presetName || presetName.trim() === '') return;
+                
+                try {
+                    const res = await fetch('/api/presets/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: presetName.trim(),
+                            data: { nodes, edges }
+                        })
+                    });
+                    
+                    const data = await res.json();
+                    if (data.success) {
+                        setModals(m=>({...m, presetSave:false}));
+                        showToast(`"${presetName}" 프리셋이 저장되었습니다.`, "success");
+                    } else {
+                        throw new Error(data.error || "저장 실패");
+                    }
+                } catch(e) {
+                    showToast("프리셋 저장 실패: " + e.message, "error");
+                }
+            };
 
             useEffect(() => {
                 const handleMessage = (event) => {
@@ -1019,6 +1045,7 @@
                                 <button onClick={redo} className="pixel-btn flex-1 py-2 text-[#6A6A8A]" title="다시하기"><Icon name="redo-2"/></button>
                             </div>
                             <button onClick={async () => { try { const res = await fetch('/api/presets'); const data = await res.json(); setPresetList(data); setModals(m=>({...m, presetLoad:true})); } catch(e){} }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2"><Icon name="folder-open"/> 프리셋 로드</button>
+                            <button onClick={() => setModals(m=>({...m, presetSave:true}))} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2 text-[#FFD700]"><Icon name="save"/> 프리셋 저장</button>
                             <button onClick={async () => { try { const res = await fetch('/api/scenarios/data?filter=my'); const data = await res.json(); setUserScenarios(data); setModals(m=>({...m, scenarioList:true})); } catch(e){} }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2"><Icon name="file-edit"/> 시나리오 로드</button>
                         </div>
                         <div className="p-4 border-t-2 border-[#4A4A6A] bg-[#0B0B19]">
@@ -1433,15 +1460,14 @@
                                                 ) : (
                                                     <><Icon name="sparkles" size={12}/> 이미지 생성 (50 CR)</>
                                                 )}
-                                            </button>
                                         </div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-2 pt-4">
                                         {/* [REQ 2] 개별 씬 검수 버튼 상태 표시 */}
                                         <div className="text-right mb-1">
-                                            <span className="text-[8px] text-[#6A6A8A] mr-1">예상:</span>
-                                            <span className={`text-[8px] font-bold ${tokenBalance >= auditEstimatedCost ? 'text-[#FFD700]' : 'text-[#FF007F]'}`}>
+                                            <span className="text-[10px] text-[#6A6A8A] mr-1">예상:</span>
+                                            <span className={`text-[12px] font-bold ${tokenBalance >= auditEstimatedCost ? 'text-[#FFD700]' : 'text-[#FF007F]'}`}>
                                                 {auditEstimatedCost.toLocaleString()} CR
                                             </span>
                                         </div>
@@ -1538,6 +1564,30 @@
                                 </div>
                             ))}
                         </div>
+                    </Modal>
+
+                    <Modal isOpen={modals.presetSave} title="프리셋 저장" onClose={() => setModals(m=>({...m, presetSave:false}))}>
+                        <div className="space-y-4">
+                            <div className="text-sm text-[#6A6A8A]">
+                                현재 시나리오 구조를 프리셋으로 저장하여 나중에 다시 사용할 수 있습니다.
+                            </div>
+                            <div className="bg-[#0B0B19] border border-[#4A4A6A] p-3 rounded">
+                                <div className="text-xs text-[#6A6A8A] mb-2">저장될 내용:</div>
+                                <div className="text-xs text-[#E0E0E0] space-y-1">
+                                    <div>• 노드 구조 ({nodes.length}개)</div>
+                                    <div>• 연결 관계 ({edges.length}개)</div>
+                                    <div>• 노드 데이터 (제목, 내용 등)</div>
+                                </div>
+                            </div>
+                        </div>
+                        <footer>
+                            <button onClick={() => setModals(m=>({...m, presetSave:false}))} className="pixel-btn px-4 py-2 text-xs text-[#6A6A8A] border border-[#4A4A6A]">
+                                취소
+                            </button>
+                            <button onClick={savePreset} className="pixel-btn px-4 py-2 text-xs text-[#FFD700] border border-[#FFD700]">
+                                <Icon name="save" size={12}/> 저장하기
+                            </button>
+                        </footer>
                     </Modal>
 
                     {/* [REQ 2] AI 검수 결과 모달 */}
