@@ -747,8 +747,14 @@
             try {
                 const res = await fetch('/api/auth/login', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: form.username.value, password: form.password.value}) });
                 const data = await res.json();
-                if (data.success) window.location.reload();
-                else alert(data.error);
+                if (data.success) {
+                    // 로그인 성공 시 show_login 파라미터 제거하고 리로드
+                    const url = new URL(window.location);
+                    url.searchParams.delete('show_login');
+                    window.location.href = url.toString();
+                } else {
+                    alert(data.error);
+                }
             } catch(e) { alert("통신 오류"); }
         };
 

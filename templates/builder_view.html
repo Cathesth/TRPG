@@ -1845,7 +1845,6 @@
                             </div>
                         </div>
                     )}
-
                 </div>
             );
         }
@@ -1853,6 +1852,49 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ScenarioBuilder />);
     </script>
-{% endraw %}
-</body>
-</html>
+
+    <script>
+        // 모달 관리 함수
+        window.openModal = function(id) {
+            const modal = document.getElementById(id);
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            document.body.classList.add('modal-active');
+            setTimeout(() => {
+                modal.querySelector('.modal-container').classList.remove('scale-95', 'opacity-0');
+                modal.querySelector('.modal-container').classList.add('scale-100', 'opacity-100');
+            }, 10);
+        };
+
+        window.closeModal = function(id) {
+            const modal = document.getElementById(id);
+            modal.querySelector('.modal-container').classList.remove('scale-100', 'opacity-100');
+            modal.querySelector('.modal-container').classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.add('opacity-0', 'pointer-events-none');
+                document.body.classList.remove('modal-active');
+            }, 300);
+        };
+
+        // 로그인이 필요할 때 index.html로 리다이렉트
+        window.requireLogin = function() {
+            window.location.href = '/login?show_login=true';
+        };
+    </script>
+
+    {% if show_login %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            window.requireLogin();
+        });
+    </script>
+    {% endif %}
+
+    <script>
+    // Lucide 아이콘 초기화
+    document.addEventListener('DOMContentLoaded', function() {
+        lucide.createIcons();
+    });
+    </script>
+
+    </body>
+    </html>

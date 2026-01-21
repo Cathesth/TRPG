@@ -47,7 +47,8 @@ async def view_builder(request: Request, user=Depends(get_current_user)):
     return templates.TemplateResponse("builder_view.html", {
         "request": request,
         "version": get_full_version(),
-        "user": user
+        "user": user,
+        "show_login": False  # 빌더는 로그인 필수이므로 기본적으로 false
     })
 
 
