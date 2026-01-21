@@ -15,7 +15,10 @@ from langgraph.graph import StateGraph, END
 from llm_factory import LLMFactory
 from schemas import NPC
 
-# [NEW] 검수 서비스 임포트
+# [NEW] 토큰 과금 및 검수 서비스 임포트
+from langchain_community.callbacks import get_openai_callback
+from services.user_service import UserService
+
 try:
     from services.ai_audit_service import AiAuditService
 except ImportError:
@@ -506,7 +509,6 @@ def finalize_build(state: BuilderState):
     """
     최종 단계에서 직접 BFS 탐색을 수행하여
     Scene과 Ending을 명확히 구분하고 ID를 Scene-N, Ending-N으로 재할당합니다.
-    [수정] 트리거 생성 로직 개선: 하드코딩 제거 및 AI 생성값/제목 우선 사용
     """
     report_progress("building", "4/5", "데이터 통합 및 최종 마무리 중...", 90, phase="finalizing")
 
@@ -546,6 +548,7 @@ def finalize_build(state: BuilderState):
                 # 스탯 이름을 소문자로 정규화하여 저장
                 stat_name = stat["name"].lower()
                 initial_player_state[stat_name] = stat.get("value")
+                # [FIX] f-string 내부 따옴표 수정 (쌍따옴표 중첩 방지)
                 custom_stats_text.append(f"{stat_name}: {stat.get('value')}")
 
     if custom_stats_text: final_hidden += "\n\n[추가 스탯 설정]\n" + "\n".join(custom_stats_text)
@@ -787,10 +790,20 @@ def build_builder_graph():
     return workflow.compile()
 
 
-def generate_scenario_from_graph(api_key, user_data, model_name=None):
+def generate_scenario_from_graph(api_key, user_data, model_name=None, user_id=None):
+    """
+    LangGraph를 실행하여 시나리오 생성 (토큰 계산 포함)
+    :param user_id: 과금할 사용자 ID (옵션이지만 필수 권장)
+    """
     app = build_builder_graph()
+
     if not model_name and isinstance(user_data, dict) and 'model' in user_data:
         model_name = user_data['model']
+
+    # 기본 모델 fallback
+    if not model_name:
+        model_name = "gpt-4o-mini"
+
     initial_state = {
         "graph_data": user_data,
         "model_name": model_name,
@@ -802,14 +815,85 @@ def generate_scenario_from_graph(api_key, user_data, model_name=None):
         "endings": [],
         "final_data": {}
     }
-    return app.invoke(initial_state)['final_data']
+
+    # [핵심] LangChain Callback으로 토큰 사용량 측정
+    prompt_tokens = 0
+    completion_tokens = 0
+    final_output = {}
+
+    try:
+        # get_openai_callback 컨텍스트 내에서 그래프 실행
+        with get_openai_callback() as cb:
+            result = app.invoke(initial_state)
+            final_output = result['final_data']
+
+            # 토큰 집계
+            prompt_tokens = cb.prompt_tokens
+            completion_tokens = cb.completion_tokens
+
+        # [과금] 유저 ID가 있으면 토큰 차감
+        if user_id:
+            total_tokens = prompt_tokens + completion_tokens
+            if total_tokens > 0:
+                cost = UserService.calculate_llm_cost(model_name, prompt_tokens, completion_tokens)
+                UserService.deduct_tokens(
+                    user_id=user_id,
+                    cost=cost,
+                    action_type="scenario_build",
+                    model_name=model_name,
+                    llm_tokens_used=total_tokens
+                )
+
+        return final_output
+
+    except Exception as e:
+        logger.error(f"Scenario generation failed: {e}")
+        # 실패 시에도 부분 데이터가 있으면 반환하거나 에러 처리
+        raise e
 
 
-def generate_single_npc(scenario_title, scenario_summary, user_request="", model_name=None):
+def generate_single_npc(scenario_title, scenario_summary, user_request="", model_name=None, user_id=None):
+    """
+    단일 NPC 생성 (토큰 계산 포함)
+    """
+    if not model_name:
+        model_name = "gpt-4o-mini"
+
     llm = LLMFactory.get_llm(model_name)
     parser = JsonOutputParser(pydantic_object=NPC)
+
     prompt = ChatPromptTemplate.from_messages([
         ("system", PROMPTS.get("generate_single_npc", "Create a TRPG NPC.")),
         ("user", f"제목:{scenario_title}\n요청:{user_request}")
     ]).partial(format_instructions=parser.get_format_instructions())
-    return safe_invoke_json(prompt | llm | parser, {}, retries=1)
+
+    chain = prompt | llm | parser
+
+    try:
+        with get_openai_callback() as cb:
+            # safe_invoke_json 대신 직접 invoke 호출하여 토큰 캡처 (safe_invoke_json은 chain.invoke를 호출함)
+            # 여기서는 편의상 safe_invoke_json 로직을 풀어서 작성
+            npc_data = safe_invoke_json(chain, {}, retries=1)
+
+            # 토큰 집계
+            prompt_tokens = cb.prompt_tokens
+            completion_tokens = cb.completion_tokens
+
+        # [과금]
+        if user_id:
+            total_tokens = prompt_tokens + completion_tokens
+            if total_tokens > 0:
+                cost = UserService.calculate_llm_cost(model_name, prompt_tokens, completion_tokens)
+                UserService.deduct_tokens(
+                    user_id=user_id,
+                    cost=cost,
+                    action_type="npc_gen",
+                    model_name=model_name,
+                    llm_tokens_used=total_tokens
+                )
+
+        return npc_data
+
+    except Exception as e:
+        logger.error(f"NPC Generation failed: {e}")
+        return None

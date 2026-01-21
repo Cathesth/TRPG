@@ -290,6 +290,19 @@
         .pixel-divider {
             border-left: 2px dotted #4A4A6A;
         }
+
+        /* Game Over Modal */
+        .game-over-container {
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 25px rgba(255, 0, 0, 0.5);
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 2s infinite;
+        }
+        @keyframes pulse-slow {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
     </style>
 </head>
 <body class="min-h-screen overflow-hidden selection:bg-rpg-accent selection:text-black">
@@ -615,6 +628,34 @@
 
 <!-- 버전 표시 -->
 <div class="version-badge">v{{ version }}</div>
+
+<!-- 💀 Game Over 모달 -->
+<div id="game-over-modal" class="hidden fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-md">
+    <div class="game-over-container bg-red-950/90 border-4 border-red-500 rounded-none p-8 max-w-md w-full mx-4 pixel-border shadow-2xl animate-pulse-slow">
+        <!-- 해골 아이콘 -->
+        <div class="flex justify-center mb-4">
+            <i data-lucide="skull" class="w-20 h-20 text-red-500"></i>
+        </div>
+
+        <!-- 타이틀 -->
+        <h2 class="text-3xl font-black text-red-400 text-center mb-4 tracking-widest uppercase font-pixel">
+            GAME OVER
+        </h2>
+
+        <!-- 메시지 -->
+        <div class="text-gray-200 text-center mb-6 font-dot leading-relaxed">
+            <p class="text-lg mb-2">운명이 다했습니다.</p>
+            <p class="text-sm text-gray-400">당신의 여정은 여기서 끝을 맺습니다.</p>
+        </div>
+
+        <!-- 버튼 -->
+        <button onclick="closeGameOverModal()"
+                class="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-none font-bold flex items-center justify-center gap-2 transition-all hover:scale-105 shadow-lg border-2 border-red-400 font-dot">
+            <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+            다시 시작하기
+        </button>
+    </div>
+</div>
 
 </body>
 </html>
