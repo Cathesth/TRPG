@@ -183,7 +183,11 @@ async def mypage_view(
         if db_user:
             user = db_user  # 템플릿에 전달할 user 객체를 DB 객체로 교체
 
-    return templates.TemplateResponse("mypage.html", {"request": request, "user": user})
+            # [추가] 사용자의 시나리오 통계 조회
+            stats = ScenarioService.get_user_statistics(user.id)
+
+    # [수정] stats 데이터를 템플릿 context에 포함하여 전달
+    return templates.TemplateResponse("mypage.html", {"request": request, "user": user, "stats": stats})
 
 
 # [추가] 메인화면 헤더 프로필 로드용 (HTMX)

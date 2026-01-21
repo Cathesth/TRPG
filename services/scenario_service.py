@@ -480,8 +480,34 @@ class ScenarioService:
                 db.close()
 
 
+    @staticmethod
+    def get_user_statistics(user_id: str) -> Dict[str, int]:
+        """사용자의 시나리오 통계(전체, 공개, 비공개) 조회"""
+        db = SessionLocal()
+        try:
+            # 전체 시나리오 수
+            total = db.query(Scenario).filter(Scenario.author_id == user_id).count()
 
-            # [중요] @staticmethod와 def가 class ScenarioService: 보다 안쪽(들여쓰기 된 상태)이어야 합니다.
+            # 공개 시나리오 수
+            public_count = db.query(Scenario).filter(
+                Scenario.author_id == user_id,
+                Scenario.is_public == True
+            ).count()
+
+            # 비공개 시나리오 수
+            private_count = total - public_count
+
+            return {
+                "total": total,
+                "public": public_count,
+                "private": private_count
+            }
+        except Exception as e:
+            logger.error(f"Statistics Error: {e}")
+            return {"total": 0, "public": 0, "private": 0}
+        finally:
+            db.close()
+
 
     @staticmethod
     def toggle_public(scenario_id: int, user_id: str):
