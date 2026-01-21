@@ -935,6 +935,81 @@ def rule_node(state: PlayerState):
         logger.info(f"💾 [FINAL HP SYNC] Final Player HP sync before save: {world_state.player['hp']}")
         logger.info(f"💾 [DB PRE-SAVE] Final Player HP in state (rule_node): {state['player_vars']['hp']}")
 
+        # ========================================
+        # 💀 [즉시 사망 처리] HP 0 이하 시 그 즉시 패배 엔딩으로 라우팅
+        # ========================================
+        if world_state.player['hp'] <= 0:
+            logger.warning(f"💀 [INSTANT DEATH] Player HP is {world_state.player['hp']} after attack - triggering immediate death routing")
+
+            # 1. 연결된 패배 엔딩 탐색
+            death_ending_found = False
+            death_keywords = ['사망', '패배', '실패', 'ending', 'dead', 'defeat', '죽음', '게임오버']
+
+            for trans in transitions:
+                target_id = trans.get('target_scene_id', '')
+                trigger = trans.get('trigger', '').lower()
+
+                # Ending으로 시작하거나 키워드가 포함된 경우
+                if target_id.startswith('Ending') or any(kw in trigger for kw in death_keywords):
+                    logger.info(f"💀 [INSTANT DEATH] Found connected death ending: {target_id} (trigger: {trigger})")
+                    state['current_scene_id'] = target_id
+                    world_state.location = target_id
+                    state['parsed_intent'] = 'ending'
+
+                    # 엔딩 설명 추가
+                    if target_id in all_endings:
+                        ending = all_endings[target_id]
+                        state['narrator_output'] = f"""
+                        <div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl">
+                            <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase">💀 GAME OVER 💀</h3>
+                            <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
+                            <div class="text-2xl font-bold text-white mb-4">"{ending.get('title')}"</div>
+                            <p class="text-gray-200 leading-relaxed text-lg">{ending.get('description')}</p>
+                        </div>
+                        """
+
+                    death_ending_found = True
+                    world_state.add_narrative_event(f"플레이어 사망 (전투 중) - [{target_id}] 엔딩으로 즉시 이동")
+                    logger.info(f"💀 [INSTANT DEATH] Immediately moved to ending: {target_id}")
+                    break
+
+            # 2. 글로벌 엔딩 폴백
+            if not death_ending_found and all_endings:
+                first_ending_id = list(all_endings.keys())[0]
+                logger.info(f"💀 [INSTANT DEATH] No connected ending found, using global fallback: {first_ending_id}")
+
+                state['current_scene_id'] = first_ending_id
+                world_state.location = first_ending_id
+                state['parsed_intent'] = 'ending'
+
+                ending = all_endings[first_ending_id]
+                state['narrator_output'] = f"""
+                <div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl">
+                    <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase">💀 GAME OVER 💀</h3>
+                    <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
+                    <div class="text-2xl font-bold text-white mb-4">"{ending.get('title')}"</div>
+                    <p class="text-gray-200 leading-relaxed text-lg">{ending.get('description')}</p>
+                </div>
+                """
+
+                death_ending_found = True
+                world_state.add_narrative_event(f"플레이어 사망 (전투 중) - 폴백 엔딩 [{first_ending_id}]로 즉시 이동")
+
+            # 3. 엔딩이 아예 없는 경우 모달 플래그 설정
+            if not death_ending_found:
+                logger.warning(f"💀 [INSTANT DEATH] No endings available - setting game_over modal flag")
+                state['player_vars']['is_game_over'] = True
+                state['parsed_intent'] = 'ending'
+
+            # 사망 상태 동기화 및 즉시 반환
+            state['world_state'] = world_state.to_dict()
+            logger.info(f"💀 [INSTANT DEATH] Death routing complete - returning immediately")
+
+            # NPC 대사 차단 (엔딩 나레이션만 출력)
+            state['npc_output'] = ""
+
+            return state
+
         # ✅ 작업 1: attack 의도 시 stuck_count 증가 (장면 이동 없음)
         old_stuck_count = state.get('stuck_count', 0)
         state['stuck_count'] = old_stuck_count + 1
@@ -1514,6 +1589,87 @@ def npc_node(state: PlayerState):
         state['player_vars']['hp'] = world_state.player["hp"]
         logger.info(f"💾 [FINAL HP SYNC] Final Player HP sync before save: {world_state.player['hp']}")
         logger.info(f"💾 [DB PRE-SAVE] Final Player HP in state (npc_node): {state['player_vars']['hp']}")
+
+        # ========================================
+        # 💀 [즉시 사망 처리] HP 0 이하 시 그 즉시 패배 엔딩으로 라우팅
+        # ========================================
+        if world_state.player['hp'] <= 0:
+            logger.warning(f"💀 [INSTANT DEATH] Player HP is {world_state.player['hp']} after attack - triggering immediate death routing")
+
+            # 1. 연결된 패배 엔딩 탐색
+            death_ending_found = False
+            death_keywords = ['사망', '패배', '실패', 'ending', 'dead', 'defeat', '죽음', '게임오버']
+
+            for trans in transitions:
+                target_id = trans.get('target_scene_id', '')
+                trigger = trans.get('trigger', '').lower()
+
+                # Ending으로 시작하거나 키워드가 포함된 경우
+                if target_id.startswith('Ending') or any(kw in trigger for kw in death_keywords):
+                    logger.info(f"💀 [INSTANT DEATH] Found connected death ending: {target_id} (trigger: {trigger})")
+                    state['current_scene_id'] = target_id
+                    world_state.location = target_id
+                    state['parsed_intent'] = 'ending'
+
+                    # 엔딩 설명 추가
+                    if target_id in all_endings:
+                        ending = all_endings[target_id]
+                        state['narrator_output'] = f"""
+                        <div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl">
+                            <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase">💀 GAME OVER 💀</h3>
+                            <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
+                            <div class="text-2xl font-bold text-white mb-4">"{ending.get('title')}"</div>
+                            <p class="text-gray-200 leading-relaxed text-lg">{ending.get('description')}</p>
+                        </div>
+                        """
+
+                    death_ending_found = True
+                    world_state.add_narrative_event(f"플레이어 사망 (전투 중) - [{target_id}] 엔딩으로 즉시 이동")
+                    logger.info(f"💀 [INSTANT DEATH] Immediately moved to ending: {target_id}")
+                    break
+
+            # 2. 글로벌 엔딩 폴백
+            if not death_ending_found and all_endings:
+                first_ending_id = list(all_endings.keys())[0]
+                logger.info(f"💀 [INSTANT DEATH] No connected ending found, using global fallback: {first_ending_id}")
+
+                state['current_scene_id'] = first_ending_id
+                world_state.location = first_ending_id
+                state['parsed_intent'] = 'ending'
+
+                ending = all_endings[first_ending_id]
+                state['narrator_output'] = f"""
+                <div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl">
+                    <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase">💀 GAME OVER 💀</h3>
+                    <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
+                    <div class="text-2xl font-bold text-white mb-4">"{ending.get('title')}"</div>
+                    <p class="text-gray-200 leading-relaxed text-lg">{ending.get('description')}</p>
+                </div>
+                """
+
+                death_ending_found = True
+                world_state.add_narrative_event(f"플레이어 사망 (전투 중) - 폴백 엔딩 [{first_ending_id}]로 즉시 이동")
+
+            # 3. 엔딩이 아예 없는 경우 모달 플래그 설정
+            if not death_ending_found:
+                logger.warning(f"💀 [INSTANT DEATH] No endings available - setting game_over modal flag")
+                state['player_vars']['is_game_over'] = True
+                state['parsed_intent'] = 'ending'
+
+            # 사망 상태 동기화 및 즉시 반환
+            state['world_state'] = world_state.to_dict()
+            logger.info(f"💀 [INSTANT DEATH] Death routing complete - returning immediately")
+
+            # NPC 대사 차단 (엔딩 나레이션만 출력)
+            state['npc_output'] = ""
+
+            return state
+
+        # ✅ 작업 1: attack 의도 시 stuck_count 증가 (장면 이동 없음)
+        old_stuck_count = state.get('stuck_count', 0)
+        state['stuck_count'] = old_stuck_count + 1
+        world_state.stuck_count = state['stuck_count']
+        logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (attack intent)")
 
         # (h) world_state 갱신
         state['world_state'] = world_state.to_dict()
