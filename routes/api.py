@@ -625,6 +625,45 @@ async def complete_tutorial(user: CurrentUser = Depends(get_current_user), db: S
     return JSONResponse({"success": False, "error": "User not found"}, status_code=404)
 
 
+@api_router.post('/user/delete')
+async def delete_user_account(request: Request, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
+    
+    try:
+        # 삭제 대상 유저 조회
+        db_user = db.query(User).filter(User.id == user.id).first()
+        if not db_user:
+            return JSONResponse({"success": False, "error": "User not found"}, status_code=404)
+        
+        # 11번 관리자 계정은 삭제 불가 (안전장치)
+        if db_user.id == '11':
+            return JSONResponse({"success": False, "error": "관리자 계정은 삭제할 수 없습니다."}, status_code=403)
+
+        # 연관 데이터 삭제 (CASCADE 설정이 되어 있다면 자동이지만, 명시적으로 처리)
+        # 1. 시나리오 삭제
+        db.query(Scenario).filter(Scenario.author_id == user.id).delete()
+        # 2. 게임 세션 삭제
+        db.query(GameSession).filter(GameSession.user_id == user.id).delete()
+        # 3. 프리셋 삭제
+        db.query(Preset).filter(Preset.author_id == user.id).delete()
+        
+        # 유저 삭제
+        db.delete(db_user)
+        db.commit()
+        
+        # 로그아웃 처리
+        request.session.clear()
+        
+        logger.info(f"User {user.id} account deleted.")
+        return {"success": True, "message": "Account deleted successfully"}
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Account Deletion Error: {e}")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
 # ---------------------------------------------------------
 # [추가] 소셜 로그인 라우트
 # ---------------------------------------------------------
@@ -1912,7 +1951,7 @@ async def get_item_list(user: CurrentUser = Depends(get_current_user), db: Sessi
         logger.error(f"Item List Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 # ==========================================
-# [API ?�우?? 관리자 기능 (?�나리오 ?�택�??�양)
+# [API 라우트] 관리자 기능 (시나리오 선택권 양도)
 # ==========================================
 
 import json
@@ -1936,9 +1975,9 @@ def set_rights_holder(user_id):
 
 @api_router.get('/admin/transfer_view', response_class=HTMLResponse)
 async def admin_transfer_view(request: Request, user: CurrentUser = Depends(get_current_user)):
-    # 11�??��? ?�인
+    # 관리자 '11'인지 확인
     if user.id != '11':
-         return HTMLResponse("<div class='p-4 text-red-500'>?�근 권한???�습?�다. (Only for 11)</div>")
+         return HTMLResponse("<div class='p-4 text-red-500'>접근 권한이 없습니다. (Only for 11)</div>")
     
     current_holder = get_rights_holder()
     
@@ -1949,24 +1988,24 @@ async def admin_transfer_view(request: Request, user: CurrentUser = Depends(get_
         </h2>
         
         <div class="bg-rpg-800/80 p-6 rounded-2xl border border-yellow-500/30 mb-8">
-            <div class="text-gray-400 text-sm mb-2">?�재 권한 보유??/div>
+            <div class="text-gray-400 text-sm mb-2">현재 권한 보유자</div>
             <div class="text-2xl font-bold text-white flex items-center gap-3">
                 <div class="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-500">
                     <i data-lucide="user" class="w-6 h-6"></i>
                 </div>
                 {current_holder}
             </div>
-            <p class="mt-4 text-sm text-gray-500">
-                ?�나리오 ?�택권을 가�??��???메인 ?�면??추천 ?�나리오�??�정?????�습?�다. (?�정)
+            <p class="mt-4 text-sm text-gray-400">
+                시나리오 선택권을 가진 사용자는 메인 화면의 추천 시나리오를 설정할 수 있습니다. (예정)
             </p>
         </div>
 
         <div class="space-y-4">
-            <h3 class="text-lg font-bold text-white">권한 ?�양</h3>
-            <p class="text-xs text-gray-400">?�이?��? 검?�하??권한???�길 ?��?�??�택?�세??</p>
+            <h3 class="text-lg font-bold text-white">권한 양도</h3>
+            <p class="text-xs text-gray-400">아이디를 검색하여 권한을 넘길 사용자를 선택하세요.</p>
             <div class="flex gap-2">
                 <input type="text" name="search" id="user-search" 
-                       placeholder="?��? ID 검??.." 
+                       placeholder="유저 ID 검색.." 
                        class="flex-1 bg-rpg-900 border border-rpg-700 rounded-lg px-4 py-3 text-white focus:border-yellow-500 outline-none font-sans"
                        hx-post="/api/admin/search_users" 
                        hx-trigger="keyup changed delay:500ms" 
@@ -1974,8 +2013,7 @@ async def admin_transfer_view(request: Request, user: CurrentUser = Depends(get_
             </div>
             
             <div id="user-search-results" class="space-y-2 mt-4 max-h-60 overflow-y-auto custom-scrollbar">
-                <!-- 검??결과 ?�시 ?�역 -->
-            </div>
+                </div>
         </div>
     </div>
     <script>lucide.createIcons();</script>
@@ -1988,14 +2026,14 @@ async def search_users(request: Request, search: str = Form(None), db: Session =
     if not search:
         return HTMLResponse('')
     
-    # 본인 ?�외, 관리자(11) ?�외 검??
+    # 본인 제외, 관리자(11) 제외 검색
     users = db.query(User).filter(
         User.id.ilike(f"%{search}%"),
         User.id != '11'
     ).limit(5).all()
     
     if not users:
-        return HTMLResponse('<div class="text-gray-500 text-sm p-4 text-center">검??결과가 ?�습?�다.</div>')
+        return HTMLResponse('<div class="text-gray-500 text-sm p-4 text-center">검색 결과가 없습니다.</div>')
         
     html = ""
     for u in users:
@@ -2010,8 +2048,8 @@ async def search_users(request: Request, search: str = Form(None), db: Session =
             <button class="px-3 py-1 bg-yellow-600 hover:bg-yellow-500 text-white text-xs font-bold rounded transition-colors"
                     hx-post="/api/admin/transfer_rights"
                     hx-vals='{{"target_user_id": "{u.id}"}}'
-                    hx-confirm="{u.id} ?�에�??�나리오 ?�택권을 ?�양?�시겠습?�까?">
-                ?�양?�기
+                    hx-confirm="{u.id}님에게 시나리오 선택권을 양도하시겠습니까?">
+                양도하기
             </button>
         </div>
         """
@@ -2020,15 +2058,15 @@ async def search_users(request: Request, search: str = Form(None), db: Session =
 
 @api_router.post("/admin/transfer_rights")
 async def transfer_rights(target_user_id: str = Form(...), user: CurrentUser = Depends(get_current_user)):
-    # 11�??�용?�만 ?�행 가??
+    # 11번 전용 기능
     if user.id != '11':
-        return JSONResponse({"success": False, "error": "권한???�습?�다."}, status_code=403)
+        return JSONResponse({"success": False, "error": "권한이 없습니다."}, status_code=403)
         
     set_rights_holder(target_user_id)
     
     return HTMLResponse(f"""
         <script>
-            alert('{target_user_id} ?�에�?권한???�공?�으�??�양?�었?�니??');
+            alert('{target_user_id}님에게 권한이 성공적으로 양도되었습니다.');
             htmx.ajax('GET', '/api/admin/transfer_view', '#main-content-area');
         </script>
     """)

@@ -222,10 +222,21 @@ const TutorialSystem = (function () {
             }
 
             // 화면 밖으로 나가지 않게 보정
+            // 화면 밖으로 나가지 않게 보정
             if (left < 10) left = 10;
             if (left + 300 > window.innerWidth) left = window.innerWidth - 320;
             if (top < 10) top = 10;
-            if (top + 100 > window.innerHeight) top = window.innerHeight - 120; // 하단 보정
+
+            // [UI 개선] 하단 여백을 더 확보하여 툴팁이 잘리지 않게 조정 (기존 120 -> 200)
+            // 또한 툴팁 높이가 동적이므로 offsetHeight를 사용해 정확히 계산
+            const tooltipHeight = tooltipElement.offsetHeight || 150; // 렌더링 직후라 정확하지 않을 수 있어 기본값 설정
+            if (top + tooltipHeight > window.innerHeight) {
+                top = window.innerHeight - tooltipHeight - 20;
+                // 만약 그래도 위에 공간이 부족하면 요소 위로 강제 이동 시도
+                if (top < 10 && rect.top > tooltipHeight + 20) {
+                    top = rect.top - tooltipHeight - 10;
+                }
+            }
 
             tooltipElement.style.top = `${top}px`;
             tooltipElement.style.left = `${left}px`;
