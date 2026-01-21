@@ -1754,8 +1754,9 @@ def check_npc_appearance(state: PlayerState) -> str:
     curr_scene = all_scenes.get(curr_id)
     if not curr_scene: return ""
 
-    # [FIX] NPC와 적을 모두 처리
-    npc_names = curr_scene.get('npcs', [])
+    # [FIX] NPC와 적을 모두 처리 - 딕셔너리에서 이름만 추출
+    raw_npcs = curr_scene.get('npcs', [])
+    npc_names = [n.get('name') if isinstance(n, dict) else n for n in raw_npcs]
     enemy_names = curr_scene.get('enemies', [])
     scene_type = curr_scene.get('type', 'normal')
     scene_title = curr_scene.get('title', 'Untitled')
