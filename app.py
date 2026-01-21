@@ -10,12 +10,24 @@ from fastapi import FastAPI, Request, Depends, APIRouter
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, RedirectResponse, StreamingResponse
+from fastapi.responses import Response, RedirectResponse, StreamingResponse, HTMLResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 
 from config import LOG_FORMAT, LOG_DATE_FORMAT, get_full_version
+
+# 점검 페이지 HTML (위트 있는 TRPG 컨셉)
+MAINTENANCE_HTML = """
+<html>
+    <head><title>점검 중</title></head>
+    <body style="text-align:center; padding-top:100px; font-family: sans-serif;">
+        <h1>🎲 다이스 갓이 주사위를 다시 굴리고 있습니다...</h1>
+        <p>현재 서버 점검 중입니다. 잠시 후 다시 모험을 시작해주세요.</p>
+        <p style="color: gray;">(GM이 시나리오 노트를 쏟았다는 소문이 있습니다.)</p>
+    </body>
+</html>
+"""
 from models import create_tables
 
 # [중요] 작성하신 api.py를 가져오기 위한 임포트 (이게 없어서 빨간줄 발생)
@@ -92,6 +104,17 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # 3. DB 테이블 생성 (앱 시작 시 자동 생성)
 Base.metadata.create_all(bind=engine)
 
+# 점검 모드 미들웨어
+class MaintenanceMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        # Railway 환경 변수 확인
+        if os.environ.get("MAINTENANCE_MODE") == "true":
+            # 점검 중일 때 503 Service Unavailable 반환
+            return HTMLResponse(content=MAINTENANCE_HTML, status_code=503)
+        
+        response = await call_next(request)
+        return response
+
 # HTTPS 프록시 미들웨어 (Railway 등 프록시 환경 대응)
 class HTTPSMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -100,6 +123,7 @@ class HTTPSMiddleware(BaseHTTPMiddleware):
             request.scope["scheme"] = "https"
         return await call_next(request)
 
+app.add_middleware(MaintenanceMiddleware)
 app.add_middleware(HTTPSMiddleware)
 
 # [수정 1] 세션 미들웨어 (CORSMiddleware와 섞여있던 부분 정리)
@@ -248,6 +272,11 @@ async def serve_image(file_path: str):
     except Exception as e:
         logger.error(f"❌ [Image Serve] 에러: {str(e)} (Key: {real_key if 'real_key' in locals() else file_path})")
         return Response(status_code=404)
+
+
+@app.get("/")
+async def root():
+    return {"message": "정상 가동 중!"}
 
 
 if __name__ == '__main__':
