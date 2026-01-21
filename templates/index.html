@@ -314,13 +314,25 @@
                     </h2>
                     <span class="text-xs text-gray-500">Drag to scroll <i data-lucide="arrow-right" class="inline w-3 h-3"></i></span>
                 </div>
-                <div id="realtime-grid"
-                     class="horizontal-scroll-container flex no-scrollbar"
-                     hx-get="/api/scenarios?sort=newest&limit=10&filter=all"
-                     hx-include="#search-input"
-                     hx-trigger="load, new_search from:body">
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
+                <div class="relative group">
+                    <button onclick="scrollListByArrows('realtime-grid', -1)"
+                            class="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/30 backdrop-blur-sm text-gray-500 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 -translate-x-1/2 hover:scale-110 shadow-lg">
+                        <i data-lucide="chevron-left" class="w-8 h-8"></i>
+                    </button>
+
+                    <div id="realtime-grid"
+                         class="horizontal-scroll-container flex no-scrollbar"
+                         hx-get="/api/scenarios?sort=newest&limit=10&filter=all"
+                         hx-include="#search-input"
+                         hx-trigger="load, new_search from:body">
+                         <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
+                         <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
+                    </div>
+
+                    <button onclick="scrollListByArrows('realtime-grid', 1)"
+                            class="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/30 backdrop-blur-sm text-gray-500 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 translate-x-1/2 hover:scale-110 shadow-lg">
+                        <i data-lucide="chevron-right" class="w-8 h-8"></i>
+                    </button>
                 </div>
             </section>
 
@@ -331,12 +343,22 @@
                     </h2>
                     <span class="text-xs text-gray-500">Drag to scroll <i data-lucide="arrow-right" class="inline w-3 h-3"></i></span>
                 </div>
-                <div id="popular-grid"
-                     class="horizontal-scroll-container flex no-scrollbar"
-                     hx-get="/api/scenarios?sort=popular&limit=10&filter=all"
-                     hx-include="#search-input"
-                     hx-trigger="load, new_search from:body">
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
+                <div class="relative group">
+                    <button onclick="scrollListByArrows('popular-grid', -1)" class="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/30 backdrop-blur-sm text-gray-500 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 -translate-x-1/2 hover:scale-110 shadow-lg">
+                        <i data-lucide="chevron-left" class="w-8 h-8"></i>
+                    </button>
+
+                    <div id="popular-grid"
+                         class="horizontal-scroll-container flex no-scrollbar"
+                         hx-get="/api/scenarios?sort=popular&limit=10&filter=all"
+                         hx-include="#search-input"
+                         hx-trigger="load, new_search from:body">
+                         <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
+                    </div>
+
+                    <button onclick="scrollListByArrows('popular-grid', 1)" class="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/30 backdrop-blur-sm text-gray-500 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 translate-x-1/2 hover:scale-110 shadow-lg">
+                        <i data-lucide="chevron-right" class="w-8 h-8"></i>
+                    </button>
                 </div>
             </section>
 
@@ -347,12 +369,22 @@
                     </h2>
                     <span class="text-xs text-gray-500">Drag to scroll <i data-lucide="arrow-right" class="inline w-3 h-3"></i></span>
                 </div>
-                <div id="steady-grid"
-                     class="horizontal-scroll-container flex no-scrollbar"
-                     hx-get="/api/scenarios?sort=steady&limit=10&filter=all"
-                     hx-include="#search-input"
-                     hx-trigger="load, new_search from:body">
-                     <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
+                <div class="relative group">
+                    <button onclick="scrollListByArrows('steady-grid', -1)" class="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/30 backdrop-blur-sm text-gray-500 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 -translate-x-1/2 hover:scale-110 shadow-lg">
+                        <i data-lucide="chevron-left" class="w-8 h-8"></i>
+                    </button>
+
+                    <div id="steady-grid"
+                         class="horizontal-scroll-container flex no-scrollbar"
+                         hx-get="/api/scenarios?sort=steady&limit=10&filter=all"
+                         hx-include="#search-input"
+                         hx-trigger="load, new_search from:body">
+                         <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
+                    </div>
+
+                    <button onclick="scrollListByArrows('steady-grid', 1)" class="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/30 backdrop-blur-sm text-gray-500 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 translate-x-1/2 hover:scale-110 shadow-lg">
+                        <i data-lucide="chevron-right" class="w-8 h-8"></i>
+                    </button>
                 </div>
             </section>
 
@@ -537,21 +569,38 @@
             enableHorizontalScroll();
         });
 
+        // [수정] 드래그 스크롤 로직 개선 (클릭한 상태에서만 이동)
         function enableHorizontalScroll() {
             const containers = document.querySelectorAll('.horizontal-scroll-container');
             containers.forEach(slider => {
+                // ▼▼▼ [추가] 이미 이벤트가 연결된 요소는 건너뛰기 (중복 방지) ▼▼▼
+                if (slider.dataset.initScroll) return;
+                slider.dataset.initScroll = "true";
+                // ▲▲▲ [추가 완료] ▲▲▲
+
                 let isDown = false;
                 let startX;
                 let scrollLeft;
+
                 slider.addEventListener('mousedown', (e) => {
                     isDown = true;
                     slider.classList.add('active');
                     startX = e.pageX - slider.offsetLeft;
                     scrollLeft = slider.scrollLeft;
                 });
-                window.addEventListener('mouseup', () => { isDown = false; slider.classList.remove('active'); });
-                window.addEventListener('mousemove', (e) => {
-                    if(!isDown) return;
+
+                slider.addEventListener('mouseleave', () => {
+                    isDown = false;
+                    slider.classList.remove('active');
+                });
+
+                slider.addEventListener('mouseup', () => {
+                    isDown = false;
+                    slider.classList.remove('active');
+                });
+
+                slider.addEventListener('mousemove', (e) => {
+                    if (!isDown) return;
                     e.preventDefault();
                     const x = e.pageX - slider.offsetLeft;
                     const walk = (x - startX) * 2;
@@ -560,6 +609,21 @@
             });
         }
         document.addEventListener('DOMContentLoaded', enableHorizontalScroll);
+
+        // [추가] 화살표 버튼 클릭 시 5칸씩 이동하는 함수
+        function scrollListByArrows(elementId, direction) {
+            const container = document.getElementById(elementId);
+            if (!container) return;
+
+            // 카드 너비(16rem=256px) + 간격(1.5rem=24px) = 약 280px
+            const unitWidth = 280;
+            const scrollAmount = unitWidth * 5 * direction; // 5칸 이동
+
+            container.scrollBy({
+                left: scrollAmount,
+                behavior: 'smooth'
+            });
+        }
 
         window.playScenario = async function(filename, btn) {
             const originalText = btn.innerHTML;
