@@ -259,9 +259,12 @@ def get_npc_weakness_hint(scenario: Dict[str, Any], enemy_names: List[str]) -> s
     weakness_hints = prompts.get('weakness_hints', {})
     npcs = scenario.get('npcs', [])
 
+    # 🔴 [CRITICAL] enemy_names 리스트 정규화: 딕셔너리면 name 필드 추출
+    normalized_enemies = [e.get('name') if isinstance(e, dict) else e for e in enemy_names]
+
     for npc in npcs:
         npc_name = npc.get('name', '')
-        if npc_name in enemy_names:
+        if npc_name in normalized_enemies:
             weakness = npc.get('weakness', npc.get('약점', ''))
             if weakness:
                 weakness_lower = weakness.lower()
@@ -327,7 +330,7 @@ def check_victory_condition(user_input: str, scenario: Dict[str, Any], curr_scen
     return False
 
 
-def intent_parser_node(state: PlayerState) -> PlayerState:
+def intent_parser_node(state: PlayerState):
     """
     [계층형 파서로 업그레이드]
     우선순위:
@@ -419,13 +422,8 @@ def intent_parser_node(state: PlayerState) -> PlayerState:
     transitions = curr_scene.get('transitions', [])
     scene_type = curr_scene.get('type', 'normal')
     scene_title = curr_scene.get('title', 'Untitled')
-    # [FIX] 데이터 정규화: dict/str 모두 처리 - 이름만 추출
-    npc_names = [n.get('name') if isinstance(n, dict) else n for n in curr_scene.get('npcs', [])]
-    enemy_names = [e.get('name') if isinstance(e, dict) else e for e in curr_scene.get('enemies', [])]
-
-    # 빈 값이나 None 제거
-    npc_names = [n for n in npc_names if n]
-    enemy_names = [e for e in enemy_names if e]
+    npc_names = curr_scene.get('npcs', [])
+    enemy_names = curr_scene.get('enemies', [])
 
     # =============================================================================
     # [작업 1] 하드코딩 기반 고우선순위 필터링 (최소화)
@@ -800,15 +798,7 @@ def rule_node(state: PlayerState):
 
         # target_npc가 없으면 현재 씬의 NPC/적 목록에서 추출 시도
         if not target_npc:
-            # [FIX] 데이터 정규화: dict/str 모두 처리 - 이름만 추출
-            npcs_raw = curr_scene.get('npcs', []) if curr_scene else []
-            enemies_raw = curr_scene.get('enemies', []) if curr_scene else []
-
-            npc_list = [n.get('name') if isinstance(n, dict) else n for n in npcs_raw]
-            npc_list += [e.get('name') if isinstance(e, dict) else e for e in enemies_raw]
-
-            # 빈 값 제거
-            npc_list = [n for n in npc_list if n]
+            npc_list = curr_scene.get('npcs', []) + curr_scene.get('enemies', []) if curr_scene else []
 
             # user_input에서 NPC 이름 매칭 시도
             for npc_name in npc_list:
@@ -1276,84 +1266,15 @@ def rule_node(state: PlayerState):
     state['world_state'] = world_state.to_dict()
     logger.info(f"💾 [DB SNAPSHOT] Saved final state to DB with location: {world_state.location}")
 
-    # ========================================
-    # 💀 사망 처리 시스템 (HP 0 이하 시 자동 엔딩 라우팅)
-    # ========================================
-    if world_state.player['hp'] <= 0:
-        logger.warning(f"💀 [DEATH SYSTEM] Player HP is {world_state.player['hp']} - triggering death routing")
-
-        # 1. 연결된 패배 엔딩 탐색
-        death_ending_found = False
-        death_keywords = ['사망', '패배', '실패', 'ending', 'dead', 'defeat', '죽음', '게임오버']
-
-        for trans in transitions:
-            target_id = trans.get('target_scene_id', '')
-            trigger = trans.get('trigger', '').lower()
-
-            # Ending으로 시작하거나 키워드가 포함된 경우
-            if target_id.startswith('Ending') or any(kw in trigger for kw in death_keywords):
-                logger.info(f"💀 [DEATH SYSTEM] Found connected death ending: {target_id} (trigger: {trigger})")
-                state['current_scene_id'] = target_id
-                world_state.location = target_id
-                state['parsed_intent'] = 'ending'
-
-                # 엔딩 설명 추가
-                if target_id in all_endings:
-                    ending = all_endings[target_id]
-                    state['narrator_output'] = f"""
-                    <div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl">
-                        <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase">💀 GAME OVER 💀</h3>
-                        <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
-                        <div class="text-2xl font-bold text-white mb-4">"{ending.get('title')}"</div>
-                        <p class="text-gray-200 leading-relaxed text-lg">{ending.get('description')}</p>
-                    </div>
-                    """
-
-                death_ending_found = True
-                world_state.add_narrative_event(f"플레이어 사망 - [{target_id}] 엔딩으로 이동")
-                logger.info(f"💀 [DEATH SYSTEM] Moved to ending: {target_id}")
-                break
-
-        # 2. 글로벌 엔딩 폴백
-        if not death_ending_found and all_endings:
-            first_ending_id = list(all_endings.keys())[0]
-            logger.info(f"💀 [DEATH SYSTEM] No connected ending found, using global fallback: {first_ending_id}")
-
-            state['current_scene_id'] = first_ending_id
-            world_state.location = first_ending_id
-            state['parsed_intent'] = 'ending'
-
-            ending = all_endings[first_ending_id]
-            state['narrator_output'] = f"""
-            <div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl">
-                <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase">💀 GAME OVER 💀</h3>
-                <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
-                <div class="text-2xl font-bold text-white mb-4">"{ending.get('title')}"</div>
-                <p class="text-gray-200 leading-relaxed text-lg">{ending.get('description')}</p>
-            </div>
-            """
-
-            death_ending_found = True
-            world_state.add_narrative_event(f"플레이어 사망 - 폴백 엔딩 [{first_ending_id}]로 이동")
-
-        # 3. 모달 플래그 설정 (엔딩이 아예 없는 경우)
-        if not death_ending_found:
-            logger.warning(f"💀 [DEATH SYSTEM] No endings available - setting game_over modal flag")
-            state['player_vars']['is_game_over'] = True
-            state['parsed_intent'] = 'ending'
-
-        # 사망 상태 동기화
-        state['world_state'] = world_state.to_dict()
-        logger.info(f"💀 [DEATH SYSTEM] Death routing complete - narrator_node will handle scene rendering")
-
     return state
 
 
 def npc_node(state: PlayerState):
     """NPC 대화 (이동 아닐 때만 발동)"""
 
-    # ✅ [FIX] 변수 미정의 해결: user_input을 최상단에 선언
+    # ✅ [FIX] 변수 미정의 해결: user_input과 curr_id를 최상단에 선언
     user_input = state.get('last_user_input', '').strip()
+    curr_id = state.get('current_scene_id', '')
 
     # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
     if 'stuck_count' not in state:
@@ -1809,16 +1730,15 @@ def check_npc_appearance(state: PlayerState) -> str:
         return ""
 
     scenario = get_scenario_by_id(scenario_id)
-    if not scenario:
-        return ""
+    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
+    curr_scene = all_scenes.get(curr_id)
+    if not curr_scene: return ""
 
-    prologue_text = scenario.get('prologue', scenario.get('prologue_text', ''))
-    if not prologue_text:
-        return ""
-
-    # [수정] 리스트 안에 객체가 들어있어도 이름(문자열)만 추출
-    npc_names = [n.get('name') if isinstance(n, dict) else n for n in scenario.get('npcs', [])]
-    enemy_names = [e.get('name') if isinstance(e, dict) else e for e in scenario.get('enemies', [])]
+    # [FIX] NPC와 적을 모두 처리
+    npc_names = curr_scene.get('npcs', [])
+    enemy_names = curr_scene.get('enemies', [])
+    scene_type = curr_scene.get('type', 'normal')
+    scene_title = curr_scene.get('title', 'Untitled')
 
     if not npc_names and not enemy_names: return ""
 
@@ -1835,11 +1755,11 @@ def check_npc_appearance(state: PlayerState) -> str:
     model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
 
     # [FIX] 장면 유형에 따른 메시지 - LLM으로 생성
-    if scenario.get('type') == 'battle':
+    if scene_type == 'battle':
         battle_start_template = prompts.get('battle_start', '')
         if battle_start_template:
             battle_start_prompt = battle_start_template.format(
-                scene_title=scenario.get('title', '알 수 없는 전투'),
+                scene_title=scene_title,
                 enemy_names=', '.join(enemy_names) if enemy_names else '알 수 없는 적'
             )
             try:
@@ -1871,7 +1791,7 @@ def check_npc_appearance(state: PlayerState) -> str:
 
             if npc_appearance_template:
                 npc_prompt = npc_appearance_template.format(
-                    scene_title=scenario.get('title', '알 수 없는 장면'),
+                    scene_title=scene_title,
                     npc_name=npc_name,
                     npc_role=npc_role
                 )
@@ -1906,7 +1826,7 @@ def check_npc_appearance(state: PlayerState) -> str:
         for enemy_name in enemy_names:
             if enemy_appearance_template:
                 enemy_prompt = enemy_appearance_template.format(
-                    scene_title=scenario.get('title', '알 수 없는 전투'),
+                    scene_title=scene_title,
                     enemy_name=enemy_name
                 )
                 try:
@@ -2060,7 +1980,6 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     1단계에서 분류된 의도(parsed_intent)에 따라 전용 서사 프롬프트를 선택하여 스트리밍
 
     나레이션 모드:
-    [MODE 0] 엔딩 씬 -> 즉시 엔딩 렌더링 (최우선)
     [MODE 1] 씬 유지 + 의도별 분기 (investigate/attack/defend/chat/near_miss)
     [MODE 2] 씬 변경 -> 장면 묘사
     """
@@ -2077,63 +1996,6 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     scenario = get_scenario_by_id(scenario_id)
     all_scenes = {s['scene_id']: s for s in scenario['scenes']}
     all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
-
-    # ========================================
-    # [MODE 0] 엔딩 씬 체크 - 최우선 처리 (HP 0 사망 등)
-    # ========================================
-    if parsed_intent == 'ending' or curr_id in all_endings:
-        logger.info(f"🎭 [ENDING] Rendering ending scene: {curr_id}")
-
-        # 엔딩 데이터 가져오기
-        ending = all_endings.get(curr_id)
-
-        if ending:
-            ending_title = ending.get('title', '알 수 없는 결말')
-            ending_desc = ending.get('description', '이야기가 끝났습니다.')
-
-            # 사망 엔딩 키워드 체크
-            death_keywords = ['사망', '패배', '실패', 'dead', 'defeat', '죽음', '게임오버', 'game over']
-            is_death_ending = any(kw in ending_title.lower() or kw in ending_desc.lower() for kw in death_keywords)
-
-            # HTML 렌더링
-            if is_death_ending:
-                # 배드 엔딩 스타일 (빨간색)
-                yield f"""
-<div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl relative overflow-hidden">
-    <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase drop-shadow-md">💀 GAME OVER 💀</h3>
-    <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
-    <div class="text-2xl font-bold text-white mb-4 drop-shadow-sm">"{ending_title}"</div>
-    <p class="text-gray-200 leading-relaxed text-lg serif-font">
-        {ending_desc}
-    </p>
-</div>
-"""
-            else:
-                # 일반 엔딩 스타일 (노란색)
-                yield f"""
-<div class="my-8 p-8 border-2 border-yellow-500/50 bg-gradient-to-b from-yellow-900/40 to-black rounded-xl text-center fade-in shadow-2xl relative overflow-hidden">
-    <h3 class="text-3xl font-black text-yellow-400 mb-4 tracking-[0.2em] uppercase drop-shadow-md">🎉 ENDING 🎉</h3>
-    <div class="w-16 h-1 bg-yellow-500 mx-auto mb-6 rounded-full"></div>
-    <div class="text-2xl font-bold text-white mb-4 drop-shadow-sm">"{ending_title}"</div>
-    <p class="text-gray-200 leading-relaxed text-lg serif-font">
-        {ending_desc}
-    </p>
-</div>
-"""
-            logger.info(f"✅ [ENDING] Rendered ending: {ending_title}")
-            return
-        else:
-            # 엔딩 데이터가 없는 경우 폴백
-            logger.warning(f"⚠️ [ENDING] No ending data found for: {curr_id}")
-            yield """
-<div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl">
-    <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase">💀 GAME OVER 💀</h3>
-    <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
-    <div class="text-2xl font-bold text-white mb-4">이야기의 끝</div>
-    <p class="text-gray-200 leading-relaxed text-lg">당신의 여정은 여기서 끝났습니다.</p>
-</div>
-"""
-            return
 
     # WorldState 인스턴스 가져오기
     world_state = WorldState()
@@ -2152,11 +2014,16 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     if curr_scene:
         scene_title = curr_scene.get('title', curr_id)
         scene_type = curr_scene.get('type', 'normal')
-        # ✅ NPC/Enemy 리스트 정규화: dict -> str
+
+        # 🔴 [CRITICAL] NPC 이름 정규화: 딕셔너리면 name 필드 추출
         raw_npcs = curr_scene.get('npcs', [])
-        raw_enemies = curr_scene.get('enemies', [])
         npc_names = [n.get('name') if isinstance(n, dict) else n for n in raw_npcs]
+
+        # 🔴 [CRITICAL] 적 이름 정규화: 딕셔너리면 name 필드 추출
+        raw_enemies = curr_scene.get('enemies', [])
         enemy_names = [e.get('name') if isinstance(e, dict) else e for e in raw_enemies]
+
+        logger.info(f"🎬 [SCENE INFO] NPCs: {npc_names}, Enemies: {enemy_names}")
 
     # ========================================
     # 💀 작업 2: 죽은 NPC 상태 정보 수집 (환각 방지)
@@ -2168,12 +2035,15 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
         dead_npcs = []
         for npc_name in all_npc_names:
+            # 🔴 [SAFETY] NPC 이름이 None이거나 빈 문자열이면 스킵
+            if not npc_name:
+                continue
+
             npc_state = world_state.get_npc_state(npc_name)
             if npc_state and npc_state.get('status') == 'dead':
                 dead_npcs.append(npc_name)
 
         if dead_npcs:
-            # ✅ dead_npcs는 이미 문자열 리스트이므로 안전하게 join
             dead_list = ", ".join(dead_npcs)
             npc_status_context = f"""
 ⚠️ **[CRITICAL INSTRUCTION - NPC STATUS]**
