@@ -840,6 +840,14 @@
         }
     }
     </script>
+    
+    {% if show_login %}
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        openModal('login-modal');
+    });
+    </script>
+    {% endif %}
 </body>
 </html>
 

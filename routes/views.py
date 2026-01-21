@@ -27,6 +27,16 @@ async def index(request: Request, user=Depends(get_current_user_optional)):
     })
 
 
+@views_router.get("/login", response_class=HTMLResponse)
+async def view_login(request: Request):
+    """로그인 페이지"""
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "version": get_full_version(),
+        "show_login": True
+    })
+
+
 @views_router.get("/views/builder", response_class=HTMLResponse)
 async def view_builder(request: Request, user=Depends(get_current_user)):
     """빌더 뷰 (로그인 필수)"""
