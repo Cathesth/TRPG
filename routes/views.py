@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends, Query
+from fastapi import APIRouter, Request, Depends, Query, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -71,7 +71,8 @@ async def view_player(request: Request, user=Depends(get_current_user_optional))
         "request": request,
         "vars": p_vars,
         "version": get_full_version(),
-        "user": user
+        "user": user,
+        "is_debug_user": user.is_debug_user if user else False
     })
 
 
@@ -105,9 +106,17 @@ async def view_debug_scenes(
 ):
     """
     디버그 모드 전체 씬 보기 (플레이어 모드에서 접근)
+    ✅ [보안] 디버그 권한이 있는 유저만 접근 가능
     ✅ [FIX 3] scenario_id를 쿼리 파라미터로 받거나 sessionStorage에서 복원
     ✅ [FIX 4] session_key를 받아서 현재 진행 중인 씬 표시
     """
+
+    # ✅ [보안 1단계] 디버그 권한 체크
+    if not user or not user.is_debug_user:
+        raise HTTPException(
+            status_code=403,
+            detail="디버그 기능은 관리자만 접근할 수 있습니다."
+        )
 
     # ✅ scenario_id가 없으면 기본 페이지 반환 (프론트엔드에서 sessionStorage 복원 시도)
     if not scenario_id:

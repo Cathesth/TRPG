@@ -23,6 +23,11 @@ class CurrentUser:
         return self._user.id if self._user else None
 
     @property
+    def is_debug_user(self) -> bool:
+        """디버그 권한 체크 (id가 '11' 또는 'cronos'인 경우 True)"""
+        return self._user.is_debug_user if self._user else False
+
+    @property
     def profile_img(self) -> str:
         """기본 프로필 이미지 (Gravatar 스타일)"""
         if self._user:
