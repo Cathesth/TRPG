@@ -726,10 +726,22 @@
             const publishScenario = async () => {
                 if(!confirm("반영하시겠습니까?")) return;
                 try {
-                    const res = await fetch(`/api/draft/${scenarioId}/publish`, { method: 'POST' });
+                    const res = await fetch(`/api/draft/${scenarioId}/publish`, { 
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({})
+                    });
                     
                     if (!res.ok) {
                         const errorData = await res.json();
+                        
+                        // 유효성 검사 실패 시 상세 정보 표시
+                        if (errorData.validation && errorData.validation.errors) {
+                            const errors = errorData.validation.errors;
+                            const errorMsg = errors.map(e => e.message).join('\\n');
+                            throw new Error(`유효성 검사 실패:\\n${errorMsg}`);
+                        }
+                        
                         throw new Error(errorData.error || `HTTP ${res.status}`);
                     }
                     
