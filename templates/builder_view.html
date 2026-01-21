@@ -384,8 +384,10 @@
                              ? MODEL_COST_RATES[selectedModel]
                              : MODEL_COST_RATES['default'];
                 if (rate === 0) return 0;
-                const baseCost = (nodes.length * 20) + 100;
-                return Math.floor(baseCost * rate);
+                // 씬 생성은 약 150-200 토큰 사용, 최소 1 Credit
+                const estimatedTokens = 150;
+                const estimatedCost = (estimatedTokens / 1000) * rate;
+                return estimatedCost > 0 && estimatedCost < 1 ? 1 : Math.floor(estimatedCost);
             }, [nodes, selectedModel]);
 
             const isAffordable = useMemo(() => {

@@ -83,8 +83,12 @@ class UserService:
         input_cost = (prompt_tokens / 1000.0) * cost_info["input"]
         output_cost = (completion_tokens / 1000.0) * cost_info["output"]
 
-        # 소수점 버림 (int 형변환)
-        total_cost = int(input_cost + output_cost)
+        # 소수점 처리 - 최소 1 Credit으로 보정
+        total_cost = input_cost + output_cost
+        if total_cost > 0 and total_cost < 1:
+            total_cost = 1  # 최소 1 Credit
+        else:
+            total_cost = int(total_cost)  # 1 이상이면 버림
 
         logger.info(f"[COST CALC] Model: {model_name}, Input: {prompt_tokens} tokens, Output: {completion_tokens} tokens")
         logger.info(f"[COST CALC] Cost info: {cost_info}")

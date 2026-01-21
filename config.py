@@ -54,7 +54,7 @@ class TokenConfig:
     """
 
     # [1] 고정 비용
-    COST_IMAGE_GENERATION = 50  # 이미지 1장 ($0.005)
+    COST_IMAGE_GENERATION = 70  # 이미지 1장 ($0.007) - Together AI FLUX/SDXL 실제 비용 기반
     COST_SCENE_ADD = 10  # 씬 추가 ($0.001)
 
     # [2] 모델별 비용 (1,000 토큰 당 소모 Credit)
@@ -63,7 +63,7 @@ class TokenConfig:
         "gemini-2.0-flash": {"input": 1.0, "output": 4.0},
         "gemini-2.5-flash": {"input": 1.0, "output": 4.0},
 
-        "claude-3.5-sonnet": {"input": 60.0, "output": 150.0},
+        "claude-3.5-sonnet": {"input": 60.0, "output": 300.0},
 
         # 3. OpenAI: GPT-4o ($2.50 / $10.00 per M) -> (25 / 100 Cr)
         "gpt-4o": {"input": 25.0, "output": 100.0},
