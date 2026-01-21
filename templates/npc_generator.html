@@ -19,7 +19,7 @@
                             hover: '#00DDDD',
                             danger: '#FF007F',
                             success: '#10b981',
-                            item: '#FFD700', // [추가] 아이템용 골드 컬러
+                            item: '#FFD700',
                         }
                     },
                     fontFamily: {
@@ -33,7 +33,7 @@
         }
     </script>
     <style>
-        /* 8-bit Pixel Art Base (원본 스타일 유지) */
+        /* 8-bit Pixel Art Base */
         body {
             background: linear-gradient(180deg, #0B0B19 0%, #1A0B2E 50%, #0B0B19 100%) !important;
             color: #e2e8f0 !important;
@@ -51,7 +51,7 @@
             pointer-events: none; z-index: 9999;
         }
 
-        /* Pixel Border & Input Styles (원본 유지) */
+        /* Pixel Border & Input Styles */
         .pixel-input {
             background: rgba(26, 11, 46, 0.8) !important;
             border: 2px solid #4A4A6A !important;
@@ -85,7 +85,7 @@
 </head>
 <body class="min-h-screen text-white p-6 relative">
 
-<!-- [NEW] 토큰 표시기 (우측 상단) -->
+<!-- 토큰 표시기 (우측 상단) -->
 <div id="token-display" class="absolute top-4 right-4 flex items-center gap-2 bg-gray-900/80 px-3 py-1.5 rounded border border-yellow-500/50 text-yellow-400 text-xs shadow-lg animate-fade-in">
     <i class="fas fa-coins text-yellow-500"></i>
     <span id="token-balance">Loading...</span>
@@ -112,7 +112,6 @@
         <label class="block text-xs text-indigo-300 mb-2 font-bold"><i class="fas fa-robot mr-1"></i>AI에게 요청할 내용</label>
         <div class="flex gap-2">
             <input type="text" id="ai-request-text" class="flex-1 bg-gray-900 border border-gray-700 rounded p-2 text-sm focus:border-indigo-500 outline-none transition-colors" placeholder="예: 전설의 녹슨 검, 비열한 고블린 상인">
-            <!-- [MODIFIED] 비용 표시 추가 -->
             <button onclick="generateWithAI()" id="btn-ai-gen" class="bg-indigo-600 hover:bg-indigo-500 px-4 rounded text-xs font-bold min-w-[100px] flex justify-center items-center gap-1 transition-colors">
                 생성 <span class="opacity-70 font-normal">(~2 CR)</span>
             </button>
@@ -120,6 +119,7 @@
         <p class="text-[10px] text-gray-500 mt-2">* 시나리오 분위기에 맞춰 자동으로 상세 설정을 채워줍니다.</p>
     </div>
 
+    <!-- NPC Form -->
     <div id="form-npc" class="space-y-4">
         <div class="grid grid-cols-2 gap-3">
             <div>
@@ -175,6 +175,7 @@
         <button onclick="createNPC()" id="btn-save-npc" class="w-full bg-green-700 hover:bg-green-600 text-white font-bold py-3 rounded mt-2 transition-colors shadow-lg">NPC 저장 및 적용</button>
     </div>
 
+    <!-- Enemy Form -->
     <div id="form-enemy" class="space-y-4 hidden">
         <div class="grid grid-cols-2 gap-3">
             <div>
@@ -225,6 +226,7 @@
         <button onclick="createEnemy()" id="btn-save-enemy" class="w-full bg-red-700 hover:bg-red-600 text-white font-bold py-3 rounded mt-2 transition-colors shadow-lg">적(Enemy) 저장 및 적용</button>
     </div>
 
+    <!-- Item Form -->
     <div id="form-item" class="space-y-4 hidden fade-in">
         <div class="grid grid-cols-2 gap-3">
             <div>
@@ -263,14 +265,14 @@
     let currentTab = 'npc';
     let scenarioInfo = { title: '', summary: '' };
 
-    // [NEW] 토큰 잔액 조회 함수
+    // [MODIFIED] 토큰 조회 경로 통일 (/api/user/status)
     async function fetchTokenBalance() {
         try {
-            const res = await fetch('/auth/api/user/status');
+            const res = await fetch('/api/user/status');
             if(res.ok) {
                 const data = await res.json();
-                if(data.status === 'success') {
-                    const balance = data.token_balance.toLocaleString();
+                if(data.success) {
+                    const balance = data.balance.toLocaleString();
                     document.getElementById('token-balance').textContent = `${balance} CR`;
                 }
             } else {
@@ -294,7 +296,6 @@
 
     window.onload = () => {
         if (window.parent) window.parent.postMessage({ type: 'GENERATOR_READY' }, '*');
-        // [NEW] 초기 잔액 조회
         fetchTokenBalance();
     };
 
@@ -303,7 +304,7 @@
         ['npc', 'enemy', 'item'].forEach(t => {
             document.getElementById(`form-${t}`).classList.add('hidden');
             const btn = document.getElementById(`tab-${t}`);
-            btn.className = "text-gray-500 hover:text-white font-bold pb-1 transition-colors"; // Reset style
+            btn.className = "text-gray-500 hover:text-white font-bold pb-1 transition-colors";
 
             if (t === tab) {
                 document.getElementById(`form-${t}`).classList.remove('hidden');
@@ -394,7 +395,6 @@
                 if (data.hp) document.getElementById('enemy-hp').value = data.hp;
                 if (data.attack) document.getElementById('enemy-attack').value = data.attack;
             } else if (currentTab === 'item') {
-                // [추가] 아이템 데이터 채우기
                 document.getElementById('item-name').value = data.name || '';
                 document.getElementById('item-desc').value = data.description || '';
                 document.getElementById('item-effect').value = data.effect || '';
@@ -402,8 +402,6 @@
             }
 
             showMessage("AI 생성이 완료되었습니다. 수정 후 저장하세요.", "success");
-
-            // [NEW] 생성 성공 후 잔액 갱신
             await fetchTokenBalance();
 
         } catch (e) {
@@ -443,7 +441,6 @@
         if (saved) {
             window.parent.postMessage({ type: 'ADD_NPC', payload: npcData }, '*');
             showMessage("NPC가 저장되었습니다!", "success");
-            // 초기화
             document.getElementById('form-npc').querySelectorAll('input, textarea').forEach(el => el.value = '');
             document.getElementById('npc-coop').value = 'medium';
         }
@@ -478,14 +475,12 @@
         if (saved) {
             window.parent.postMessage({ type: 'ADD_NPC', payload: enemyData }, '*');
             showMessage("적이 저장되었습니다!", "success");
-            // 초기화
             document.getElementById('form-enemy').querySelectorAll('input, textarea').forEach(el => el.value = '');
             document.getElementById('enemy-difficulty').value = 'medium';
         }
         btn.disabled = false; btn.innerText = "적(Enemy) 저장 및 적용";
     }
 
-    // [추가] 아이템 생성 함수
     async function createItem() {
         const btn = document.getElementById('btn-save-item');
         btn.disabled = true; btn.innerText = "저장 중...";
@@ -504,14 +499,13 @@
             item_type: itemType,
             effect: document.getElementById('item-effect').value,
             description: document.getElementById('item-desc').value,
-            type: 'item' // DB 구분자
+            type: 'item'
         };
 
         const saved = await saveToDB('item', itemData);
         if (saved) {
             window.parent.postMessage({ type: 'ADD_ITEM', payload: itemData }, '*');
             showMessage("아이템이 저장되었습니다!", "success");
-            // 초기화
             document.getElementById('form-item').querySelectorAll('input, textarea').forEach(el => el.value = '');
         }
         btn.disabled = false; btn.innerText = "아이템 저장 및 적용";

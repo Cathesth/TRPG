@@ -485,7 +485,6 @@ def get_billing_view():
     """
 
 
-
 # ==========================================
 # [API 라우트] 인증 (Auth) - 직접 구현으로 변경
 # ==========================================
@@ -576,6 +575,20 @@ async def get_current_user_info(user: CurrentUser = Depends(get_current_user_opt
     return {
         "is_logged_in": user.is_authenticated,
         "username": user.id if user.is_authenticated else None
+    }
+
+
+# [추가] 유저 잔액 조회 API
+@api_router.get('/user/status')
+async def get_user_status(user: CurrentUser = Depends(get_current_user)):
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
+
+    balance = UserService.get_user_balance(user.id)
+    return {
+        "success": True,
+        "username": user.id,
+        "balance": balance
     }
 
 
@@ -746,6 +759,7 @@ async def reset_build_progress():
     with build_lock:
         build_progress = {"status": "idle", "progress": 0}
     return {"success": True}
+
 
 # [1. 헬퍼 함수 추가] 잠금 버튼 HTML 생성기
 def _generate_lock_button(scenario_id: int, is_public: bool):
@@ -1045,9 +1059,9 @@ def list_scenarios(
         <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_style}">
             <div class="relative {img_height} overflow-hidden bg-black shrink-0">
                 <img src="{img_src}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
-                
+
                 {lock_btn_html}
-                
+
                 {like_btn}
                 <div class="absolute top-2 left-2 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-[#38bdf8] border border-[#38bdf8]/30">
                     Fantasy
@@ -1516,8 +1530,11 @@ async def save_draft(scenario_id: int, request: Request, user: CurrentUser = Dep
     success, error = DraftService.save_draft(scenario_id, user.id, data)
     if not success: return JSONResponse({"success": False, "error": error}, status_code=400)
 
-    # 자동 히스토리 추가
-    HistoryService.add_snapshot(scenario_id, user.id, data, "Draft 저장")
+    # 자동 히스토리 추가 (성공 시에만)
+    history_success, history_error = HistoryService.add_history(scenario_id, user.id, "draft_save", "Draft 저장", data)
+    if not history_success:
+        logger.warning(f"History save failed: {history_error}")
+    
     return {"success": True, "message": "Draft가 저장되었습니다."}
 
 

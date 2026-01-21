@@ -139,7 +139,7 @@
     <div id="root" class="w-full h-full relative z-10"></div>
 
     {% raw %}
-    <script type="text/babel">
+<script type="text/babel">
         const { useState, useRef, useEffect, useCallback, useMemo } = React;
 
         const AVAILABLE_AI_MODELS = [
@@ -150,7 +150,6 @@
             { id: "openai/meta-llama/llama-3.1-405b-instruct", name: "Llama 3.1 405B", provider: "Meta" },
         ];
 
-        // [NEW] 모델별 비용 가중치 (1K 토큰 당 Credit)
         const MODEL_COST_RATES = {
             "openai/google/gemini-2.0-flash-001": 1.0,
             "openai/anthropic/claude-3.5-sonnet": 60.0,
@@ -197,6 +196,8 @@
                             {node.type==='scene' && <Icon name="clapperboard" size={10}/>}
                             {node.type==='ending' && <Icon name="flag" size={10}/>}
                             {node.type.toUpperCase()}
+                            {/* NEW: 새 노드 표시 */}
+                            {node.data.isNew && <span className="text-[8px] bg-red-600 px-1 rounded text-white ml-1">NEW</span>}
                         </span>
                         <button
                             onMouseDown={(e) => e.stopPropagation()}
@@ -221,13 +222,41 @@
             );
         });
 
-        const EdgeLayer = React.memo(({ edges, nodes, connectSource, mousePos }) => {
+        const EdgeLayer = React.memo(({ edges, nodes, connectSource, mousePos, onEdgeClick }) => {
             return (
-                <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
+                <svg className="absolute inset-0 w-full h-full overflow-visible">
                     {edges.map(e => {
                         const s = nodes.find(n => n.id === e.source), t = nodes.find(n => n.id === e.target);
                         if(!s || !t) return null;
-                        return <line key={e.id} x1={s.x+100} y1={s.y+40} x2={t.x+100} y2={t.y+40} className="connection-line" />;
+                        return (
+                            <g key={e.id}>
+                                <line 
+                                    x1={s.x+100} 
+                                    y1={s.y+40} 
+                                    x2={t.x+100} 
+                                    y2={t.y+40} 
+                                    className="connection-line cursor-pointer hover:stroke-red-500 hover:stroke-width-4" 
+                                    onClick={() => onEdgeClick(e.id)}
+                                />
+                                {/* 삭제 버튼 (연결선 중간) */}
+                                <circle 
+                                    cx={(s.x+100 + t.x+100)/2} 
+                                    cy={(s.y+40 + t.y+40)/2} 
+                                    r="8" 
+                                    className="fill-red-500 stroke-white cursor-pointer hover:fill-red-600 hover:r-10 transition-all"
+                                    onClick={() => onEdgeClick(e.id)}
+                                />
+                                <text 
+                                    x={(s.x+100 + t.x+100)/2} 
+                                    y={(s.y+40 + t.y+40)/2 + 3} 
+                                    textAnchor="middle" 
+                                    className="fill-white text-xs font-bold pointer-events-none select-none"
+                                    onClick={() => onEdgeClick(e.id)}
+                                >
+                                    ×
+                                </text>
+                            </g>
+                        );
                     })}
                     {connectSource && (() => {
                         const s = nodes.find(n => n.id === connectSource);
@@ -261,7 +290,7 @@
 
             nodes.push({
                 id: 'start', type: 'start', x: 50, y: 50,
-                data: { label: scenData.title || '시나리오 설정', prologue: scenData.prologue || '', gm_notes: scenData.gm_notes || '', background: scenData.background || '' }
+                data: { label: scenData.title || '시나리오 설정', prologue: scenData.prologue || '', gm_notes: scenData.gm_notes || '', background: scenData.background || '', isNew: false }
             });
 
             (scenData.scenes || []).forEach((s, idx) => {
@@ -276,7 +305,8 @@
                         background_image: s.background_image || '',
                         npcs: (s.npcs || []).map(n => typeof n === 'string' ? {name:n} : n),
                         enemies: (s.enemies || []).map(e => typeof e === 'string' ? {name:e} : e),
-                        items: (s.items || []).map(i => typeof i === 'string' ? {name:i} : i)
+                        items: (s.items || []).map(i => typeof i === 'string' ? {name:i} : i),
+                        isNew: false // 로드된 노드는 false
                     }
                 });
             });
@@ -285,7 +315,7 @@
             (scenData.endings || []).forEach((e, idx) => {
                 nodes.push({
                     id: e.ending_id, type: 'ending', x: xBase + 400, y: endingYStart + (idx * 200),
-                    data: { title: e.title || '엔딩', description: e.description || '', background: e.background || '', ai_note: e.ai_note || '' }
+                    data: { title: e.title || '엔딩', description: e.description || '', background: e.background || '', ai_note: e.ai_note || '', isNew: false }
                 });
             });
 
@@ -308,8 +338,8 @@
 
         function ScenarioBuilder() {
             const [nodes, setNodes] = useState([
-                { id: 'start', type: 'start', x: 50, y: 50, data: { label: '시나리오 설정', prologue: '', gm_notes: '', background: '' } },
-                { id: 'scene-1', type: 'scene', x: 400, y: 150, data: { title: '첫 번째 장면', description: '', background: '', trigger: '', npcs: [], enemies: [], items: [] } }
+                { id: 'start', type: 'start', x: 50, y: 50, data: { label: '시나리오 설정', prologue: '', gm_notes: '', background: '', isNew: true } },
+                { id: 'scene-1', type: 'scene', x: 400, y: 150, data: { title: '첫 번째 장면', description: '', background: '', trigger: '', npcs: [], enemies: [], items: [], isNew: true } }
             ]);
             const [edges, setEdges] = useState([]);
             const [globalNpcs, setGlobalNpcs] = useState([]);
@@ -330,13 +360,15 @@
                 npcGen: false, npcList: false,
                 itemList: false,
                 presetLoad: false, scenarioList: false, imageGen: false,
-                noToken: false // [NEW] 잔액 부족 경고 모달
+                noToken: false
             });
             const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
             const [auditState, setAuditState] = useState({ isOpen: false, isLoading: false, results: null, targetNodeId: null });
             const [imageGenState, setImageGenState] = useState({ isLoading: false, result: null });
+            const [textGenState, setTextGenState] = useState({ isLoading: false }); // NEW: 텍스트 생성 상태
             const [genImgType, setGenImgType] = useState('background');
             const [targetIndex, setTargetIndex] = useState(-1);
+            const [imagePrompt, setImagePrompt] = useState(''); // NEW: 이미지 프롬프트 상태
             const [presetList, setPresetList] = useState([]);
             const [dbNpcList, setDbNpcList] = useState([]);
             const [dbItemList, setDbItemList] = useState([]);
@@ -344,42 +376,29 @@
             const [selectedModel, setSelectedModel] = useState('openai/tngtech/deepseek-r1t2-chimera:free');
             const [history, setHistory] = useState({ past: [], future: [] });
 
-            // [NEW] 토큰 잔액 상태
             const [tokenBalance, setTokenBalance] = useState(0);
-
-            // [추가] 마우스 오버 미리보기 상태
             const [hoverPreview, setHoverPreview] = useState({ show: false, x: 0, y: 0, url: '', name: '' });
 
-            // [MODIFIED] 예상 생성 비용 계산 (모델별 요율 적용 + 잔액 부족 시각화)
             const estimatedCost = useMemo(() => {
                 const rate = MODEL_COST_RATES[selectedModel] !== undefined
                              ? MODEL_COST_RATES[selectedModel]
                              : MODEL_COST_RATES['default'];
-
-                // 무료 모델은 0 CR
                 if (rate === 0) return 0;
-
-                // 기본 계산식: (노드 수 * 20) + 100 (Gemini 2.0 기준)
-                // 여기에 모델별 가중치(rate)를 곱함
                 const baseCost = (nodes.length * 20) + 100;
                 return Math.floor(baseCost * rate);
             }, [nodes, selectedModel]);
 
-            // [NEW] 잔액 부족 여부 (UI 표기용)
             const isAffordable = useMemo(() => {
                 return tokenBalance >= estimatedCost;
             }, [tokenBalance, estimatedCost]);
 
-            // [NEW] 토큰 잔액 조회 함수
             const fetchTokenBalance = async () => {
                 try {
-                    const res = await fetch('/api/auth/me'); // 간단 체크용
-                    // 실제 잔액은 /api/user/status 또는 /auth/api/user/status
-                    const statusRes = await fetch('/auth/api/user/status');
+                    const statusRes = await fetch('/api/user/status');
                     if(statusRes.ok) {
                         const data = await statusRes.json();
-                        if(data.status === 'success') {
-                            setTokenBalance(data.token_balance);
+                        if(data.success) {
+                            setTokenBalance(data.balance);
                         }
                     }
                 } catch(e) {
@@ -387,7 +406,6 @@
                 }
             };
 
-            // Effect: 컴포넌트 마운트 시 토큰 조회
             useEffect(() => {
                 fetchTokenBalance();
             }, []);
@@ -448,6 +466,7 @@
 
                         if(loadedNodes) loadedNodes = loadedNodes.map(n => {
                             if(n.data) {
+                                n.data.isNew = false; // 로드 시 isNew 초기화 (기존 데이터)
                                 if(n.data.npcs) n.data.npcs = n.data.npcs.map(x => typeof x === 'string' ? {name: x} : x);
                                 if(n.data.enemies) n.data.enemies = n.data.enemies.map(x => typeof x === 'string' ? {name: x} : x);
                                 if(n.data.items) n.data.items = n.data.items.map(x => typeof x === 'string' ? {name: x} : x);
@@ -463,8 +482,64 @@
                 } catch (e) { showToast("로드 실패: " + e.message, "error"); }
             };
 
+            // [NEW] 씬 내용 자동 생성 함수
+            const generateNodeText = async (nodeId, type) => {
+                if (tokenBalance < 1) { // 텍스트 생성은 보통 저렴 (1토큰 가정)
+                     setModals(m => ({ ...m, noToken: true }));
+                     return;
+                }
+
+                const node = nodes.find(n => n.id === nodeId);
+                if (!node) return;
+
+                // [REQ 1-2, 1-3] 수정 모드일 때는 신규 노드만 생성 가능
+                if (isEditMode && !node.data.isNew) {
+                    showToast("수정 모드에서는 새로 추가한 씬에 대해서만 내용을 생성할 수 있습니다.", "error");
+                    return;
+                }
+
+                setTextGenState({ isLoading: true });
+                try {
+                    // 프롬프트 구성
+                    const genre = nodes[0].data.background || "판타지"; // 시작 노드 배경/장르
+                    const title = node.data.title || "제목 없음";
+                    const prompt = `장르: ${genre}\n상황/제목: ${title}\n이전 상황과 연결되도록 자연스러운 TRPG 씬 묘사를 3줄 이내로 작성해줘.`;
+
+                    const res = await fetch('/api/ai/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt: prompt, type: 'text' })
+                    });
+                    const data = await res.json();
+
+                    if (data.result) {
+                        updateNodeData(nodeId, node.type === 'start' ? 'prologue' : 'description', data.result);
+                        fetchTokenBalance();
+                        showToast("내용 생성 완료!", "success");
+                    } else {
+                        throw new Error("결과 없음");
+                    }
+                } catch (e) {
+                    showToast("생성 실패: " + e.message, "error");
+                } finally {
+                    setTextGenState({ isLoading: false });
+                }
+            };
+
             const generateImage = async (imageType, description) => {
-                // [NEW] 잔액 확인 (이미지 생성 비용 약 50)
+                // [REQ 1-1] NPC/적/아이템은 즉시 토큰 소모 (수정 모드 무관하게 허용)
+                // [REQ 1-2] 씬(background)은 수정 모드일 때 신규 노드만 허용
+
+                const isAsset = ['npc', 'enemy', 'item'].includes(imageType);
+
+                if (isEditMode && !isAsset) {
+                     const node = nodes.find(n => n.id === selectedNodeId);
+                     if (node && !node.data.isNew) {
+                         showToast("수정 모드에서는 새로 추가한 씬에 대해서만 배경을 생성할 수 있습니다.", "error");
+                         return;
+                     }
+                }
+
                 if (tokenBalance < 50) {
                     setModals(m => ({ ...m, noToken: true }));
                     return;
@@ -487,8 +562,10 @@
                     if (json.success && json.data) {
                         setImageGenState({ isLoading: false, result: json.data });
                         showToast("이미지 생성 완료!", "success");
-                        // [NEW] 성공 시 잔액 갱신
                         fetchTokenBalance();
+
+                        // [REQ 4] 성공 시 프롬프트 초기화
+                        setImagePrompt('');
 
                         if (selectedNodeId) {
                             setNodes(prev => prev.map(n => {
@@ -527,8 +604,8 @@
                 pushHistory();
                 const id = `${type}-${Date.now()}`;
                 const newData = type === 'scene'
-                    ? { title: '새 장면', description: '', trigger: '', ai_note: '', npcs: [], enemies: [], items: [] }
-                    : { title: '새 엔딩', description: '', ai_note: '' };
+                    ? { title: '새 장면', description: '', trigger: '', ai_note: '', npcs: [], enemies: [], items: [], isNew: true } // [REQ 1-2] isNew 추가
+                    : { title: '새 엔딩', description: '', ai_note: '', isNew: true };
                 setNodes(prev => [...prev, { id, type, x: -pan.x/pan.zoom + 200, y: -pan.y/pan.zoom + 200, data: newData }]);
             };
             const deleteNode = useCallback((id) => {
@@ -539,6 +616,15 @@
                 setEdges(prev => prev.filter(e => e.source !== id && e.target !== id));
                 setSelectedNodeId(null);
             }, [edges, pushHistory]);
+
+            // [NEW] 분기점 연결선(edge) 삭제 기능
+            const deleteEdge = useCallback((edgeId) => {
+                if (!confirm("연결선을 삭제하시겠습니까?")) return;
+                pushHistory();
+                setEdges(prev => prev.filter(e => e.id !== edgeId));
+                showToast("연결선이 삭제되었습니다.", "success");
+            }, [pushHistory]);
+
             const updateNodeData = useCallback((id, key, value) => {
                 setNodes(prev => prev.map(n => n.id === id ? { ...n, data: { ...n.data, [key]: value } } : n));
             }, []);
@@ -615,22 +701,63 @@
             const saveDraft = async () => {
                 if (!scenarioId) return;
                 try {
-                    await fetch(`/api/draft/${scenarioId}/save`, {
+                    const res = await fetch(`/api/draft/${scenarioId}/save`, {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ nodes, edges, npcs: [...globalNpcs, ...globalEnemies], items: globalItems })
                     });
-                    setIsDraft(true); showToast("저장 완료", "success");
-                } catch(e) { showToast("저장 실패", "error"); }
+                    
+                    if (!res.ok) {
+                        const errorData = await res.json();
+                        throw new Error(errorData.error || `HTTP ${res.status}`);
+                    }
+                    
+                    const data = await res.json();
+                    if (data.success) {
+                        setIsDraft(true); 
+                        showToast("저장 완료", "success");
+                    } else {
+                        throw new Error(data.error || "저장 실패");
+                    }
+                } catch(e) { 
+                    console.error("Save draft error:", e);
+                    showToast("저장 실패: " + e.message, "error"); 
+                }
             };
             const publishScenario = async () => {
                 if(!confirm("반영하시겠습니까?")) return;
                 try {
-                    await fetch(`/api/draft/${scenarioId}/publish`, { method: 'POST' });
-                    setIsDraft(false); showToast("반영 완료", "success");
-                } catch(e) { showToast("반영 실패", "error"); }
+                    const res = await fetch(`/api/draft/${scenarioId}/publish`, { 
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({})
+                    });
+                    
+                    if (!res.ok) {
+                        const errorData = await res.json();
+                        
+                        // 유효성 검사 실패 시 상세 정보 표시
+                        if (errorData.validation && errorData.validation.errors) {
+                            const errors = errorData.validation.errors;
+                            const errorMsg = errors.map(e => e.message).join('\\n');
+                            throw new Error(`유효성 검사 실패:\\n${errorMsg}`);
+                        }
+                        
+                        throw new Error(errorData.error || `HTTP ${res.status}`);
+                    }
+                    
+                    const data = await res.json();
+                    if (data.success) {
+                        setIsDraft(false); 
+                        showToast("반영 완료", "success");
+                    } else {
+                        throw new Error(data.error || "반영 실패");
+                    }
+                } catch(e) { 
+                    console.error("Publish scenario error:", e);
+                    showToast("반영 실패: " + e.message, "error"); 
+                }
             };
             const generateNewScenario = async () => {
-                // [NEW] 잔액 확인 (예상 비용보다 적으면 경고)
                 if (tokenBalance < estimatedCost) {
                     setModals(m => ({ ...m, noToken: true }));
                     return;
@@ -644,8 +771,6 @@
                         body: JSON.stringify({ nodes, edges, npcs: [...globalNpcs, ...globalEnemies], items: globalItems, model: selectedModel, title: nodes[0].data.label })
                     });
                     const json = await res.json();
-
-                    // [NEW] 성공 시 잔액 갱신
                     fetchTokenBalance();
 
                     if(json.filename) window.location.href = `/views/scenes/edit/${json.filename}`;
@@ -653,6 +778,7 @@
                 } catch(e) { showToast(e.message, "error"); setIsGenerating(false); }
             };
             const runAiAudit = async (nodeId = null) => {
+                // [REQ 2] 검수 중 상태 표시
                 setAuditState({ isOpen: true, isLoading: true, results: null, targetNodeId: nodeId });
                 try {
                     const res = await fetch('/api/audit/scene', {
@@ -696,6 +822,8 @@
                         if (entity.isEnemy) setGlobalEnemies(prev => [...prev, entity]);
                         else setGlobalNpcs(prev => [...prev, entity]);
                         showToast(`${entity.name} 추가됨`, "success");
+                        // 1-1. NPC/적 생성 시 토큰 소모는 iframe 내에서 처리되거나, 여기서 별도 호출 필요 시 추가
+                        // 현재 구조상 iframe 내부(npc_generator)에서 생성 API를 호출하면 거기서 소모됨.
                     }
                     if (event.data.type === 'ADD_ITEM') {
                         const item = event.data.payload;
@@ -744,12 +872,11 @@
                         </div>
                         <div className="p-4 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
                             <div className="text-[10px] text-[#6A6A8A] mb-1 font-bold">노드 생성</div>
-                            {/* [MODIFIED] 씬/엔딩 추가 버튼에 예상 비용 표기 */}
                             <button onClick={() => addNode('scene')} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs hover:text-[#00FFFF]">
-                                <Icon name="plus-square"/> Scene 추가 <span className="text-[10px] opacity-70">(+10 CR)</span>
+                                <Icon name="plus-square"/> Scene 추가
                             </button>
                             <button onClick={() => addNode('ending')} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#FF007F] hover:text-[#FF4081]">
-                                <Icon name="flag"/> Ending 추가 <span className="text-[10px] opacity-70">(+10 CR)</span>
+                                <Icon name="flag"/> Ending 추가
                             </button>
 
                             <div className="h-px bg-[#4A4A6A] my-2"></div>
@@ -781,7 +908,7 @@
                             <div className="flex items-center justify-between mb-3 px-3 py-2 bg-[#1A0B2E] border border-[#FFD700] rounded text-[#FFD700]">
                                 <div className="flex items-center gap-2">
                                     <Icon name="coins" size={14} className="text-yellow-400" />
-                                    <span className="font-bold text-xs">BALANCE</span>
+                                    <span className="font-bold text-xs">보유 토큰</span>
                                 </div>
                                 <span className="font-mono font-bold text-sm tracking-wide">
                                     {tokenBalance.toLocaleString()} CR
@@ -797,20 +924,22 @@
                                     ))}
                                 </select>
                             </div>
-                            <button onClick={() => runAiAudit(null)} className="pixel-btn w-full mb-3 py-3 text-xs flex items-center justify-center gap-2 border-[#6366f1] text-[#6366f1] hover:text-white hover:bg-[#6366f1]">
-                                <Icon name="brain-circuit"/> 전체 스토리 검수
+                            {/* [REQ 2] Audit 버튼 상태 표시 수정 */}
+                            <button onClick={() => runAiAudit(null)} disabled={auditState.isLoading} className="pixel-btn w-full mb-3 py-3 text-xs flex items-center justify-center gap-2 border-[#6366f1] text-[#6366f1] hover:text-white hover:bg-[#6366f1] disabled:opacity-50 disabled:cursor-wait">
+                                {auditState.isLoading && auditState.targetNodeId === null ?
+                                    <><Icon name="loader-2" className="animate-spin"/> AI 검수 진행 중...</> :
+                                    <><Icon name="brain-circuit"/> 전체 스토리 검수</>
+                                }
                             </button>
 
                             {!isEditMode ? (
                                 <>
-                                    {/* [NEW] 예상 소모 비용 표기 (잔액 부족 시 붉은색 및 경고 효과) */}
                                     <div className="mb-2 text-right">
                                         <span className="text-[10px] text-[#6A6A8A] mr-1">예상 소모:</span>
                                         <span className={`text-xs font-bold ${isAffordable ? 'text-[#FFD700]' : 'text-[#FF007F] animate-pulse'}`}>
                                             {estimatedCost.toLocaleString()} CR
                                         </span>
                                     </div>
-                                    {/* [MODIFIED] 버튼 명칭 수정 및 잔액 부족 시 비활성화 스타일 적용 */}
                                     <button
                                         onClick={generateNewScenario}
                                         disabled={!isAffordable || isGenerating}
@@ -836,7 +965,7 @@
                          onMouseDown={handleMouseDown}
                          onWheel={(e) => setPan(p => ({ ...p, zoom: Math.min(Math.max(0.2, p.zoom - e.deltaY * 0.001), 3) }))}>
                         <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${pan.zoom})`, transformOrigin: '0 0', width: '100%', height: '100%' }}>
-                            <EdgeLayer edges={edges} nodes={nodes} connectSource={connectSource} mousePos={mousePos} />
+                            <EdgeLayer edges={edges} nodes={nodes} connectSource={connectSource} mousePos={mousePos} onEdgeClick={deleteEdge} />
                             {nodes.map(node => (
                                 <NodeItem
                                     key={node.id}
@@ -884,7 +1013,11 @@
                             return (
                                 <div className="space-y-4 animate-fade-in">
                                     <div className="text-xs text-[#6A6A8A] border-b-2 border-[#4A4A6A] pb-2 mb-4 flex justify-between font-bold">
-                                        속성 편집 <span>ID: {node.id.split('-')[1] || node.id}</span>
+                                        속성 편집
+                                        <span>ID: {node.id.split('-')[1] || node.id}
+                                            {/* 디버그용: 신규 노드 여부 표시 */}
+                                            {node.data.isNew ? <span className="text-red-500 ml-1"> (NEW)</span> : <span className="text-gray-500 ml-1"> (OLD)</span>}
+                                        </span>
                                     </div>
 
                                     <div>
@@ -895,7 +1028,14 @@
                                     </div>
 
                                     <div>
-                                        <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">내용/지문</label>
+                                        <div className="flex justify-between items-end mb-1">
+                                             <label className="text-[10px] text-[#6A6A8A] block font-bold">내용/지문</label>
+                                             {/* [NEW] 내용 AI 생성 버튼 */}
+                                             <button onClick={() => generateNodeText(node.id, node.type)} disabled={textGenState.isLoading}
+                                                className="text-[10px] text-[#6366f1] border border-[#6366f1] px-1 hover:bg-[#6366f1] hover:text-white transition-colors disabled:opacity-50">
+                                                {textGenState.isLoading ? '생성 중...' : <><Icon name="sparkles" size={10}/> AI 작성</>}
+                                             </button>
+                                        </div>
                                         <textarea className="w-full pixel-input p-2 text-sm h-32 resize-none"
                                                   value={node.data.description || node.data.prologue || ''}
                                                   onChange={e => updateNodeData(node.id, isStart?'prologue':'description', e.target.value)}></textarea>
@@ -922,7 +1062,6 @@
                                                              onMouseLeave={() => setHoverPreview({ show: false, x: 0, y: 0, url: '', name: '' })}
                                                         >
                                                             <div className="flex items-center gap-2">
-                                                                {/* [추가] 리스트 썸네일 */}
                                                                 {n.image && <img src={getImageUrl(n.image)} className="w-4 h-4 rounded-full border border-gray-500 object-cover"/>}
                                                                 {n.name}
                                                             </div>
@@ -1056,6 +1195,7 @@
 
                                                 if (node && node.data) {
                                                     if (genImgType === 'background') {
+                                                        // [REQ 5] 배경 이미지 미리보기 즉시 반영
                                                         currentImageUrl = node.data.background_image;
                                                         label = "씬 배경 이미지";
                                                     } else if (targetIndex >= 0) {
@@ -1076,7 +1216,6 @@
                                                     label = "방금 생성된 이미지 (저장됨)";
                                                 }
 
-                                                // [추가] 타입별 스타일 정의
                                                 let containerClass = "mt-2 p-2 bg-[#0B0B19] border border-[#4A4A6A] relative text-center";
                                                 let imgClass = "w-full h-32 object-cover border border-[#4A4A6A] bg-black";
 
@@ -1112,7 +1251,6 @@
                                                     return (
                                                         <div className="mt-2 p-4 bg-[#0B0B19] border border-[#4A4A6A] border-dashed text-center">
                                                             <div className="text-[10px] text-[#6A6A8A] mb-2">이미지가 없습니다.</div>
-                                                            {/* 플레이스홀더 아이콘 */}
                                                             {genImgType === 'background' && <Icon name="image" size={32} className="opacity-30"/>}
                                                             {(genImgType === 'npc' || genImgType === 'enemy') && <Icon name="user" size={32} className="opacity-30"/>}
                                                             {genImgType === 'item' && <Icon name="box" size={32} className="opacity-30"/>}
@@ -1127,7 +1265,8 @@
                                                 <input
                                                     type="text"
                                                     className="w-full pixel-input p-2 text-xs"
-                                                    id="imageDescriptionInput"
+                                                    value={imagePrompt} // [REQ 4] 상태 제어
+                                                    onChange={(e) => setImagePrompt(e.target.value)}
                                                     placeholder="예: 붉은 눈의 기사, 낡은 검"
                                                 />
                                             </div>
@@ -1135,12 +1274,11 @@
                                             {/* 5. 생성 버튼 (잔액 확인 로직 포함) */}
                                             <button
                                                 onClick={() => {
-                                                    const desc = document.getElementById('imageDescriptionInput').value;
-                                                    if (!desc.trim()) return showToast("설명을 입력하세요", "error");
+                                                    if (!imagePrompt.trim()) return showToast("설명을 입력하세요", "error");
                                                     if (genImgType !== 'background' && targetIndex === -1) {
                                                         return showToast("이미지를 적용할 대상을 선택해주세요!", "error");
                                                     }
-                                                    generateImage(genImgType, desc);
+                                                    generateImage(genImgType, imagePrompt);
                                                 }}
                                                 disabled={imageGenState.isLoading}
                                                 className="pixel-btn w-full py-2 text-xs text-[#00FFFF] border-[#00FFFF] disabled:opacity-50"
@@ -1158,7 +1296,15 @@
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-2 pt-4">
-                                        <button onClick={() => runAiAudit(node.id)} className="pixel-btn py-2 text-xs col-span-2 text-[#6366f1] border-[#6366f1]"><Icon name="brain-circuit"/> 씬 검수</button>
+                                        {/* [REQ 2] 개별 씬 검수 버튼 상태 표시 */}
+                                        <button onClick={() => runAiAudit(node.id)} disabled={auditState.isLoading}
+                                            className="pixel-btn py-2 text-xs col-span-2 text-[#6366f1] border-[#6366f1] disabled:opacity-50">
+                                            {auditState.isLoading && auditState.targetNodeId === node.id ?
+                                                <><Icon name="loader-2" className="animate-spin"/> 검수 중...</> :
+                                                <><Icon name="brain-circuit"/> 씬 검수</>
+                                            }
+                                        </button>
+                                        {/* [REQ 3] 노드 삭제 기능 (기존 유지 확인) */}
                                         {!isStart && <button onClick={() => deleteNode(node.id)} className="pixel-btn py-2 text-xs col-span-2 text-[#FF007F] border-[#FF007F]"><Icon name="trash-2"/> 삭제</button>}
                                     </div>
                                 </div>
@@ -1302,6 +1448,6 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ScenarioBuilder />);
     </script>
-    {% endraw %}
+{% endraw %}
 </body>
 </html>
