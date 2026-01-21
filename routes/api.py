@@ -40,7 +40,7 @@ from services.preset_service import PresetService  # 누락된 임포트 추가
 
 # 인증 및 모델
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
-from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike, User
+from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike, User, GameSession, TempScenario
 
 # [api.py 상단 임포트 추가]
 from authlib.integrations.starlette_client import OAuth
