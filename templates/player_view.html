@@ -489,6 +489,7 @@
                 </div>
 
                 <!-- 디버그 정보 영역 -->
+                {% if is_debug_user %}
                 <div id="debug-info-area" class="hidden mt-4 space-y-4">
                     <!-- 전체 씬 보기 버튼 -->
                     <div class="border-t-4 border-rpg-700 pt-4">
@@ -536,6 +537,7 @@
                         </div>
                     </div>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
