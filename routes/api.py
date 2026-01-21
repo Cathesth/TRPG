@@ -759,27 +759,27 @@ def _generate_lock_button(scenario_id: int, is_public: bool):
     base_style = "absolute top-2 right-14 p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all z-20 flex items-center justify-center"
 
     if is_public:
-        # [공개 상태] -> 열린 자물쇠 아이콘 (누르면 잠김/비공개)
+        # [현재: 공개 상태] -> 파란색 열린 자물쇠 아이콘 (누르면 -> 비공개로 전환)
         return f"""
-        <button hx-post="/api/scenarios/{scenario_id}/toggle-public" 
-                hx-swap="outerHTML"
-                class="{base_style} text-blue-400 hover:text-blue-300" 
-                title="현재 공개됨 (클릭하여 비공개 전환)">
-            <i data-lucide="lock-open" class="w-5 h-5"></i>
-            <script>lucide.createIcons();</script>
-        </button>
-        """
+            <button hx-post="/api/scenarios/{scenario_id}/toggle-public" 
+                    hx-swap="outerHTML"
+                    class="{base_style} text-blue-400 hover:text-blue-300" 
+                    title="현재 공개됨 (클릭하여 비공개 전환)">
+                <i data-lucide="lock-open" class="w-5 h-5"></i>
+                <script>lucide.createIcons();</script>
+            </button>
+            """
     else:
-        # [비공개 상태] -> 잠긴 자물쇠 아이콘 (누르면 풀림/공개)
+        # [현재: 비공개 상태] -> 빨간색 잠긴 자물쇠 아이콘 (누르면 -> 공개로 전환)
         return f"""
-        <button hx-post="/api/scenarios/{scenario_id}/toggle-public" 
-                hx-swap="outerHTML"
-                class="{base_style} text-red-500 hover:text-red-400" 
-                title="현재 비공개 (클릭하여 공개 전환)">
-            <i data-lucide="lock" class="w-5 h-5"></i>
-            <script>lucide.createIcons();</script>
-        </button>
-        """
+            <button hx-post="/api/scenarios/{scenario_id}/toggle-public" 
+                    hx-swap="outerHTML"
+                    class="{base_style} text-red-500 hover:text-red-400" 
+                    title="현재 비공개 (클릭하여 공개 전환)">
+                <i data-lucide="lock" class="w-5 h-5"></i>
+                <script>lucide.createIcons();</script>
+            </button>
+            """
 
 # [2. API 엔드포인트 추가] 토글 요청 처리
 @api_router.post('/scenarios/{scenario_id}/toggle-public')

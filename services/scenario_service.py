@@ -480,7 +480,7 @@ class ScenarioService:
 
         @staticmethod
         def toggle_public(scenario_id: int, user_id: str):
-            # [수정] next(get_db()) 대신 SessionLocal() 사용
+            """시나리오 공개/비공개 토글 메서드 (추가됨)"""
             db = SessionLocal()
             try:
                 scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
@@ -490,14 +490,16 @@ class ScenarioService:
                 if scenario.author_id != user_id:
                     return False, "권한이 없습니다.", None
 
-                # 상태 반전 (True <-> False)
+                # 현재 상태의 반대값으로 설정 (True <-> False)
                 scenario.is_public = not scenario.is_public
+
                 db.commit()
                 db.refresh(scenario)
 
                 return True, "상태가 변경되었습니다.", scenario.is_public
             except Exception as e:
                 db.rollback()
+                logger.error(f"Toggle Public Error: {e}")
                 return False, str(e), None
             finally:
                 db.close()
