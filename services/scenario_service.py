@@ -159,9 +159,13 @@ class ScenarioService:
                 "player_vars": player_vars
             }
 
-            is_public_setting = False
-            if user_id is None:
-                is_public_setting = True
+            # [수정 전] 기본 비공개(False)
+            # is_public_setting = False
+            # if user_id is None:
+            #     is_public_setting = True
+
+            # [수정 후] 로그인 여부와 관계없이 기본 '공개(True)'로 설정
+            is_public_setting = True
 
             new_scenario = Scenario(
                 title=title,
@@ -476,33 +480,33 @@ class ScenarioService:
                 db.close()
 
 
-        # services/scenario_service.py 내부
 
-        @staticmethod
-        def toggle_public(scenario_id: int, user_id: str):
-            """시나리오 공개/비공개 토글 메서드 (추가됨)"""
-            db = SessionLocal()
-            try:
-                scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
-                if not scenario:
-                    return False, "시나리오를 찾을 수 없습니다.", None
+            # [중요] @staticmethod와 def가 class ScenarioService: 보다 안쪽(들여쓰기 된 상태)이어야 합니다.
+    @staticmethod
+    def toggle_public(scenario_id: int, user_id: str):
+        """시나리오 공개/비공개 토글 메서드"""
+        db = SessionLocal()
+        try:
+            scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
+            if not scenario:
+                return False, "시나리오를 찾을 수 없습니다.", None
 
-                if scenario.author_id != user_id:
-                    return False, "권한이 없습니다.", None
+            if scenario.author_id != user_id:
+                return False, "권한이 없습니다.", None
 
-                # 현재 상태의 반대값으로 설정 (True <-> False)
-                scenario.is_public = not scenario.is_public
+            # None 값 방지를 위해 bool()로 변환 후 반전
+            current_status = bool(scenario.is_public)
+            scenario.is_public = not current_status
 
-                db.commit()
-                db.refresh(scenario)
+            db.commit()
+            db.refresh(scenario)
 
-                return True, "상태가 변경되었습니다.", scenario.is_public
-            except Exception as e:
-                db.rollback()
-                logger.error(f"Toggle Public Error: {e}")
-                return False, str(e), None
-            finally:
-                db.close()
-
+            return True, "상태가 변경되었습니다.", scenario.is_public
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Toggle Public Error: {e}")
+            return False, str(e), None
+        finally:
+            db.close()
 
 
