@@ -1344,7 +1344,7 @@ def rule_node(state: PlayerState):
 
         # 사망 상태 동기화
         state['world_state'] = world_state.to_dict()
-        logger.info(f"💀 [DEATH SYSTEM] Death routing complete")
+        logger.info(f"💀 [DEATH SYSTEM] Death routing complete - narrator_node will handle scene rendering")
 
     return state
 
@@ -1809,15 +1809,16 @@ def check_npc_appearance(state: PlayerState) -> str:
         return ""
 
     scenario = get_scenario_by_id(scenario_id)
-    all_scenes = {s['scene_id']: s for s in scenario['scenes']}
-    curr_scene = all_scenes.get(curr_id)
-    if not curr_scene: return ""
+    if not scenario:
+        return ""
+
+    prologue_text = scenario.get('prologue', scenario.get('prologue_text', ''))
+    if not prologue_text:
+        return ""
 
     # [수정] 리스트 안에 객체가 들어있어도 이름(문자열)만 추출
-    npc_names = [n.get('name') if isinstance(n, dict) else n for n in curr_scene.get('npcs', [])]
-    enemy_names = [e.get('name') if isinstance(e, dict) else e for e in curr_scene.get('enemies', [])]
-    scene_type = curr_scene.get('type', 'normal')
-    scene_title = curr_scene.get('title', 'Untitled')
+    npc_names = [n.get('name') if isinstance(n, dict) else n for n in scenario.get('npcs', [])]
+    enemy_names = [e.get('name') if isinstance(e, dict) else e for e in scenario.get('enemies', [])]
 
     if not npc_names and not enemy_names: return ""
 
@@ -1834,11 +1835,11 @@ def check_npc_appearance(state: PlayerState) -> str:
     model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
 
     # [FIX] 장면 유형에 따른 메시지 - LLM으로 생성
-    if scene_type == 'battle':
+    if scenario.get('type') == 'battle':
         battle_start_template = prompts.get('battle_start', '')
         if battle_start_template:
             battle_start_prompt = battle_start_template.format(
-                scene_title=scene_title,
+                scene_title=scenario.get('title', '알 수 없는 전투'),
                 enemy_names=', '.join(enemy_names) if enemy_names else '알 수 없는 적'
             )
             try:
@@ -1870,7 +1871,7 @@ def check_npc_appearance(state: PlayerState) -> str:
 
             if npc_appearance_template:
                 npc_prompt = npc_appearance_template.format(
-                    scene_title=scene_title,
+                    scene_title=scenario.get('title', '알 수 없는 장면'),
                     npc_name=npc_name,
                     npc_role=npc_role
                 )
@@ -1905,7 +1906,7 @@ def check_npc_appearance(state: PlayerState) -> str:
         for enemy_name in enemy_names:
             if enemy_appearance_template:
                 enemy_prompt = enemy_appearance_template.format(
-                    scene_title=scene_title,
+                    scene_title=scenario.get('title', '알 수 없는 전투'),
                     enemy_name=enemy_name
                 )
                 try:
@@ -2059,6 +2060,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     1단계에서 분류된 의도(parsed_intent)에 따라 전용 서사 프롬프트를 선택하여 스트리밍
 
     나레이션 모드:
+    [MODE 0] 엔딩 씬 -> 즉시 엔딩 렌더링 (최우선)
     [MODE 1] 씬 유지 + 의도별 분기 (investigate/attack/defend/chat/near_miss)
     [MODE 2] 씬 변경 -> 장면 묘사
     """
@@ -2075,6 +2077,63 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     scenario = get_scenario_by_id(scenario_id)
     all_scenes = {s['scene_id']: s for s in scenario['scenes']}
     all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
+
+    # ========================================
+    # [MODE 0] 엔딩 씬 체크 - 최우선 처리 (HP 0 사망 등)
+    # ========================================
+    if parsed_intent == 'ending' or curr_id in all_endings:
+        logger.info(f"🎭 [ENDING] Rendering ending scene: {curr_id}")
+
+        # 엔딩 데이터 가져오기
+        ending = all_endings.get(curr_id)
+
+        if ending:
+            ending_title = ending.get('title', '알 수 없는 결말')
+            ending_desc = ending.get('description', '이야기가 끝났습니다.')
+
+            # 사망 엔딩 키워드 체크
+            death_keywords = ['사망', '패배', '실패', 'dead', 'defeat', '죽음', '게임오버', 'game over']
+            is_death_ending = any(kw in ending_title.lower() or kw in ending_desc.lower() for kw in death_keywords)
+
+            # HTML 렌더링
+            if is_death_ending:
+                # 배드 엔딩 스타일 (빨간색)
+                yield f"""
+<div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl relative overflow-hidden">
+    <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase drop-shadow-md">💀 GAME OVER 💀</h3>
+    <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
+    <div class="text-2xl font-bold text-white mb-4 drop-shadow-sm">"{ending_title}"</div>
+    <p class="text-gray-200 leading-relaxed text-lg serif-font">
+        {ending_desc}
+    </p>
+</div>
+"""
+            else:
+                # 일반 엔딩 스타일 (노란색)
+                yield f"""
+<div class="my-8 p-8 border-2 border-yellow-500/50 bg-gradient-to-b from-yellow-900/40 to-black rounded-xl text-center fade-in shadow-2xl relative overflow-hidden">
+    <h3 class="text-3xl font-black text-yellow-400 mb-4 tracking-[0.2em] uppercase drop-shadow-md">🎉 ENDING 🎉</h3>
+    <div class="w-16 h-1 bg-yellow-500 mx-auto mb-6 rounded-full"></div>
+    <div class="text-2xl font-bold text-white mb-4 drop-shadow-sm">"{ending_title}"</div>
+    <p class="text-gray-200 leading-relaxed text-lg serif-font">
+        {ending_desc}
+    </p>
+</div>
+"""
+            logger.info(f"✅ [ENDING] Rendered ending: {ending_title}")
+            return
+        else:
+            # 엔딩 데이터가 없는 경우 폴백
+            logger.warning(f"⚠️ [ENDING] No ending data found for: {curr_id}")
+            yield """
+<div class="my-8 p-8 border-2 border-red-500/50 bg-gradient-to-b from-red-900/40 to-black rounded-xl text-center fade-in shadow-2xl">
+    <h3 class="text-3xl font-black text-red-400 mb-4 tracking-[0.2em] uppercase">💀 GAME OVER 💀</h3>
+    <div class="w-16 h-1 bg-red-500 mx-auto mb-6 rounded-full"></div>
+    <div class="text-2xl font-bold text-white mb-4">이야기의 끝</div>
+    <p class="text-gray-200 leading-relaxed text-lg">당신의 여정은 여기서 끝났습니다.</p>
+</div>
+"""
+            return
 
     # WorldState 인스턴스 가져오기
     world_state = WorldState()
