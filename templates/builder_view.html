@@ -138,7 +138,8 @@
     <div class="crt-overlay"></div>
     <div id="root" class="w-full h-full relative z-10"></div>
 
-    <script type="text/babel">
+    {% raw %}
+<script type="text/babel">
         const { useState, useRef, useEffect, useCallback, useMemo } = React;
 
         const AVAILABLE_AI_MODELS = [
@@ -1435,5 +1436,6 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ScenarioBuilder />);
     </script>
+{% endraw %}
 </body>
 </html>
