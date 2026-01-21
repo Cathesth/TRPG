@@ -297,6 +297,13 @@
                             </button>
                         </li>
                         {% endif %}
+                        <li>
+                            <button onclick="confirmDeleteAccount()"
+                                class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-900/30 text-red-400 hover:text-red-300 font-bold border border-transparent hover:border-red-900/50 transition-all text-left">
+                                <i data-lucide="user-x" class="w-5 h-5"></i>
+                                회원 탈퇴
+                            </button>
+                        </li>
                     </ul>
                 </nav>
 
@@ -597,7 +604,39 @@
             } catch (e) { errorMsg.innerText = "서버 오류"; errorMsg.classList.remove('hidden'); }
         };
 
-        // HTMX 로드 후 아이콘 재생성
+        // HTMX 로드 후 아이콘 재생성 및 이벤트 바인딩
+        document.body.addEventListener('htmx:afterSwap', function (evt) {
+            lucide.createIcons();
+        });
+
+        window.confirmDeleteAccount = async function () {
+            if (!confirm('정말 탈퇴하시겠습니까?\n이 작업은 되돌릴 수 없으며, 작성한 모든 시나리오와 데이터가 삭제됩니다.')) return;
+
+            // 한 번 더 확인 (안전장치)
+            const input = prompt('탈퇴를 원하시면 "탈퇴"라고 입력해주세요.');
+            if (input !== '탈퇴') {
+                alert('입력값이 일치하지 않아 취소되었습니다.');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/user/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    alert('성공적으로 탈퇴되었습니다. 이용해 주셔서 감사합니다.');
+                    window.location.href = '/';
+                } else {
+                    alert('탈퇴 실패: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                console.error('Account Delete Error:', e);
+                alert('서버 오류가 발생했습니다.');
+            }
+        };
         document.body.addEventListener('htmx:afterOnLoad', function (evt) {
             if (evt.detail.target.id === "my-scenario-grid") {
                 lucide.createIcons();

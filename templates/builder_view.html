@@ -1962,6 +1962,8 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ScenarioBuilder />);
     </script>
+    {% endraw %}
+
     <script src="{{ url_for('static', path='/js/tutorial.js') }}"></script>
     <script>
         // 튜토리얼 자동 시작 (빌더 모드)
@@ -1974,7 +1976,6 @@
             }
         });
     </script>
-    {% endraw %}
 
     <script>
         // 모달 관리 함수
