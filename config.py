@@ -112,4 +112,15 @@ def get_git_commit_hash():
 
 # [FIX] app.py에서 호출하는 함수
 def get_full_version():
-    return f"v{VERSION_NUMBER}-{get_git_commit_hash()}"
+    """전체 버전 문자열 생성: 년.월일.넘버.해시"""
+    now = datetime.now()
+    year = now.year
+    month_day = now.strftime('%m%d')
+    commit_hash = get_git_commit_hash()
+
+    # Railway 브랜치 정보도 표시 (선택사항)
+    railway_branch = os.getenv('RAILWAY_GIT_BRANCH')
+    if railway_branch and railway_branch != 'main':
+        return f"{year}.{month_day}.{VERSION_NUMBER}.{commit_hash}-{railway_branch}"
+
+    return f"{year}.{month_day}.{VERSION_NUMBER}.{commit_hash}"
