@@ -819,18 +819,23 @@ def list_scenarios(
 
     # 2. 필터링
     if filter == 'my':
+        # [내 시나리오] 로그인 필요, 내 작품만 조회 (비공개 포함)
         if not user.is_authenticated:
             return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
         query = query.filter(Scenario.author_id == user.id)
-    elif filter == 'public':
-        query = query.filter(Scenario.is_public == True)
+
     # filter='all'은 전체 조회
-    elif filter == 'liked':  # [추가] 찜한 목록 필터
+    elif filter == 'liked':
+        # [찜한 목록] 로그인 필요, 내가 찜한 것만 조회
         if not user.is_authenticated:
             return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
-        # ScenarioLike 테이블과 조인하여 내가 찜한 것만 가져옴
         query = query.join(ScenarioLike, Scenario.id == ScenarioLike.scenario_id) \
             .filter(ScenarioLike.user_id == user.id)
+
+    else:
+        # [수정됨] public, all(메인화면), 그 외 모든 경우 -> 무조건 '공개(True)'된 시나리오만 조회
+        # 이 코드가 없어서 메인화면에 비공개 시나리오가 노출되었습니다.
+        query = query.filter(Scenario.is_public == True)
 
     # 3. 정렬
     if sort == 'oldest':
