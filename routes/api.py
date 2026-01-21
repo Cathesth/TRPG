@@ -1695,13 +1695,35 @@ async def ai_audit_scene(scenario_id: int, data: AuditRequest, user: CurrentUser
     elif data.audit_type == 'trigger':
         method = AIAuditService.audit_trigger_consistency
 
+    try:
+        cost = TokenConfig.COST_AI_AUDIT
+        UserService.deduct_tokens(
+            user_id=user.id,
+            cost=cost,
+            action_type="ai_audit",
+            model_name=data.model
+        )
+        logger.info(f"💰 Audit token deducted for {user.id}: -{cost}")
+    except ValueError as e:
+        logger.warning(f"🚫 Audit 거부 (잔액 부족): {user.id} - {e}")
+        return JSONResponse({"success": False, "error": "Insufficient tokens"}, status_code=402)
+    except Exception as e:
+        logger.error(f"❌ Audit 토큰 처리 중 오류: {e}")
+        return JSONResponse({"success": False, "error": "Token processing failed"}, status_code=500)
+
     audit_result = await run_in_threadpool(method, result['scenario'], data.scene_id, data.model)
 
     return {"success": True, "audit_type": data.audit_type, "result": audit_result}
 
 
 @api_router.post('/audit/scene')
-async def audit_builder_scene(data: BuilderAuditRequest):
+async def audit_builder_scene(data: BuilderAuditRequest, user: CurrentUser = Depends(get_current_user)):
+    """
+    AI 검수 API (토큰 과금 포함)
+    """
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
+
     try:
         nodes = data.scenario.get('nodes', [])
         edges = data.scenario.get('edges', [])

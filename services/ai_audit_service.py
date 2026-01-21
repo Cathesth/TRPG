@@ -303,7 +303,7 @@ class AIAuditService:
                 child_scenes_info=child_info
             )
 
-            # LLM 호출
+            # LLM 호출 (토큰 측정 포함)
             api_key = os.getenv("OPENROUTER_API_KEY")
             if not api_key:
                 return AuditResult(success=False, scene_id=scene_id, summary="API Key Missing")
@@ -313,10 +313,27 @@ class AIAuditService:
                 api_key=api_key,
                 temperature=0.3
             )
-            response = llm.invoke(prompt)
-            result_data = AIAuditService._parse_json_response(
-                response.content if hasattr(response, 'content') else str(response)
-            )
+            
+            # 토큰 사용량 측정
+            with get_openai_callback() as cb:
+                response = llm.invoke(prompt)
+                result_data = AIAuditService._parse_json_response(
+                    response.content if hasattr(response, 'content') else str(response)
+                )
+                
+                # 토큰 사용량 정보 저장
+                prompt_tokens = cb.prompt_tokens
+                completion_tokens = cb.completion_tokens
+                total_tokens = prompt_tokens + completion_tokens
+                
+                logger.info(f"[AUDIT TOKENS] Model: {model_name}, Scene: {scene_id}, Tokens: {total_tokens}")
+                
+                # 토큰 정보를 결과에 추가
+                result_data['token_usage'] = {
+                    'prompt_tokens': prompt_tokens,
+                    'completion_tokens': completion_tokens,
+                    'total_tokens': total_tokens
+                }
 
             issues = []
             for issue in result_data.get('issues', []):
