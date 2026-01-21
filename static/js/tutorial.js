@@ -166,6 +166,8 @@ const TutorialSystem = (function () {
         if (currentHighlightElement) {
             currentHighlightElement.style.zIndex = '';
             currentHighlightElement.style.position = '';
+            currentHighlightElement.style.boxShadow = ''; // 효과 제거
+            currentHighlightElement.style.outline = '';   // 아웃라인 제거
             currentHighlightElement.classList.remove('tutorial-highlight');
         }
 
@@ -177,6 +179,13 @@ const TutorialSystem = (function () {
                 target.style.position = 'relative';
             }
             target.style.zIndex = '9999';
+
+            // [VISUAL] 시각적 강조 효과 추가 (색 대비, 글로우)
+            // 배경 오버레이가 있으므로 과도한 그림자 대신 글로우와 테두리로 강조
+            target.style.boxShadow = '0 0 30px rgba(0, 255, 255, 0.6)';
+            target.style.outline = '3px solid #00FFFF';
+            target.style.borderRadius = '4px'; // 약간의 둥글기 추가
+
             target.classList.add('tutorial-highlight');
             currentHighlightElement = target;
 
@@ -221,7 +230,6 @@ const TutorialSystem = (function () {
                 left = rect.right + 10;
             }
 
-            // 화면 밖으로 나가지 않게 보정
             // 화면 밖으로 나가지 않게 보정
             if (left < 10) left = 10;
             if (left + 300 > window.innerWidth) left = window.innerWidth - 320;

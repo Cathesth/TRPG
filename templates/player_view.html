@@ -606,22 +606,11 @@
                             데이터 없음<br>
                             <span class="text-xs">상단 [불러오기]를 눌러주세요.</span>
                         </div>
-                    {% endif %}
-                </div>
-
-                <!-- 디버그 정보 영역 -->
-                {% if is_debug_user %}
-                <div id="debug-info-area" class="hidden mt-4 space-y-4">
-                    <!-- 전체 씬 보기 버튼 -->
-                    <div class="border-t-4 border-rpg-700 pt-4">
-                        <button onclick="openDebugScenesView()"
-                                class="w-full bg-gradient-to-r from-pink-900/80 to-purple-900/80 hover:from-pink-800 hover:to-purple-800 text-white py-3 rounded-none pixel-border-accent flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-lg hover:shadow-pink-500/20 font-dot">
-                            <i data-lucide="git-merge" class="w-5 h-5"></i>
-                            <span>전체 씬 보기</span>
-                        </button>
+                        {% endif %}
                     </div>
 
                     <!-- 디버그 정보 영역 -->
+                    {% if is_debug_user %}
                     <div id="debug-info-area" class="hidden mt-4 space-y-4">
                         <!-- 전체 씬 보기 버튼 -->
                         <div class="border-t-4 border-rpg-700 pt-4">
@@ -632,180 +621,188 @@
                             </button>
                         </div>
 
-                        <!-- 세션 ID 표시 -->
-                        <div class="bg-rpg-900/50 rounded-none p-2 pixel-border">
-                            <div class="text-gray-500 text-[10px] mb-1 flex items-center gap-1 font-pixel">
-                                <i data-lucide="key" class="w-3 h-3"></i>
-                                Session ID
+                        <!-- 디버그 정보 영역 -->
+                        <div id="debug-info-area" class="hidden mt-4 space-y-4">
+                            <!-- 전체 씬 보기 버튼 -->
+                            <div class="border-t-4 border-rpg-700 pt-4">
+                                <button onclick="openDebugScenesView()"
+                                    class="w-full bg-gradient-to-r from-pink-900/80 to-purple-900/80 hover:from-pink-800 hover:to-purple-800 text-white py-3 rounded-none pixel-border-accent flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-lg hover:shadow-pink-500/20 font-dot">
+                                    <i data-lucide="git-merge" class="w-5 h-5"></i>
+                                    <span>전체 씬 보기</span>
+                                </button>
                             </div>
-                            <div id="session-id-display" class="text-gray-300 text-xs font-mono break-all font-dot">
-                                세션 없음
-                            </div>
-                        </div>
 
-                        <!-- NPC 상태 -->
-                        <div class="border-t-4 border-rpg-700 pt-4">
-                            <h4 class="text-gray-400 font-bold text-sm mb-3 flex items-center gap-2 font-pixel">
-                                <i data-lucide="users" class="w-4 h-4"></i>
-                                NPC STATUS
-                            </h4>
-                            <div id="npc-status-area" class="space-y-2">
-                                <div
-                                    class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
-                                    NPC 데이터 없음
+                            <!-- 세션 ID 표시 -->
+                            <div class="bg-rpg-900/50 rounded-none p-2 pixel-border">
+                                <div class="text-gray-500 text-[10px] mb-1 flex items-center gap-1 font-pixel">
+                                    <i data-lucide="key" class="w-3 h-3"></i>
+                                    Session ID
+                                </div>
+                                <div id="session-id-display" class="text-gray-300 text-xs font-mono break-all font-dot">
+                                    세션 없음
                                 </div>
                             </div>
-                        </div>
 
-                        <!-- World State Manager -->
-                        <div class="border-t-4 border-rpg-700 pt-4 mb-10">
-                            <h4 class="text-gray-400 font-bold text-sm mb-3 flex items-center gap-2 font-pixel">
-                                <i data-lucide="globe" class="w-4 h-4"></i>
-                                WORLD STATE
-                            </h4>
-                            <div id="world-state-area" class="text-xs">
-                                <div
-                                    class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
-                                    World State 데이터 없음
+                            <!-- NPC 상태 -->
+                            <div class="border-t-4 border-rpg-700 pt-4">
+                                <h4 class="text-gray-400 font-bold text-sm mb-3 flex items-center gap-2 font-pixel">
+                                    <i data-lucide="users" class="w-4 h-4"></i>
+                                    NPC STATUS
+                                </h4>
+                                <div id="npc-status-area" class="space-y-2">
+                                    <div
+                                        class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
+                                        NPC 데이터 없음
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- World State Manager -->
+                            <div class="border-t-4 border-rpg-700 pt-4 mb-10">
+                                <h4 class="text-gray-400 font-bold text-sm mb-3 flex items-center gap-2 font-pixel">
+                                    <i data-lucide="globe" class="w-4 h-4"></i>
+                                    WORLD STATE
+                                </h4>
+                                <div id="world-state-area" class="text-xs">
+                                    <div
+                                        class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
+                                        World State 데이터 없음
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
+                    {% endif %}
                 </div>
-                {% endif %}
             </div>
         </div>
-    </div>
 
-    <script src="{{ url_for('static', path='/js/player/constants.js') }}"></script>
-    <script src="{{ url_for('static', path='/js/player/api_service.js') }}"></script>
-    <script src="{{ url_for('static', path='/js/player/ui_manager.js') }}"></script>
-    <script src="{{ url_for('static', path='/js/player/debug_module.js') }}"></script>
-    <script src="{{ url_for('static', path='/js/player/main.js') }}"></script>
-    <script src="{{ url_for('static', path='/js/tutorial.js') }}"></script>
+        <script src="{{ url_for('static', path='/js/player/constants.js') }}"></script>
+        <script src="{{ url_for('static', path='/js/player/api_service.js') }}"></script>
+        <script src="{{ url_for('static', path='/js/player/ui_manager.js') }}"></script>
+        <script src="{{ url_for('static', path='/js/player/debug_module.js') }}"></script>
+        <script src="{{ url_for('static', path='/js/player/main.js') }}"></script>
+        <script src="{{ url_for('static', path='/js/tutorial.js') }}"></script>
 
-    <!-- Lucide 아이콘 초기화 -->
-    <script>
-        if (typeof lucide !== 'undefined' && lucide.createIcons) {
-            lucide.createIcons();
-        }
-    </script>
-
-    <!-- 8비트 블록 커서 초기화 -->
-    <script>
-        (function () {
-            const input = document.getElementById('action-input');
-            if (!input) return;
-
-            // 커스텀 커서 요소 생성
-            const cursor = document.createElement('div');
-            cursor.className = 'custom-cursor';
-            document.body.appendChild(cursor);
-
-            // 커서 위치 업데이트 함수
-            function updateCursorPosition() {
-                const inputRect = input.getBoundingClientRect();
-                const style = window.getComputedStyle(input);
-                const fontSize = parseFloat(style.fontSize);
-                const lineHeight = parseFloat(style.lineHeight);
-                const paddingTop = parseFloat(style.paddingTop);
-                const paddingLeft = parseFloat(style.paddingLeft);
-
-                const textWidth = getTextWidth(input.value.substring(0, input.selectionStart), input);
-
-                // 텍스트 라인의 실제 높이 계산
-                const textHeight = lineHeight || fontSize * 1.5;
-                const cursorHeight = Math.min(18, textHeight);
-
-                // 입력창 내부 중앙 정렬
-                const verticalCenter = inputRect.top + paddingTop + (inputRect.height - paddingTop - parseFloat(style.paddingBottom)) / 2;
-                const topPosition = verticalCenter - cursorHeight / 2;
-                const leftPosition = inputRect.left + paddingLeft + textWidth;
-
-                cursor.style.left = leftPosition + 'px';
-                cursor.style.top = topPosition + 'px';
-                cursor.style.height = cursorHeight + 'px';
+        <!-- Lucide 아이콘 초기화 -->
+        <script>
+            if (typeof lucide !== 'undefined' && lucide.createIcons) {
+                lucide.createIcons();
             }
+        </script>
 
-            // 텍스트 너비 계산
-            function getTextWidth(text, element) {
-                const canvas = getTextWidth.canvas || (getTextWidth.canvas = document.createElement('canvas'));
-                const context = canvas.getContext('2d');
-                const style = window.getComputedStyle(element);
-                context.font = style.font;
-                return context.measureText(text).width;
-            }
+        <!-- 8비트 블록 커서 초기화 -->
+        <script>
+            (function () {
+                const input = document.getElementById('action-input');
+                if (!input) return;
 
-            // 포커스 상태 관리
-            input.addEventListener('focus', () => {
-                cursor.style.display = 'block';
-                updateCursorPosition();
-            });
+                // 커스텀 커서 요소 생성
+                const cursor = document.createElement('div');
+                cursor.className = 'custom-cursor';
+                document.body.appendChild(cursor);
 
-            input.addEventListener('blur', () => {
+                // 커서 위치 업데이트 함수
+                function updateCursorPosition() {
+                    const inputRect = input.getBoundingClientRect();
+                    const style = window.getComputedStyle(input);
+                    const fontSize = parseFloat(style.fontSize);
+                    const lineHeight = parseFloat(style.lineHeight);
+                    const paddingTop = parseFloat(style.paddingTop);
+                    const paddingLeft = parseFloat(style.paddingLeft);
+
+                    const textWidth = getTextWidth(input.value.substring(0, input.selectionStart), input);
+
+                    // 텍스트 라인의 실제 높이 계산
+                    const textHeight = lineHeight || fontSize * 1.5;
+                    const cursorHeight = Math.min(18, textHeight);
+
+                    // 입력창 내부 중앙 정렬
+                    const verticalCenter = inputRect.top + paddingTop + (inputRect.height - paddingTop - parseFloat(style.paddingBottom)) / 2;
+                    const topPosition = verticalCenter - cursorHeight / 2;
+                    const leftPosition = inputRect.left + paddingLeft + textWidth;
+
+                    cursor.style.left = leftPosition + 'px';
+                    cursor.style.top = topPosition + 'px';
+                    cursor.style.height = cursorHeight + 'px';
+                }
+
+                // 텍스트 너비 계산
+                function getTextWidth(text, element) {
+                    const canvas = getTextWidth.canvas || (getTextWidth.canvas = document.createElement('canvas'));
+                    const context = canvas.getContext('2d');
+                    const style = window.getComputedStyle(element);
+                    context.font = style.font;
+                    return context.measureText(text).width;
+                }
+
+                // 포커스 상태 관리
+                input.addEventListener('focus', () => {
+                    cursor.style.display = 'block';
+                    updateCursorPosition();
+                });
+
+                input.addEventListener('blur', () => {
+                    cursor.style.display = 'none';
+                });
+
+                // 입력, 클릭, 키 이벤트마다 위치 업데이트
+                input.addEventListener('input', updateCursorPosition);
+                input.addEventListener('click', updateCursorPosition);
+                input.addEventListener('keyup', updateCursorPosition);
+                input.addEventListener('keydown', updateCursorPosition);
+
+                // 창 크기 변경 시 위치 재계산
+                window.addEventListener('resize', updateCursorPosition);
+
+                // 스크롤 시에도 위치 업데이트
+                window.addEventListener('scroll', updateCursorPosition);
+
+                // 초기 커서 숨김
                 cursor.style.display = 'none';
-            });
 
-            // 입력, 클릭, 키 이벤트마다 위치 업데이트
-            input.addEventListener('input', updateCursorPosition);
-            input.addEventListener('click', updateCursorPosition);
-            input.addEventListener('keyup', updateCursorPosition);
-            input.addEventListener('keydown', updateCursorPosition);
+                // 튜토리얼 자동 실행 체크 (플레이어 모드)
+                // 시작하자마자 바로 체크 (이전 조건 제거)
+                if (window.TutorialSystem && window.TutorialSystem.checkAndStart) {
+                    setTimeout(() => {
+                        window.TutorialSystem.checkAndStart('player');
+                    }, 1000); // UI 로딩 시간을 고려해 1초 딜레이
+                }
+            })();
+        </script>
 
-            // 창 크기 변경 시 위치 재계산
-            window.addEventListener('resize', updateCursorPosition);
+        <!-- 버전 표시 -->
+        <div class="version-badge">v{{ version }}</div>
 
-            // 스크롤 시에도 위치 업데이트
-            window.addEventListener('scroll', updateCursorPosition);
+        <!-- 💀 Game Over 모달 -->
+        <div id="game-over-modal"
+            class="hidden fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-md">
+            <div
+                class="game-over-container bg-red-950/90 border-4 border-red-500 rounded-none p-8 max-w-md w-full mx-4 pixel-border shadow-2xl animate-pulse-slow">
+                <!-- 해골 아이콘 -->
+                <div class="flex justify-center mb-4">
+                    <i data-lucide="skull" class="w-20 h-20 text-red-500"></i>
+                </div>
 
-            // 초기 커서 숨김
-            cursor.style.display = 'none';
+                <!-- 타이틀 -->
+                <h2 class="text-3xl font-black text-red-400 text-center mb-4 tracking-widest uppercase font-pixel">
+                    GAME OVER
+                </h2>
 
-            // 튜토리얼 자동 실행 체크 (플레이어 모드)
-            // URL 파라미터에 start_tutorial=true가 있을 때만 실행 (index.html에서 넘어올 때)
-            const urlParams = new URLSearchParams(window.location.search);
-            const shouldStartTutorial = urlParams.get('start_tutorial') === 'true';
+                <!-- 메시지 -->
+                <div class="text-gray-200 text-center mb-6 font-dot leading-relaxed">
+                    <p class="text-lg mb-2">운명이 다했습니다.</p>
+                    <p class="text-sm text-gray-400">당신의 여정은 여기서 끝을 맺습니다.</p>
+                </div>
 
-            if (shouldStartTutorial && window.TutorialSystem && window.TutorialSystem.checkAndStart) {
-                setTimeout(() => {
-                    window.TutorialSystem.checkAndStart('player');
-                }, 1000); // UI 로딩 시간을 고려해 1초 딜레이
-            }
-        })();
-    </script>
-
-    <!-- 버전 표시 -->
-    <div class="version-badge">v{{ version }}</div>
-
-    <!-- 💀 Game Over 모달 -->
-    <div id="game-over-modal"
-        class="hidden fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-md">
-        <div
-            class="game-over-container bg-red-950/90 border-4 border-red-500 rounded-none p-8 max-w-md w-full mx-4 pixel-border shadow-2xl animate-pulse-slow">
-            <!-- 해골 아이콘 -->
-            <div class="flex justify-center mb-4">
-                <i data-lucide="skull" class="w-20 h-20 text-red-500"></i>
+                <!-- 버튼 -->
+                <button onclick="closeGameOverModal()"
+                    class="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-none font-bold flex items-center justify-center gap-2 transition-all hover:scale-105 shadow-lg border-2 border-red-400 font-dot">
+                    <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+                    다시 시작하기
+                </button>
             </div>
-
-            <!-- 타이틀 -->
-            <h2 class="text-3xl font-black text-red-400 text-center mb-4 tracking-widest uppercase font-pixel">
-                GAME OVER
-            </h2>
-
-            <!-- 메시지 -->
-            <div class="text-gray-200 text-center mb-6 font-dot leading-relaxed">
-                <p class="text-lg mb-2">운명이 다했습니다.</p>
-                <p class="text-sm text-gray-400">당신의 여정은 여기서 끝을 맺습니다.</p>
-            </div>
-
-            <!-- 버튼 -->
-            <button onclick="closeGameOverModal()"
-                class="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-none font-bold flex items-center justify-center gap-2 transition-all hover:scale-105 shadow-lg border-2 border-red-400 font-dot">
-                <i data-lucide="refresh-cw" class="w-5 h-5"></i>
-                다시 시작하기
-            </button>
         </div>
-    </div>
 
 </body>
 
