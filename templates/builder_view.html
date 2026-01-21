@@ -336,6 +336,45 @@
             return { nodes, edges };
         };
 
+        // 랜덤 로딩 문구 배열 (TRPG 현실 스타일)
+        const LOADING_MESSAGES = [
+            "다이스 갓(Dice God)에게 제물 바치는 중...",
+            "GM의 \"잠시만요, 제가 노트를 좀 찾을게요\" 대사 준비 중...",
+            "플레이어가 시나리오를 박살 낼 확률 계산 중 (99.9% 확정)...",
+            "고블린에게 주 52시간 근무제 설명 중...",
+            "던전 입구에 '위험' 표지판 닦는 중...",
+            "드래곤의 보물 창고에서 세금 누락분 확인 중...",
+            "술집 주인이 수상한 퀘스트를 줄 때까지 대기 중...",
+            "전투에서 패배했을 때의 비극적인 묘사 생성 중...",
+            "바드가 드래곤을 추행하려는 시도 차단 중...",
+            "\"정말로 그걸 하시겠습니까?\"라고 물어볼 준비 중...",
+            "이야기 속에 무서운 거 집어넣는 중...",
+            "전투 상황에서 데미지가 전부 '1'이 나올 확률 조작 중...",
+            "죽은 동료의 소지품을 챙기는 파티원들 감시 중...",
+            "마왕성 월세 연체 고지서 발송 중...",
+            "함정 발동 확률을 '운'에 맡기는 중...",
+            "NPC의 이름이 '길가는 행인 A'에서 '대마법사'로 격상되는 중...",
+            "캐릭터 시트의 눈물 자국 지우는 중...",
+            "세계관 설정 오류를 \"마법 때문입니다\"로 덮는 중...",
+            "갑자기 나타난 투명 벽에 부딪히는 NPC들을 위로 중...",
+            "다이스 타워 안에서 잠든 주사위 깨우는 중...",
+            "던전 탐험 도중 화장실 가고 싶은 캐릭터의 심리 상태 분석 중...",
+            "보스 몬스터에게 줄 '패배 시 대사' 스크립트 작성 중...",
+            "플레이어들의 창의적인 트롤링을 데이터베이스에 저장 중...",
+            "힐러가 딜링에 집중하는 현상 조사 중...",
+            "인벤토리에 꽉 찬 쓸모없는 슬라임 핵 정리 중...",
+            "시나리오 라이터의 탈모 진행도 측정 중...",
+            "로그가 파티원 지갑을 소매치기하는지 확인 중...",
+            "판정 수치가 부족할 때 GM의 자비심 수치 검색 중...",
+            "\"저기요, 전 마법사인데 왜 근력 수치가 높죠?\" 질문 무시 중...",
+            "운명의 수레바퀴에 WD-40 뿌리는 중..."
+        ];
+
+        // 랜덤 문구 선택 함수
+        const getRandomLoadingMessage = () => {
+            return LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)];
+        };
+
         function ScenarioBuilder() {
             const [nodes, setNodes] = useState([
                 { id: 'start', type: 'start', x: 50, y: 50, data: { label: '시나리오 설정', prologue: '', gm_notes: '', background: '', isNew: true } },
@@ -378,6 +417,7 @@
 
             const [tokenBalance, setTokenBalance] = useState(0);
             const [hoverPreview, setHoverPreview] = useState({ show: false, x: 0, y: 0, url: '', name: '' });
+            const [loadingMessage, setLoadingMessage] = useState(getRandomLoadingMessage());
 
             const estimatedCost = useMemo(() => {
                 const rate = MODEL_COST_RATES[selectedModel] !== undefined
@@ -647,6 +687,8 @@
                     return;
                 }
 
+                // 랜덤 로딩 문구 설정
+                setLoadingMessage(getRandomLoadingMessage());
                 setImageGenState({ isLoading: true, result: null });
                 try {
                     const res = await fetch('/api/image/generate', {
@@ -878,6 +920,9 @@
                 }
 
                 if (nodes.length < 2) return showToast("최소 2개의 노드 필요", "error");
+                
+                // 랜덤 로딩 문구 설정
+                setLoadingMessage(getRandomLoadingMessage());
                 setIsGenerating(true);
                 try {
                     const res = await fetch('/api/init_game', {
@@ -997,8 +1042,20 @@
 
                     {isGenerating && (
                         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-fade-in">
-                            <div className="w-16 h-16 border-4 border-[#00FFFF] border-t-transparent rounded-none animate-spin mb-4"></div>
-                            <div className="text-xl font-bold">시나리오 생성 중...</div>
+                            <div className="relative mb-6">
+                                {/* 메인 스피너 */}
+                                <div className="w-20 h-20 border-4 border-[#00FFFF]/20 rounded-full animate-spin"></div>
+                                {/* 내부 스피너 */}
+                                <div className="absolute top-2 left-2 w-16 h-16 border-4 border-[#00FFFF]/40 rounded-full animate-spin" style={{ animationDuration: '1.5s' }}></div>
+                                {/* 중심 스피너 */}
+                                <div className="absolute top-4 left-4 w-12 h-12 border-4 border-[#00FFFF] rounded-full animate-spin" style={{ animationDuration: '2s' }}></div>
+                                {/* 중심 아이콘 */}
+                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                                    <Icon name="sparkles" size={24} className="text-[#00FFFF] animate-pulse"/>
+                                </div>
+                            </div>
+                            <div className="text-xl font-bold text-[#00FFFF] mb-2">시나리오 생성 중...</div>
+                            <div className="text-sm text-gray-400">{loadingMessage}</div>
                         </div>
                     )}
 
@@ -1454,12 +1511,16 @@
                                             >
                                                 {imageGenState.isLoading ? (
                                                     <>
-                                                        <div className="w-3 h-3 border border-[#00FFFF] border-t-transparent animate-spin mr-2 inline-block"></div>
-                                                        생성 중...
+                                                        <div className="relative mr-2">
+                                                            <div className="w-4 h-4 border-2 border-[#00FFFF]/30 rounded-full animate-spin"></div>
+                                                            <div className="absolute top-0.5 left-0.5 w-3 h-3 border-2 border-[#00FFFF] rounded-full animate-spin" style={{ animationDuration: '1.5s' }}></div>
+                                                        </div>
+                                                        <span className="text-[#00FFFF]">마법 부리는 중...</span>
                                                     </>
                                                 ) : (
                                                     <><Icon name="sparkles" size={12}/> 이미지 생성 (50 CR)</>
                                                 )}
+                                            </button>
                                         </div>
                                     </div>
 
