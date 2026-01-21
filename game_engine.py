@@ -1944,7 +1944,7 @@ def get_narrative_fallback_message(scenario: Dict[str, Any]) -> str:
         if key != 'default' and (key in genre or key in world_setting):
             return message
 
-    return fallback_messages.get('default', "⚠️ 잠시 상황 파악이 어렵습니다. 심호흡을 하고 다시 시도해 주세요.")
+    return fallback_messages.get('default', "")
 
 
 def _stream_and_track(llm, prompt, user_id, model_name):
@@ -1953,11 +1953,15 @@ def _stream_and_track(llm, prompt, user_id, model_name):
     """
     prompt_tokens = 0
     completion_tokens = 0
+    total_cost = 0
 
     # stream
+    content_chunks = []
     for chunk in llm.stream(prompt):
         if chunk.content:
-            yield chunk.content
+            content_chunk = chunk.content
+            content_chunks.append(content_chunk)
+            yield content_chunk
 
         # LangChain usage metadata capture
         if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
@@ -1969,9 +1973,23 @@ def _stream_and_track(llm, prompt, user_id, model_name):
     if user_id and (prompt_tokens > 0 or completion_tokens > 0):
         try:
             cost = UserService.calculate_llm_cost(model_name, prompt_tokens, completion_tokens)
+            total_cost = cost
             UserService.deduct_tokens(user_id, cost, "narrative_stream", model_name, prompt_tokens + completion_tokens)
+            
+            # [NEW] 토큰 소모 정보 로깅
+            logger.info(f"[GAME TOKEN] User: {user_id}, Model: {model_name}, Cost: {cost} CR, Tokens: {prompt_tokens + completion_tokens}")
         except Exception as e:
             logger.error(f"Billing error in stream: {e}")
+    
+    # [NEW] 토큰 소모 정보 반환 (프론트에서 표시용)
+    token_info = {
+        "tokens_used": prompt_tokens + completion_tokens,
+        "cost": total_cost,
+        "model": model_name
+    }
+    
+    # 토큰 정보를 별도로 yield
+    yield token_info
 
 
 def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries: int = 2, user_id: str = None):
@@ -2131,9 +2149,30 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
                 logger.info(f"🎬 [NARRATIVE] Using prompt: {prompt_key} for intent: {parsed_intent}")
 
-                # [NEW] _stream_and_track 사용
+                # [NEW] _stream_and_track 사용 및 토큰 정보 수집
+                token_info = None
+                content_chunks = []
+                
                 for chunk in _stream_and_track(llm, narrative_prompt, user_id, model_name):
-                    yield chunk
+                    if isinstance(chunk, dict):
+                        # 토큰 정보 수신
+                        token_info = chunk
+                    else:
+                        # 일반 콘텐츠
+                        content_chunks.append(chunk)
+                        yield chunk
+                
+                # 🔥 [NEW] 토큰 소모 정보 전송 (프론트 표시용)
+                if token_info and token_info.get('cost', 0) > 0:
+                    token_data = {
+                        "type": "token_usage",
+                        "tokens_used": token_info.get('tokens_used', 0),
+                        "cost": token_info.get('cost', 0),
+                        "model": token_info.get('model', 'unknown'),
+                        "action": "narrative"
+                    }
+                    yield f"__TOKEN_INFO__{json.dumps(token_data)}__"
+                
                 return
 
             except Exception as e:
@@ -2146,7 +2185,17 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                         yield "주변을 둘러보니 활용할 수 있는 것들이 보입니다."
                     return
                 elif parsed_intent == 'attack':
-                    yield random.choice(get_battle_attack_messages())
+                    attack_msg = random.choice(get_battle_attack_messages())
+                    yield attack_msg
+                    
+                    # 전투 후 추가 행동 유도
+                    battle_hints = [
+                        "적이 쓰러졌습니다. 이제 어떻게 하시겠습니까?",
+                        "전투가 끝났습니다. 다음 행동을 선택해주세요.",
+                        "승리했습니다! 계속해서 앞으로 나아가시겠습니까?",
+                        "적을 물리쳤습니다. 주변을 조사하거나 다른 곳으로 이동할 수 있습니다."
+                    ]
+                    yield random.choice(battle_hints)
                     return
                 elif parsed_intent == 'defend':
                     yield random.choice(get_battle_defensive_messages())
@@ -2174,14 +2223,37 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                     api_key = os.getenv("OPENROUTER_API_KEY")
                     model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
                     llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
-                    # [NEW] _stream_and_track 사용
+
+                    token_info = None
+                    content_chunks = []
+                    
                     for chunk in _stream_and_track(llm, battle_continue_prompt, user_id, model_name):
-                        yield chunk
+                        if isinstance(chunk, dict):
+                            # 
+                            token_info = chunk
+                        else:
+                            # 
+                            content_chunks.append(chunk)
+                            yield chunk
+                    
+                    #  [NEW] 
+                    if token_info and token_info.get('cost', 0) > 0:
+                        token_data = {
+                            "type": "token_usage",
+                            "tokens_used": token_info.get('tokens_used', 0),
+                            "cost": token_info.get('cost', 0),
+                            "model": token_info.get('model', 'unknown'),
+                            "action": "battle_continue"
+                        }
+                        yield f"__TOKEN_INFO__{json.dumps(token_data)}__"
+                    
+                    return
+
                 except Exception:
                     yield random.choice(get_battle_stalemate_messages())
                 return
 
-        # 일반 씬에서 chat 행동 시 힌트 모드 (transitions 기반)
+        # 
         if parsed_intent == 'chat' and not npc_output:
             transitions = curr_scene.get('transitions', [])
             filtered_transitions = filter_negative_transitions(transitions, scenario)
@@ -2211,9 +2283,30 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
                         logger.info(f"💡 [HINT MODE] stuck_level: {stuck_level}")
 
-                        # [NEW] _stream_and_track 사용
+                        # [NEW] _stream_and_track 사용 및 토큰 정보 수집
+                        token_info = None
+                        content_chunks = []
+                        
                         for chunk in _stream_and_track(llm, hint_prompt, user_id, model_name):
-                            yield chunk
+                            if isinstance(chunk, dict):
+                                # 토큰 정보 수신
+                                token_info = chunk
+                            else:
+                                # 일반 콘텐츠
+                                content_chunks.append(chunk)
+                                yield chunk
+                        
+                        # 🔥 [NEW] 토큰 소모 정보 전송 (프론트 표시용)
+                        if token_info and token_info.get('cost', 0) > 0:
+                            token_data = {
+                                "type": "token_usage",
+                                "tokens_used": token_info.get('tokens_used', 0),
+                                "cost": token_info.get('cost', 0),
+                                "model": token_info.get('model', 'unknown'),
+                                "action": "hint_mode"
+                            }
+                            yield f"__TOKEN_INFO__{json.dumps(token_data)}__"
+                        
                         return
                     except Exception as e:
                         logger.error(f"Hint mode generation error: {e}")
@@ -2297,12 +2390,31 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         accumulated_text = ""
         has_content = False
 
-        # [NEW] _stream_and_track 사용
+        # [NEW] _stream_and_track 사용 및 토큰 정보 수집
+        token_info = None
+        content_chunks = []
+        
         for chunk in _stream_and_track(llm, prompt, user_id, model_name):
-            if chunk:
+            if isinstance(chunk, dict):
+                # 토큰 정보 수신
+                token_info = chunk
+            else:
+                # 일반 콘텐츠
+                content_chunks.append(chunk)
                 accumulated_text += chunk
                 has_content = True
                 yield chunk
+        
+        # 🔥 [NEW] 토큰 소모 정보 전송 (프론트 표시용)
+        if token_info and token_info.get('cost', 0) > 0:
+            token_data = {
+                "type": "token_usage",
+                "tokens_used": token_info.get('tokens_used', 0),
+                "cost": token_info.get('cost', 0),
+                "model": token_info.get('model', 'unknown'),
+                "action": "scene_description"
+            }
+            yield f"__TOKEN_INFO__{json.dumps(token_data)}__"
 
         if not has_content or len(accumulated_text.strip()) < 10:
             raise Exception("Empty or insufficient response from LLM")

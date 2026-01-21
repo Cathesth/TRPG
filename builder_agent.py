@@ -3,6 +3,7 @@ import os
 import yaml
 import logging
 import concurrent.futures
+import random
 from typing import TypedDict, List, Annotated, Optional, Dict, Any, Callable
 from collections import deque
 
@@ -664,7 +665,7 @@ def finalize_build(state: BuilderState):
 
     # 4. Transitions 연결 및 프롤로그 연결 업데이트
 
-    # 4-1. 씬들의 Transitions 업데이트 (Smart Trigger Generation)
+    # 4-1. 씬들의 Transitions 업데이트 (Smart Trigger Generation - 강화)
     for scene in final_scenes:
         # 현재 씬의 Old ID 찾기 (역매핑)
         old_id = next((k for k, v in id_map.items() if v == scene["scene_id"]), None)
@@ -673,12 +674,11 @@ def finalize_build(state: BuilderState):
         base_data = generated_scene_map.get(old_id.lower() if old_id else "", {})
         llm_transitions = base_data.get("transitions", [])
 
-        # 이 노드에서 나가는 엣지 찾기
-        out_edges = [e for e in raw_edges if e.get("source") == old_id]
+        # Blueprint에 연결된 타겟 목록 가져오기
+        blueprint_targets = blueprint.get('connections', {}).get(old_id, []) if old_id else []
 
         transitions = []
-        for edge in out_edges:
-            tgt_old = edge.get("target")
+        for tgt_old in blueprint_targets:
             if tgt_old in id_map:
                 tgt_new = id_map[tgt_old]
 
@@ -693,19 +693,20 @@ def finalize_build(state: BuilderState):
                 trigger_text = "이동"  # 최후의 수단
 
                 if llm_trigger:
-                    trigger_text = llm_trigger
+                    # 트리거 길이 및 형식 검증 및 최적화
+                    trigger_text = optimize_trigger_text(llm_trigger)
                 else:
                     # 2. 스마트 폴백: 타겟 노드의 정보를 이용해 트리거 자동 생성
 
                     # A. 타겟이 엔딩인 경우 -> 엔딩 제목을 트리거로 사용 (예: "해피 엔딩", "배드 엔딩")
                     tgt_ending = next((e for e in final_endings if e["ending_id"] == tgt_new), None)
                     if tgt_ending:
-                        trigger_text = tgt_ending.get("title", "엔딩")
+                        trigger_text = optimize_trigger_text(tgt_ending.get("title", "엔딩"))
 
                     # B. 타겟이 씬인 경우 -> 그 씬의 진입 트리거 사용 (예: "문을 연다")
                     tgt_scene = next((s for s in final_scenes if s["scene_id"] == tgt_new), None)
                     if tgt_scene:
-                        trigger_text = tgt_scene.get("trigger") or tgt_scene.get("name") or "이동"
+                        trigger_text = optimize_trigger_text(tgt_scene.get("trigger") or tgt_scene.get("name") or "이동")
 
                 transitions.append({
                     "trigger": trigger_text,
@@ -902,6 +903,45 @@ def generate_scene_content(scenario_title, scenario_summary, user_request="", mo
     except Exception as e:
         logger.error(f"Scene Generation failed: {e}")
         return None
+
+
+def optimize_trigger_text(trigger_text):
+    """
+    트리거 텍스트를 게임 엔진이 인식하기 쉬운 형태로 최적화
+    - 길이 제한: 2-5단어
+    - 불필요한 수식어 제거
+    - 명확한 행동 동사로 변환
+    """
+    if not trigger_text:
+        return "이동"
+    
+    # 기본 정리
+    text = trigger_text.strip()
+    
+    # 불필요한 수식어 제거
+    unnecessary_words = [
+        "용감하게", "신중하게", "상냥하게", "조용히", "갑자기", "마침내",
+        "결심한다", "시도한다", "하기로 한다", "해보려고 한다", "하려고 한다"
+    ]
+    
+    for word in unnecessary_words:
+        text = text.replace(word, "")
+    
+    # 여러 공백을 단일 공백으로
+    text = " ".join(text.split())
+    
+    # 너무 길면 앞부분만 사용 (최대 5단어)
+    words = text.split()
+    if len(words) > 5:
+        text = " ".join(words[:5])
+    
+    # 최소 2단어 보장
+    if len(words) < 2:
+        # 기본 행동 추가
+        basic_actions = ["앞으로", "계속", "다음으로"]
+        text = f"{words[0] if words else '이동'} {random.choice(basic_actions)}"
+    
+    return text.strip()
 
 
 def generate_single_npc(scenario_title, scenario_summary, user_request="", model_name=None, user_id=None):
