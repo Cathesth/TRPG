@@ -166,6 +166,8 @@ const TutorialSystem = (function () {
         if (currentHighlightElement) {
             currentHighlightElement.style.zIndex = '';
             currentHighlightElement.style.position = '';
+            currentHighlightElement.style.boxShadow = ''; // 효과 제거
+            currentHighlightElement.style.outline = '';   // 아웃라인 제거
             currentHighlightElement.classList.remove('tutorial-highlight');
         }
 
@@ -177,6 +179,13 @@ const TutorialSystem = (function () {
                 target.style.position = 'relative';
             }
             target.style.zIndex = '9999';
+
+            // [VISUAL] 시각적 강조 효과 추가 (색 대비, 글로우)
+            // 배경 오버레이가 있으므로 과도한 그림자 대신 글로우와 테두리로 강조
+            target.style.boxShadow = '0 0 30px rgba(0, 255, 255, 0.6)';
+            target.style.outline = '3px solid #00FFFF';
+            target.style.borderRadius = '4px'; // 약간의 둥글기 추가
+
             target.classList.add('tutorial-highlight');
             currentHighlightElement = target;
 
@@ -222,7 +231,6 @@ const TutorialSystem = (function () {
             }
 
             // 화면 밖으로 나가지 않게 보정
-            // 화면 밖으로 나가지 않게 보정
             if (left < 10) left = 10;
             if (left + 300 > window.innerWidth) left = window.innerWidth - 320;
             if (top < 10) top = 10;
@@ -241,12 +249,30 @@ const TutorialSystem = (function () {
             tooltipElement.style.top = `${top}px`;
             tooltipElement.style.left = `${left}px`;
 
-            // 버튼 이벤트 연결
-            const nextBtn = document.getElementById('tutorial-next-btn');
-            nextBtn.onclick = nextStep;
+            // 버튼 이벤트 연결 (확실한 클릭 처리를 위해 addEventListener 사용 및 전파 방지)
+            setTimeout(() => {
+                const nextBtn = document.getElementById('tutorial-next-btn');
+                if (nextBtn) {
+                    nextBtn.onclick = null; // 기존 핸들러 제거
+                    nextBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        nextStep();
+                    });
+                    nextBtn.style.pointerEvents = 'auto'; // 클릭 보장
+                }
 
-            const skipBtn = document.getElementById('tutorial-skip-btn');
-            if (skipBtn) skipBtn.onclick = end;
+                const skipBtn = document.getElementById('tutorial-skip-btn');
+                if (skipBtn) {
+                    skipBtn.onclick = null;
+                    skipBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        end();
+                    });
+                    skipBtn.style.pointerEvents = 'auto';
+                }
+            }, 0); // DOM 렌더링 직후 실행 보장
 
         } else {
             console.warn(`Target ${step.target} not found, skipping step.`);
@@ -298,9 +324,17 @@ const TutorialSystem = (function () {
     return {
         init: init,
         start: start,
+        end: end, // end 함수도 노출 필요 (건너뛰기 버튼 등 외부 호출 가능성 대비)
         checkAndStart: checkAndStart
     };
 })();
+
+// 자동 초기화
+document.addEventListener('DOMContentLoaded', () => {
+    if (window.TutorialSystem) {
+        window.TutorialSystem.init();
+    }
+});
 
 // 페이지 로드 시 초기화
 document.addEventListener('DOMContentLoaded', () => {

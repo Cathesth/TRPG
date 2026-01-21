@@ -989,17 +989,30 @@
                     showToast("저장 실패: " + e.message, "error");
                 }
             };
-            const publishScenario = async () => {
-                // 수정 모드에서 임시 저장 여부 확인
-                if (isEditMode && isDraft) {
-                    if (!confirm("임시 저장된 변경사항이 있습니다.\\n먼저 임시 저장을 진행하시겠습니까?")) {
-                        return;
-                    }
-                    // 임시 저장 먼저 실행
-                    await saveDraft();
+                        const publishScenario = async () => {
+                if (!scenarioId) return alert("저장된 시나리오가 아닙니다.");
+                
+                // [FIX] 최종 반영 전 자동 저장
+                try {
+                    await fetch('/api/scenario/save_draft', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            original_scenario_id: parseInt(scenarioId),
+                            nodes,
+                            edges,
+                            npcs: [...globalNpcs, ...globalEnemies],
+                            items: globalItems
+                        })
+                    });
+                } catch (e) {
+                    console.error("Auto-save draft failed:", e);
+                    showToast("자동 저장 실패(진행 불가): " + e.message, "error");
+                    return; 
                 }
 
-                if (!confirm("최종 반영하시겠습니까?")) return;
+                if (!confirm("최종 반영하시겠습니까? (자동 저장됨)")) return;
+                
                 try {
                     const res = await fetch(`/api/draft/${scenarioId}/publish`, {
                         method: 'POST',
@@ -1009,14 +1022,11 @@
 
                     if (!res.ok) {
                         const errorData = await res.json();
-
-                        // 유효성 검사 실패 시 상세 정보 표시
                         if (errorData.validation && errorData.validation.errors) {
                             const errors = errorData.validation.errors;
-                            const errorMsg = errors.map(e => e.message).join('\\n');
-                            throw new Error(`유효성 검사 실패:\\n${errorMsg}`);
+                            const errorMsg = errors.map(e => e.message).join('\n'); // 이스케이프 주의
+                            throw new Error(`유효성 검사 실패:\n${errorMsg}`);
                         }
-
                         throw new Error(errorData.error || `HTTP ${res.status}`);
                     }
 
@@ -1032,992 +1042,993 @@
                     showToast("반영 실패: " + e.message, "error");
                 }
             };
+
             const generateNewScenario = async () => {
-                // 생성 직전 토큰 잔액 재확인 (실시간 동기화)
-                await fetchTokenBalance();
+                    // 생성 직전 토큰 잔액 재확인 (실시간 동기화)
+                    await fetchTokenBalance();
 
-                if (tokenBalance < estimatedCost) {
-                    setModals(m => ({ ...m, noToken: true }));
-                    return;
-                }
-
-                if (nodes.length < 2) return showToast("최소 2개의 노드 필요", "error");
-
-                // 랜덤 로딩 문구 설정
-                setLoadingMessage(getRandomLoadingMessage());
-                setIsGenerating(true);
-                try {
-                    const res = await fetch('/api/init_game', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ nodes, edges, npcs: [...globalNpcs, ...globalEnemies], items: globalItems, model: selectedModel, title: nodes[0].data.label })
-                    });
-                    const json = await res.json();
-                    fetchTokenBalance();
-
-                    if (json.filename) window.location.href = `/views/scenes/edit/${json.filename}`;
-                    else throw new Error(json.error);
-                } catch (e) { showToast(e.message, "error"); setIsGenerating(false); }
-            };
-            const runAiAudit = async (nodeId = null) => {
-                // [REQ 2] 검수 중 상태 표시
-                setAuditState({ isOpen: true, isLoading: true, results: null, targetNodeId: nodeId });
-                try {
-                    const res = await fetch('/api/audit/scene', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ scenario: { nodes, edges }, scene_id: nodeId, model: selectedModel })
-                    });
-                    const json = await res.json();
-                    if (json.success && json.result) {
-                        const r = json.result;
-                        const issues = [...(r.coherence?.issues || []), ...(r.trigger?.issues || [])];
-                        setAuditState(prev => ({ ...prev, isLoading: false, results: { issues, summary: json.summary } }));
-                    } else throw new Error(json.error);
-                } catch (e) { showToast("검수 실패", "error"); setAuditState(p => ({ ...p, isOpen: false })); }
-            };
-            const applySuggestion = (issue) => {
-                if (!issue.scene_id) return;
-                const targetId = issue.scene_id;
-                const suggestionText = `\n[${new Date().toLocaleTimeString()} AI 제안]\n문제: ${issue.message}\n제안: ${issue.suggestion}\n`;
-                setNodes(prev => prev.map(n => {
-                    if (n.id === targetId || n.data.title === targetId) {
-                        return { ...n, data: { ...n.data, ai_note: (n.data.ai_note || "") + suggestionText } };
+                    if (tokenBalance < estimatedCost) {
+                        setModals(m => ({ ...m, noToken: true }));
+                        return;
                     }
-                    return n;
-                }));
 
-                // 적용 완료 모달창 표시
-                const targetNode = nodes.find(n => n.id === targetId || n.data.title === targetId);
-                const sceneTitle = targetNode?.data?.title || targetId;
-                setModals(m => ({ ...m, auditApplied: true, auditAppliedMessage: `"${sceneTitle}" 씬의 개선사항이 AI 노트에 추가되었습니다.` }));
-            };
-            const loadPreset = (preset) => {
-                if (!confirm("현재 내용이 사라집니다. 적용하시겠습니까?")) return;
-                try {
-                    let data = typeof preset.data === 'string' ? JSON.parse(preset.data) : preset.data;
-                    pushHistory();
-                    setNodes(data.nodes); setEdges(data.edges);
-                    // NPC/적/아이템 데이터도 함께 복원
-                    if (data.globalNpcs) setGlobalNpcs(data.globalNpcs);
-                    if (data.globalEnemies) setGlobalEnemies(data.globalEnemies);
-                    if (data.globalItems) setGlobalItems(data.globalItems);
-                    setModals(m => ({ ...m, presetLoad: false })); showToast("프리셋 적용됨", "success");
-                } catch (e) { showToast("프리셋 오류", "error"); }
-            };
+                    if (nodes.length < 2) return showToast("최소 2개의 노드 필요", "error");
 
-            const savePreset = async () => {
-                const presetName = prompt("프리셋 이름을 입력하세요:");
-                if (!presetName || presetName.trim() === '') return;
+                    // 랜덤 로딩 문구 설정
+                    setLoadingMessage(getRandomLoadingMessage());
+                    setIsGenerating(true);
+                    try {
+                        const res = await fetch('/api/init_game', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ nodes, edges, npcs: [...globalNpcs, ...globalEnemies], items: globalItems, model: selectedModel, title: nodes[0].data.label })
+                        });
+                        const json = await res.json();
+                        fetchTokenBalance();
 
-                try {
-                    const res = await fetch('/api/presets/save', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            name: presetName.trim(),
-                            data: { nodes, edges }
-                        })
-                    });
-
-                    const data = await res.json();
-                    if (data.success) {
-                        setModals(m => ({ ...m, presetSave: false }));
-                        showToast(`"${presetName}" 프리셋이 저장되었습니다.`, "success");
-                    } else {
-                        throw new Error(data.error || "저장 실패");
-                    }
-                } catch (e) {
-                    showToast("프리셋 저장 실패: " + e.message, "error");
-                }
-            };
-
-            useEffect(() => {
-                const handleMessage = (event) => {
-                    if (event.data.type === 'ADD_NPC') {
-                        const entity = event.data.payload;
-                        if (entity.isEnemy) setGlobalEnemies(prev => [...prev, entity]);
-                        else setGlobalNpcs(prev => [...prev, entity]);
-                        showToast(`${entity.name} 추가됨`, "success");
-                        // 1-1. NPC/적 생성 시 토큰 소모는 iframe 내에서 처리되거나, 여기서 별도 호출 필요 시 추가
-                        // 현재 구조상 iframe 내부(npc_generator)에서 생성 API를 호출하면 거기서 소모됨.
-                    }
-                    if (event.data.type === 'ADD_ITEM') {
-                        const item = event.data.payload;
-                        setGlobalItems(prev => [...prev, item]);
-                        showToast(`${item.name} 아이템 추가됨`, "success");
-                    }
-                    if (event.data.type === 'GENERATOR_READY') {
-                        const iframe = document.querySelector('iframe');
-                        if (iframe) {
-                            iframe.contentWindow.postMessage({
-                                type: 'SCENARIO_INFO',
-                                payload: { title: nodes[0].data.label || '제목 없음' }
-                            }, '*');
+                        if (json.filename) window.location.href = `/views/scenes/edit/${json.filename}`;
+                        else throw new Error(json.error);
+                    } catch (e) { showToast(e.message, "error"); setIsGenerating(false); }
+                };
+                const runAiAudit = async (nodeId = null) => {
+                    // [REQ 2] 검수 중 상태 표시
+                    setAuditState({ isOpen: true, isLoading: true, results: null, targetNodeId: nodeId });
+                    try {
+                        const res = await fetch('/api/audit/scene', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ scenario: { nodes, edges }, scene_id: nodeId, model: selectedModel })
+                        });
+                        const json = await res.json();
+                        if (json.success && json.result) {
+                            const r = json.result;
+                            const issues = [...(r.coherence?.issues || []), ...(r.trigger?.issues || [])];
+                            setAuditState(prev => ({ ...prev, isLoading: false, results: { issues, summary: json.summary } }));
+                        } else throw new Error(json.error);
+                    } catch (e) { showToast("검수 실패", "error"); setAuditState(p => ({ ...p, isOpen: false })); }
+                };
+                const applySuggestion = (issue) => {
+                    if (!issue.scene_id) return;
+                    const targetId = issue.scene_id;
+                    const suggestionText = `\n[${new Date().toLocaleTimeString()} AI 제안]\n문제: ${issue.message}\n제안: ${issue.suggestion}\n`;
+                    setNodes(prev => prev.map(n => {
+                        if (n.id === targetId || n.data.title === targetId) {
+                            return { ...n, data: { ...n.data, ai_note: (n.data.ai_note || "") + suggestionText } };
                         }
+                        return n;
+                    }));
+
+                    // 적용 완료 모달창 표시
+                    const targetNode = nodes.find(n => n.id === targetId || n.data.title === targetId);
+                    const sceneTitle = targetNode?.data?.title || targetId;
+                    setModals(m => ({ ...m, auditApplied: true, auditAppliedMessage: `"${sceneTitle}" 씬의 개선사항이 AI 노트에 추가되었습니다.` }));
+                };
+                const loadPreset = (preset) => {
+                    if (!confirm("현재 내용이 사라집니다. 적용하시겠습니까?")) return;
+                    try {
+                        let data = typeof preset.data === 'string' ? JSON.parse(preset.data) : preset.data;
+                        pushHistory();
+                        setNodes(data.nodes); setEdges(data.edges);
+                        // NPC/적/아이템 데이터도 함께 복원
+                        if (data.globalNpcs) setGlobalNpcs(data.globalNpcs);
+                        if (data.globalEnemies) setGlobalEnemies(data.globalEnemies);
+                        if (data.globalItems) setGlobalItems(data.globalItems);
+                        setModals(m => ({ ...m, presetLoad: false })); showToast("프리셋 적용됨", "success");
+                    } catch (e) { showToast("프리셋 오류", "error"); }
+                };
+
+                const savePreset = async () => {
+                    const presetName = prompt("프리셋 이름을 입력하세요:");
+                    if (!presetName || presetName.trim() === '') return;
+
+                    try {
+                        const res = await fetch('/api/presets/save', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                name: presetName.trim(),
+                                data: { nodes, edges }
+                            })
+                        });
+
+                        const data = await res.json();
+                        if (data.success) {
+                            setModals(m => ({ ...m, presetSave: false }));
+                            showToast(`"${presetName}" 프리셋이 저장되었습니다.`, "success");
+                        } else {
+                            throw new Error(data.error || "저장 실패");
+                        }
+                    } catch (e) {
+                        showToast("프리셋 저장 실패: " + e.message, "error");
                     }
                 };
-                window.addEventListener('message', handleMessage);
-                return () => window.removeEventListener('message', handleMessage);
-            }, [nodes]);
 
-            return (
-                <div className="flex h-screen overflow-hidden text-sm font-sans"
-                    onMouseUp={handleMouseUp} onMouseMove={handleMouseMove} onClick={handleCanvasClick}
-                    onContextMenu={e => { e.preventDefault(); setConnectSource(null); }}>
+                useEffect(() => {
+                    const handleMessage = (event) => {
+                        if (event.data.type === 'ADD_NPC') {
+                            const entity = event.data.payload;
+                            if (entity.isEnemy) setGlobalEnemies(prev => [...prev, entity]);
+                            else setGlobalNpcs(prev => [...prev, entity]);
+                            showToast(`${entity.name} 추가됨`, "success");
+                            // 1-1. NPC/적 생성 시 토큰 소모는 iframe 내에서 처리되거나, 여기서 별도 호출 필요 시 추가
+                            // 현재 구조상 iframe 내부(npc_generator)에서 생성 API를 호출하면 거기서 소모됨.
+                        }
+                        if (event.data.type === 'ADD_ITEM') {
+                            const item = event.data.payload;
+                            setGlobalItems(prev => [...prev, item]);
+                            showToast(`${item.name} 아이템 추가됨`, "success");
+                        }
+                        if (event.data.type === 'GENERATOR_READY') {
+                            const iframe = document.querySelector('iframe');
+                            if (iframe) {
+                                iframe.contentWindow.postMessage({
+                                    type: 'SCENARIO_INFO',
+                                    payload: { title: nodes[0].data.label || '제목 없음' }
+                                }, '*');
+                            }
+                        }
+                    };
+                    window.addEventListener('message', handleMessage);
+                    return () => window.removeEventListener('message', handleMessage);
+                }, [nodes]);
 
-                    <div className="absolute inset-0 z-0 bg-dots-pattern pointer-events-none"></div>
+                return (
+                    <div className="flex h-screen overflow-hidden text-sm font-sans"
+                        onMouseUp={handleMouseUp} onMouseMove={handleMouseMove} onClick={handleCanvasClick}
+                        onContextMenu={e => { e.preventDefault(); setConnectSource(null); }}>
 
-                    {isGenerating && (
-                        <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-fade-in">
-                            <div className="relative mb-6">
-                                {/* 메인 스피너 */}
-                                <div className="w-20 h-20 border-4 border-[#00FFFF]/20 rounded-full animate-spin"></div>
-                                {/* 내부 스피너 */}
-                                <div className="absolute top-2 left-2 w-16 h-16 border-4 border-[#00FFFF]/40 rounded-full animate-spin" style={{ animationDuration: '1.5s' }}></div>
-                                {/* 중심 스피너 */}
-                                <div className="absolute top-4 left-4 w-12 h-12 border-4 border-[#00FFFF] rounded-full animate-spin" style={{ animationDuration: '2s' }}></div>
-                                {/* 중심 아이콘 */}
-                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                                    <Icon name="sparkles" size={24} className="text-[#00FFFF] animate-pulse" />
-                                </div>
-                            </div>
-                            <div className="text-xl font-bold text-[#00FFFF] mb-2">시나리오 생성 중...</div>
-                            <div className="text-sm text-gray-400">{loadingMessage}</div>
-                        </div>
-                    )}
+                        <div className="absolute inset-0 z-0 bg-dots-pattern pointer-events-none"></div>
 
-                    {toast.show && (
-                        <div className={`fixed top-5 left-1/2 -translate-x-1/2 z-[200] px-6 py-3 border-2 border-[#4A4A6A] shadow-xl font-bold animate-fade-in bg-[#131320] text-[#FFFACD]`}>
-                            {toast.msg}
-                        </div>
-                    )}
-
-                    {/* Left Toolbar */}
-                    <div id="builder-left-panel" className="w-64 bg-[#0B0B19] border-r-2 border-[#4A4A6A] flex flex-col z-20 shadow-2xl">
-                        <div className="p-4 border-b-2 border-[#4A4A6A] flex items-center justify-between bg-[#1A0B2E]">
-                            <span className="font-bold text-sm text-[#FF007F]">TRPG 빌더</span>
-                            <div className="flex items-center gap-2">
-                                <button onClick={() => window.TutorialSystem && window.TutorialSystem.start('builder')}
-                                    className="text-[#00FFFF] hover:text-white" title="튜토리얼">
-                                    <Icon name="help-circle" size={16} />
-                                </button>
-                                <a href="/" className="text-[#6A6A8A] hover:text-[#FFFACD]"><Icon name="home" size={16} /></a>
-                            </div>
-                        </div>
-                        <div className="p-4 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
-                            <div className="text-[10px] text-[#6A6A8A] mb-1 font-bold">노드 생성</div>
-                            <button onClick={() => addNode('scene')} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs hover:text-[#00FFFF]">
-                                <Icon name="plus-square" /> Scene 추가
-                            </button>
-                            <button onClick={() => addNode('ending')} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#FF007F] hover:text-[#FF4081]">
-                                <Icon name="flag" /> Ending 추가
-                            </button>
-
-                            <div className="h-px bg-[#4A4A6A] my-2"></div>
-                            <div className="text-[10px] text-[#6A6A8A] mb-1 font-bold">에셋 관리</div>
-                            <button onClick={() => setModals(m => ({ ...m, npcGen: true }))} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#00FFFF]"><Icon name="user-plus" /> NPC 생성</button>
-                            <button onClick={async () => { try { const res = await fetch('/api/npc/list'); const data = await res.json(); setDbNpcList(data); setModals(m => ({ ...m, npcList: true })); } catch (e) { } }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs"><Icon name="users" /> NPC 불러오기</button>
-
-                            <button onClick={() => {
-                                setModals(m => ({ ...m, npcGen: true }));
-                                setTimeout(() => {
-                                    const iframe = document.querySelector('iframe');
-                                    if (iframe) iframe.contentWindow.postMessage({ type: 'SWITCH_TAB', tab: 'item' }, '*');
-                                }, 500);
-                            }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#FFD700] mt-2"><Icon name="package-plus" /> 아이템 생성</button>
-
-                            <button onClick={async () => { try { const res = await fetch('/api/item/list'); const data = await res.json(); setDbItemList(data); setModals(m => ({ ...m, itemList: true })); } catch (e) { } }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs"><Icon name="package" /> 아이템 불러오기</button>
-
-                            <div className="h-px bg-[#4A4A6A] my-2"></div>
-                            <div className="text-[10px] text-[#6A6A8A] mb-1 font-bold">도구</div>
-                            <div className="flex gap-2">
-                                <button onClick={undo} className="pixel-btn flex-1 py-2 text-[#6A6A8A]" title="되돌리기"><Icon name="undo-2" /></button>
-                                <button onClick={redo} className="pixel-btn flex-1 py-2 text-[#6A6A8A]" title="다시하기"><Icon name="redo-2" /></button>
-                            </div>
-                            <button onClick={async () => { try { const res = await fetch('/api/presets'); const data = await res.json(); setPresetList(data); setModals(m => ({ ...m, presetLoad: true })); } catch (e) { } }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2"><Icon name="folder-open" /> 프리셋 로드</button>
-                            <button onClick={() => setModals(m => ({ ...m, presetSave: true }))} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2 text-[#FFD700]"><Icon name="save" /> 프리셋 저장</button>
-                            <button onClick={async () => { try { const res = await fetch('/api/scenarios/data?filter=my'); const data = await res.json(); setUserScenarios(data); setModals(m => ({ ...m, scenarioList: true })); } catch (e) { } }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2"><Icon name="file-edit" /> 시나리오 로드</button>
-                        </div>
-                        <div className="p-4 border-t-2 border-[#4A4A6A] bg-[#0B0B19]">
-                            {/* 토큰 잔액 표시 영역 */}
-                            <div className="flex items-center justify-between mb-3 px-3 py-2 bg-[#1A0B2E] border border-[#FFD700] rounded text-[#FFD700]">
-                                <div className="flex items-center gap-2">
-                                    <Icon name="coins" size={14} className="text-yellow-400" />
-                                    <span className="font-bold text-xs">보유 토큰</span>
-                                </div>
-                                <span className="font-mono font-bold text-sm tracking-wide">
-                                    {tokenBalance.toLocaleString()} CR
-                                </span>
-                            </div>
-
-                            <div className="mb-3">
-                                <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">AI 모델 선택</label>
-                                <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
-                                    className="w-full pixel-input p-1 text-xs">
-                                    {AVAILABLE_AI_MODELS.map(model => (
-                                        <option key={model.id} value={model.id}>{model.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            {/* [REQ 2] Audit 버튼 상태 표시 수정 */}
-                            <div className="mb-2 text-right">
-                                <span className="text-[10px] text-[#6A6A8A] mr-1">예상 소모:</span>
-                                <span className={`text-xs font-bold ${tokenBalance >= fullAuditEstimatedCost ? 'text-[#FFD700]' : 'text-[#FF007F] animate-pulse'}`}>
-                                    {fullAuditEstimatedCost.toLocaleString()} CR ({nodes.filter(n => n.type === 'scene').length} 씬)
-                                </span>
-                            </div>
-                            <button onClick={() => runAiAudit(null)} disabled={auditState.isLoading} className="pixel-btn w-full mb-3 py-3 text-xs flex items-center justify-center gap-2 border-[#6366f1] text-[#6366f1] hover:text-white hover:bg-[#6366f1] disabled:opacity-50 disabled:cursor-wait">
-                                {auditState.isLoading && auditState.targetNodeId === null ?
-                                    <><Icon name="loader-2" className="animate-spin" /> AI 검수 진행 중...</> :
-                                    <><Icon name="brain-circuit" /> 전체 스토리 검수</>
-                                }
-                            </button>
-
-                            {!isEditMode ? (
-                                <>
-                                    <div className="mb-2 text-right">
-                                        <span className="text-[10px] text-[#6A6A8A] mr-1">예상 소모:</span>
-                                        <span className={`text-xs font-bold ${isAffordable ? 'text-[#FFD700]' : 'text-[#FF007F] animate-pulse'}`}>
-                                            {estimatedCost.toLocaleString()} CR
-                                        </span>
+                        {isGenerating && (
+                            <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-fade-in">
+                                <div className="relative mb-6">
+                                    {/* 메인 스피너 */}
+                                    <div className="w-20 h-20 border-4 border-[#00FFFF]/20 rounded-full animate-spin"></div>
+                                    {/* 내부 스피너 */}
+                                    <div className="absolute top-2 left-2 w-16 h-16 border-4 border-[#00FFFF]/40 rounded-full animate-spin" style={{ animationDuration: '1.5s' }}></div>
+                                    {/* 중심 스피너 */}
+                                    <div className="absolute top-4 left-4 w-12 h-12 border-4 border-[#00FFFF] rounded-full animate-spin" style={{ animationDuration: '2s' }}></div>
+                                    {/* 중심 아이콘 */}
+                                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                                        <Icon name="sparkles" size={24} className="text-[#00FFFF] animate-pulse" />
                                     </div>
-                                    <button
-                                        onClick={generateNewScenario}
-                                        disabled={!isAffordable || isGenerating}
-                                        className={`pixel-btn w-full py-3 flex items-center justify-center gap-2
-                                            ${isAffordable
-                                                ? 'bg-[#00FFFF]/10 text-[#00FFFF] border-[#00FFFF] hover:bg-[#00FFFF]/20'
-                                                : 'bg-[#FF007F]/10 text-[#FF007F] border-[#FF007F] cursor-not-allowed opacity-50'}`}
-                                    >
-                                        <Icon name="wand-2" /> {isAffordable ? "시나리오 생성" : "잔액 부족"}
+                                </div>
+                                <div className="text-xl font-bold text-[#00FFFF] mb-2">시나리오 생성 중...</div>
+                                <div className="text-sm text-gray-400">{loadingMessage}</div>
+                            </div>
+                        )}
+
+                        {toast.show && (
+                            <div className={`fixed top-5 left-1/2 -translate-x-1/2 z-[200] px-6 py-3 border-2 border-[#4A4A6A] shadow-xl font-bold animate-fade-in bg-[#131320] text-[#FFFACD]`}>
+                                {toast.msg}
+                            </div>
+                        )}
+
+                        {/* Left Toolbar */}
+                        <div id="builder-left-panel" className="w-64 bg-[#0B0B19] border-r-2 border-[#4A4A6A] flex flex-col z-20 shadow-2xl">
+                            <div className="p-4 border-b-2 border-[#4A4A6A] flex items-center justify-between bg-[#1A0B2E]">
+                                <span className="font-bold text-sm text-[#FF007F]">TRPG 빌더</span>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => window.TutorialSystem && window.TutorialSystem.start('builder')}
+                                        className="text-[#00FFFF] hover:text-white" title="튜토리얼">
+                                        <Icon name="help-circle" size={16} />
                                     </button>
-                                </>
-                            ) : (
-                                <div className="space-y-2">
-                                    <button onClick={saveDraft} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-[#6366f1]"><Icon name="save" /> 임시 저장</button>
-                                    <button id="builder-publish-btn" onClick={publishScenario} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-[#00FFFF]"><Icon name="upload" /> 최종 반영</button>
+                                    <a href="/" className="text-[#6A6A8A] hover:text-[#FFFACD]"><Icon name="home" size={16} /></a>
+                                </div>
+                            </div>
+                            <div className="p-4 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
+                                <div className="text-[10px] text-[#6A6A8A] mb-1 font-bold">노드 생성</div>
+                                <button onClick={() => addNode('scene')} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs hover:text-[#00FFFF]">
+                                    <Icon name="plus-square" /> Scene 추가
+                                </button>
+                                <button onClick={() => addNode('ending')} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#FF007F] hover:text-[#FF4081]">
+                                    <Icon name="flag" /> Ending 추가
+                                </button>
+
+                                <div className="h-px bg-[#4A4A6A] my-2"></div>
+                                <div className="text-[10px] text-[#6A6A8A] mb-1 font-bold">에셋 관리</div>
+                                <button onClick={() => setModals(m => ({ ...m, npcGen: true }))} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#00FFFF]"><Icon name="user-plus" /> NPC 생성</button>
+                                <button onClick={async () => { try { const res = await fetch('/api/npc/list'); const data = await res.json(); setDbNpcList(data); setModals(m => ({ ...m, npcList: true })); } catch (e) { } }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs"><Icon name="users" /> NPC 불러오기</button>
+
+                                <button onClick={() => {
+                                    setModals(m => ({ ...m, npcGen: true }));
+                                    setTimeout(() => {
+                                        const iframe = document.querySelector('iframe');
+                                        if (iframe) iframe.contentWindow.postMessage({ type: 'SWITCH_TAB', tab: 'item' }, '*');
+                                    }, 500);
+                                }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs text-[#FFD700] mt-2"><Icon name="package-plus" /> 아이템 생성</button>
+
+                                <button onClick={async () => { try { const res = await fetch('/api/item/list'); const data = await res.json(); setDbItemList(data); setModals(m => ({ ...m, itemList: true })); } catch (e) { } }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs"><Icon name="package" /> 아이템 불러오기</button>
+
+                                <div className="h-px bg-[#4A4A6A] my-2"></div>
+                                <div className="text-[10px] text-[#6A6A8A] mb-1 font-bold">도구</div>
+                                <div className="flex gap-2">
+                                    <button onClick={undo} className="pixel-btn flex-1 py-2 text-[#6A6A8A]" title="되돌리기"><Icon name="undo-2" /></button>
+                                    <button onClick={redo} className="pixel-btn flex-1 py-2 text-[#6A6A8A]" title="다시하기"><Icon name="redo-2" /></button>
+                                </div>
+                                <button onClick={async () => { try { const res = await fetch('/api/presets'); const data = await res.json(); setPresetList(data); setModals(m => ({ ...m, presetLoad: true })); } catch (e) { } }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2"><Icon name="folder-open" /> 프리셋 로드</button>
+                                <button onClick={() => setModals(m => ({ ...m, presetSave: true }))} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2 text-[#FFD700]"><Icon name="save" /> 프리셋 저장</button>
+                                <button onClick={async () => { try { const res = await fetch('/api/scenarios/data?filter=my'); const data = await res.json(); setUserScenarios(data); setModals(m => ({ ...m, scenarioList: true })); } catch (e) { } }} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-xs mt-2"><Icon name="file-edit" /> 시나리오 로드</button>
+                            </div>
+                            <div className="p-4 border-t-2 border-[#4A4A6A] bg-[#0B0B19]">
+                                {/* 토큰 잔액 표시 영역 */}
+                                <div className="flex items-center justify-between mb-3 px-3 py-2 bg-[#1A0B2E] border border-[#FFD700] rounded text-[#FFD700]">
+                                    <div className="flex items-center gap-2">
+                                        <Icon name="coins" size={14} className="text-yellow-400" />
+                                        <span className="font-bold text-xs">보유 토큰</span>
+                                    </div>
+                                    <span className="font-mono font-bold text-sm tracking-wide">
+                                        {tokenBalance.toLocaleString()} CR
+                                    </span>
+                                </div>
+
+                                <div className="mb-3">
+                                    <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">AI 모델 선택</label>
+                                    <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
+                                        className="w-full pixel-input p-1 text-xs">
+                                        {AVAILABLE_AI_MODELS.map(model => (
+                                            <option key={model.id} value={model.id}>{model.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                {/* [REQ 2] Audit 버튼 상태 표시 수정 */}
+                                <div className="mb-2 text-right">
+                                    <span className="text-[10px] text-[#6A6A8A] mr-1">예상 소모:</span>
+                                    <span className={`text-xs font-bold ${tokenBalance >= fullAuditEstimatedCost ? 'text-[#FFD700]' : 'text-[#FF007F] animate-pulse'}`}>
+                                        {fullAuditEstimatedCost.toLocaleString()} CR ({nodes.filter(n => n.type === 'scene').length} 씬)
+                                    </span>
+                                </div>
+                                <button onClick={() => runAiAudit(null)} disabled={auditState.isLoading} className="pixel-btn w-full mb-3 py-3 text-xs flex items-center justify-center gap-2 border-[#6366f1] text-[#6366f1] hover:text-white hover:bg-[#6366f1] disabled:opacity-50 disabled:cursor-wait">
+                                    {auditState.isLoading && auditState.targetNodeId === null ?
+                                        <><Icon name="loader-2" className="animate-spin" /> AI 검수 진행 중...</> :
+                                        <><Icon name="brain-circuit" /> 전체 스토리 검수</>
+                                    }
+                                </button>
+
+                                {!isEditMode ? (
+                                    <>
+                                        <div className="mb-2 text-right">
+                                            <span className="text-[10px] text-[#6A6A8A] mr-1">예상 소모:</span>
+                                            <span className={`text-xs font-bold ${isAffordable ? 'text-[#FFD700]' : 'text-[#FF007F] animate-pulse'}`}>
+                                                {estimatedCost.toLocaleString()} CR
+                                            </span>
+                                        </div>
+                                        <button
+                                            onClick={generateNewScenario}
+                                            disabled={!isAffordable || isGenerating}
+                                            className={`pixel-btn w-full py-3 flex items-center justify-center gap-2
+                                            ${isAffordable
+                                                    ? 'bg-[#00FFFF]/10 text-[#00FFFF] border-[#00FFFF] hover:bg-[#00FFFF]/20'
+                                                    : 'bg-[#FF007F]/10 text-[#FF007F] border-[#FF007F] cursor-not-allowed opacity-50'}`}
+                                        >
+                                            <Icon name="wand-2" /> {isAffordable ? "시나리오 생성" : "잔액 부족"}
+                                        </button>
+                                    </>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <button onClick={saveDraft} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-[#6366f1]"><Icon name="save" /> 임시 저장</button>
+                                        <button id="builder-publish-btn" onClick={publishScenario} className="pixel-btn w-full py-2 flex items-center justify-center gap-2 text-[#00FFFF]"><Icon name="upload" /> 최종 반영</button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Canvas */}
+                        <div id="builder-canvas" ref={canvasRef} className="flex-1 relative overflow-hidden cursor-crosshair z-10"
+                            onMouseDown={handleMouseDown}
+                            onWheel={(e) => setPan(p => ({ ...p, zoom: Math.min(Math.max(0.2, p.zoom - e.deltaY * 0.001), 3) }))}>
+                            <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${pan.zoom})`, transformOrigin: '0 0', width: '100%', height: '100%' }}>
+                                <EdgeLayer edges={edges} nodes={nodes} connectSource={connectSource} mousePos={mousePos} onEdgeClick={deleteEdge} />
+                                {nodes.map(node => (
+                                    <NodeItem
+                                        key={node.id}
+                                        node={node}
+                                        isSelected={selectedNodeId === node.id}
+                                        isConnectSource={connectSource === node.id}
+                                        isCandidate={connectSource && connectSource !== node.id}
+                                        onMouseDown={handleNodeDragStart}
+                                        onClick={handleNodeBodyClick}
+                                        onLinkClick={handleLinkClick}
+                                        onDelete={deleteNode}
+                                        onAudit={runAiAudit}
+                                        globalNpcs={globalNpcs}
+                                        globalEnemies={globalEnemies}
+                                    />
+                                ))}
+                            </div>
+
+                            <div className="absolute top-4 right-4 flex flex-col gap-2 z-30">
+                                <button onClick={() => setPan(p => ({ ...p, zoom: p.zoom + 0.1 }))} className="pixel-btn p-2 bg-[#0B0B19]"><Icon name="plus" /></button>
+                                <button onClick={() => setPan({ x: 0, y: 0, zoom: 1 })} className="pixel-btn p-2 bg-[#0B0B19] text-xs font-bold">{Math.round(pan.zoom * 100)}%</button>
+                                <button onClick={() => setPan(p => ({ ...p, zoom: p.zoom - 0.1 }))} className="pixel-btn p-2 bg-[#0B0B19]"><Icon name="minus" /></button>
+                            </div>
+
+                            {isEditMode && (
+                                <div className="absolute top-4 left-4 pixel-box px-4 py-2 flex items-center gap-2 z-30 bg-[#0B0B19]">
+                                    <span className="w-2 h-2 bg-[#10b981] animate-pulse"></span>
+                                    <span className="text-xs text-[#FFFACD] font-bold">편집 중: {scenarioId}</span>
+                                </div>
+                            )}
+
+                            {connectSource && (
+                                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 pixel-box px-6 py-2 bg-[#0B0B19] text-[#00FFFF] text-xs animate-bounce z-50 border-2 border-[#00FFFF]">
+                                    연결할 대상을 클릭하세요...
                                 </div>
                             )}
                         </div>
-                    </div>
 
-                    {/* Canvas */}
-                    <div id="builder-canvas" ref={canvasRef} className="flex-1 relative overflow-hidden cursor-crosshair z-10"
-                        onMouseDown={handleMouseDown}
-                        onWheel={(e) => setPan(p => ({ ...p, zoom: Math.min(Math.max(0.2, p.zoom - e.deltaY * 0.001), 3) }))}>
-                        <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${pan.zoom})`, transformOrigin: '0 0', width: '100%', height: '100%' }}>
-                            <EdgeLayer edges={edges} nodes={nodes} connectSource={connectSource} mousePos={mousePos} onEdgeClick={deleteEdge} />
-                            {nodes.map(node => (
-                                <NodeItem
-                                    key={node.id}
-                                    node={node}
-                                    isSelected={selectedNodeId === node.id}
-                                    isConnectSource={connectSource === node.id}
-                                    isCandidate={connectSource && connectSource !== node.id}
-                                    onMouseDown={handleNodeDragStart}
-                                    onClick={handleNodeBodyClick}
-                                    onLinkClick={handleLinkClick}
-                                    onDelete={deleteNode}
-                                    onAudit={runAiAudit}
-                                    globalNpcs={globalNpcs}
-                                    globalEnemies={globalEnemies}
-                                />
-                            ))}
-                        </div>
-
-                        <div className="absolute top-4 right-4 flex flex-col gap-2 z-30">
-                            <button onClick={() => setPan(p => ({ ...p, zoom: p.zoom + 0.1 }))} className="pixel-btn p-2 bg-[#0B0B19]"><Icon name="plus" /></button>
-                            <button onClick={() => setPan({ x: 0, y: 0, zoom: 1 })} className="pixel-btn p-2 bg-[#0B0B19] text-xs font-bold">{Math.round(pan.zoom * 100)}%</button>
-                            <button onClick={() => setPan(p => ({ ...p, zoom: p.zoom - 0.1 }))} className="pixel-btn p-2 bg-[#0B0B19]"><Icon name="minus" /></button>
-                        </div>
-
-                        {isEditMode && (
-                            <div className="absolute top-4 left-4 pixel-box px-4 py-2 flex items-center gap-2 z-30 bg-[#0B0B19]">
-                                <span className="w-2 h-2 bg-[#10b981] animate-pulse"></span>
-                                <span className="text-xs text-[#FFFACD] font-bold">편집 중: {scenarioId}</span>
-                            </div>
-                        )}
-
-                        {connectSource && (
-                            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 pixel-box px-6 py-2 bg-[#0B0B19] text-[#00FFFF] text-xs animate-bounce z-50 border-2 border-[#00FFFF]">
-                                연결할 대상을 클릭하세요...
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Right Properties Panel */}
-                    <div id="builder-right-panel" className="w-80 bg-[#131320] border-l-2 border-[#4A4A6A] p-4 overflow-y-auto custom-scrollbar z-20 shadow-xl">
-                        {selectedNodeId ? (() => {
-                            const node = nodes.find(n => n.id === selectedNodeId);
-                            if (!node) return null;
-                            const isStart = node.type === 'start';
-                            return (
-                                <div className="space-y-4 animate-fade-in">
-                                    <div className="text-xs text-[#6A6A8A] border-b-2 border-[#4A4A6A] pb-2 mb-4 flex justify-between font-bold">
-                                        속성 편집
-                                        <span>ID: {node.id.split('-')[1] || node.id}
-                                            {/* 디버그용: 신규 노드 여부 표시 */}
-                                            {node.data.isNew ? <span className="text-red-500 ml-1"> (NEW)</span> : <span className="text-gray-500 ml-1"> (OLD)</span>}
-                                        </span>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">제목</label>
-                                        <input className="w-full pixel-input p-2 text-sm"
-                                            value={node.data.title || node.data.label || ''}
-                                            onChange={e => updateNodeData(node.id, isStart ? 'label' : 'title', e.target.value)} />
-                                    </div>
-
-                                    <div>
-                                        <div className="flex justify-between items-end mb-1">
-                                            <label className="text-[10px] text-[#6A6A8A] block font-bold">내용/지문</label>
-                                            {/* [NEW] 내용 AI 생성 버튼 */}
-                                            <button onClick={() => generateNodeText(node.id, node.type)} disabled={textGenState.isLoading}
-                                                className="text-[10px] text-[#6366f1] border border-[#6366f1] px-1 hover:bg-[#6366f1] hover:text-white transition-colors disabled:opacity-50">
-                                                {textGenState.isLoading ? '생성 중...' : <><Icon name="sparkles" size={10} /> AI 작성</>}
-                                            </button>
+                        {/* Right Properties Panel */}
+                        <div id="builder-right-panel" className="w-80 bg-[#131320] border-l-2 border-[#4A4A6A] p-4 overflow-y-auto custom-scrollbar z-20 shadow-xl">
+                            {selectedNodeId ? (() => {
+                                const node = nodes.find(n => n.id === selectedNodeId);
+                                if (!node) return null;
+                                const isStart = node.type === 'start';
+                                return (
+                                    <div className="space-y-4 animate-fade-in">
+                                        <div className="text-xs text-[#6A6A8A] border-b-2 border-[#4A4A6A] pb-2 mb-4 flex justify-between font-bold">
+                                            속성 편집
+                                            <span>ID: {node.id.split('-')[1] || node.id}
+                                                {/* 디버그용: 신규 노드 여부 표시 */}
+                                                {node.data.isNew ? <span className="text-red-500 ml-1"> (NEW)</span> : <span className="text-gray-500 ml-1"> (OLD)</span>}
+                                            </span>
                                         </div>
-                                        <textarea className="w-full pixel-input p-2 text-sm h-32 resize-none"
-                                            value={node.data.description || node.data.prologue || ''}
-                                            onChange={e => updateNodeData(node.id, isStart ? 'prologue' : 'description', e.target.value)}></textarea>
-                                    </div>
 
-                                    {node.type === 'scene' && (
-                                        <>
-                                            {/* 씬 배경 이미지 표시 */}
-                                            {node.data.background_image && (
-                                                <div>
-                                                    <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">배경 이미지</label>
-                                                    <div className="relative group">
-                                                        <img
-                                                            src={getImageUrl(node.data.background_image)}
-                                                            className="w-full h-32 object-cover rounded border-2 border-[#4A4A6A] hover:border-[#00FFFF] transition-colors cursor-pointer"
-                                                            onClick={() => window.open(getImageUrl(node.data.background_image), '_blank')}
-                                                            alt="씬 배경 이미지"
-                                                            onError={(e) => {
-                                                                console.error('Background image load error:', e);
-                                                                console.error('Background image URL:', getImageUrl(node.data.background_image));
-                                                                e.target.style.display = 'none';
-                                                                const errDiv = document.getElementById(`bg-err-${node.id}`);
-                                                                if (errDiv) errDiv.style.display = 'block';
-                                                            }}
-                                                        />
-                                                        <div id={`bg-err-${node.id}`} style={{ display: 'none' }} className="w-full h-32 flex flex-col items-center justify-center bg-[#1A0B2E] border border-[#FF007F] border-dashed text-center p-2">
-                                                            <div className="text-[10px] text-[#FF007F] flex flex-col items-center">
-                                                                <span className="mb-1 font-bold">배경 이미지 로드 실패</span>
-                                                                <span className="text-[9px] opacity-70 break-all select-all">{node.data.background_image}</span>
-                                                            </div>
-                                                        </div>
-                                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded">
-                                                            <span className="text-white text-xs font-bold">클릭하여 원본 보기</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
+                                        <div>
+                                            <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">제목</label>
+                                            <input className="w-full pixel-input p-2 text-sm"
+                                                value={node.data.title || node.data.label || ''}
+                                                onChange={e => updateNodeData(node.id, isStart ? 'label' : 'title', e.target.value)} />
+                                        </div>
 
-                                            <div>
-                                                <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">진입 조건 (Trigger)</label>
-                                                <input className="w-full pixel-input p-2 text-sm"
-                                                    value={node.data.trigger || ''} placeholder="예: 문을 연다"
-                                                    onChange={e => updateNodeData(node.id, 'trigger', e.target.value)} />
+                                        <div>
+                                            <div className="flex justify-between items-end mb-1">
+                                                <label className="text-[10px] text-[#6A6A8A] block font-bold">내용/지문</label>
+                                                {/* [NEW] 내용 AI 생성 버튼 */}
+                                                <button onClick={() => generateNodeText(node.id, node.type)} disabled={textGenState.isLoading}
+                                                    className="text-[10px] text-[#6366f1] border border-[#6366f1] px-1 hover:bg-[#6366f1] hover:text-white transition-colors disabled:opacity-50">
+                                                    {textGenState.isLoading ? '생성 중...' : <><Icon name="sparkles" size={10} /> AI 작성</>}
+                                                </button>
                                             </div>
+                                            <textarea className="w-full pixel-input p-2 text-sm h-32 resize-none"
+                                                value={node.data.description || node.data.prologue || ''}
+                                                onChange={e => updateNodeData(node.id, isStart ? 'prologue' : 'description', e.target.value)}></textarea>
+                                        </div>
 
-                                            <div className="pt-2 border-t border-[#4A4A6A] mt-2">
-                                                <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">등장 NPC</label>
-                                                <div className="space-y-1 mb-2">
-                                                    {(node.data.npcs || []).map((n, i) => (
-                                                        <div key={i}
-                                                            className="flex justify-between p-1 bg-[#0B0B19] border border-[#4A4A6A] text-xs text-[#10b981]"
-                                                            onMouseEnter={(e) => {
-                                                                if (n.image) setHoverPreview({ show: true, x: e.clientX, y: e.clientY, url: n.image, name: n.name });
-                                                            }}
-                                                            onMouseLeave={() => setHoverPreview({ show: false, x: 0, y: 0, url: '', name: '' })}
-                                                        >
-                                                            <div className="flex items-center gap-2">
-                                                                {n.image && <img src={getImageUrl(n.image)} className="w-4 h-4 rounded-full border border-gray-500 object-cover" />}
-                                                                {n.name}
-                                                            </div>
-                                                            <button onClick={() => removeEntityFromNode(node.id, 'npcs', i)}><Icon name="x" size={12} /></button>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <select className="w-full pixel-input p-1 text-xs" onChange={(e) => { if (e.target.value) { addEntityToNode(node.id, 'npcs', globalNpcs.find(n => n.name === e.target.value)); e.target.value = "" } }}>
-                                                    <option value="">+ NPC 추가</option>
-                                                    {globalNpcs.map((n, i) => <option key={i} value={n.name}>{n.name}</option>)}
-                                                </select>
-                                            </div>
-
-                                            <div className="pt-2 border-t border-[#4A4A6A] mt-2">
-                                                <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">등장 적</label>
-                                                <div className="space-y-1 mb-2">
-                                                    {(node.data.enemies || []).map((e, i) => (
-                                                        <div key={i}
-                                                            className="flex justify-between p-1 bg-[#0B0B19] border border-[#4A4A6A] text-xs text-[#FF007F]"
-                                                            onMouseEnter={(ev) => {
-                                                                if (e.image) setHoverPreview({ show: true, x: ev.clientX, y: ev.clientY, url: e.image, name: e.name });
-                                                            }}
-                                                            onMouseLeave={() => setHoverPreview({ show: false, x: 0, y: 0, url: '', name: '' })}
-                                                        >
-                                                            <div className="flex items-center gap-2">
-                                                                {e.image && <img src={getImageUrl(e.image)} className="w-4 h-4 rounded-full border border-gray-500 object-cover" />}
-                                                                {e.name}
-                                                            </div>
-                                                            <button onClick={() => removeEntityFromNode(node.id, 'enemies', i)}><Icon name="x" size={12} /></button>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <select className="w-full pixel-input p-1 text-xs" onChange={(e) => { if (e.target.value) { addEntityToNode(node.id, 'enemies', globalEnemies.find(n => n.name === e.target.value)); e.target.value = "" } }}>
-                                                    <option value="">+ 적 추가</option>
-                                                    {globalEnemies.map((n, i) => <option key={i} value={n.name}>{n.name}</option>)}
-                                                </select>
-                                            </div>
-
-                                            <div className="pt-2 border-t border-[#4A4A6A] mt-2">
-                                                <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">획득 아이템</label>
-                                                <div className="space-y-1 mb-2">
-                                                    {(node.data.items || []).map((item, i) => (
-                                                        <div key={i}
-                                                            className="flex justify-between p-1 bg-[#0B0B19] border border-[#4A4A6A] text-xs text-[#FFD700]"
-                                                            onMouseEnter={(ev) => {
-                                                                if (item.image) setHoverPreview({ show: true, x: ev.clientX, y: ev.clientY, url: item.image, name: item.name });
-                                                            }}
-                                                            onMouseLeave={() => setHoverPreview({ show: false, x: 0, y: 0, url: '', name: '' })}
-                                                        >
-                                                            <div className="flex items-center gap-2">
-                                                                {item.image && <img src={getImageUrl(item.image)} className="w-4 h-4 border border-gray-500 object-cover" />}
-                                                                {item.name}
-                                                            </div>
-                                                            <button onClick={() => removeEntityFromNode(node.id, 'items', i)}><Icon name="x" size={12} /></button>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <select className="w-full pixel-input p-1 text-xs" onChange={(e) => { if (e.target.value) { addEntityToNode(node.id, 'items', globalItems.find(n => n.name === e.target.value)); e.target.value = "" } }}>
-                                                    <option value="">+ 아이템 추가</option>
-                                                    {globalItems.map((n, i) => <option key={i} value={n.name}>{n.name}</option>)}
-                                                </select>
-                                            </div>
-                                        </>
-                                    )}
-
-                                    <div className="mt-4 pt-4 border-t-2 border-[#4A4A6A]">
-                                        <label className="text-[10px] text-[#6A6A8A] block mb-1 flex items-center gap-1 font-bold"><Icon name="brain-circuit" size={12} /> AI 제안 노트</label>
-                                        <textarea className="w-full pixel-input p-2 text-xs h-20 resize-none text-[#FFFACD]"
-                                            value={node.data.ai_note || ''} readOnly></textarea>
-                                    </div>
-
-                                    {/* AI 이미지 생성 및 미리보기 패널 */}
-                                    <div className="mt-4 pt-4 border-t-2 border-[#4A4A6A]">
-                                        <label className="text-[10px] text-[#6A6A8A] block mb-1 flex items-center gap-1 font-bold">
-                                            <Icon name="image" size={12} /> AI 이미지 생성
-                                        </label>
-
-                                        <div className="space-y-3">
-                                            {/* 1. 종류 선택 */}
-                                            <div>
-                                                <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">이미지 종류</label>
-                                                <select
-                                                    className="w-full pixel-input p-2 text-xs"
-                                                    value={genImgType}
-                                                    onChange={(e) => {
-                                                        setGenImgType(e.target.value);
-                                                        setTargetIndex(-1); // 종류 바뀌면 타겟 초기화
-                                                        setImageGenState({ isLoading: false, result: null }); // 이전 생성 결과 초기화
-                                                    }}
-                                                >
-                                                    <option value="background">씬 배경</option>
-                                                    <option value="npc">NPC (초상화)</option>
-                                                    <option value="enemy">적 (초상화)</option>
-                                                    <option value="item">아이템 (아이콘)</option>
-                                                </select>
-                                            </div>
-
-                                            {/* 2. 대상 선택 (배경이 아닐 때만 노출) */}
-                                            {genImgType !== 'background' && (() => {
-                                                const node = nodes.find(n => n.id === selectedNodeId);
-                                                let list = [];
-                                                if (node && node.data) {
-                                                    if (genImgType === 'npc') list = node.data.npcs || [];
-                                                    else if (genImgType === 'enemy') list = node.data.enemies || [];
-                                                    else if (genImgType === 'item') list = node.data.items || [];
-                                                }
-                                                return (
+                                        {node.type === 'scene' && (
+                                            <>
+                                                {/* 씬 배경 이미지 표시 */}
+                                                {node.data.background_image && (
                                                     <div>
-                                                        <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">적용 대상</label>
-                                                        <select
-                                                            className="w-full pixel-input p-2 text-xs border-dashed border-[#00FFFF]"
-                                                            value={targetIndex}
-                                                            onChange={(e) => setTargetIndex(parseInt(e.target.value))}
-                                                        >
-                                                            <option value="-1">-- 대상을 선택하세요 --</option>
-                                                            {list.map((item, idx) => (
-                                                                <option key={idx} value={idx}>
-                                                                    {item.name} {item.image ? '(✅이미지 보유)' : ''}
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                );
-                                            })()}
-
-                                            {/* 3. 현재 적용된 이미지 미리보기 (타입별 스타일 분기) */}
-                                            {(() => {
-                                                const node = nodes.find(n => n.id === selectedNodeId);
-                                                let currentImageUrl = null;
-                                                let label = "현재 이미지";
-
-                                                if (node && node.data) {
-                                                    if (genImgType === 'background') {
-                                                        // [REQ 5] 배경 이미지 미리보기 즉시 반영
-                                                        currentImageUrl = node.data.background_image;
-                                                        label = "씬 배경 이미지";
-                                                    } else if (targetIndex >= 0) {
-                                                        let list = [];
-                                                        if (genImgType === 'npc') list = node.data.npcs;
-                                                        else if (genImgType === 'enemy') list = node.data.enemies;
-                                                        else if (genImgType === 'item') list = node.data.items;
-
-                                                        if (list && list[targetIndex]) {
-                                                            currentImageUrl = list[targetIndex].image;
-                                                            label = `${list[targetIndex].name}의 이미지`;
-                                                        }
-                                                    }
-                                                }
-
-                                                if (imageGenState.result && imageGenState.result.image_url) {
-                                                    currentImageUrl = imageGenState.result.image_url;
-                                                    label = "방금 생성된 이미지 (저장됨)";
-                                                }
-
-                                                let containerClass = "mt-2 p-2 bg-[#0B0B19] border border-[#4A4A6A] relative text-center";
-                                                let imgClass = "w-full h-32 object-cover border border-[#4A4A6A] bg-black";
-
-                                                if (genImgType === 'npc' || genImgType === 'enemy') {
-                                                    imgClass = "w-24 h-24 object-cover border-4 border-double border-[#E0E0E0] mx-auto bg-[#1A0B2E] shadow-lg";
-                                                } else if (genImgType === 'item') {
-                                                    imgClass = "w-16 h-16 object-contain border-2 border-[#FFD700] mx-auto bg-[#1A0B2E] p-1 shadow-lg";
-                                                }
-
-                                                if (currentImageUrl) {
-                                                    return (
-                                                        <div className={containerClass}>
-                                                            <div className="text-[10px] text-[#00FFFF] mb-2 font-bold">{label}</div>
+                                                        <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">배경 이미지</label>
+                                                        <div className="relative group">
                                                             <img
-                                                                src={getImageUrl(currentImageUrl)}
-                                                                alt="Preview"
-                                                                className={imgClass}
+                                                                src={getImageUrl(node.data.background_image)}
+                                                                className="w-full h-32 object-cover rounded border-2 border-[#4A4A6A] hover:border-[#00FFFF] transition-colors cursor-pointer"
+                                                                onClick={() => window.open(getImageUrl(node.data.background_image), '_blank')}
+                                                                alt="씬 배경 이미지"
                                                                 onError={(e) => {
-                                                                    console.error('Image load error:', e);
-                                                                    console.error('Image URL:', getImageUrl(currentImageUrl));
+                                                                    console.error('Background image load error:', e);
+                                                                    console.error('Background image URL:', getImageUrl(node.data.background_image));
                                                                     e.target.style.display = 'none';
-                                                                    const errDiv = document.getElementById(`img-err-${selectedNodeId}`);
+                                                                    const errDiv = document.getElementById(`bg-err-${node.id}`);
                                                                     if (errDiv) errDiv.style.display = 'block';
                                                                 }}
                                                             />
-                                                            <div id={`img-err-${selectedNodeId}`} style={{ display: 'none' }} className="w-full h-32 flex flex-col items-center justify-center bg-[#1A0B2E] border border-[#FF007F] border-dashed text-center p-2">
+                                                            <div id={`bg-err-${node.id}`} style={{ display: 'none' }} className="w-full h-32 flex flex-col items-center justify-center bg-[#1A0B2E] border border-[#FF007F] border-dashed text-center p-2">
                                                                 <div className="text-[10px] text-[#FF007F] flex flex-col items-center">
-                                                                    <span className="mb-1 font-bold">이미지 로드 실패</span>
-                                                                    <span className="text-[9px] opacity-70 break-all select-all">{currentImageUrl}</span>
+                                                                    <span className="mb-1 font-bold">배경 이미지 로드 실패</span>
+                                                                    <span className="text-[9px] opacity-70 break-all select-all">{node.data.background_image}</span>
                                                                 </div>
                                                             </div>
+                                                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded">
+                                                                <span className="text-white text-xs font-bold">클릭하여 원본 보기</span>
+                                                            </div>
                                                         </div>
-                                                    );
-                                                } else {
-                                                    return (
-                                                        <div className="mt-2 p-4 bg-[#0B0B19] border border-[#4A4A6A] border-dashed text-center">
-                                                            <div className="text-[10px] text-[#6A6A8A] mb-2">이미지가 없습니다.</div>
-                                                            {genImgType === 'background' && <Icon name="image" size={32} className="opacity-30" />}
-                                                            {(genImgType === 'npc' || genImgType === 'enemy') && <Icon name="user" size={32} className="opacity-30" />}
-                                                            {genImgType === 'item' && <Icon name="box" size={32} className="opacity-30" />}
-                                                        </div>
-                                                    );
-                                                }
-                                            })()}
-
-                                            {/* 4. 설명 입력 */}
-                                            <div>
-                                                <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">설명 (프롬프트)</label>
-                                                <input
-                                                    type="text"
-                                                    className="w-full pixel-input p-2 text-xs"
-                                                    value={imagePrompt} // [REQ 4] 상태 제어
-                                                    onChange={(e) => setImagePrompt(e.target.value)}
-                                                    placeholder="예: 붉은 눈의 기사, 낡은 검"
-                                                />
-                                            </div>
-
-                                            {/* 5. 생성 버튼 (잔액 확인 로직 포함) */}
-                                            <button
-                                                onClick={() => {
-                                                    if (!imagePrompt.trim()) return showToast("설명을 입력하세요", "error");
-                                                    if (genImgType !== 'background' && targetIndex === -1) {
-                                                        return showToast("이미지를 적용할 대상을 선택해주세요!", "error");
-                                                    }
-                                                    generateImage(genImgType, imagePrompt);
-                                                }}
-                                                disabled={imageGenState.isLoading}
-                                                className="pixel-btn w-full py-2 text-xs text-[#00FFFF] border-[#00FFFF] disabled:opacity-50"
-                                            >
-                                                {imageGenState.isLoading ? (
-                                                    <>
-                                                        <div className="relative mr-2">
-                                                            <div className="w-4 h-4 border-2 border-[#00FFFF]/30 rounded-full animate-spin"></div>
-                                                            <div className="absolute top-0.5 left-0.5 w-3 h-3 border-2 border-[#00FFFF] rounded-full animate-spin" style={{ animationDuration: '1.5s' }}></div>
-                                                        </div>
-                                                        <span className="text-[#00FFFF]">마법 부리는 중...</span>
-                                                    </>
-                                                ) : (
-                                                    <><Icon name="sparkles" size={12} /> 이미지 생성 (50 CR)</>
+                                                    </div>
                                                 )}
+
+                                                <div>
+                                                    <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">진입 조건 (Trigger)</label>
+                                                    <input className="w-full pixel-input p-2 text-sm"
+                                                        value={node.data.trigger || ''} placeholder="예: 문을 연다"
+                                                        onChange={e => updateNodeData(node.id, 'trigger', e.target.value)} />
+                                                </div>
+
+                                                <div className="pt-2 border-t border-[#4A4A6A] mt-2">
+                                                    <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">등장 NPC</label>
+                                                    <div className="space-y-1 mb-2">
+                                                        {(node.data.npcs || []).map((n, i) => (
+                                                            <div key={i}
+                                                                className="flex justify-between p-1 bg-[#0B0B19] border border-[#4A4A6A] text-xs text-[#10b981]"
+                                                                onMouseEnter={(e) => {
+                                                                    if (n.image) setHoverPreview({ show: true, x: e.clientX, y: e.clientY, url: n.image, name: n.name });
+                                                                }}
+                                                                onMouseLeave={() => setHoverPreview({ show: false, x: 0, y: 0, url: '', name: '' })}
+                                                            >
+                                                                <div className="flex items-center gap-2">
+                                                                    {n.image && <img src={getImageUrl(n.image)} className="w-4 h-4 rounded-full border border-gray-500 object-cover" />}
+                                                                    {n.name}
+                                                                </div>
+                                                                <button onClick={() => removeEntityFromNode(node.id, 'npcs', i)}><Icon name="x" size={12} /></button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <select className="w-full pixel-input p-1 text-xs" onChange={(e) => { if (e.target.value) { addEntityToNode(node.id, 'npcs', globalNpcs.find(n => n.name === e.target.value)); e.target.value = "" } }}>
+                                                        <option value="">+ NPC 추가</option>
+                                                        {globalNpcs.map((n, i) => <option key={i} value={n.name}>{n.name}</option>)}
+                                                    </select>
+                                                </div>
+
+                                                <div className="pt-2 border-t border-[#4A4A6A] mt-2">
+                                                    <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">등장 적</label>
+                                                    <div className="space-y-1 mb-2">
+                                                        {(node.data.enemies || []).map((e, i) => (
+                                                            <div key={i}
+                                                                className="flex justify-between p-1 bg-[#0B0B19] border border-[#4A4A6A] text-xs text-[#FF007F]"
+                                                                onMouseEnter={(ev) => {
+                                                                    if (e.image) setHoverPreview({ show: true, x: ev.clientX, y: ev.clientY, url: e.image, name: e.name });
+                                                                }}
+                                                                onMouseLeave={() => setHoverPreview({ show: false, x: 0, y: 0, url: '', name: '' })}
+                                                            >
+                                                                <div className="flex items-center gap-2">
+                                                                    {e.image && <img src={getImageUrl(e.image)} className="w-4 h-4 rounded-full border border-gray-500 object-cover" />}
+                                                                    {e.name}
+                                                                </div>
+                                                                <button onClick={() => removeEntityFromNode(node.id, 'enemies', i)}><Icon name="x" size={12} /></button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <select className="w-full pixel-input p-1 text-xs" onChange={(e) => { if (e.target.value) { addEntityToNode(node.id, 'enemies', globalEnemies.find(n => n.name === e.target.value)); e.target.value = "" } }}>
+                                                        <option value="">+ 적 추가</option>
+                                                        {globalEnemies.map((n, i) => <option key={i} value={n.name}>{n.name}</option>)}
+                                                    </select>
+                                                </div>
+
+                                                <div className="pt-2 border-t border-[#4A4A6A] mt-2">
+                                                    <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">획득 아이템</label>
+                                                    <div className="space-y-1 mb-2">
+                                                        {(node.data.items || []).map((item, i) => (
+                                                            <div key={i}
+                                                                className="flex justify-between p-1 bg-[#0B0B19] border border-[#4A4A6A] text-xs text-[#FFD700]"
+                                                                onMouseEnter={(ev) => {
+                                                                    if (item.image) setHoverPreview({ show: true, x: ev.clientX, y: ev.clientY, url: item.image, name: item.name });
+                                                                }}
+                                                                onMouseLeave={() => setHoverPreview({ show: false, x: 0, y: 0, url: '', name: '' })}
+                                                            >
+                                                                <div className="flex items-center gap-2">
+                                                                    {item.image && <img src={getImageUrl(item.image)} className="w-4 h-4 border border-gray-500 object-cover" />}
+                                                                    {item.name}
+                                                                </div>
+                                                                <button onClick={() => removeEntityFromNode(node.id, 'items', i)}><Icon name="x" size={12} /></button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <select className="w-full pixel-input p-1 text-xs" onChange={(e) => { if (e.target.value) { addEntityToNode(node.id, 'items', globalItems.find(n => n.name === e.target.value)); e.target.value = "" } }}>
+                                                        <option value="">+ 아이템 추가</option>
+                                                        {globalItems.map((n, i) => <option key={i} value={n.name}>{n.name}</option>)}
+                                                    </select>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        <div className="mt-4 pt-4 border-t-2 border-[#4A4A6A]">
+                                            <label className="text-[10px] text-[#6A6A8A] block mb-1 flex items-center gap-1 font-bold"><Icon name="brain-circuit" size={12} /> AI 제안 노트</label>
+                                            <textarea className="w-full pixel-input p-2 text-xs h-20 resize-none text-[#FFFACD]"
+                                                value={node.data.ai_note || ''} readOnly></textarea>
+                                        </div>
+
+                                        {/* AI 이미지 생성 및 미리보기 패널 */}
+                                        <div className="mt-4 pt-4 border-t-2 border-[#4A4A6A]">
+                                            <label className="text-[10px] text-[#6A6A8A] block mb-1 flex items-center gap-1 font-bold">
+                                                <Icon name="image" size={12} /> AI 이미지 생성
+                                            </label>
+
+                                            <div className="space-y-3">
+                                                {/* 1. 종류 선택 */}
+                                                <div>
+                                                    <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">이미지 종류</label>
+                                                    <select
+                                                        className="w-full pixel-input p-2 text-xs"
+                                                        value={genImgType}
+                                                        onChange={(e) => {
+                                                            setGenImgType(e.target.value);
+                                                            setTargetIndex(-1); // 종류 바뀌면 타겟 초기화
+                                                            setImageGenState({ isLoading: false, result: null }); // 이전 생성 결과 초기화
+                                                        }}
+                                                    >
+                                                        <option value="background">씬 배경</option>
+                                                        <option value="npc">NPC (초상화)</option>
+                                                        <option value="enemy">적 (초상화)</option>
+                                                        <option value="item">아이템 (아이콘)</option>
+                                                    </select>
+                                                </div>
+
+                                                {/* 2. 대상 선택 (배경이 아닐 때만 노출) */}
+                                                {genImgType !== 'background' && (() => {
+                                                    const node = nodes.find(n => n.id === selectedNodeId);
+                                                    let list = [];
+                                                    if (node && node.data) {
+                                                        if (genImgType === 'npc') list = node.data.npcs || [];
+                                                        else if (genImgType === 'enemy') list = node.data.enemies || [];
+                                                        else if (genImgType === 'item') list = node.data.items || [];
+                                                    }
+                                                    return (
+                                                        <div>
+                                                            <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">적용 대상</label>
+                                                            <select
+                                                                className="w-full pixel-input p-2 text-xs border-dashed border-[#00FFFF]"
+                                                                value={targetIndex}
+                                                                onChange={(e) => setTargetIndex(parseInt(e.target.value))}
+                                                            >
+                                                                <option value="-1">-- 대상을 선택하세요 --</option>
+                                                                {list.map((item, idx) => (
+                                                                    <option key={idx} value={idx}>
+                                                                        {item.name} {item.image ? '(✅이미지 보유)' : ''}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    );
+                                                })()}
+
+                                                {/* 3. 현재 적용된 이미지 미리보기 (타입별 스타일 분기) */}
+                                                {(() => {
+                                                    const node = nodes.find(n => n.id === selectedNodeId);
+                                                    let currentImageUrl = null;
+                                                    let label = "현재 이미지";
+
+                                                    if (node && node.data) {
+                                                        if (genImgType === 'background') {
+                                                            // [REQ 5] 배경 이미지 미리보기 즉시 반영
+                                                            currentImageUrl = node.data.background_image;
+                                                            label = "씬 배경 이미지";
+                                                        } else if (targetIndex >= 0) {
+                                                            let list = [];
+                                                            if (genImgType === 'npc') list = node.data.npcs;
+                                                            else if (genImgType === 'enemy') list = node.data.enemies;
+                                                            else if (genImgType === 'item') list = node.data.items;
+
+                                                            if (list && list[targetIndex]) {
+                                                                currentImageUrl = list[targetIndex].image;
+                                                                label = `${list[targetIndex].name}의 이미지`;
+                                                            }
+                                                        }
+                                                    }
+
+                                                    if (imageGenState.result && imageGenState.result.image_url) {
+                                                        currentImageUrl = imageGenState.result.image_url;
+                                                        label = "방금 생성된 이미지 (저장됨)";
+                                                    }
+
+                                                    let containerClass = "mt-2 p-2 bg-[#0B0B19] border border-[#4A4A6A] relative text-center";
+                                                    let imgClass = "w-full h-32 object-cover border border-[#4A4A6A] bg-black";
+
+                                                    if (genImgType === 'npc' || genImgType === 'enemy') {
+                                                        imgClass = "w-24 h-24 object-cover border-4 border-double border-[#E0E0E0] mx-auto bg-[#1A0B2E] shadow-lg";
+                                                    } else if (genImgType === 'item') {
+                                                        imgClass = "w-16 h-16 object-contain border-2 border-[#FFD700] mx-auto bg-[#1A0B2E] p-1 shadow-lg";
+                                                    }
+
+                                                    if (currentImageUrl) {
+                                                        return (
+                                                            <div className={containerClass}>
+                                                                <div className="text-[10px] text-[#00FFFF] mb-2 font-bold">{label}</div>
+                                                                <img
+                                                                    src={getImageUrl(currentImageUrl)}
+                                                                    alt="Preview"
+                                                                    className={imgClass}
+                                                                    onError={(e) => {
+                                                                        console.error('Image load error:', e);
+                                                                        console.error('Image URL:', getImageUrl(currentImageUrl));
+                                                                        e.target.style.display = 'none';
+                                                                        const errDiv = document.getElementById(`img-err-${selectedNodeId}`);
+                                                                        if (errDiv) errDiv.style.display = 'block';
+                                                                    }}
+                                                                />
+                                                                <div id={`img-err-${selectedNodeId}`} style={{ display: 'none' }} className="w-full h-32 flex flex-col items-center justify-center bg-[#1A0B2E] border border-[#FF007F] border-dashed text-center p-2">
+                                                                    <div className="text-[10px] text-[#FF007F] flex flex-col items-center">
+                                                                        <span className="mb-1 font-bold">이미지 로드 실패</span>
+                                                                        <span className="text-[9px] opacity-70 break-all select-all">{currentImageUrl}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    } else {
+                                                        return (
+                                                            <div className="mt-2 p-4 bg-[#0B0B19] border border-[#4A4A6A] border-dashed text-center">
+                                                                <div className="text-[10px] text-[#6A6A8A] mb-2">이미지가 없습니다.</div>
+                                                                {genImgType === 'background' && <Icon name="image" size={32} className="opacity-30" />}
+                                                                {(genImgType === 'npc' || genImgType === 'enemy') && <Icon name="user" size={32} className="opacity-30" />}
+                                                                {genImgType === 'item' && <Icon name="box" size={32} className="opacity-30" />}
+                                                            </div>
+                                                        );
+                                                    }
+                                                })()}
+
+                                                {/* 4. 설명 입력 */}
+                                                <div>
+                                                    <label className="text-[10px] text-[#6A6A8A] block mb-1 font-bold">설명 (프롬프트)</label>
+                                                    <input
+                                                        type="text"
+                                                        className="w-full pixel-input p-2 text-xs"
+                                                        value={imagePrompt} // [REQ 4] 상태 제어
+                                                        onChange={(e) => setImagePrompt(e.target.value)}
+                                                        placeholder="예: 붉은 눈의 기사, 낡은 검"
+                                                    />
+                                                </div>
+
+                                                {/* 5. 생성 버튼 (잔액 확인 로직 포함) */}
+                                                <button
+                                                    onClick={() => {
+                                                        if (!imagePrompt.trim()) return showToast("설명을 입력하세요", "error");
+                                                        if (genImgType !== 'background' && targetIndex === -1) {
+                                                            return showToast("이미지를 적용할 대상을 선택해주세요!", "error");
+                                                        }
+                                                        generateImage(genImgType, imagePrompt);
+                                                    }}
+                                                    disabled={imageGenState.isLoading}
+                                                    className="pixel-btn w-full py-2 text-xs text-[#00FFFF] border-[#00FFFF] disabled:opacity-50"
+                                                >
+                                                    {imageGenState.isLoading ? (
+                                                        <>
+                                                            <div className="relative mr-2">
+                                                                <div className="w-4 h-4 border-2 border-[#00FFFF]/30 rounded-full animate-spin"></div>
+                                                                <div className="absolute top-0.5 left-0.5 w-3 h-3 border-2 border-[#00FFFF] rounded-full animate-spin" style={{ animationDuration: '1.5s' }}></div>
+                                                            </div>
+                                                            <span className="text-[#00FFFF]">마법 부리는 중...</span>
+                                                        </>
+                                                    ) : (
+                                                        <><Icon name="sparkles" size={12} /> 이미지 생성 (50 CR)</>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-2 pt-4">
+                                            {/* [REQ 2] 개별 씬 검수 버튼 상태 표시 */}
+                                            <div className="text-right mb-1">
+                                                <span className="text-[10px] text-[#6A6A8A] mr-1">예상:</span>
+                                                <span className={`text-[12px] font-bold ${tokenBalance >= auditEstimatedCost ? 'text-[#FFD700]' : 'text-[#FF007F]'}`}>
+                                                    {auditEstimatedCost.toLocaleString()} CR
+                                                </span>
+                                            </div>
+                                            <button onClick={() => runAiAudit(node.id)} disabled={auditState.isLoading}
+                                                className="pixel-btn py-2 text-xs col-span-2 text-[#6366f1] border-[#6366f1] disabled:opacity-50">
+                                                {auditState.isLoading && auditState.targetNodeId === node.id ?
+                                                    <><Icon name="loader-2" className="animate-spin" /> 검수 중...</> :
+                                                    <><Icon name="brain-circuit" /> 씬 검수</>
+                                                }
+                                            </button>
+                                            {/* [REQ 3] 노드 삭제 기능 (기존 유지 확인) */}
+                                            {!isStart && <button onClick={() => deleteNode(node.id)} className="pixel-btn py-2 text-xs col-span-2 text-[#FF007F] border-[#FF007F]"><Icon name="trash-2" /> 삭제</button>}
+                                        </div>
+                                    </div>
+                                );
+                            })() : (
+                                <div className="h-full flex flex-col items-center justify-center text-[#6A6A8A] gap-4">
+                                    <Icon name="mouse-pointer-2" size={48} className="opacity-50" />
+                                    <p className="text-xs text-center font-bold">편집할 노드를<br />선택하세요</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* [추가] 마우스 오버 미리보기 오버레이 */}
+                        {hoverPreview.show && (
+                            <div className="fixed z-[1000] pointer-events-none bg-[#0B0B19] border-2 border-[#FFFACD] p-2 shadow-2xl animate-fade-in"
+                                style={{ left: hoverPreview.x - 240, top: Math.min(hoverPreview.y - 50, window.innerHeight - 300), width: '220px' }}>
+                                <div className="w-full h-48 bg-black border border-[#4A4A6A] mb-2 relative flex items-center justify-center overflow-hidden">
+                                    <img src={getImageUrl(hoverPreview.url)} className="w-full h-full object-contain" alt={hoverPreview.name} />
+                                </div>
+                                <div className="text-center font-bold text-[#FFFACD] text-xs break-words">{hoverPreview.name}</div>
+                                <div className="text-center text-[10px] text-[#6A6A8A] mt-1">Preview</div>
+                            </div>
+                        )}
+
+                        {/* Modals */}
+                        <Modal isOpen={modals.npcList} title="NPC 목록" onClose={() => setModals(m => ({ ...m, npcList: false }))}>
+                            <div className="space-y-2">
+                                {dbNpcList.map((npc, i) => (
+                                    <div key={i} className="flex justify-between items-center p-3 bg-[#0B0B19] border border-[#4A4A6A] hover:border-[#FFFACD] transition-colors">
+                                        <div>
+                                            <div className="font-bold text-white text-sm">{npc.name}</div>
+                                            <div className="text-[10px] text-[#10b981]">{npc.isEnemy ? 'ENEMY' : 'NPC'}</div>
+                                        </div>
+                                        <button onClick={() => { (npc.isEnemy ? setGlobalEnemies : setGlobalNpcs)(prev => [...prev, npc]); showToast("추가됨", "success"); }}
+                                            className="pixel-btn px-3 py-1 text-xs">추가</button>
+                                    </div>
+                                ))}
+                            </div>
+                        </Modal>
+
+                        {/* [추가] 아이템 목록 모달 */}
+                        <Modal isOpen={modals.itemList} title="아이템 목록" onClose={() => setModals(m => ({ ...m, itemList: false }))}>
+                            <div className="space-y-2">
+                                {dbItemList.map((item, i) => (
+                                    <div key={i} className="flex justify-between items-center p-3 bg-[#0B0B19] border border-[#4A4A6A] hover:border-[#FFD700] transition-colors">
+                                        <div>
+                                            <div className="font-bold text-white text-sm">{item.name}</div>
+                                            <div className="text-[10px] text-[#FFD700]">{item.type || 'ITEM'}</div>
+                                        </div>
+                                        <button onClick={() => { setGlobalItems(prev => [...prev, item]); showToast("아이템 추가됨", "success"); }}
+                                            className="pixel-btn px-3 py-1 text-xs">추가</button>
+                                    </div>
+                                ))}
+                            </div>
+                        </Modal>
+
+                        <Modal isOpen={modals.scenarioList} title="시나리오 불러오기" onClose={() => setModals(m => ({ ...m, scenarioList: false }))}>
+                            <div className="space-y-2">
+                                {userScenarios.length === 0 ? (
+                                    <div className="text-center text-gray-500 py-4">저장된 시나리오가 없습니다.</div>
+                                ) : (
+                                    userScenarios.map(s => (
+                                        <div key={s.id} onClick={() => window.location.href = `/views/scenes/edit/${s.filename}`}
+                                            className="p-4 bg-[#0B0B19] border border-[#4A4A6A] hover:border-[#00FFFF] cursor-pointer group transition-all">
+                                            <div className="font-bold text-[#FFFACD] group-hover:text-white">{s.title}</div>
+                                            <div className="text-xs text-[#6A6A8A] mt-1 truncate">{s.prologue}</div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </Modal>
+
+                        <Modal isOpen={modals.presetLoad} title="프리셋 불러오기" onClose={() => setModals(m => ({ ...m, presetLoad: false }))}>
+                            <div className="space-y-2">
+                                {presetList.map((p, i) => (
+                                    <div key={i} onClick={() => loadPreset(p)}
+                                        className="p-4 bg-[#0B0B19] border border-[#4A4A6A] hover:border-[#FF007F] cursor-pointer group transition-all flex justify-between">
+                                        <div>
+                                            <div className="font-bold text-[#E0E0E0]">{p.name}</div>
+                                            <div className="text-xs text-[#6A6A8A]">{p.description}</div>
+                                        </div>
+                                        <Icon name="download" className="text-[#6A6A8A] group-hover:text-white" />
+                                    </div>
+                                ))}
+                            </div>
+                        </Modal>
+
+                        <Modal isOpen={modals.presetSave} title="프리셋 저장" onClose={() => setModals(m => ({ ...m, presetSave: false }))}>
+                            <div className="space-y-4">
+                                <div className="text-sm text-[#6A6A8A]">
+                                    현재 시나리오 구조를 프리셋으로 저장하여 나중에 다시 사용할 수 있습니다.
+                                </div>
+                                <div className="bg-[#0B0B19] border border-[#4A4A6A] p-3 rounded">
+                                    <div className="text-xs text-[#6A6A8A] mb-2">저장될 내용:</div>
+                                    <div className="text-xs text-[#E0E0E0] space-y-1">
+                                        <div>• 노드 구조 ({nodes.length}개)</div>
+                                        <div>• 연결 관계 ({edges.length}개)</div>
+                                        <div>• 노드 데이터 (제목, 내용 등)</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <footer>
+                                <button onClick={() => setModals(m => ({ ...m, presetSave: false }))} className="pixel-btn px-4 py-2 text-xs text-[#6A6A8A] border border-[#4A4A6A]">
+                                    취소
+                                </button>
+                                <button onClick={savePreset} className="pixel-btn px-4 py-2 text-xs text-[#FFD700] border border-[#FFD700]">
+                                    <Icon name="save" size={12} /> 저장하기
+                                </button>
+                            </footer>
+                        </Modal>
+
+                        {/* [REQ 2] AI 검수 결과 모달 */}
+                        {auditState.isOpen && (
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-fade-in p-4">
+                                <div className="pixel-box w-full max-w-4xl max-h-[80vh] bg-[#131320] border-2 border-[#6366f1] shadow-[0_0_20px_rgba(99,102,241,0.3)] overflow-hidden">
+                                    <div className="p-4 bg-[#1A0B2E] border-b-2 border-[#4A4A6A] flex justify-between items-center">
+                                        <h3 className="text-[#6366f1] font-bold flex items-center gap-2">
+                                            <Icon name="brain-circuit" size={18} /> AI 검수 결과
+                                        </h3>
+                                        <button onClick={() => setAuditState(p => ({ ...p, isOpen: false }))} className="text-[#6A6A8A] hover:text-white">
+                                            <Icon name="x" />
+                                        </button>
+                                    </div>
+
+                                    <div className="p-6 overflow-y-auto max-h-[60vh]">
+                                        {auditState.isLoading ? (
+                                            <div className="text-center py-8">
+                                                <Icon name="loader-2" className="animate-spin text-[#6366f1] text-4xl mb-4" />
+                                                <p className="text-gray-400">AI 검수 중...</p>
+                                            </div>
+                                        ) : auditState.results ? (
+                                            <div>
+                                                <div className="mb-4 p-3 bg-[#0B0B19] border border-[#4A4A6A] rounded">
+                                                    <p className="text-sm text-gray-300">{auditState.results.summary}</p>
+                                                </div>
+
+                                                {auditState.results.issues && auditState.results.issues.length > 0 ? (
+                                                    <div className="space-y-3">
+                                                        <h4 className="text-white font-bold flex items-center gap-2">
+                                                            <Icon name="alert-triangle" size={16} /> 발견된 문제 ({auditState.results.issues.length}개)
+                                                        </h4>
+                                                        {auditState.results.issues.map((issue, idx) => (
+                                                            <div key={idx} className={`p-3 border rounded ${issue.severity === 'error' ? 'bg-red-900/20 border-red-600' :
+                                                                issue.severity === 'warning' ? 'bg-yellow-900/20 border-yellow-600' :
+                                                                    'bg-blue-900/20 border-blue-600'
+                                                                }`}>
+                                                                <div className="flex justify-between items-start mb-2">
+                                                                    <span className={`text-xs font-bold ${issue.severity === 'error' ? 'text-red-400' :
+                                                                        issue.severity === 'warning' ? 'text-yellow-400' :
+                                                                            'text-blue-400'
+                                                                        }`}>
+                                                                        {issue.severity.toUpperCase()}
+                                                                    </span>
+                                                                    <span className="text-xs text-gray-400">{issue.scene_id}</span>
+                                                                </div>
+                                                                <p className="text-white text-sm mb-2">{issue.message}</p>
+                                                                {issue.suggestion && (
+                                                                    <div className="mt-2 pt-2 border-t border-gray-700">
+                                                                        <p className="text-gray-300 text-xs mb-2">제안:</p>
+                                                                        <p className="text-gray-400 text-sm">{issue.suggestion}</p>
+                                                                    </div>
+                                                                )}
+                                                                {issue.suggestion && (
+                                                                    <button
+                                                                        onClick={() => applySuggestion(issue)}
+                                                                        className="mt-2 px-3 py-1 bg-[#6366f1] text-white text-xs rounded hover:bg-[#4f46e5] transition-colors"
+                                                                    >
+                                                                        적용
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-8">
+                                                        <Icon name="check-circle" className="text-green-500 text-4xl mb-4" />
+                                                        <p className="text-green-400">문제가 발견되지 않았습니다!</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-8">
+                                                <Icon name="alert-circle" className="text-red-500 text-4xl mb-4" />
+                                                <p className="text-red-400">검수 결과가 없습니다</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* [NEW] 잔액 부족 경고 모달 */}
+                        {modals.noToken && (
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-fade-in p-4">
+                                <div className="pixel-box w-full max-w-md bg-[#131320] border-2 border-[#FF007F] shadow-[0_0_20px_rgba(255,0,127,0.3)]">
+                                    <div className="p-4 bg-[#1A0B2E] border-b-2 border-[#4A4A6A] flex justify-between items-center">
+                                        <h3 className="text-[#FF007F] font-bold flex items-center gap-2">
+                                            <Icon name="alert-triangle" size={18} /> WARNING: LOW POWER
+                                        </h3>
+                                        <button onClick={() => setModals(m => ({ ...m, noToken: false }))} className="text-[#6A6A8A] hover:text-white"><Icon name="x" /></button>
+                                    </div>
+                                    <div className="p-8 text-center">
+                                        <div className="mb-6 relative inline-block">
+                                            <div className="w-16 h-16 border-4 border-[#FF007F]/20 rounded-full animate-spin"></div>
+                                            <div className="absolute top-2 left-2 w-12 h-12 border-4 border-[#FF007F]/40 rounded-full animate-spin" style={{ animationDuration: '1.5s' }}></div>
+                                            <div className="absolute top-4 left-4 w-8 h-8 border-4 border-[#FF007F] rounded-full animate-spin" style={{ animationDuration: '2s' }}></div>
+                                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                                                <Icon name="battery-low" size={20} className="text-[#FF007F] animate-pulse" />
+                                            </div>
+                                        </div>
+                                        <div className="text-[#FF007F] font-bold mb-4">⚡ 파워 부족 ⚡</div>
+                                        <div className="text-gray-400 mb-6">토큰 잔액이 부족하여 이 작업을 수행할 수 없습니다.<br />충전 후 다시 시도해주세요.</div>
+                                        <div className="flex justify-center gap-3">
+                                            <a href="/billing"
+                                                className="pixel-btn bg-[#FFD700] text-black border-[#E0E0E0] hover:bg-[#E6C200] hover:text-black hover:border-white font-bold py-2 px-6 flex items-center gap-2">
+                                                <Icon name="zap" size={16} /> 충전하러 가기
+                                            </a>
+                                            <button onClick={() => setModals(m => ({ ...m, noToken: false }))}
+                                                className="pixel-btn py-2 px-4 text-[#6A6A6A] border-[#4A4A6A]">
+                                                닫기
                                             </button>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        )}
 
-                                    <div className="grid grid-cols-2 gap-2 pt-4">
-                                        {/* [REQ 2] 개별 씬 검수 버튼 상태 표시 */}
-                                        <div className="text-right mb-1">
-                                            <span className="text-[10px] text-[#6A6A8A] mr-1">예상:</span>
-                                            <span className={`text-[12px] font-bold ${tokenBalance >= auditEstimatedCost ? 'text-[#FFD700]' : 'text-[#FF007F]'}`}>
-                                                {auditEstimatedCost.toLocaleString()} CR
-                                            </span>
+                        {/* AI Audit 적용 완료 모달 */}
+                        {modals.auditApplied && (
+                            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-fade-in p-4">
+                                <div className="pixel-box w-full max-w-md bg-[#131320] border-2 border-[#00FFFF] shadow-[0_0_20px_rgba(0,255,255,0.3)]">
+                                    <div className="p-4 bg-[#1A0B2E] border-b-2 border-[#4A4A6A] flex justify-between items-center">
+                                        <h3 className="text-[#00FFFF] font-bold flex items-center gap-2">
+                                            <Icon name="check-circle" size={18} /> AI 제안 적용 완료
+                                        </h3>
+                                        <button onClick={() => setModals(m => ({ ...m, auditApplied: false }))} className="text-[#6A6A8A] hover:text-white"><Icon name="x" /></button>
+                                    </div>
+                                    <div className="p-8 text-center">
+                                        <div className="mb-6 relative inline-block">
+                                            <div className="w-16 h-16 border-4 border-[#00FFFF]/20 rounded-full animate-pulse"></div>
+                                            <div className="absolute top-2 left-2 w-12 h-12 border-4 border-[#00FFFF]/40 rounded-full animate-pulse" style={{ animationDuration: '1.5s' }}></div>
+                                            <div className="absolute top-4 left-4 w-8 h-8 border-4 border-[#00FFFF] rounded-full animate-pulse" style={{ animationDuration: '2s' }}></div>
+                                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                                                <Icon name="sparkles" size={20} className="text-[#00FFFF] animate-pulse" />
+                                            </div>
                                         </div>
-                                        <button onClick={() => runAiAudit(node.id)} disabled={auditState.isLoading}
-                                            className="pixel-btn py-2 text-xs col-span-2 text-[#6366f1] border-[#6366f1] disabled:opacity-50">
-                                            {auditState.isLoading && auditState.targetNodeId === node.id ?
-                                                <><Icon name="loader-2" className="animate-spin" /> 검수 중...</> :
-                                                <><Icon name="brain-circuit" /> 씬 검수</>
-                                            }
-                                        </button>
-                                        {/* [REQ 3] 노드 삭제 기능 (기존 유지 확인) */}
-                                        {!isStart && <button onClick={() => deleteNode(node.id)} className="pixel-btn py-2 text-xs col-span-2 text-[#FF007F] border-[#FF007F]"><Icon name="trash-2" /> 삭제</button>}
+                                        <div className="text-[#00FFFF] font-bold mb-4">✨ 개선사항 적용 완료 ✨</div>
+                                        <div className="text-gray-300 mb-6">{modals.auditAppliedMessage}</div>
+                                        <div className="flex justify-center gap-3">
+                                            <button onClick={() => setModals(m => ({ ...m, auditApplied: false }))}
+                                                className="pixel-btn bg-[#00FFFF] text-black border-[#00FFFF] hover:bg-[#00CCCC] font-bold py-2 px-6 flex items-center gap-2">
+                                                <Icon name="check" size={16} /> 적용 완료
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
-                            );
-                        })() : (
-                            <div className="h-full flex flex-col items-center justify-center text-[#6A6A8A] gap-4">
-                                <Icon name="mouse-pointer-2" size={48} className="opacity-50" />
-                                <p className="text-xs text-center font-bold">편집할 노드를<br />선택하세요</p>
+                            </div>
+                        )}
+
+                        {/* Unified Generator Modal (NPC + Item) */}
+                        {modals.npcGen && (
+                            <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 p-4">
+                                <div className="bg-[#131320] w-full max-w-4xl h-[85vh] pixel-box flex flex-col">
+                                    <div className="p-2 border-b-2 border-[#4A4A6A] flex justify-end"><button onClick={() => setModals(m => ({ ...m, npcGen: false }))}><Icon name="x" /></button></div>
+                                    <iframe src="/builder/npc-generator" className="w-full h-full border-none" title="Asset Gen"></iframe>
+                                </div>
                             </div>
                         )}
                     </div>
+                );
+            }
 
-                    {/* [추가] 마우스 오버 미리보기 오버레이 */}
-                    {hoverPreview.show && (
-                        <div className="fixed z-[1000] pointer-events-none bg-[#0B0B19] border-2 border-[#FFFACD] p-2 shadow-2xl animate-fade-in"
-                            style={{ left: hoverPreview.x - 240, top: Math.min(hoverPreview.y - 50, window.innerHeight - 300), width: '220px' }}>
-                            <div className="w-full h-48 bg-black border border-[#4A4A6A] mb-2 relative flex items-center justify-center overflow-hidden">
-                                <img src={getImageUrl(hoverPreview.url)} className="w-full h-full object-contain" alt={hoverPreview.name} />
-                            </div>
-                            <div className="text-center font-bold text-[#FFFACD] text-xs break-words">{hoverPreview.name}</div>
-                            <div className="text-center text-[10px] text-[#6A6A8A] mt-1">Preview</div>
-                        </div>
-                    )}
-
-                    {/* Modals */}
-                    <Modal isOpen={modals.npcList} title="NPC 목록" onClose={() => setModals(m => ({ ...m, npcList: false }))}>
-                        <div className="space-y-2">
-                            {dbNpcList.map((npc, i) => (
-                                <div key={i} className="flex justify-between items-center p-3 bg-[#0B0B19] border border-[#4A4A6A] hover:border-[#FFFACD] transition-colors">
-                                    <div>
-                                        <div className="font-bold text-white text-sm">{npc.name}</div>
-                                        <div className="text-[10px] text-[#10b981]">{npc.isEnemy ? 'ENEMY' : 'NPC'}</div>
-                                    </div>
-                                    <button onClick={() => { (npc.isEnemy ? setGlobalEnemies : setGlobalNpcs)(prev => [...prev, npc]); showToast("추가됨", "success"); }}
-                                        className="pixel-btn px-3 py-1 text-xs">추가</button>
-                                </div>
-                            ))}
-                        </div>
-                    </Modal>
-
-                    {/* [추가] 아이템 목록 모달 */}
-                    <Modal isOpen={modals.itemList} title="아이템 목록" onClose={() => setModals(m => ({ ...m, itemList: false }))}>
-                        <div className="space-y-2">
-                            {dbItemList.map((item, i) => (
-                                <div key={i} className="flex justify-between items-center p-3 bg-[#0B0B19] border border-[#4A4A6A] hover:border-[#FFD700] transition-colors">
-                                    <div>
-                                        <div className="font-bold text-white text-sm">{item.name}</div>
-                                        <div className="text-[10px] text-[#FFD700]">{item.type || 'ITEM'}</div>
-                                    </div>
-                                    <button onClick={() => { setGlobalItems(prev => [...prev, item]); showToast("아이템 추가됨", "success"); }}
-                                        className="pixel-btn px-3 py-1 text-xs">추가</button>
-                                </div>
-                            ))}
-                        </div>
-                    </Modal>
-
-                    <Modal isOpen={modals.scenarioList} title="시나리오 불러오기" onClose={() => setModals(m => ({ ...m, scenarioList: false }))}>
-                        <div className="space-y-2">
-                            {userScenarios.length === 0 ? (
-                                <div className="text-center text-gray-500 py-4">저장된 시나리오가 없습니다.</div>
-                            ) : (
-                                userScenarios.map(s => (
-                                    <div key={s.id} onClick={() => window.location.href = `/views/scenes/edit/${s.filename}`}
-                                        className="p-4 bg-[#0B0B19] border border-[#4A4A6A] hover:border-[#00FFFF] cursor-pointer group transition-all">
-                                        <div className="font-bold text-[#FFFACD] group-hover:text-white">{s.title}</div>
-                                        <div className="text-xs text-[#6A6A8A] mt-1 truncate">{s.prologue}</div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </Modal>
-
-                    <Modal isOpen={modals.presetLoad} title="프리셋 불러오기" onClose={() => setModals(m => ({ ...m, presetLoad: false }))}>
-                        <div className="space-y-2">
-                            {presetList.map((p, i) => (
-                                <div key={i} onClick={() => loadPreset(p)}
-                                    className="p-4 bg-[#0B0B19] border border-[#4A4A6A] hover:border-[#FF007F] cursor-pointer group transition-all flex justify-between">
-                                    <div>
-                                        <div className="font-bold text-[#E0E0E0]">{p.name}</div>
-                                        <div className="text-xs text-[#6A6A8A]">{p.description}</div>
-                                    </div>
-                                    <Icon name="download" className="text-[#6A6A8A] group-hover:text-white" />
-                                </div>
-                            ))}
-                        </div>
-                    </Modal>
-
-                    <Modal isOpen={modals.presetSave} title="프리셋 저장" onClose={() => setModals(m => ({ ...m, presetSave: false }))}>
-                        <div className="space-y-4">
-                            <div className="text-sm text-[#6A6A8A]">
-                                현재 시나리오 구조를 프리셋으로 저장하여 나중에 다시 사용할 수 있습니다.
-                            </div>
-                            <div className="bg-[#0B0B19] border border-[#4A4A6A] p-3 rounded">
-                                <div className="text-xs text-[#6A6A8A] mb-2">저장될 내용:</div>
-                                <div className="text-xs text-[#E0E0E0] space-y-1">
-                                    <div>• 노드 구조 ({nodes.length}개)</div>
-                                    <div>• 연결 관계 ({edges.length}개)</div>
-                                    <div>• 노드 데이터 (제목, 내용 등)</div>
-                                </div>
-                            </div>
-                        </div>
-                        <footer>
-                            <button onClick={() => setModals(m => ({ ...m, presetSave: false }))} className="pixel-btn px-4 py-2 text-xs text-[#6A6A8A] border border-[#4A4A6A]">
-                                취소
-                            </button>
-                            <button onClick={savePreset} className="pixel-btn px-4 py-2 text-xs text-[#FFD700] border border-[#FFD700]">
-                                <Icon name="save" size={12} /> 저장하기
-                            </button>
-                        </footer>
-                    </Modal>
-
-                    {/* [REQ 2] AI 검수 결과 모달 */}
-                    {auditState.isOpen && (
-                        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-fade-in p-4">
-                            <div className="pixel-box w-full max-w-4xl max-h-[80vh] bg-[#131320] border-2 border-[#6366f1] shadow-[0_0_20px_rgba(99,102,241,0.3)] overflow-hidden">
-                                <div className="p-4 bg-[#1A0B2E] border-b-2 border-[#4A4A6A] flex justify-between items-center">
-                                    <h3 className="text-[#6366f1] font-bold flex items-center gap-2">
-                                        <Icon name="brain-circuit" size={18} /> AI 검수 결과
-                                    </h3>
-                                    <button onClick={() => setAuditState(p => ({ ...p, isOpen: false }))} className="text-[#6A6A8A] hover:text-white">
-                                        <Icon name="x" />
-                                    </button>
-                                </div>
-
-                                <div className="p-6 overflow-y-auto max-h-[60vh]">
-                                    {auditState.isLoading ? (
-                                        <div className="text-center py-8">
-                                            <Icon name="loader-2" className="animate-spin text-[#6366f1] text-4xl mb-4" />
-                                            <p className="text-gray-400">AI 검수 중...</p>
-                                        </div>
-                                    ) : auditState.results ? (
-                                        <div>
-                                            <div className="mb-4 p-3 bg-[#0B0B19] border border-[#4A4A6A] rounded">
-                                                <p className="text-sm text-gray-300">{auditState.results.summary}</p>
-                                            </div>
-
-                                            {auditState.results.issues && auditState.results.issues.length > 0 ? (
-                                                <div className="space-y-3">
-                                                    <h4 className="text-white font-bold flex items-center gap-2">
-                                                        <Icon name="alert-triangle" size={16} /> 발견된 문제 ({auditState.results.issues.length}개)
-                                                    </h4>
-                                                    {auditState.results.issues.map((issue, idx) => (
-                                                        <div key={idx} className={`p-3 border rounded ${issue.severity === 'error' ? 'bg-red-900/20 border-red-600' :
-                                                            issue.severity === 'warning' ? 'bg-yellow-900/20 border-yellow-600' :
-                                                                'bg-blue-900/20 border-blue-600'
-                                                            }`}>
-                                                            <div className="flex justify-between items-start mb-2">
-                                                                <span className={`text-xs font-bold ${issue.severity === 'error' ? 'text-red-400' :
-                                                                    issue.severity === 'warning' ? 'text-yellow-400' :
-                                                                        'text-blue-400'
-                                                                    }`}>
-                                                                    {issue.severity.toUpperCase()}
-                                                                </span>
-                                                                <span className="text-xs text-gray-400">{issue.scene_id}</span>
-                                                            </div>
-                                                            <p className="text-white text-sm mb-2">{issue.message}</p>
-                                                            {issue.suggestion && (
-                                                                <div className="mt-2 pt-2 border-t border-gray-700">
-                                                                    <p className="text-gray-300 text-xs mb-2">제안:</p>
-                                                                    <p className="text-gray-400 text-sm">{issue.suggestion}</p>
-                                                                </div>
-                                                            )}
-                                                            {issue.suggestion && (
-                                                                <button
-                                                                    onClick={() => applySuggestion(issue)}
-                                                                    className="mt-2 px-3 py-1 bg-[#6366f1] text-white text-xs rounded hover:bg-[#4f46e5] transition-colors"
-                                                                >
-                                                                    적용
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <div className="text-center py-8">
-                                                    <Icon name="check-circle" className="text-green-500 text-4xl mb-4" />
-                                                    <p className="text-green-400">문제가 발견되지 않았습니다!</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div className="text-center py-8">
-                                            <Icon name="alert-circle" className="text-red-500 text-4xl mb-4" />
-                                            <p className="text-red-400">검수 결과가 없습니다</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* [NEW] 잔액 부족 경고 모달 */}
-                    {modals.noToken && (
-                        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-fade-in p-4">
-                            <div className="pixel-box w-full max-w-md bg-[#131320] border-2 border-[#FF007F] shadow-[0_0_20px_rgba(255,0,127,0.3)]">
-                                <div className="p-4 bg-[#1A0B2E] border-b-2 border-[#4A4A6A] flex justify-between items-center">
-                                    <h3 className="text-[#FF007F] font-bold flex items-center gap-2">
-                                        <Icon name="alert-triangle" size={18} /> WARNING: LOW POWER
-                                    </h3>
-                                    <button onClick={() => setModals(m => ({ ...m, noToken: false }))} className="text-[#6A6A8A] hover:text-white"><Icon name="x" /></button>
-                                </div>
-                                <div className="p-8 text-center">
-                                    <div className="mb-6 relative inline-block">
-                                        <div className="w-16 h-16 border-4 border-[#FF007F]/20 rounded-full animate-spin"></div>
-                                        <div className="absolute top-2 left-2 w-12 h-12 border-4 border-[#FF007F]/40 rounded-full animate-spin" style={{ animationDuration: '1.5s' }}></div>
-                                        <div className="absolute top-4 left-4 w-8 h-8 border-4 border-[#FF007F] rounded-full animate-spin" style={{ animationDuration: '2s' }}></div>
-                                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                                            <Icon name="battery-low" size={20} className="text-[#FF007F] animate-pulse" />
-                                        </div>
-                                    </div>
-                                    <div className="text-[#FF007F] font-bold mb-4">⚡ 파워 부족 ⚡</div>
-                                    <div className="text-gray-400 mb-6">토큰 잔액이 부족하여 이 작업을 수행할 수 없습니다.<br />충전 후 다시 시도해주세요.</div>
-                                    <div className="flex justify-center gap-3">
-                                        <a href="/billing"
-                                            className="pixel-btn bg-[#FFD700] text-black border-[#E0E0E0] hover:bg-[#E6C200] hover:text-black hover:border-white font-bold py-2 px-6 flex items-center gap-2">
-                                            <Icon name="zap" size={16} /> 충전하러 가기
-                                        </a>
-                                        <button onClick={() => setModals(m => ({ ...m, noToken: false }))}
-                                            className="pixel-btn py-2 px-4 text-[#6A6A6A] border-[#4A4A6A]">
-                                            닫기
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* AI Audit 적용 완료 모달 */}
-                    {modals.auditApplied && (
-                        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-fade-in p-4">
-                            <div className="pixel-box w-full max-w-md bg-[#131320] border-2 border-[#00FFFF] shadow-[0_0_20px_rgba(0,255,255,0.3)]">
-                                <div className="p-4 bg-[#1A0B2E] border-b-2 border-[#4A4A6A] flex justify-between items-center">
-                                    <h3 className="text-[#00FFFF] font-bold flex items-center gap-2">
-                                        <Icon name="check-circle" size={18} /> AI 제안 적용 완료
-                                    </h3>
-                                    <button onClick={() => setModals(m => ({ ...m, auditApplied: false }))} className="text-[#6A6A8A] hover:text-white"><Icon name="x" /></button>
-                                </div>
-                                <div className="p-8 text-center">
-                                    <div className="mb-6 relative inline-block">
-                                        <div className="w-16 h-16 border-4 border-[#00FFFF]/20 rounded-full animate-pulse"></div>
-                                        <div className="absolute top-2 left-2 w-12 h-12 border-4 border-[#00FFFF]/40 rounded-full animate-pulse" style={{ animationDuration: '1.5s' }}></div>
-                                        <div className="absolute top-4 left-4 w-8 h-8 border-4 border-[#00FFFF] rounded-full animate-pulse" style={{ animationDuration: '2s' }}></div>
-                                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                                            <Icon name="sparkles" size={20} className="text-[#00FFFF] animate-pulse" />
-                                        </div>
-                                    </div>
-                                    <div className="text-[#00FFFF] font-bold mb-4">✨ 개선사항 적용 완료 ✨</div>
-                                    <div className="text-gray-300 mb-6">{modals.auditAppliedMessage}</div>
-                                    <div className="flex justify-center gap-3">
-                                        <button onClick={() => setModals(m => ({ ...m, auditApplied: false }))}
-                                            className="pixel-btn bg-[#00FFFF] text-black border-[#00FFFF] hover:bg-[#00CCCC] font-bold py-2 px-6 flex items-center gap-2">
-                                            <Icon name="check" size={16} /> 적용 완료
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Unified Generator Modal (NPC + Item) */}
-                    {modals.npcGen && (
-                        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 p-4">
-                            <div className="bg-[#131320] w-full max-w-4xl h-[85vh] pixel-box flex flex-col">
-                                <div className="p-2 border-b-2 border-[#4A4A6A] flex justify-end"><button onClick={() => setModals(m => ({ ...m, npcGen: false }))}><Icon name="x" /></button></div>
-                                <iframe src="/builder/npc-generator" className="w-full h-full border-none" title="Asset Gen"></iframe>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-        }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<ScenarioBuilder />);
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(<ScenarioBuilder />);
     </script>
     {% endraw %}
 
     <script src="{{ url_for('static', path='/js/tutorial.js') }}"></script>
     <script>
-        // 튜토리얼 자동 시작 (빌더 모드)
-        document.addEventListener('DOMContentLoaded', () => {
-            if (window.TutorialSystem && window.TutorialSystem.checkAndStart) {
-                // React 렌더링 시간을 고려해 약간의 지연 후 실행
-                setTimeout(() => {
-                    window.TutorialSystem.checkAndStart('builder');
-                }, 1500);
-            }
-        });
+            // 튜토리얼 자동 시작 (빌더 모드)
+            document.addEventListener('DOMContentLoaded', () => {
+                if (window.TutorialSystem && window.TutorialSystem.checkAndStart) {
+                    // React 렌더링 시간을 고려해 약간의 지연 후 실행
+                    setTimeout(() => {
+                        window.TutorialSystem.checkAndStart('builder');
+                    }, 1500);
+                }
+            });
     </script>
 
     <script>
-        // 모달 관리 함수
-        window.openModal = function (id) {
-            const modal = document.getElementById(id);
-            modal.classList.remove('opacity-0', 'pointer-events-none');
-            document.body.classList.add('modal-active');
-            setTimeout(() => {
-                modal.querySelector('.modal-container').classList.remove('scale-95', 'opacity-0');
-                modal.querySelector('.modal-container').classList.add('scale-100', 'opacity-100');
-            }, 10);
-        };
+            // 모달 관리 함수
+            window.openModal = function (id) {
+                const modal = document.getElementById(id);
+                modal.classList.remove('opacity-0', 'pointer-events-none');
+                document.body.classList.add('modal-active');
+                setTimeout(() => {
+                    modal.querySelector('.modal-container').classList.remove('scale-95', 'opacity-0');
+                    modal.querySelector('.modal-container').classList.add('scale-100', 'opacity-100');
+                }, 10);
+            };
 
-        window.closeModal = function (id) {
-            const modal = document.getElementById(id);
-            modal.querySelector('.modal-container').classList.remove('scale-100', 'opacity-100');
-            modal.querySelector('.modal-container').classList.add('scale-95', 'opacity-0');
-            setTimeout(() => {
-                modal.classList.add('opacity-0', 'pointer-events-none');
-                document.body.classList.remove('modal-active');
-            }, 300);
-        };
+            window.closeModal = function (id) {
+                const modal = document.getElementById(id);
+                modal.querySelector('.modal-container').classList.remove('scale-100', 'opacity-100');
+                modal.querySelector('.modal-container').classList.add('scale-95', 'opacity-0');
+                setTimeout(() => {
+                    modal.classList.add('opacity-0', 'pointer-events-none');
+                    document.body.classList.remove('modal-active');
+                }, 300);
+            };
 
-        // 로그인이 필요할 때 index.html로 리다이렉트
-        window.requireLogin = function () {
-            window.location.href = '/login?show_login=true';
-        };
+            // 로그인이 필요할 때 index.html로 리다이렉트
+            window.requireLogin = function () {
+                window.location.href = '/login?show_login=true';
+            };
     </script>
 
     {% if show_login %}
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            window.requireLogin();
-        });
+            document.addEventListener('DOMContentLoaded', function () {
+                window.requireLogin();
+            });
     </script>
     {% endif %}
 
     <script>
-        // Lucide 아이콘 초기화
-        document.addEventListener('DOMContentLoaded', function () {
-            lucide.createIcons();
-        });
+            // Lucide 아이콘 초기화
+            document.addEventListener('DOMContentLoaded', function () {
+                lucide.createIcons();
+            });
     </script>
 
 </body>
