@@ -307,8 +307,8 @@
 
         <div class="space-y-16 mt-12 pb-20">
 
-            <section class="container mx-auto pl-8">
-                <div class="flex items-center justify-between pr-8 mb-4">
+            <section class="container mx-auto pl-8 pr-8">
+                <div class="flex items-center justify-between mb-4">
                     <h2 class="text-2xl font-title font-bold text-white flex items-center gap-2">
                         <span class="w-1 h-6 bg-rpg-accent rounded-full shadow-[0_0_10px_#38bdf8]"></span> 실시간 (Newest)
                     </h2>
@@ -316,7 +316,7 @@
                 </div>
                 <div class="relative group">
                     <button onclick="scrollListByArrows('realtime-grid', -1)"
-                            class="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/30 backdrop-blur-sm text-gray-500 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 -translate-x-1/2 hover:scale-110 shadow-lg">
+                            class="absolute -left-6 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/50 backdrop-blur-sm text-gray-400 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 hover:scale-110 shadow-lg">
                         <i data-lucide="chevron-left" class="w-8 h-8"></i>
                     </button>
 
@@ -326,25 +326,25 @@
                          hx-include="#search-input"
                          hx-trigger="load, new_search from:body">
                          <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
-                         <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                     </div>
 
                     <button onclick="scrollListByArrows('realtime-grid', 1)"
-                            class="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/30 backdrop-blur-sm text-gray-500 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 translate-x-1/2 hover:scale-110 shadow-lg">
+                            class="absolute -right-6 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/50 backdrop-blur-sm text-gray-400 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 hover:scale-110 shadow-lg">
                         <i data-lucide="chevron-right" class="w-8 h-8"></i>
                     </button>
                 </div>
             </section>
 
-            <section class="container mx-auto pl-8">
-                <div class="flex items-center justify-between pr-8 mb-4">
+            <section class="container mx-auto pl-8 pr-8">
+                <div class="flex items-center justify-between mb-4">
                     <h2 class="text-2xl font-title font-bold text-white flex items-center gap-2">
                         <span class="w-1 h-6 bg-yellow-500 rounded-full shadow-[0_0_10px_#eab308]"></span> 인기 (Popular)
                     </h2>
                     <span class="text-xs text-gray-500">Drag to scroll <i data-lucide="arrow-right" class="inline w-3 h-3"></i></span>
                 </div>
                 <div class="relative group">
-                    <button onclick="scrollListByArrows('popular-grid', -1)" class="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/30 backdrop-blur-sm text-gray-500 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 -translate-x-1/2 hover:scale-110 shadow-lg">
+                    <button onclick="scrollListByArrows('popular-grid', -1)"
+                            class="absolute -left-6 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/50 backdrop-blur-sm text-gray-400 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 hover:scale-110 shadow-lg">
                         <i data-lucide="chevron-left" class="w-8 h-8"></i>
                     </button>
 
@@ -356,21 +356,23 @@
                          <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                     </div>
 
-                    <button onclick="scrollListByArrows('popular-grid', 1)" class="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/30 backdrop-blur-sm text-gray-500 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 translate-x-1/2 hover:scale-110 shadow-lg">
+                    <button onclick="scrollListByArrows('popular-grid', 1)"
+                            class="absolute -right-6 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/50 backdrop-blur-sm text-gray-400 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 hover:scale-110 shadow-lg">
                         <i data-lucide="chevron-right" class="w-8 h-8"></i>
                     </button>
                 </div>
             </section>
 
-            <section class="container mx-auto pl-8">
-                <div class="flex items-center justify-between pr-8 mb-4">
+            <section class="container mx-auto pl-8 pr-8">
+                <div class="flex items-center justify-between mb-4">
                     <h2 class="text-2xl font-title font-bold text-white flex items-center gap-2">
                         <span class="w-1 h-6 bg-green-500 rounded-full shadow-[0_0_10px_#22c55e]"></span> 스테디셀러
                     </h2>
                     <span class="text-xs text-gray-500">Drag to scroll <i data-lucide="arrow-right" class="inline w-3 h-3"></i></span>
                 </div>
                 <div class="relative group">
-                    <button onclick="scrollListByArrows('steady-grid', -1)" class="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/30 backdrop-blur-sm text-gray-500 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 -translate-x-1/2 hover:scale-110 shadow-lg">
+                    <button onclick="scrollListByArrows('steady-grid', -1)"
+                            class="absolute -left-6 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/50 backdrop-blur-sm text-gray-400 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 hover:scale-110 shadow-lg">
                         <i data-lucide="chevron-left" class="w-8 h-8"></i>
                     </button>
 
@@ -382,7 +384,8 @@
                          <div class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0"></div>
                     </div>
 
-                    <button onclick="scrollListByArrows('steady-grid', 1)" class="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/30 backdrop-blur-sm text-gray-500 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 translate-x-1/2 hover:scale-110 shadow-lg">
+                    <button onclick="scrollListByArrows('steady-grid', 1)"
+                            class="absolute -right-6 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/50 backdrop-blur-sm text-gray-400 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 hover:scale-110 shadow-lg">
                         <i data-lucide="chevron-right" class="w-8 h-8"></i>
                     </button>
                 </div>
@@ -570,12 +573,14 @@
         });
 
         // [수정] 드래그 스크롤 로직 개선 (클릭한 상태에서만 이동)
-        function enableHorizontalScroll() {
+       function enableHorizontalScroll() {
             const containers = document.querySelectorAll('.horizontal-scroll-container');
             containers.forEach(slider => {
-                // ▼▼▼ [추가] 이미 이벤트가 연결된 요소는 건너뛰기 (중복 방지) ▼▼▼
                 if (slider.dataset.initScroll) return;
                 slider.dataset.initScroll = "true";
+
+                // ▼▼▼ [추가] 이미지/텍스트 드래그 방지 (이게 없으면 툭툭 끊김) ▼▼▼
+                slider.addEventListener('dragstart', (e) => e.preventDefault());
                 // ▲▲▲ [추가 완료] ▲▲▲
 
                 let isDown = false;
