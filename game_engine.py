@@ -2333,6 +2333,23 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                         # 폴백
                         yield "주변을 둘러보니 여러 가지 시도해볼 수 있을 것 같습니다."
                         return
+        # =============================================================================
+    # [MODE 2] 씬 변경됨 -> 장면 묘사
+    # =============================================================================
+    scene_desc = curr_scene.get('description', '')  # <--- scene_desc 변수 선언 추가
+
+    npc_intro = check_npc_appearance(state)
+    if npc_intro: yield npc_intro + "<br><br>"
+
+    # YAML에서 씬 묘사 프롬프트 로드
+    npc_list = ', '.join(npc_names) if npc_names else '없음'
+    prompts = load_player_prompts()
+    scene_prompt_template = prompts.get('scene_description', '')
+
+    if scene_prompt_template:
+        player_status = format_player_status(scenario, state.get('player_vars', {}))
+
+        # [추가] transitions 리스트 생성 - 장면 묘사에 포함할 선택지들
         transitions = curr_scene.get('transitions', [])
         available_transitions = ""
         if transitions:
@@ -2350,7 +2367,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             context_prefix = f"""**최우선 지침: 유저의 마지막 입력("{user_input}")이 이 장면으로의 전환을 일으켰습니다. 그 결과를 먼저 서술하세요.**
 
 """
-            # ✅ 작업 2: 죽은 NPC 상태 컨텍스트 주입
+            # 작업 2: 죽은 NPC 상태 컨텍스트 주입
             prompt = npc_status_context + context_prefix + scene_prompt_template.format(
                 player_status=player_status,
                 scene_title=scene_title,
@@ -2359,7 +2376,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 available_transitions=available_transitions
             )
         else:
-            # ✅ 작업 2: 죽은 NPC 상태 컨텍스트 주입
+            # 작업 2: 죽은 NPC 상태 컨텍스트 주입
             prompt = npc_status_context + scene_prompt_template.format(
                 player_status=player_status,
                 scene_title=scene_title,
@@ -2369,7 +2386,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             )
     else:
         # 폴백 프롬프트
-        # ✅ 작업 2: 죽은 NPC 상태 컨텍스트 주입
+        # 작업 2: 죽은 NPC 상태 컨텍스트 주입
         prompt = npc_status_context + f"""당신은 텍스트 기반 RPG의 게임 마스터입니다.
 
 **장면 정보:**

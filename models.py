@@ -231,6 +231,7 @@ class ScenarioHistory(Base):
 
     # 이력 순서
     sequence = Column(Integer, nullable=False)
+    is_current = Column(Boolean, default=False)  # 현재 버전 여부
     created_at = Column(DateTime, default=datetime.now)
 
     # 관계 설정
