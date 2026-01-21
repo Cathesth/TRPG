@@ -241,10 +241,22 @@ def get_mypage_scenarios_view():
             <h2 class="text-xl font-bold text-white flex items-center gap-2">
                 <i data-lucide="book-open" class="w-5 h-5 text-rpg-accent"></i> My Scenarios
             </h2>
-            <div class="flex gap-2">
-                <button class="px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors">All</button>
-                <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Public</button>
-                <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Private</button>
+
+            <div class="flex gap-2" id="filter-buttons">
+                <button hx-get="/api/scenarios?filter=my&visibility=all" 
+                        hx-target="#my-scenario-grid"
+                        onclick="updateFilterStyle(this)"
+                        class="px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors">All</button>
+
+                <button hx-get="/api/scenarios?filter=my&visibility=public" 
+                        hx-target="#my-scenario-grid"
+                        onclick="updateFilterStyle(this)"
+                        class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Public</button>
+
+                <button hx-get="/api/scenarios?filter=my&visibility=private" 
+                        hx-target="#my-scenario-grid"
+                        onclick="updateFilterStyle(this)"
+                        class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Private</button>
             </div>
         </div>
 
@@ -908,6 +920,7 @@ def list_scenarios(
         request: Request,
         sort: str = Query('newest'),
         filter: str = Query('public'),
+        visibility: str = Query('all'), # [추가] 공개/비공개 필터 파라미터
         limit: int = Query(10),
         search: Optional[str] = Query(None),
         user: CurrentUser = Depends(get_current_user_optional),
@@ -921,6 +934,13 @@ def list_scenarios(
         if not user.is_authenticated:
             return HTMLResponse('<div class="col-span-full text-center text-gray-500 py-10 w-full">로그인이 필요합니다.</div>')
         query = query.filter(Scenario.author_id == user.id)
+
+        # [추가] 마이페이지 내 공개/비공개 필터링 로직
+        if visibility == 'public':
+            query = query.filter(Scenario.is_public == True)
+        elif visibility == 'private':
+            query = query.filter(Scenario.is_public == False)
+        # visibility == 'all' 이면 필터 없이 모두 조회 (기본 동작)
 
     # filter='all'은 전체 조회
     elif filter == 'liked':

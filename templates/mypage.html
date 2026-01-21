@@ -297,10 +297,22 @@
                         <h2 class="text-xl font-bold text-white flex items-center gap-2">
                             <i data-lucide="book-open" class="w-5 h-5 text-rpg-accent"></i> My Scenarios
                         </h2>
-                        <div class="flex gap-2">
-                            <button class="px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors">All</button>
-                            <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Public</button>
-                            <button class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Private</button>
+
+                        <div class="flex gap-2" id="filter-buttons-main">
+                            <button hx-get="/api/scenarios?filter=my&visibility=all"
+                                    hx-target="#my-scenario-grid"
+                                    onclick="updateFilterStyle(this)"
+                                    class="px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors">All</button>
+
+                            <button hx-get="/api/scenarios?filter=my&visibility=public"
+                                    hx-target="#my-scenario-grid"
+                                    onclick="updateFilterStyle(this)"
+                                    class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Public</button>
+
+                            <button hx-get="/api/scenarios?filter=my&visibility=private"
+                                    hx-target="#my-scenario-grid"
+                                    onclick="updateFilterStyle(this)"
+                                    class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">Private</button>
                         </div>
                     </div>
 
@@ -574,6 +586,24 @@
                 console.error(e);
                 alert("통신 오류가 발생했습니다.");
             }
+        }
+
+        // [추가] 필터 버튼 스타일 토글 함수
+        function updateFilterStyle(btn) {
+            // 클릭된 버튼이 속한 그룹(div)을 찾음
+            const parent = btn.closest('div');
+            const buttons = parent.querySelectorAll('button');
+
+            // 비활성 스타일 (어두운 배경, 회색 텍스트)
+            const inactiveClass = "px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors";
+            // 활성 스타일 (밝은 배경, 흰색 텍스트)
+            const activeClass = "px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors";
+
+            // 모든 버튼을 비활성 상태로 초기화
+            buttons.forEach(b => b.className = inactiveClass);
+
+            // 클릭된 버튼만 활성 상태로 변경
+            btn.className = activeClass;
         }
     </script>
 </body>
