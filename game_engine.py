@@ -11,6 +11,10 @@ from llm_factory import LLMFactory
 from dotenv import load_dotenv
 from core.state import WorldState
 
+# [NEW] 토큰 추적 및 과금 처리를 위한 임포트
+from langchain_community.callbacks import get_openai_callback
+from services.user_service import UserService
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -119,6 +123,7 @@ class PlayerState(TypedDict):
     world_state: Dict[str, Any]  # [추가] WorldState 스냅샷
     is_game_start: bool  # [추가] 게임 시작 여부 플래그
     target_npc: str  # [추가] 공격 대상 NPC 이름
+    user_id: Optional[str]  # [추가] 토큰 과금을 위한 유저 ID
 
 
 def normalize_text(text: str) -> str:
@@ -183,7 +188,8 @@ def filter_negative_transitions(transitions: list, scenario: dict) -> list:
     """
     힌트 생성 시 부정적인 결말(ending, 패배, 죽음 등)로 가는 경로를 제외
     """
-    negative_keywords = ['패배', '죽음', 'death', 'defeat', 'game_over', 'bad_end', '실패', '사망', '처치', '엔딩', 'ending', '종료', '끝', 'die', 'kill', 'dead', 'lose', 'lost']
+    negative_keywords = ['패배', '죽음', 'death', 'defeat', 'game_over', 'bad_end', '실패', '사망', '처치', '엔딩', 'ending', '종료',
+                         '끝', 'die', 'kill', 'dead', 'lose', 'lost']
     endings = {e['ending_id'].lower(): e for e in scenario.get('endings', [])}
 
     filtered = []
@@ -359,7 +365,8 @@ def intent_parser_node(state: PlayerState):
             f"⚠️ [INTENT_PARSER] Location regression detected! "
             f"state.current_scene_id: '{curr_scene_id_from_state}' (TRUTH) vs world_state.location: '{ws_location}' (OUTDATED)"
         )
-        logger.info(f"🔧 [LOCATION SYNC] Forcing world_state.location = '{curr_scene_id_from_state}' (state.current_scene_id is Source of Truth)")
+        logger.info(
+            f"🔧 [LOCATION SYNC] Forcing world_state.location = '{curr_scene_id_from_state}' (state.current_scene_id is Source of Truth)")
         wsm.location = curr_scene_id_from_state
     elif not curr_scene_id_from_state and ws_location:
         # current_scene_id가 비어있으면 world_state.location으로 복원
@@ -368,7 +375,8 @@ def intent_parser_node(state: PlayerState):
         curr_scene_id_from_state = ws_location
     elif not curr_scene_id_from_state and not ws_location:
         # ✅ 작업 2: 둘 다 비어있을 때만 기본값 설정 (Scene-1 회귀 방지)
-        logger.warning("⚠️ [INTENT_PARSER] Both current_scene_id and world_state.location are empty, using 'prologue' as default")
+        logger.warning(
+            "⚠️ [INTENT_PARSER] Both current_scene_id and world_state.location are empty, using 'prologue' as default")
         curr_scene_id_from_state = 'prologue'
         state['current_scene_id'] = curr_scene_id_from_state
         wsm.location = curr_scene_id_from_state
@@ -380,7 +388,8 @@ def intent_parser_node(state: PlayerState):
     user_input = state.get('last_user_input', '').strip()
 
     # ✅ 정합성 로그
-    logger.info(f"🟢 [INTENT_PARSER START] USER INPUT: '{user_input}' | Scene: '{curr_scene_id_from_state}' (from state.current_scene_id - SOURCE OF TRUTH)")
+    logger.info(
+        f"🟢 [INTENT_PARSER START] USER INPUT: '{user_input}' | Scene: '{curr_scene_id_from_state}' (from state.current_scene_id - SOURCE OF TRUTH)")
 
     # ✅ 노드 종료 전 world_state 저장
     state['world_state'] = wsm.to_dict()
@@ -420,7 +429,8 @@ def intent_parser_node(state: PlayerState):
     # [작업 1] 하드코딩 기반 고우선순위 필터링 (최소화)
     # =============================================================================
 
-    logger.info(f"🎯 [HARDCODE FILTER START] Filtering based on scene: '{curr_scene_id}' | Total transitions: {len(transitions)}")
+    logger.info(
+        f"🎯 [HARDCODE FILTER START] Filtering based on scene: '{curr_scene_id}' | Total transitions: {len(transitions)}")
 
     # 1-1. 따옴표 감지 -> 무조건 'chat' (대사/대화)
     if '"' in user_input or "'" in user_input or '"' in user_input or '"' in user_input or ''' in user_input or ''' in user_input:
@@ -442,7 +452,8 @@ def intent_parser_node(state: PlayerState):
             state['parsed_intent'] = 'transition'
             return state
 
-    logger.info(f"🎯 [HARDCODE FILTER END] No hardcode match found in scene '{curr_scene_id}', proceeding to LLM classifier")
+    logger.info(
+        f"🎯 [HARDCODE FILTER END] No hardcode match found in scene '{curr_scene_id}', proceeding to LLM classifier")
 
     # =============================================================================
     # [작업 2] LLM을 통한 의도 분류 (2단계 API 호출)
@@ -489,6 +500,7 @@ def intent_parser_node(state: PlayerState):
         model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
         llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
 
+        # [TOKEN] invoke 호출 시 상위 context manager가 있으면 토큰이 추적됨
         response = llm.invoke(intent_prompt).content.strip()
         logger.info(f"🤖 [INTENT CLASSIFIER] Raw response: {response}")
 
@@ -558,7 +570,8 @@ def intent_parser_node(state: PlayerState):
                     npc_list = npc_names + enemy_names
 
                     for npc_name in npc_list:
-                        if npc_name in user_input or npc_name.replace(' ', '').lower() in user_input.lower().replace(' ', ''):
+                        if npc_name in user_input or npc_name.replace(' ', '').lower() in user_input.lower().replace(
+                                ' ', ''):
                             state['target_npc'] = npc_name
                             logger.info(f"🎯 [ATTACK] Target extracted from input: '{npc_name}'")
                             break
@@ -627,7 +640,8 @@ def _fast_track_intent_parser(state: PlayerState, user_input: str, curr_scene: D
         return state
 
     # 공격 행동 감지
-    attack_keywords = ['공격', '때리', '치', '베', '찌르', '쏘', '던지', '싸우', 'attack', 'hit', 'strike', 'fight', 'kill', '처치', '죽이', '무찌']
+    attack_keywords = ['공격', '때리', '치', '베', '찌르', '쏘', '던지', '싸우', 'attack', 'hit', 'strike', 'fight', 'kill', '처치',
+                       '죽이', '무찌']
     is_attack_action = any(kw in user_input.lower() for kw in attack_keywords)
 
     if scene_type == 'battle' and is_attack_action:
@@ -695,7 +709,8 @@ def _fast_track_intent_parser(state: PlayerState, user_input: str, curr_scene: D
 
     # ✅ [작업 3] 0.4 ~ 0.59: Near Miss - 가장 가까운 트리거 전체 문구 저장
     elif highest_ratio >= 0.4:
-        logger.info(f"⚠️ [NEAR MISS] Similarity: {highest_ratio:.2f} | User: '{user_input}' vs Trigger: '{best_trigger_text}'")
+        logger.info(
+            f"⚠️ [NEAR MISS] Similarity: {highest_ratio:.2f} | User: '{user_input}' vs Trigger: '{best_trigger_text}'")
         # 트리거 전체 문구를 저장하여 나레이션 노드에서 힌트 제공
         state['near_miss_trigger'] = best_trigger_text
         state['parsed_intent'] = 'chat'
@@ -737,7 +752,8 @@ def rule_node(state: PlayerState):
 
     # ✅ [작업 1-1] 턴 시작 시점에 실제 현재 위치를 명시적으로 캡처 (이것이 진실!)
     actual_current_location = world_state.location
-    logger.info(f"📍 [RULE_NODE START] Captured actual_current_location: '{actual_current_location}' (from world_state.location)")
+    logger.info(
+        f"📍 [RULE_NODE START] Captured actual_current_location: '{actual_current_location}' (from world_state.location)")
 
     # ✅ [작업 1-3] 턴 시작 시 위치 정보 검증 - world_state.location과 state['current_scene_id'] 일치 확인
     if state['current_scene_id'] != actual_current_location:
@@ -768,7 +784,8 @@ def rule_node(state: PlayerState):
     # user_action 추출 (서사 이벤트 기록용)
     user_action = user_input if user_input else None
 
-    logger.info(f"🎬 [APPLY_EFFECTS] Scene before transition: {actual_current_location}, Intent: {state['parsed_intent']}, Transition index: {idx}")
+    logger.info(
+        f"🎬 [APPLY_EFFECTS] Scene before transition: {actual_current_location}, Intent: {state['parsed_intent']}, Transition index: {idx}")
 
     # ========================================
     # ⚔️ 작업 1 & 3: attack 의도 처리 (전투 로직 주입 + 시체 확인)
@@ -871,7 +888,8 @@ def rule_node(state: PlayerState):
 
                         # player_vars의 inventory도 동기화 강제
                         state['player_vars']['inventory'] = list(world_state.player["inventory"])
-                        logger.info(f"📦 [ITEM SYSTEM] Synced inventory to player_vars after loot: {state['player_vars']['inventory']}")
+                        logger.info(
+                            f"📦 [ITEM SYSTEM] Synced inventory to player_vars after loot: {state['player_vars']['inventory']}")
 
                         logger.info(f"💰 [LOOT] Total items dropped from {target_npc}: {len(drop_items)}")
                     else:
@@ -891,7 +909,8 @@ def rule_node(state: PlayerState):
         # ========================================
         world_state_hp = world_state.player.get("hp", 100)
         state['player_vars']['hp'] = world_state_hp
-        logger.info(f"💾 [HP SYNC] Player HP synced to player_vars: {world_state_hp} (world_state.player['hp'] -> state['player_vars']['hp'])")
+        logger.info(
+            f"💾 [HP SYNC] Player HP synced to player_vars: {world_state_hp} (world_state.player['hp'] -> state['player_vars']['hp'])")
 
         # (f) system_message에 결과 저장
         state['system_message'] = combat_result
@@ -1189,7 +1208,8 @@ def rule_node(state: PlayerState):
         if user_action:
             old_stuck_count = state.get('stuck_count', 0)
             state['stuck_count'] = old_stuck_count + 1
-            logger.info(f"🔄 [STUCK] Player stuck in scene '{actual_current_location}' | Intent: {state['parsed_intent']} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+            logger.info(
+                f"🔄 [STUCK] Player stuck in scene '{actual_current_location}' | Intent: {state['parsed_intent']} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
 
             # 서사 이벤트 기록
             world_state.add_narrative_event(
@@ -1239,7 +1259,8 @@ def rule_node(state: PlayerState):
         f"[CRITICAL] Final location mismatch! "
         f"state: {state['current_scene_id']}, world_state: {world_state.location}"
     )
-    logger.info(f"✅ [FINAL ASSERT] Location verified: state['current_scene_id'] == world_state.location == '{world_state.location}'")
+    logger.info(
+        f"✅ [FINAL ASSERT] Location verified: state['current_scene_id'] == world_state.location == '{world_state.location}'")
 
     # ✅ WorldState 스냅샷 저장 (위치 동기화 후 저장)
     state['world_state'] = world_state.to_dict()
@@ -1313,9 +1334,9 @@ def npc_node(state: PlayerState):
 
     # 룰 기반 안전망: LLM이 chat으로 분류했어도 공격 동사가 있으면 attack으로 override
     attack_keywords = ['때리', '공격', '찌르', '베', '쏘', '죽이', '패', '가격', '해치', '치',
-                      '무찌르', '처치', '타격', '구타', '폭행', '살해', '제거', '제압',
-                      'attack', 'hit', 'strike', 'kill', 'murder', 'beat', 'punch', 'kick',
-                      'stab', 'slash', 'shoot', 'harm', 'hurt', 'damage', 'destroy']
+                       '무찌르', '처치', '타격', '구타', '폭행', '살해', '제거', '제압',
+                       'attack', 'hit', 'strike', 'kill', 'murder', 'beat', 'punch', 'kick',
+                       'stab', 'slash', 'shoot', 'harm', 'hurt', 'damage', 'destroy']
 
     has_attack_keyword = any(kw in user_input.lower() for kw in attack_keywords)
 
@@ -1350,7 +1371,8 @@ def npc_node(state: PlayerState):
                 # user_input에서 NPC 이름 매칭 시도
                 for npc_name in npc_list:
                     # 부분 매칭 (예: "노인" -> "노인 J")
-                    if npc_name in user_input or npc_name.replace(' ', '').lower() in user_input.lower().replace(' ', ''):
+                    if npc_name in user_input or npc_name.replace(' ', '').lower() in user_input.lower().replace(' ',
+                                                                                                                 ''):
                         target_npc = npc_name
                         logger.info(f"🎯 [COMBAT] Target extracted from input: '{target_npc}'")
                         break
@@ -1398,7 +1420,8 @@ def npc_node(state: PlayerState):
         # ========================================
         world_state_hp = world_state.player.get("hp", 100)
         state['player_vars']['hp'] = world_state_hp
-        logger.info(f"💾 [HP SYNC] Player HP synced to player_vars: {world_state_hp} (world_state.player['hp'] -> state['player_vars']['hp'])")
+        logger.info(
+            f"💾 [HP SYNC] Player HP synced to player_vars: {world_state_hp} (world_state.player['hp'] -> state['player_vars']['hp'])")
 
         # (f) system_message에 결과 저장
         state['system_message'] = combat_result
@@ -1467,7 +1490,8 @@ def npc_node(state: PlayerState):
     if user_input:
         old_stuck_count = state.get('stuck_count', 0)
         state['stuck_count'] = old_stuck_count + 1
-        logger.info(f"🔄 [STUCK] Player stuck in scene '{curr_scene_id}' | Intent: {parsed_intent} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
+        logger.info(
+            f"🔄 [STUCK] Player stuck in scene '{curr_scene_id}' | Intent: {parsed_intent} | stuck_count: {old_stuck_count} -> {state['stuck_count']}")
 
         # ✅ 작업 4: investigate 의도일 때 서사 기록
         if parsed_intent == 'investigate':
@@ -1487,7 +1511,8 @@ def npc_node(state: PlayerState):
         world_state.location = state.get("current_scene_id", world_state.location)
         world_state.stuck_count = state.get("stuck_count", 0)
         state['world_state'] = world_state.to_dict()
-        logger.info(f"🔄 [SYNC] Location synchronized in npc_node (early return): world_state.location = {world_state.location}, stuck_count = {world_state.stuck_count}")
+        logger.info(
+            f"🔄 [SYNC] Location synchronized in npc_node (early return): world_state.location = {world_state.location}, stuck_count = {world_state.stuck_count}")
         return
 
     # 기존 NPC 대화 로직
@@ -1683,11 +1708,13 @@ NPC ({target_npc_name}): "{response}"
         f"[CRITICAL] NPC_NODE final location mismatch! "
         f"state: {state['current_scene_id']}, world_state: {world_state.location}"
     )
-    logger.info(f"✅ [NPC_NODE FINAL ASSERT] Location verified: state['current_scene_id'] == world_state.location == '{world_state.location}'")
+    logger.info(
+        f"✅ [NPC_NODE FINAL ASSERT] Location verified: state['current_scene_id'] == world_state.location == '{world_state.location}'")
 
     # WorldState 스냅샷 저장 (위치 동기화 후 저장)
     state['world_state'] = world_state.to_dict()
-    logger.info(f"🔄 [SYNC] Location synchronized in npc_node: world_state.location = {world_state.location}, stuck_count = {world_state.stuck_count}")
+    logger.info(
+        f"🔄 [SYNC] Location synchronized in npc_node: world_state.location = {world_state.location}, stuck_count = {world_state.stuck_count}")
     logger.info(f"💾 [DB SNAPSHOT] Saved final state to DB with location: {world_state.location}")
 
     return state
@@ -1920,7 +1947,34 @@ def get_narrative_fallback_message(scenario: Dict[str, Any]) -> str:
     return fallback_messages.get('default', "⚠️ 잠시 상황 파악이 어렵습니다. 심호흡을 하고 다시 시도해 주세요.")
 
 
-def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries: int = 2):
+def _stream_and_track(llm, prompt, user_id, model_name):
+    """
+    LLM 스트리밍 및 토큰 과금 헬퍼
+    """
+    prompt_tokens = 0
+    completion_tokens = 0
+
+    # stream
+    for chunk in llm.stream(prompt):
+        if chunk.content:
+            yield chunk.content
+
+        # LangChain usage metadata capture
+        if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
+            # Usually the last chunk has the total
+            prompt_tokens = chunk.usage_metadata.get('input_tokens', 0)
+            completion_tokens = chunk.usage_metadata.get('output_tokens', 0)
+
+    # Billing
+    if user_id and (prompt_tokens > 0 or completion_tokens > 0):
+        try:
+            cost = UserService.calculate_llm_cost(model_name, prompt_tokens, completion_tokens)
+            UserService.deduct_tokens(user_id, cost, "narrative_stream", model_name, prompt_tokens + completion_tokens)
+        except Exception as e:
+            logger.error(f"Billing error in stream: {e}")
+
+
+def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries: int = 2, user_id: str = None):
     """
     [2단계 API 호출 구조 - 2단계: 서사 생성]
     1단계에서 분류된 의도(parsed_intent)에 따라 전용 서사 프롬프트를 선택하여 스트리밍
@@ -1929,6 +1983,10 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     [MODE 1] 씬 유지 + 의도별 분기 (investigate/attack/defend/chat/near_miss)
     [MODE 2] 씬 변경 -> 장면 묘사
     """
+    # [NEW] user_id 추출 (함수 인자 또는 state에서)
+    if not user_id:
+        user_id = state.get('user_id')
+
     scenario_id = state['scenario_id']
     curr_id = state['current_scene_id']
     prev_id = state.get('previous_scene_id')
@@ -2073,9 +2131,9 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
                 logger.info(f"🎬 [NARRATIVE] Using prompt: {prompt_key} for intent: {parsed_intent}")
 
-                for chunk in llm.stream(narrative_prompt):
-                    if chunk.content:
-                        yield chunk.content
+                # [NEW] _stream_and_track 사용
+                for chunk in _stream_and_track(llm, narrative_prompt, user_id, model_name):
+                    yield chunk
                 return
 
             except Exception as e:
@@ -2116,8 +2174,9 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                     api_key = os.getenv("OPENROUTER_API_KEY")
                     model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
                     llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
-                    for chunk in llm.stream(battle_continue_prompt):
-                        if chunk.content: yield chunk.content
+                    # [NEW] _stream_and_track 사용
+                    for chunk in _stream_and_track(llm, battle_continue_prompt, user_id, model_name):
+                        yield chunk
                 except Exception:
                     yield random.choice(get_battle_stalemate_messages())
                 return
@@ -2152,8 +2211,9 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
                         logger.info(f"💡 [HINT MODE] stuck_level: {stuck_level}")
 
-                        for chunk in llm.stream(hint_prompt):
-                            if chunk.content: yield chunk.content
+                        # [NEW] _stream_and_track 사용
+                        for chunk in _stream_and_track(llm, hint_prompt, user_id, model_name):
+                            yield chunk
                         return
                     except Exception as e:
                         logger.error(f"Hint mode generation error: {e}")
@@ -2237,11 +2297,12 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         accumulated_text = ""
         has_content = False
 
-        for chunk in llm.stream(prompt):
-            if chunk.content:
-                accumulated_text += chunk.content
+        # [NEW] _stream_and_track 사용
+        for chunk in _stream_and_track(llm, prompt, user_id, model_name):
+            if chunk:
+                accumulated_text += chunk
                 has_content = True
-                yield chunk.content
+                yield chunk
 
         if not has_content or len(accumulated_text.strip()) < 10:
             raise Exception("Empty or insufficient response from LLM")
@@ -2268,6 +2329,8 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 <div class="text-yellow-400 serif-font">{fallback_msg}</div>
             </div>
             """
+
+
 # --- Graph Construction ---
 
 def create_game_graph():
@@ -2311,3 +2374,73 @@ def create_game_graph():
     workflow.add_edge("narrator", END)
 
     return workflow.compile()
+
+
+# --- [NEW] Game Engine Wrapper for Token Management ---
+
+class GameEngine:
+    """
+    게임 로직 실행 및 토큰 과금 관리 래퍼 클래스
+    """
+
+    def __init__(self):
+        self.workflow = create_game_graph()
+
+    def run_turn(self, user_id: str, current_state: Dict[str, Any], user_input: str) -> Dict[str, Any]:
+        """
+        한 턴을 진행하고 토큰 비용을 정산하는 메인 메서드 (Sync Logic)
+        """
+        # 1. 잔액 확인 (최소 비용 체크)
+        current_balance = UserService.get_user_balance(user_id)
+        if current_balance <= 0:
+            return {
+                "error": "토큰이 부족합니다. 충전 후 이용해주세요.",
+                "balance": 0
+            }
+
+        # 입력 상태 준비
+        inputs = current_state
+        inputs['user_input'] = user_input
+        # [NEW] user_id 주입 (state를 통해 전파)
+        inputs['user_id'] = user_id
+
+        # 모델명 (추후 유저 설정이나 시나리오 설정에서 로드)
+        model_name = inputs.get('model', 'openai/google/gemini-2.0-flash-001')
+
+        prompt_tokens = 0
+        completion_tokens = 0
+        final_state = None
+
+        try:
+            # [핵심] LangChain Callback으로 입/출력 토큰 분리 측정 (Intent Parser, NPC Chat 등)
+            with get_openai_callback() as cb:
+                # 실제 게임 그래프 실행 (Blocking)
+                final_state = self.workflow.invoke(inputs)
+
+                # 사용량 집계 (Callback에서 추출)
+                prompt_tokens = cb.prompt_tokens
+                completion_tokens = cb.completion_tokens
+
+            # 3. 비용 계산 및 차감 (1K 단위 분리 계산)
+            total_tokens = prompt_tokens + completion_tokens
+
+            if total_tokens > 0:
+                cost = UserService.calculate_llm_cost(model_name, prompt_tokens, completion_tokens)
+
+                UserService.deduct_tokens(
+                    user_id=user_id,
+                    cost=cost,
+                    action_type="game_turn",
+                    model_name=model_name,
+                    llm_tokens_used=total_tokens
+                )
+
+            # 결과 반환
+            return final_state
+
+        except ValueError as ve:
+            logger.warning(f"Game turn interrupted: {ve}")
+            return {"error": str(ve)}
+        except Exception as e:
+            logger.error(f"Game turn failed: {e}")
+            return {"error": "게임 진행 중 오류가 발생했습니다."}

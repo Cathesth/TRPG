@@ -63,11 +63,34 @@ class User(Base):
     email = Column(String(120), nullable=True)
     # ▼ [추가] 프로필 사진 경로 저장 컬럼
     avatar_url = Column(String(255), nullable=True)
+
+    # ▼ [추가] 사용자의 현재 보유 토큰 (기본값 1000)
+    token_balance = Column(Integer, default=1000, nullable=False)
+
     created_at = Column(DateTime, default=datetime.now)
 
     # 관계 설정
     scenarios = relationship('Scenario', back_populates='owner')
     # Flask-Login 관련 속성 삭제됨 (auth.py가 대신 처리함)
+
+
+class TokenLog(Base):
+    """
+    [NEW] 토큰 사용 내역 기록 테이블
+    - 사용량 추적, 과금 근거, 어뷰징 감지 용도
+    """
+    __tablename__ = 'token_logs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(50), ForeignKey('users.id'), nullable=False)
+
+    action_type = Column(String(50), nullable=False)  # 예: 'game_turn', 'image_generation'
+    model_name = Column(String(50), nullable=True)  # 예: 'gpt-4o', 'dall-e-3'
+
+    tokens_used = Column(Integer, default=0)  # 실제 LLM/API 소모 토큰 양 (참고용)
+    cost_deducted = Column(Integer, default=0)  # 유저 지갑에서 실제 차감된 서비스 토큰
+
+    created_at = Column(DateTime, default=datetime.now)
 
 
 class Scenario(Base):
@@ -283,14 +306,19 @@ def create_tables():
         Base.metadata.create_all(bind=engine)
         logger.info("✅ All database tables created successfully")
 
-        # 2. [추가] users 테이블에 avatar_url 컬럼이 없으면 추가 (Auto Migration)
+        # 2. [추가] users 테이블에 avatar_url 및 token_balance 컬럼이 없으면 추가 (Auto Migration)
         with engine.connect() as conn:
             try:
                 # PostgreSQL 쿼리로 컬럼 추가 시도
                 conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(255)"))
                 conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(120)"))
+
+                # [NEW] token_balance 추가
+                conn.execute(
+                    text("ALTER TABLE users ADD COLUMN IF NOT EXISTS token_balance INTEGER DEFAULT 1000 NOT NULL"))
+
                 conn.commit()
-                logger.info("✅ Checked/Added 'avatar_url' and 'email' columns to 'users' table.")
+                logger.info("✅ Checked/Added 'avatar_url', 'email', 'token_balance' columns to 'users' table.")
             except Exception as ex:
                 logger.warning(f"⚠️ Column migration warning (SQLite or already exists): {ex}")
 
@@ -324,6 +352,3 @@ def cleanup_old_sessions(days=7):
     except Exception as e:
         logger.error(f"❌ Failed to cleanup sessions: {e}")
         return 0
-
-
-
