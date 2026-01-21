@@ -373,7 +373,7 @@
             const [dbNpcList, setDbNpcList] = useState([]);
             const [dbItemList, setDbItemList] = useState([]);
             const [userScenarios, setUserScenarios] = useState([]);
-            const [selectedModel, setSelectedModel] = useState('openai/tngtech/deepseek-r1t2-chimera:free');
+            const [selectedModel, setSelectedModel] = useState('openai/google/gemini-2.0-flash-001');
             const [history, setHistory] = useState({ past: [], future: [] });
 
             const [tokenBalance, setTokenBalance] = useState(0);
@@ -1403,6 +1403,88 @@
                             ))}
                         </div>
                     </Modal>
+
+                    {/* [REQ 2] AI 검수 결과 모달 */}
+                    {auditState.isOpen && (
+                        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-fade-in p-4">
+                            <div className="pixel-box w-full max-w-4xl max-h-[80vh] bg-[#131320] border-2 border-[#6366f1] shadow-[0_0_20px_rgba(99,102,241,0.3)] overflow-hidden">
+                                <div className="p-4 bg-[#1A0B2E] border-b-2 border-[#4A4A6A] flex justify-between items-center">
+                                    <h3 className="text-[#6366f1] font-bold flex items-center gap-2">
+                                        <Icon name="brain-circuit" size={18}/> AI 검수 결과
+                                    </h3>
+                                    <button onClick={() => setAuditState(p=>({...p, isOpen:false}))} className="text-[#6A6A8A] hover:text-white">
+                                        <Icon name="x"/>
+                                    </button>
+                                </div>
+                                
+                                <div className="p-6 overflow-y-auto max-h-[60vh]">
+                                    {auditState.isLoading ? (
+                                        <div className="text-center py-8">
+                                            <Icon name="loader-2" className="animate-spin text-[#6366f1] text-4xl mb-4"/>
+                                            <p className="text-gray-400">AI 검수 중...</p>
+                                        </div>
+                                    ) : auditState.results ? (
+                                        <div>
+                                            <div className="mb-4 p-3 bg-[#0B0B19] border border-[#4A4A6A] rounded">
+                                                <p className="text-sm text-gray-300">{auditState.results.summary}</p>
+                                            </div>
+                                            
+                                            {auditState.results.issues && auditState.results.issues.length > 0 ? (
+                                                <div className="space-y-3">
+                                                    <h4 className="text-white font-bold flex items-center gap-2">
+                                                        <Icon name="alert-triangle" size={16}/> 발견된 문제 ({auditState.results.issues.length}개)
+                                                    </h4>
+                                                    {auditState.results.issues.map((issue, idx) => (
+                                                        <div key={idx} className={`p-3 border rounded ${
+                                                            issue.severity === 'error' ? 'bg-red-900/20 border-red-600' :
+                                                            issue.severity === 'warning' ? 'bg-yellow-900/20 border-yellow-600' :
+                                                            'bg-blue-900/20 border-blue-600'
+                                                        }`}>
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <span className={`text-xs font-bold ${
+                                                                    issue.severity === 'error' ? 'text-red-400' :
+                                                                    issue.severity === 'warning' ? 'text-yellow-400' :
+                                                                    'text-blue-400'
+                                                                }`}>
+                                                                    {issue.severity.toUpperCase()}
+                                                                </span>
+                                                                <span className="text-xs text-gray-400">{issue.scene_id}</span>
+                                                            </div>
+                                                            <p className="text-white text-sm mb-2">{issue.message}</p>
+                                                            {issue.suggestion && (
+                                                                <div className="mt-2 pt-2 border-t border-gray-700">
+                                                                    <p className="text-gray-300 text-xs mb-2">제안:</p>
+                                                                    <p className="text-gray-400 text-sm">{issue.suggestion}</p>
+                                                                </div>
+                                                            )}
+                                                            {issue.suggestion && (
+                                                                <button 
+                                                                    onClick={() => applySuggestion(issue)}
+                                                                    className="mt-2 px-3 py-1 bg-[#6366f1] text-white text-xs rounded hover:bg-[#4f46e5] transition-colors"
+                                                                >
+                                                                    적용
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="text-center py-8">
+                                                    <Icon name="check-circle" className="text-green-500 text-4xl mb-4"/>
+                                                    <p className="text-green-400">문제가 발견되지 않았습니다!</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-8">
+                                            <Icon name="alert-circle" className="text-red-500 text-4xl mb-4"/>
+                                            <p className="text-red-400">검수 결과가 없습니다</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* [NEW] 잔액 부족 경고 모달 */}
                     {modals.noToken && (

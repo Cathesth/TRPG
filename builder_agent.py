@@ -883,6 +883,7 @@ def generate_scene_content(scenario_title, scenario_summary, user_request="", mo
             total_tokens = prompt_tokens + completion_tokens
             if total_tokens > 0:
                 cost = UserService.calculate_llm_cost(model_name, prompt_tokens, completion_tokens)
+                logger.info(f"[TOKEN DEDUCT] User: {user_id}, Model: {model_name}, Tokens: {total_tokens}, Cost: {cost}")
                 UserService.deduct_tokens(
                     user_id=user_id,
                     cost=cost,
@@ -890,6 +891,11 @@ def generate_scene_content(scenario_title, scenario_summary, user_request="", mo
                     model_name=model_name,
                     llm_tokens_used=total_tokens
                 )
+                logger.info(f"[TOKEN DEDUCT] Completed for user {user_id}")
+            else:
+                logger.info(f"[TOKEN DEDUCT] No tokens used for user {user_id}")
+        else:
+            logger.info(f"[TOKEN DEDUCT] No user_id provided")
 
         return {"description": scene_content}
 

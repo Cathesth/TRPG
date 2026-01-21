@@ -86,6 +86,10 @@ class UserService:
         # 소수점 버림 (int 형변환)
         total_cost = int(input_cost + output_cost)
 
+        logger.info(f"[COST CALC] Model: {model_name}, Input: {prompt_tokens} tokens, Output: {completion_tokens} tokens")
+        logger.info(f"[COST CALC] Cost info: {cost_info}")
+        logger.info(f"[COST CALC] Input cost: {input_cost}, Output cost: {output_cost}, Total: {total_cost}")
+
         return total_cost
 
     @staticmethod
@@ -93,20 +97,30 @@ class UserService:
         """
         토큰 차감 및 로그 기록 (Atomic Transaction)
         """
+        logger.info(f"[TOKEN DEDUCT START] User: {user_id}, Cost: {cost}, Action: {action_type}")
+        
         db = SessionLocal()
         try:
             # Row-level locking으로 동시성 문제 방지
             user = db.query(User).filter(User.id == user_id).with_for_update().first()
 
             if not user:
+                logger.error(f"[TOKEN DEDUCT] User not found: {user_id}")
                 raise ValueError("User not found")
+
+            logger.info(f"[TOKEN DEDUCT] User found: {user_id}, Current balance: {user.token_balance}")
 
             # 비용 검증 (무료 모델은 0원일 수 있음)
             if cost > 0 and user.token_balance < cost:
+                logger.error(f"[TOKEN DEDUCT] Insufficient tokens: Need {cost}, Have {user.token_balance}")
                 raise ValueError(f"토큰이 부족합니다. (필요: {cost}, 보유: {user.token_balance})")
 
             # 차감
+            old_balance = user.token_balance
             user.token_balance -= cost
+            new_balance = user.token_balance
+
+            logger.info(f"[TOKEN DEDUCT] Balance update: {old_balance} - {cost} = {new_balance}")
 
             # 로그 기록
             log = TokenLog(
