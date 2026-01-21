@@ -390,6 +390,37 @@
                 return estimatedCost > 0 && estimatedCost < 1 ? 1 : Math.floor(estimatedCost);
             }, [nodes, selectedModel]);
 
+            // AI Audit 예상 비용 계산
+            const auditEstimatedCost = useMemo(() => {
+                const rate = MODEL_COST_RATES[selectedModel] !== undefined
+                             ? MODEL_COST_RATES[selectedModel]
+                             : MODEL_COST_RATES['default'];
+                if (rate === 0) return 0;
+                // Audit은 씬당 약 80-120토큰 사용
+                const estimatedTokens = 100;
+                const costPerScene = (estimatedTokens / 1000) * rate;
+                const finalCost = costPerScene > 0 && costPerScene < 1 ? 1 : Math.floor(costPerScene);
+                // 개별 씬 검수 비용 (1회)
+                return finalCost;
+            }, [nodes, selectedModel]);
+
+            // 전체 스토리 검수 예상 비용 (모든 씬)
+            const fullAuditEstimatedCost = useMemo(() => {
+                const rate = MODEL_COST_RATES[selectedModel] !== undefined
+                             ? MODEL_COST_RATES[selectedModel]
+                             : MODEL_COST_RATES['default'];
+                if (rate === 0) return 0;
+                // 씬 개수 계산 (start 노드 제외)
+                const sceneCount = nodes.filter(n => n.type === 'scene').length;
+                if (sceneCount === 0) return 0;
+                
+                const estimatedTokens = 100;
+                const costPerScene = (estimatedTokens / 1000) * rate;
+                const finalCost = costPerScene > 0 && costPerScene < 1 ? 1 : Math.floor(costPerScene);
+                // 전체 검수는 씬 수만큼 비용
+                return finalCost * sceneCount;
+            }, [nodes, selectedModel]);
+
             const isAffordable = useMemo(() => {
                 return tokenBalance >= estimatedCost;
             }, [tokenBalance, estimatedCost]);
@@ -502,10 +533,56 @@
 
                 setTextGenState({ isLoading: true });
                 try {
-                    // 프롬프트 구성
-                    const genre = nodes[0].data.background || "판타지"; // 시작 노드 배경/장르
+                    // 이전/다음 씬 연결 관계 파악
+                    const findConnectedScenes = (targetNodeId) => {
+                        const incomingEdges = edges.filter(e => e.target === targetNodeId);
+                        const outgoingEdges = edges.filter(e => e.source === targetNodeId);
+                        
+                        const previousScenes = incomingEdges.map(e => {
+                            const prevNode = nodes.find(n => n.id === e.source);
+                            return prevNode ? {
+                                id: prevNode.id,
+                                title: prevNode.data.title || prevNode.data.label || '제목 없음',
+                                description: prevNode.data.description || prevNode.data.prologue || '',
+                                trigger: e.data?.label || '자유 행동'
+                            } : null;
+                        }).filter(Boolean);
+                        
+                        const nextScenes = outgoingEdges.map(e => {
+                            const nextNode = nodes.find(n => n.id === e.target);
+                            return nextNode ? {
+                                id: nextNode.id,
+                                title: nextNode.data.title || nextNode.data.label || '제목 없음',
+                                description: nextNode.data.description || nextNode.data.prologue || '',
+                                trigger: e.data?.label || '자유 행동'
+                            } : null;
+                        }).filter(Boolean);
+                        
+                        return { previousScenes, nextScenes };
+                    };
+                    
+                    const connectedScenes = findConnectedScenes(nodeId);
+                    
+                    // 프롬프트 구성 (문맥 포함)
+                    const genre = nodes[0].data.background || "판타지";
                     const title = node.data.title || "제목 없음";
-                    const prompt = `장르: ${genre}\n상황/제목: ${title}\n이전 상황과 연결되도록 자연스러운 TRPG 씬 묘사를 3줄 이내로 작성해줘.`;
+                    
+                    let contextInfo = "";
+                    if (connectedScenes.previousScenes.length > 0) {
+                        contextInfo += "\n[이전 상황]\n";
+                        connectedScenes.previousScenes.forEach(prev => {
+                            contextInfo += `- ${prev.title}: ${prev.description.substring(0, 100)}... (선택지: "${prev.trigger}")\n`;
+                        });
+                    }
+                    
+                    if (connectedScenes.nextScenes.length > 0) {
+                        contextInfo += "\n[다음 상황]\n";
+                        connectedScenes.nextScenes.forEach(next => {
+                            contextInfo += `- ${next.title}: ${next.description.substring(0, 100)}... (선택지: "${next.trigger}")\n`;
+                        });
+                    }
+                    
+                    const prompt = `장르: ${genre}\n상황/제목: ${title}${contextInfo}\n위 문맥을 바탕으로 자연스럽게 연결되는 TRPG 씬 묘사를 3줄 이내로 작성해줘.`;
 
                     // 시작 노드에서 시나리오 정보 가져오기 (수정/신규 모드 공통)
                     const startNode = nodes.find(n => n.id === 'start');
@@ -738,7 +815,16 @@
                 }
             };
             const publishScenario = async () => {
-                if(!confirm("반영하시겠습니까?")) return;
+                // 수정 모드에서 임시 저장 여부 확인
+                if (isEditMode && isDraft) {
+                    if (!confirm("임시 저장된 변경사항이 있습니다.\\n먼저 임시 저장을 진행하시겠습니까?")) {
+                        return;
+                    }
+                    // 임시 저장 먼저 실행
+                    await saveDraft();
+                }
+                
+                if(!confirm("최종 반영하시겠습니까?")) return;
                 try {
                     const res = await fetch(`/api/draft/${scenarioId}/publish`, { 
                         method: 'POST',
@@ -762,7 +848,7 @@
                     const data = await res.json();
                     if (data.success) {
                         setIsDraft(false); 
-                        showToast("반영 완료", "success");
+                        showToast("최종 반영 완료", "success");
                     } else {
                         throw new Error(data.error || "반영 실패");
                     }
@@ -817,7 +903,11 @@
                     }
                     return n;
                 }));
-                showToast(`"${targetId}" 씬의 AI 노트에 추가됨`, "success");
+                
+                // 더 명확한 적용 알림
+                const targetNode = nodes.find(n => n.id === targetId || n.data.title === targetId);
+                const sceneTitle = targetNode?.data?.title || targetId;
+                showToast(`✅ AI 제안 적용 완료!\n"${sceneTitle}" 씬의 개선사항이 AI 노트에 추가되었습니다.`, "success");
             };
             const loadPreset = (preset) => {
                 if(!confirm("현재 내용이 사라집니다. 적용하시겠습니까?")) return;
@@ -939,6 +1029,12 @@
                                 </select>
                             </div>
                             {/* [REQ 2] Audit 버튼 상태 표시 수정 */}
+                            <div className="mb-2 text-right">
+                                <span className="text-[10px] text-[#6A6A8A] mr-1">예상 소모:</span>
+                                <span className={`text-xs font-bold ${tokenBalance >= fullAuditEstimatedCost ? 'text-[#FFD700]' : 'text-[#FF007F] animate-pulse'}`}>
+                                    {fullAuditEstimatedCost.toLocaleString()} CR ({nodes.filter(n => n.type === 'scene').length} 씬)
+                                </span>
+                            </div>
                             <button onClick={() => runAiAudit(null)} disabled={auditState.isLoading} className="pixel-btn w-full mb-3 py-3 text-xs flex items-center justify-center gap-2 border-[#6366f1] text-[#6366f1] hover:text-white hover:bg-[#6366f1] disabled:opacity-50 disabled:cursor-wait">
                                 {auditState.isLoading && auditState.targetNodeId === null ?
                                     <><Icon name="loader-2" className="animate-spin"/> AI 검수 진행 중...</> :
@@ -1311,6 +1407,12 @@
 
                                     <div className="grid grid-cols-2 gap-2 pt-4">
                                         {/* [REQ 2] 개별 씬 검수 버튼 상태 표시 */}
+                                        <div className="text-right mb-1">
+                                            <span className="text-[8px] text-[#6A6A8A] mr-1">예상:</span>
+                                            <span className={`text-[8px] font-bold ${tokenBalance >= auditEstimatedCost ? 'text-[#FFD700]' : 'text-[#FF007F]'}`}>
+                                                {auditEstimatedCost.toLocaleString()} CR
+                                            </span>
+                                        </div>
                                         <button onClick={() => runAiAudit(node.id)} disabled={auditState.isLoading}
                                             className="pixel-btn py-2 text-xs col-span-2 text-[#6366f1] border-[#6366f1] disabled:opacity-50">
                                             {auditState.isLoading && auditState.targetNodeId === node.id ?
