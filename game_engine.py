@@ -904,6 +904,110 @@ def rule_node(state: PlayerState):
                 # narrative_history에 기록
                 world_state.add_narrative_event(f"{target_npc} 처치 후 전리품 [{items_text}] 획득")
 
+            # ========================================
+            # 🚀 [AUTO TRANSITION] 전투 승리 시 유효 경로가 1개면 자동 이동
+            # ========================================
+            logger.info(f"🚀 [AUTO TRANSITION] Checking for auto-move after combat victory...")
+
+            # 엔딩이 아닌 일반 이동 경로만 필터링
+            valid_transitions = []
+            for i, trans in enumerate(transitions):
+                target_id = trans.get('target_scene_id', '')
+                if target_id and target_id not in all_endings:
+                    valid_transitions.append((i, trans))
+
+            logger.info(f"🚀 [AUTO TRANSITION] Found {len(valid_transitions)} valid non-ending transitions")
+
+            # 유효 경로가 정확히 1개인 경우에만 자동 이동
+            if len(valid_transitions) == 1:
+                valid_idx, valid_trans = valid_transitions[0]
+                next_id = valid_trans.get('target_scene_id')
+                trigger_used = valid_trans.get('trigger', 'unknown')
+                effects = valid_trans.get('effects', [])
+
+                logger.info(f"🚀 [AUTO TRANSITION] Auto-moving to: {next_id} via index {valid_idx}")
+
+                # 가짜 '이동' 입력 주입
+                state['last_user_input'] = "이동"
+                state['parsed_intent'] = 'transition'
+                state['last_user_choice_idx'] = valid_idx
+
+                # 효과 적용
+                if effects:
+                    world_state.update_state(effects)
+                    for eff in effects:
+                        if isinstance(eff, dict):
+                            key = eff.get("target", "").lower()
+                            operation = eff.get("operation", "add")
+                            raw_val = eff.get("value", 0)
+
+                            if operation in ["gain_item", "lose_item"]:
+                                item_name = str(raw_val)
+                                inventory = state['player_vars'].get('inventory', [])
+                                if not isinstance(inventory, list):
+                                    inventory = []
+
+                                if operation == "gain_item":
+                                    if item_name not in inventory:
+                                        inventory.append(item_name)
+                                    combat_result += f"\n📦 획득: {item_name}"
+                                elif operation == "lose_item":
+                                    if item_name in inventory:
+                                        inventory.remove(item_name)
+                                    combat_result += f"\n🗑️ 사용: {item_name}"
+
+                                state['player_vars']['inventory'] = inventory
+                                continue
+
+                            val = 0
+                            if isinstance(raw_val, (int, float)):
+                                val = int(raw_val)
+                            elif isinstance(raw_val, str):
+                                if raw_val.isdigit() or (raw_val.startswith('-') and raw_val[1:].isdigit()):
+                                    val = int(raw_val)
+
+                            if key:
+                                current_val = state['player_vars'].get(key, 0)
+                                if not isinstance(current_val, (int, float)):
+                                    current_val = 0
+
+                                if operation == "add":
+                                    new_val = current_val + val
+                                elif operation == "subtract":
+                                    new_val = max(0, current_val - abs(val))
+                                elif operation == "set":
+                                    new_val = val
+                                else:
+                                    new_val = current_val
+
+                                state['player_vars'][key] = new_val
+
+                # 씬 이동
+                if next_id:
+                    from_scene = actual_current_location
+                    state['current_scene_id'] = next_id
+                    world_state.location = next_id
+
+                    state['npc_output'] = ''
+                    state['narrator_output'] = ''
+
+                    if from_scene != next_id:
+                        world_state.add_narrative_event(
+                            f"전투 승리 후 자동으로 '{trigger_used}'을(를) 통해 [{from_scene}]에서 [{next_id}]로 이동함"
+                        )
+
+                    old_stuck_count = state.get('stuck_count', 0)
+                    state['stuck_count'] = 0
+                    logger.info(f"✅ [AUTO TRANSITION] {from_scene} -> {next_id} | stuck_count: {old_stuck_count} -> 0")
+
+                state['system_message'] = combat_result
+                state['world_state'] = world_state.to_dict()
+
+                logger.info(f"🚀 [AUTO TRANSITION] Complete, returning state")
+                return state
+            else:
+                logger.info(f"🚀 [AUTO TRANSITION] Skipped - transitions: {len(valid_transitions)} (need exactly 1)")
+
         # ========================================
         # 💥 작업 2: 플레이어 HP 동기화 - WorldState의 HP를 player_vars에 강제 동기화
         # ========================================
