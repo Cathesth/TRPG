@@ -509,7 +509,6 @@ def finalize_build(state: BuilderState):
     """
     최종 단계에서 직접 BFS 탐색을 수행하여
     Scene과 Ending을 명확히 구분하고 ID를 Scene-N, Ending-N으로 재할당합니다.
-    [수정] 트리거 생성 로직 개선: 하드코딩 제거 및 AI 생성값/제목 우선 사용
     """
     report_progress("building", "4/5", "데이터 통합 및 최종 마무리 중...", 90, phase="finalizing")
 
@@ -549,7 +548,8 @@ def finalize_build(state: BuilderState):
                 # 스탯 이름을 소문자로 정규화하여 저장
                 stat_name = stat["name"].lower()
                 initial_player_state[stat_name] = stat.get("value")
-                custom_stats_text.append(f"{stat_name}: {stat.get("value")}")
+                # [FIX] f-string 내부 따옴표 수정 (쌍따옴표 중첩 방지)
+                custom_stats_text.append(f"{stat_name}: {stat.get('value')}")
 
     if custom_stats_text: final_hidden += "\n\n[추가 스탯 설정]\n" + "\n".join(custom_stats_text)
     if stat_rules: final_hidden += "\n\n[스탯 규칙]\n" + str(stat_rules)
