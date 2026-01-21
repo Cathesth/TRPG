@@ -34,9 +34,10 @@ async def view_login(request: Request):
     # 사용자 로그인 상태 확인
     user = get_current_user_optional(request)
     
-    # URL 파라미터 또는 비로그인 상태일 때만 모달 표시
+    # URL 파라미터가 있거나, 비로그인 상태면 모달 표시
     show_login_param = request.query_params.get("show_login") == "true"
-    show_login = show_login_param and not (user and user.is_authenticated)
+    is_not_logged_in = not (user and user.is_authenticated)
+    show_login = show_login_param or is_not_logged_in
     
     return templates.TemplateResponse("index.html", {
         "request": request,
@@ -51,7 +52,7 @@ async def view_builder(request: Request, user=Depends(get_current_user)):
     """빌더 뷰 (로그인 필수)"""
     # 로그인하지 않은 경우 로그인 페이지로 리다이렉트
     if not user or not user.is_authenticated:
-        return RedirectResponse("/login", status_code=302)
+        return RedirectResponse("/login?show_login=true", status_code=302)
     
     return templates.TemplateResponse("builder_view.html", {
         "request": request,
