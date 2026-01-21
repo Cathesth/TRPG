@@ -62,6 +62,26 @@ def get_scenario_by_id(scenario_id: int) -> Dict[str, Any]:
         db.close()
 
 
+# =============================================================================
+# [NEW] Cache Management
+# =============================================================================
+
+def invalidate_scenario_cache(scenario_id: str):
+    """
+    시나리오 캐시 무효화 - 데이터 일관성 보장
+    """
+    if scenario_id in _scenario_cache:
+        del _scenario_cache[scenario_id]
+        logger.info(f"🗑️ [CACHE] Scenario cache invalidated: {scenario_id}")
+
+def refresh_scenario_cache(scenario_id: str):
+    """
+    시나리오 캐시 새로고침 - DB에서 최신 데이터 로드
+    """
+    invalidate_scenario_cache(scenario_id)
+    return get_scenario_by_id(scenario_id)
+
+
 # [최적화] 프롬프트 캐시 (YAML 파일에서 한 번만 로드)
 _prompt_cache: Dict[str, Any] = {}
 
@@ -2313,28 +2333,6 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                         # 폴백
                         yield "주변을 둘러보니 여러 가지 시도해볼 수 있을 것 같습니다."
                         return
-
-            # transitions가 없으면 일반 메시지
-            yield "당신은 잠시 주변을 살핍니다."
-            return
-
-    # =============================================================================
-    # [MODE 2] 씬 변경됨 -> 장면 묘사
-    # =============================================================================
-    scene_desc = curr_scene.get('description', '')
-
-    npc_intro = check_npc_appearance(state)
-    if npc_intro: yield npc_intro + "<br><br>"
-
-    # YAML에서 씬 묘사 프롬프트 로드
-    npc_list = ', '.join(npc_names) if npc_names else '없음'
-    prompts = load_player_prompts()
-    scene_prompt_template = prompts.get('scene_description', '')
-
-    if scene_prompt_template:
-        player_status = format_player_status(scenario, state.get('player_vars', {}))
-
-        # [추가] transitions 리스트 생성 - 장면 묘사에 포함할 선택지들
         transitions = curr_scene.get('transitions', [])
         available_transitions = ""
         if transitions:
