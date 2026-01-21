@@ -1,10 +1,13 @@
 import os
+import logging
 from typing import Dict, Any, Generator
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
 # .env 파일 활성화
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # 사용 가능한 모델 목록 (OpenRouter 형식)
 AVAILABLE_MODELS = {
@@ -30,15 +33,18 @@ AVAILABLE_MODELS = {
     "openai/openai/gpt-5.2": {"name": "GPT-5.2", "provider": "OpenAI", "context": "1M"},
 
     # DeepSeek
-    "openai/tngtech/deepseek-r1t2-chimera:free": {"name": "R1 Chimera (Free)", "provider": "DeepSeek", "context": "164K", "free": True},
+    "openai/tngtech/deepseek-r1t2-chimera:free": {"name": "R1 Chimera (Free)", "provider": "DeepSeek",
+                                                  "context": "164K", "free": True},
     "openai/deepseek/deepseek-chat-v3-0324": {"name": "DeepSeek Chat V3", "provider": "DeepSeek", "context": "128K"},
     "openai/deepseek/deepseek-v3.2": {"name": "DeepSeek V3.2", "provider": "DeepSeek", "context": "128K"},
 
     # Meta Llama (3.1 → 3.3)
     "openai/meta-llama/llama-3.1-8b-instruct": {"name": "Llama 3.1 8B", "provider": "Meta", "context": "128K"},
-    "openai/meta-llama/llama-3.1-405b-instruct:free": {"name": "Llama 3.1 405B (Free)", "provider": "Meta", "context": "128K", "free": True},
+    "openai/meta-llama/llama-3.1-405b-instruct:free": {"name": "Llama 3.1 405B (Free)", "provider": "Meta",
+                                                       "context": "128K", "free": True},
     "openai/meta-llama/llama-3.1-405b-instruct": {"name": "Llama 3.1 405B", "provider": "Meta", "context": "128K"},
-    "openai/meta-llama/llama-3.3-70b-instruct:free": {"name": "Llama 3.3 70B (Free)", "provider": "Meta", "context": "128K", "free": True},
+    "openai/meta-llama/llama-3.3-70b-instruct:free": {"name": "Llama 3.3 70B (Free)", "provider": "Meta",
+                                                      "context": "128K", "free": True},
     "openai/meta-llama/llama-3.3-70b-instruct": {"name": "Llama 3.3 70B", "provider": "Meta", "context": "128K"},
 
     # xAI Grok (1 → 4 → 4.1)
@@ -47,10 +53,12 @@ AVAILABLE_MODELS = {
     "openai/x-ai/grok-4.1-fast": {"name": "Grok 4.1 Fast", "provider": "xAI", "context": "1M"},
 
     # Mistral AI
-    "openai/mistralai/devstral-2512:free": {"name": "Devstral 2512 (Free)", "provider": "Mistral", "context": "128K", "free": True},
+    "openai/mistralai/devstral-2512:free": {"name": "Devstral 2512 (Free)", "provider": "Mistral", "context": "128K",
+                                            "free": True},
 
     # Xiaomi
-    "openai/xiaomi/mimo-v2-flash:free": {"name": "MiMo V2 Flash (Free)", "provider": "Xiaomi", "context": "128K", "free": True},
+    "openai/xiaomi/mimo-v2-flash:free": {"name": "MiMo V2 Flash (Free)", "provider": "Xiaomi", "context": "128K",
+                                         "free": True},
 }
 
 # 기본 모델
@@ -80,15 +88,21 @@ class OpenRouterLLM(ChatOpenAI):
 
 class LLMFactory:
     @staticmethod
-    def get_llm(model_name: str, api_key: str = None, temperature: float = 0.7, streaming: bool = False):
+    def get_llm(model_name: str = None, api_key: str = None, temperature: float = 0.7, streaming: bool = False):
         # 모델 유효성 검사
-        if model_name not in AVAILABLE_MODELS:
-            print(f"[경고] 알 수 없는 모델 '{model_name}', 기본 모델 '{DEFAULT_MODEL}' 사용")
+        if not model_name or model_name == 'None':
+            model_name = DEFAULT_MODEL
+        elif model_name not in AVAILABLE_MODELS:
+            logger.warning(f"[경고] 알 수 없는 모델 '{model_name}', 기본 모델 '{DEFAULT_MODEL}' 사용")
             model_name = DEFAULT_MODEL
 
         # API Key 확인
         if not api_key:
             api_key = os.getenv("OPENROUTER_API_KEY")
+        # Fallback to OpenAI Key if OpenRouter not found
+        if not api_key:
+            api_key = os.getenv("OPENAI_API_KEY")
+
         if not api_key:
             raise ValueError("API Key가 없습니다. .env 파일을 확인해주세요.")
 
@@ -96,12 +110,18 @@ class LLMFactory:
         os.environ["OPENAI_API_KEY"] = api_key
         os.environ["OPENAI_API_BASE"] = "https://openrouter.ai/api/v1"
 
+        # [NEW] 스트리밍 시 토큰 사용량 정보 포함 (토큰 경제 시스템 연동용)
+        model_kwargs = {}
+        if streaming:
+            model_kwargs["stream_options"] = {"include_usage": True}
+
         return OpenRouterLLM(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
             model=model_name,  # 여기엔 'openai/'가 붙은 이름이 들어옴
             temperature=temperature,
             streaming=streaming,
+            model_kwargs=model_kwargs,
             default_headers={
                 "HTTP-Referer": "https://github.com/crewAIInc/crewAI",
                 "X-Title": "CrewAI TRPG"
@@ -114,6 +134,14 @@ class LLMFactory:
         if model_name is None:
             model_name = DEFAULT_MODEL
         return LLMFactory.get_llm(model_name, api_key, temperature, streaming=True)
+
+    # [NEW] 비용 추정 헬퍼 메서드
+    @staticmethod
+    def estimate_cost(input_text: str) -> int:
+        """단순 단어 수 기반 토큰 추정 (1단어 ≈ 1.3토큰)"""
+        if not input_text:
+            return 0
+        return int(len(input_text.split()) * 1.3)
 
 
 # --- 편의 함수 ---

@@ -1,0 +1,15 @@
+#!/bin/bash
+# Railway 배포 후 마이그레이션 실행 스크립트
+
+echo "🚀 Starting Railway Database Migration..."
+
+# 마이그레이션 실행
+python migrate_db.py
+
+if [ $? -eq 0 ]; then
+    echo "✅ Migration completed successfully!"
+else
+    echo "❌ Migration failed!"
+    exit 1
+fi
+

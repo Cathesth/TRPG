@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRPG Studio - My Archives</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=DotGothic16&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        rpg: {
+                            900: '#0B0B19', // Main Background
+                            800: '#1A0B2E', // Panel Background
+                            700: '#2D1B4E', // Border
+                            accent: '#00FFFF', // Cyan
+                            hover: '#00DDDD', // Blue
+                            danger: '#FF007F', // Red
+                            success: '#10b981', // Green
+                        }
+                    },
+                    fontFamily: {
+                        pixel: ['Press Start 2P', 'monospace'],
+                        dot: ['DotGothic16', 'sans-serif'],
+                        title: ['Press Start 2P', 'monospace'],
+                        body: ['DotGothic16', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* 8-bit Pixel Art Base */
+        body {
+            background: linear-gradient(180deg, #0B0B19 0%, #1A0B2E 50%, #0B0B19 100%) !important;
+            color: #e2e8f0 !important;
+            font-family: 'DotGothic16', sans-serif;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+
+        /* CRT Effect - Scanlines */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.15),
+                rgba(0, 0, 0, 0.15) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* Pixel Border Effect */
+        .pixel-border {
+            border: 3px solid currentColor;
+            border-radius: 0 !important;
+            box-shadow: 
+                4px 4px 0 rgba(0, 0, 0, 0.3),
+                8px 8px 0 rgba(0, 0, 0, 0.2),
+                12px 12px 0 rgba(0, 0, 0, 0.1);
+        }
+
+        .pixel-btn {
+            background: transparent;
+            border: 3px solid currentColor;
+            color: #FFFACD;
+            font-family: 'Press Start 2P', monospace;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 8px 16px;
+            transition: all 0.2s;
+            position: relative;
+            border-radius: 0 !important;
+        }
+
+        .pixel-btn:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 
+                2px 2px 0 rgba(0, 0, 0, 0.3),
+                4px 4px 0 rgba(0, 0, 0, 0.2);
+        }
+
+        .pixel-input {
+            background: rgba(26, 11, 46, 0.8) !important;
+            border: 2px solid #4A4A6A !important;
+            color: #FFFACD !important;
+            font-family: 'DotGothic16', sans-serif;
+            border-radius: 0 !important;
+            padding: 8px 12px !important;
+        }
+
+        .pixel-input:focus {
+            border-color: #00FFFF !important;
+            box-shadow: 0 0 8px rgba(0, 255, 255, 0.3) !important;
+            outline: none !important;
+        }
+
+        /* 텍스트 글로우 애니메이션 - 8-bit style */
+        @keyframes textGlow {
+            0%, 100% { text-shadow: 0 0 5px rgba(0, 255, 255, 0.3); }
+            50% { text-shadow: 0 0 15px rgba(0, 255, 255, 0.8); color: #00FFFF; }
+        }
+        .animate-text-glow:hover {
+            animation: textGlow 2s infinite;
+        }
+
+        /* 커스텀 스크롤바 - Pixel style */
+        ::-webkit-scrollbar { width: 12px; }
+        ::-webkit-scrollbar-track { background: #0B0B19; }
+        ::-webkit-scrollbar-thumb { 
+            background: #4A4A6A; 
+            border: 2px solid #2D1B4E;
+            border-radius: 0 !important;
+        }
+        ::-webkit-scrollbar-thumb:hover { background: #6A6A8A; }
+
+        .font-title { font-family: 'Press Start 2P', monospace; }
+
+        /* 모달 활성화 시 바디 스크롤 방지 */
+        body.modal-active { overflow: hidden; }
+
+        /* [수정] 카드 스타일 조정 (정사각형 비율, 크기 축소) */
+        #my-scenario-grid .scenario-card-base {
+        width: 100% !important;
+        /* aspect-ratio 삭제: 고정 비율 대신 내용물에 맞춰 늘어나게 함 */
+        height: auto !important;
+        min-height: 24rem !important; /* 최소 높이 보장 */
+        display: flex !important;
+        flex-direction: column !important;
+        }
+
+        #my-scenario-grid .card-image-wrapper {
+            /* 높이 % 대신 고정값(rem) 사용하여 이미지 공간 확보 */
+            height: 12rem !important;
+            flex-shrink: 0 !important; /* 이미지가 찌그러지지 않게 고정 */
+        }
+
+        #my-scenario-grid .card-content {
+            padding: 1rem !important;
+            flex: 1 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+            min-height: 0; /* 내부 스크롤/넘침 방지용 */
+        }
+        /* 제목 한 줄 처리 */
+        #my-scenario-grid .card-title {
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            font-size: 1rem !important;
+        }
+
+        /* 설명 두 줄 제한 */
+        #my-scenario-grid .card-desc {
+            font-size: 0.8rem !important;
+            -webkit-line-clamp: 2 !important;
+            line-clamp: 2 !important;
+            min-height: 2.4em !important;
+        }
+
+        /* 버튼 크기 조정 */
+        #my-scenario-grid button {
+            padding-top: 0.5rem !important;
+            padding-bottom: 0.5rem !important;
+            font-size: 0.8rem !important;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-rpg-900 text-gray-200 overflow-x-hidden">
+
+    <div class="fixed inset-0 pointer-events-none z-0">
+        <div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/10 rounded-full blur-[100px]"></div>
+        <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/10 rounded-full blur-[100px]"></div>
+    </div>
+
+    <div class="relative z-10 max-w-7xl mx-auto px-6 py-12">
+
+        <div class="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
+            <div class="flex items-center gap-4">
+                <button onclick="location.href='/'" class="p-3 bg-rpg-800 rounded-full hover:bg-rpg-700 text-gray-400 hover:text-white transition-all group border border-rpg-700">
+                    <i data-lucide="arrow-left" class="w-6 h-6 group-hover:-translate-x-1 transition-transform"></i>
+                </button>
+                <div>
+                    <h1 class="text-4xl font-title font-bold text-white tracking-wider animate-text-glow">MY ARCHIVES</h1>
+                    <p class="text-gray-400 mt-1">당신이 기록한 모험의 서사시</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-4 bg-rpg-800/50 backdrop-blur-sm p-4 rounded-2xl border border-rpg-700/50">
+                {% if user %}
+                    <div class="w-12 h-12 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-purple-500/20 overflow-hidden">
+                        {% if user.avatar_url %}
+                            <img src="{{ user.avatar_url }}" class="w-full h-full object-cover" alt="Profile">
+                        {% else %}
+                            {{ user.id[:2].upper() if user and user.id else 'G' }}
+                        {% endif %}
+                    </div>
+
+                    <div class="text-right hidden sm:block">
+                        <p class="text-white font-bold">{{ user.id if user and user.id else 'Guest' }}</p>
+                        <p class="text-xs text-rpg-accent">Master Weaver</p>
+                    </div>
+                    <button onclick="logout()" class="ml-4 p-2 text-gray-400 hover:text-red-400 transition-colors" title="로그아웃">
+                        <i data-lucide="log-out" class="w-5 h-5"></i>
+                    </button>
+                {% else %}
+                    <button onclick="openModal('login-modal')" class="px-4 py-2 bg-rpg-accent text-black font-bold rounded hover:bg-white transition-all">LOGIN</button>
+                {% endif %}
+
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+
+            <div class="lg:col-span-1 space-y-6">
+
+                <nav class="bg-rpg-800/80 backdrop-blur border border-rpg-700 rounded-2xl p-4 shadow-xl overflow-hidden">
+                    <ul class="space-y-1">
+                        <li>
+                            <button hx-get="/api/views/mypage/scenarios"
+                                    hx-target="#main-content-area"
+                                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-rpg-700/50 text-gray-300 hover:text-rpg-accent font-bold border border-transparent hover:border-rpg-700/50 transition-all text-left focus:bg-rpg-700 focus:text-white">
+                                <i data-lucide="book" class="w-5 h-5"></i>
+                                내 작품 보기
+                            </button>
+                        </li>
+                        <li>
+                            <button hx-get="/api/views/mypage/profile"
+                                    hx-target="#main-content-area"
+                                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-rpg-700/50 text-gray-300 hover:text-rpg-accent font-bold border border-transparent hover:border-rpg-700/50 transition-all text-left focus:bg-rpg-700 focus:text-white">
+                                <i data-lucide="user-cog" class="w-5 h-5"></i>
+                                회원 정보 수정
+                            </button>
+                        </li>
+                        <li>
+                            <button hx-get="/api/views/mypage/billing"
+                                    hx-target="#main-content-area"
+                                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-rpg-700/50 text-gray-300 hover:text-rpg-accent font-bold border border-transparent hover:border-rpg-700/50 transition-all text-left focus:bg-rpg-700 focus:text-white">
+                                <i data-lucide="credit-card" class="w-5 h-5"></i>
+                                결제 / 플랜 변경
+                            </button>
+                        </li>
+                    </ul>
+                </nav>
+
+                <div class="bg-rpg-800/80 backdrop-blur border border-rpg-700 rounded-2xl p-6 shadow-xl">
+                    <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                        <i data-lucide="bar-chart-2" class="w-5 h-5 text-rpg-accent"></i> Statistics
+                    </h3>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center p-3 bg-rpg-900/50 rounded-lg border border-rpg-700/50">
+                            <span class="text-gray-400 text-sm">생성된 시나리오</span>
+                            <span class="text-white font-bold text-xl">{{ stats.total }}</span>
+                        </div>
+
+                        <div class="flex justify-between items-center p-3 bg-rpg-900/50 rounded-lg border border-rpg-700/50">
+                            <span class="text-gray-400 text-sm">봉인된 시나리오</span>
+                            <span id="stat-private-count" class="text-rpg-accent font-bold text-xl">{{ stats.private }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gradient-to-br from-rpg-800 to-rpg-900 border border-rpg-700 rounded-2xl p-6 shadow-xl text-center group cursor-pointer hover:border-rpg-accent/50 transition-all" onclick="location.href='/views/builder'">
+                    <div class="mb-4 flex justify-center">
+                        <div class="p-3 bg-rpg-accent/10 rounded-full group-hover:bg-rpg-accent/20 transition-all">
+                            <i data-lucide="plus" class="w-8 h-8 text-rpg-accent"></i>
+                        </div>
+                    </div>
+                    <h3 class="text-lg font-bold text-white mb-2">New Adventure</h3>
+                    <p class="text-sm text-gray-400 mb-6">새로운 세계를 창조할 준비가 되셨나요?</p>
+                    <button class="w-full py-3 bg-rpg-accent hover:bg-white text-black font-bold rounded-xl transition-all shadow-lg shadow-rpg-accent/20 flex items-center justify-center gap-2">
+                        <i data-lucide="pen-tool" class="w-4 h-4"></i> Create New
+                    </button>
+                </div>
+            </div>
+
+            <div id="main-content-area" class="lg:col-span-3">
+                <div class="fade-in">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                            <i data-lucide="book-open" class="w-5 h-5 text-rpg-accent"></i> My Scenarios
+                        </h2>
+
+                        <div class="flex gap-2" id="filter-buttons-main">
+                            <button hx-get="/api/scenarios?filter=my&visibility=all"
+                                    hx-target="#my-scenario-grid"
+                                    onclick="updateFilterStyle(this)"
+                                    class="px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors">전체</button>
+
+                            <button hx-get="/api/scenarios?filter=my&visibility=public"
+                                    hx-target="#my-scenario-grid"
+                                    onclick="updateFilterStyle(this)"
+                                    class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">공개</button>
+
+                            <button hx-get="/api/scenarios?filter=my&visibility=private"
+                                    hx-target="#my-scenario-grid"
+                                    onclick="updateFilterStyle(this)"
+                                    class="px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors">비공개</button>
+                        </div>
+                    </div>
+
+                    <div id="my-scenario-grid"
+                         class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+                         hx-get="/api/scenarios?filter=my"
+                         hx-trigger="load"
+                         hx-swap="innerHTML">
+
+                        <div class="col-span-full py-12 flex flex-col items-center justify-center text-gray-500 animate-pulse">
+                            <i data-lucide="loader-2" class="w-8 h-8 mb-4 animate-spin"></i>
+                            <p>Loading your archives...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="login-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-[100]">
+        <div class="modal-overlay absolute w-full h-full bg-black/80 backdrop-blur-sm" onclick="closeModal('login-modal')"></div>
+        <div class="modal-container bg-rpg-800 w-11/12 md:max-w-md mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-rpg-700 transform transition-all scale-95 opacity-0 duration-300">
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-title font-bold text-white">LOGIN</h3>
+                    <button onclick="closeModal('login-modal')" class="text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
+                </div>
+                <form onsubmit="handleLogin(event)" class="space-y-6">
+                    <div>
+                        <label class="block text-gray-400 text-xs font-bold mb-2 uppercase">Username</label>
+                        <input type="text" name="username" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all font-bold">
+                    </div>
+                    <div>
+                        <label class="block text-gray-400 text-xs font-bold mb-2 uppercase">Password</label>
+                        <input type="password" name="password" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all font-bold">
+                    </div>
+                    <div id="login-error" class="text-red-400 text-xs bg-red-500/10 p-3 rounded border border-red-500/20 hidden font-bold"></div>
+                    <button type="submit" class="w-full bg-rpg-accent hover:bg-white text-black font-black py-4 rounded-lg shadow-lg shadow-rpg-accent/20 transition-all text-lg">ACCESS SYSTEM</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="register-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-[100]">
+        <div class="modal-overlay absolute w-full h-full bg-black/80 backdrop-blur-sm" onclick="closeModal('register-modal')"></div>
+        <div class="modal-container bg-rpg-800 w-11/12 md:max-w-md mx-auto rounded-2xl shadow-2xl z-50 overflow-hidden border border-rpg-700 transform transition-all scale-95 opacity-0 duration-300">
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-title font-bold text-white">REGISTER</h3>
+                    <button onclick="closeModal('register-modal')" class="text-gray-400 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
+                </div>
+                <form onsubmit="handleRegister(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Username</label>
+                        <input type="text" name="username" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Email</label>
+                        <input type="email" name="email" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Password</label>
+                        <input type="password" name="password" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Confirm Password</label>
+                        <input type="password" name="confirm_password" required class="w-full bg-rpg-900 text-white border border-rpg-700 rounded-lg py-3 px-4 focus:outline-none focus:border-rpg-accent transition-all">
+                    </div>
+                    <div id="register-error" class="text-red-400 text-xs bg-red-500/10 p-3 rounded border border-red-500/20 hidden font-bold"></div>
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-500 text-white font-black py-4 rounded-lg shadow-lg transition-all text-lg mt-2">CREATE ACCOUNT</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        async function logout() {
+            if(confirm('로그아웃 하시겠습니까?')) {
+                await fetch('/api/auth/logout', {method:'POST'});
+                window.location.href = '/';
+            }
+        }
+
+        // 시나리오 플레이
+        window.playScenario = async function(fid, btn) {
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin w-4 h-4"></i>';
+            btn.disabled = true;
+            lucide.createIcons();
+
+            try {
+                const formData = new FormData();
+                formData.append('filename', fid);
+
+                const res = await fetch('/api/load_scenario', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+
+                    // ✅ 서버에서 받은 새로운 세션 키 저장
+                    if (data.session_key) {
+                        sessionStorage.setItem('trpg_session_key', data.session_key);
+                        console.log('🆕 New session created:', data.session_key);
+                    }
+
+                    window.location.href = '/views/player';
+                } else {
+                    alert('시나리오를 불러오는 데 실패했습니다.');
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    lucide.createIcons();
+                }
+            } catch (e) {
+                console.error('Play Error:', e);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                lucide.createIcons();
+            }
+        };
+
+        window.editScenario = function(fid) {
+            window.location.href = `/views/builder?scenario=${encodeURIComponent(fid)}`;
+        };
+
+        window.deleteScenario = async function(fid, btn) {
+            if (!confirm('정말 이 시나리오를 영구히 삭제하시겠습니까?')) return;
+
+            try {
+                const res = await fetch('/api/delete_scenario', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ filename: fid })
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    // HTMX 트리거를 이용해 목록 새로고침
+                    htmx.trigger("#my-scenario-grid", "load");
+                } else {
+                    alert('삭제 중 오류가 발생했습니다: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                console.error('Delete Error:', e);
+                alert('서버 통신 오류가 발생했습니다.');
+            }
+        };
+
+        // [수정된 모달 제어 함수들]
+        window.openModal = function(id) {
+            const modal = document.getElementById(id);
+            const container = modal.querySelector('.modal-container');
+
+            const form = modal.querySelector('form');
+            if (form) form.reset();
+            const errorMsg = modal.querySelector('[id$="-error"]');
+            if (errorMsg) errorMsg.classList.add('hidden');
+
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            document.body.classList.add('modal-active');
+
+            setTimeout(() => {
+                if (container) {
+                    container.classList.remove('scale-95', 'opacity-0');
+                    container.classList.add('scale-100', 'opacity-100');
+                }
+            }, 10);
+        };
+
+        window.closeModal = function(id) {
+            const modal = document.getElementById(id);
+            const container = modal.querySelector('.modal-container');
+
+            if (container) {
+                container.classList.remove('scale-100', 'opacity-100');
+                container.classList.add('scale-95', 'opacity-0');
+            }
+
+            setTimeout(() => {
+                modal.classList.add('opacity-0', 'pointer-events-none');
+                document.body.classList.remove('modal-active');
+            }, 300);
+        };
+
+        window.handleLogin = async function(e) {
+            e.preventDefault(); const form = e.target;
+            const errorMsg = document.getElementById('login-error');
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: form.username.value, password: form.password.value})
+                });
+                const data = await res.json();
+                if (data.success) window.location.reload();
+                else { errorMsg.innerText = data.error; errorMsg.classList.remove('hidden'); }
+            } catch(e) { errorMsg.innerText = "서버 통신 오류"; errorMsg.classList.remove('hidden'); }
+        };
+
+        window.handleRegister = async function(e) {
+            e.preventDefault(); const form = e.target;
+            const errorMsg = document.getElementById('register-error');
+            if (form.password.value !== form.confirm_password.value) { errorMsg.innerText = "비밀번호 불일치"; errorMsg.classList.remove('hidden'); return; }
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: form.username.value, password: form.password.value, email: form.email.value})
+                });
+                const data = await res.json();
+                if (data.success) { alert('가입 성공!'); closeModal('register-modal'); openModal('login-modal'); }
+                else { errorMsg.innerText = data.error; errorMsg.classList.remove('hidden'); }
+            } catch(e) { errorMsg.innerText = "서버 오류"; errorMsg.classList.remove('hidden'); }
+        };
+
+        // HTMX 로드 후 아이콘 재생성
+        document.body.addEventListener('htmx:afterOnLoad', function(evt) {
+            if (evt.detail.target.id === "my-scenario-grid") {
+                lucide.createIcons();
+            }
+        });
+
+        // HTMX 스왑 후에도 아이콘 재생성 (중복 안전장치)
+        document.body.addEventListener('htmx:afterSwap', function(evt) {
+            lucide.createIcons();
+        });
+
+        // 에러 로깅
+        document.body.addEventListener('htmx:error', function(evt) {
+            console.error('HTMX Error:', evt.detail);
+        });
+
+        // [1] 이미지 미리보기 함수
+        function previewImage(input) {
+            if (input.files && input.files[0]) {
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    // 미리보기 영역의 내용을 이미지 태그로 교체
+                    document.getElementById('avatar-preview').innerHTML =
+                        '<img src="' + e.target.result + '" class="w-full h-full object-cover" alt="Preview">';
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        // [2] 프로필 수정 요청 함수
+        async function handleProfileUpdate(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form); // 파일 포함 모든 데이터 자동 수집
+
+            try {
+                const res = await fetch('/api/auth/profile/update', {
+                    method: 'POST',
+                    body: formData // JSON이 아닌 FormData로 전송
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    alert(data.message);
+                    window.location.reload(); // 헤더 사진 갱신을 위해 새로고침
+                } else {
+                    alert(data.error);
+                }
+            } catch (e) {
+                console.error(e);
+                alert("통신 오류가 발생했습니다.");
+            }
+        }
+
+        // [추가] 필터 버튼 스타일 토글 함수
+        function updateFilterStyle(btn) {
+            // 클릭된 버튼이 속한 그룹(div)을 찾음
+            const parent = btn.closest('div');
+            const buttons = parent.querySelectorAll('button');
+
+            // 비활성 스타일 (어두운 배경, 회색 텍스트)
+            const inactiveClass = "px-3 py-1.5 bg-rpg-900 hover:bg-rpg-800 border border-rpg-700 rounded-lg text-xs text-gray-400 transition-colors";
+            // 활성 스타일 (밝은 배경, 흰색 텍스트)
+            const activeClass = "px-3 py-1.5 bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 rounded-lg text-xs text-white transition-colors";
+
+            // 모든 버튼을 비활성 상태로 초기화
+            buttons.forEach(b => b.className = inactiveClass);
+
+            // 클릭된 버튼만 활성 상태로 변경
+            btn.className = activeClass;
+        }
+    </script>
+</body>
+</html>

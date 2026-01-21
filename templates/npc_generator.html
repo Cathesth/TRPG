@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>NPC/Enemy Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=DotGothic16&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        rpg: {
+                            900: '#0B0B19',
+                            800: '#1A0B2E',
+                            700: '#2D1B4E',
+                            accent: '#00FFFF',
+                            hover: '#00DDDD',
+                            danger: '#FF007F',
+                            success: '#10b981',
+                            item: '#FFD700',
+                        }
+                    },
+                    fontFamily: {
+                        pixel: ['Press Start 2P', 'monospace'],
+                        dot: ['DotGothic16', 'sans-serif'],
+                        title: ['Press Start 2P', 'monospace'],
+                        body: ['DotGothic16', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 8-bit Pixel Art Base */
+        body {
+            background: linear-gradient(180deg, #0B0B19 0%, #1A0B2E 50%, #0B0B19 100%) !important;
+            color: #e2e8f0 !important;
+            font-family: 'DotGothic16', sans-serif;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+
+        /* CRT Effect */
+        body::before {
+            content: '';
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.15) 1px, transparent 1px, transparent 2px);
+            pointer-events: none; z-index: 9999;
+        }
+
+        /* Pixel Border & Input Styles */
+        .pixel-input {
+            background: rgba(26, 11, 46, 0.8) !important;
+            border: 2px solid #4A4A6A !important;
+            color: #FFFACD !important;
+            font-family: 'DotGothic16', sans-serif;
+            border-radius: 0 !important;
+            padding: 8px 12px !important;
+        }
+        .pixel-input:focus {
+            border-color: #00FFFF !important;
+            box-shadow: 0 0 8px rgba(0, 255, 255, 0.3) !important;
+            outline: none !important;
+        }
+
+        .loader {
+            border: 3px solid #4A4A6A; border-top: 3px solid #00FFFF;
+            border-radius: 0 !important; width: 20px; height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 12px; }
+        ::-webkit-scrollbar-track { background: #0B0B19; }
+        ::-webkit-scrollbar-thumb { background: #4A4A6A; border: 2px solid #2D1B4E; border-radius: 0 !important; }
+        ::-webkit-scrollbar-thumb:hover { background: #6A6A8A; }
+
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="min-h-screen text-white p-6 relative">
+
+<!-- 토큰 표시기 (우측 상단) -->
+<div id="token-display" class="absolute top-4 right-4 flex items-center gap-2 bg-gray-900/80 px-3 py-1.5 rounded border border-yellow-500/50 text-yellow-400 text-xs shadow-lg animate-fade-in">
+    <i class="fas fa-coins text-yellow-500"></i>
+    <span id="token-balance">Loading...</span>
+</div>
+
+<div class="max-w-xl mx-auto">
+    <div id="scenario-info" class="mb-4 text-xs text-gray-500 text-right">
+        시나리오 정보 대기 중...
+    </div>
+
+    <div class="flex justify-between items-center border-b border-gray-700 pb-2 mb-6">
+        <div class="flex gap-4">
+            <button onclick="switchTab('npc')" id="tab-npc" class="text-green-400 font-bold border-b-2 border-green-400 pb-1 transition-colors">NPC 생성</button>
+            <button onclick="switchTab('enemy')" id="tab-enemy" class="text-gray-500 hover:text-red-400 font-bold pb-1 transition-colors">적(Enemy) 생성</button>
+            <button onclick="switchTab('item')" id="tab-item" class="text-gray-500 hover:text-yellow-400 font-bold pb-1 transition-colors">아이템 생성</button>
+        </div>
+
+        <button onclick="openAiPrompt()" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded flex items-center gap-2 shadow-lg transition-transform active:scale-95">
+            <i class="fas fa-magic"></i> AI 자동 생성
+        </button>
+    </div>
+
+    <div id="ai-prompt-box" class="hidden mb-6 bg-gray-800 p-4 rounded-lg border border-indigo-500/50 shadow-xl animate-fade-in-down">
+        <label class="block text-xs text-indigo-300 mb-2 font-bold"><i class="fas fa-robot mr-1"></i>AI에게 요청할 내용</label>
+        <div class="flex gap-2">
+            <input type="text" id="ai-request-text" class="flex-1 bg-gray-900 border border-gray-700 rounded p-2 text-sm focus:border-indigo-500 outline-none transition-colors" placeholder="예: 전설의 녹슨 검, 비열한 고블린 상인">
+            <button onclick="generateWithAI()" id="btn-ai-gen" class="bg-indigo-600 hover:bg-indigo-500 px-4 rounded text-xs font-bold min-w-[100px] flex justify-center items-center gap-1 transition-colors">
+                생성 <span class="opacity-70 font-normal">(~2 CR)</span>
+            </button>
+        </div>
+        <p class="text-[10px] text-gray-500 mt-2">* 시나리오 분위기에 맞춰 자동으로 상세 설정을 채워줍니다.</p>
+    </div>
+
+    <!-- NPC Form -->
+    <div id="form-npc" class="space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">이름 <span class="text-green-500">*</span></label>
+                <input type="text" id="npc-name" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-green-500 outline-none" placeholder="NPC 이름">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">역할/직업 <span class="text-green-500">*</span></label>
+                <input type="text" id="npc-role" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-green-500 outline-none" placeholder="예: 대장장이">
+            </div>
+        </div>
+        <div>
+            <label class="block text-xs text-gray-400 mb-1">외모 묘사</label>
+            <input type="text" id="npc-appearance" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-green-500 outline-none" placeholder="예: 붉은 수염, 한쪽 눈 안대">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-400 mb-1">성격/특징 <span class="text-green-500">*</span></label>
+            <input type="text" id="npc-personality" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-green-500 outline-none" placeholder="예: 무뚝뚝함, 다혈질">
+        </div>
+        <div>
+            <label class="block text-xs text-indigo-300 mb-1 font-bold">💬 대표 대사 (말버릇) <span class="text-green-500">*</span></label>
+            <textarea id="npc-dialogue" rows="2" class="w-full bg-gray-800 border border-indigo-900/50 rounded p-2 text-sm focus:border-indigo-500 outline-none placeholder-gray-600" placeholder="&quot;이봐, 살 거 아니면 썩 꺼지라고!&quot;"></textarea>
+        </div>
+        <div>
+            <label class="block text-xs text-yellow-500/80 mb-1">🔒 숨겨진 비밀 (선택)</label>
+            <input type="text" id="npc-secret" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-yellow-500 outline-none" placeholder="예: 사실 왕실의 수배자다.">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-400 mb-1">배경 설정</label>
+            <textarea id="npc-bg" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-green-500 outline-none" placeholder="NPC의 과거사나 현재 상황"></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-3 pt-2 border-t border-gray-800">
+            <div>
+                <label class="block text-xs text-gray-500">나이</label>
+                <select id="npc-age" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm">
+                    <option value="">알 수 없음</option>
+                    <option value="child">어린이</option>
+                    <option value="teen">청소년</option>
+                    <option value="young_adult">청년</option>
+                    <option value="middle_aged">중년</option>
+                    <option value="elderly">노년</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500">협력도</label>
+                <select id="npc-coop" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm">
+                    <option value="medium">중립적</option>
+                    <option value="low">비협조적</option>
+                    <option value="high">우호적</option>
+                </select>
+            </div>
+        </div>
+        <button onclick="createNPC()" id="btn-save-npc" class="w-full bg-green-700 hover:bg-green-600 text-white font-bold py-3 rounded mt-2 transition-colors shadow-lg">NPC 저장 및 적용</button>
+    </div>
+
+    <!-- Enemy Form -->
+    <div id="form-enemy" class="space-y-4 hidden">
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">이름 <span class="text-red-500">*</span></label>
+                <input type="text" id="enemy-name" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-red-500 outline-none" placeholder="적 이름">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">종족/유형 <span class="text-red-500">*</span></label>
+                <input type="text" id="enemy-type" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-red-500 outline-none" placeholder="예: 언데드, 야수">
+            </div>
+        </div>
+        <div class="bg-gray-800/50 p-3 rounded border border-gray-700">
+            <label class="block text-xs text-red-400 font-bold mb-2"><i class="fas fa-skull mr-1"></i>전투 정보</label>
+            <div class="grid grid-cols-3 gap-2">
+                <div>
+                    <label class="block text-[10px] text-gray-500">난이도</label>
+                    <select id="enemy-difficulty" class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-xs text-white">
+                        <option value="easy">하</option>
+                        <option value="medium" selected>중</option>
+                        <option value="hard">상</option>
+                        <option value="boss">보스</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] text-gray-500">체력 (HP)</label>
+                    <input type="number" id="enemy-hp" class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-xs text-white" placeholder="기본">
+                </div>
+                <div>
+                    <label class="block text-[10px] text-gray-500">공격력 (ATK)</label>
+                    <input type="number" id="enemy-attack" class="w-full bg-gray-900 border border-gray-700 rounded p-1.5 text-xs text-white" placeholder="기본">
+                </div>
+            </div>
+        </div>
+        <div>
+            <label class="block text-xs text-gray-400 mb-1">특징/공격 패턴</label>
+            <textarea id="enemy-desc" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-red-500 outline-none" placeholder="외형 묘사 및 주 공격 패턴"></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs text-gray-500">약점 (Weakness)</label>
+                <input type="text" id="enemy-weakness" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-xs" placeholder="예: 불, 신성 마법">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500">드랍 아이템</label>
+                <input type="text" id="enemy-drop" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-xs" placeholder="예: 늑대 가죽, 골드">
+            </div>
+        </div>
+        <button onclick="createEnemy()" id="btn-save-enemy" class="w-full bg-red-700 hover:bg-red-600 text-white font-bold py-3 rounded mt-2 transition-colors shadow-lg">적(Enemy) 저장 및 적용</button>
+    </div>
+
+    <!-- Item Form -->
+    <div id="form-item" class="space-y-4 hidden fade-in">
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">아이템 이름 <span class="text-yellow-500">*</span></label>
+                <input type="text" id="item-name" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-yellow-500 outline-none" placeholder="아이템 명">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">유형</label>
+                <select id="item-type" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-yellow-500 outline-none">
+                    <option value="weapon">무기</option>
+                    <option value="armor">방어구</option>
+                    <option value="consumable">소모품</option>
+                    <option value="key_item">중요 아이템</option>
+                    <option value="misc">기타</option>
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-xs text-gray-400 mb-1">효과 / 능력치</label>
+            <input type="text" id="item-effect" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-yellow-500 outline-none" placeholder="예: 공격력 +10, 체력 50 회복">
+        </div>
+
+        <div>
+            <label class="block text-xs text-gray-400 mb-1">설명 / 외형</label>
+            <textarea id="item-desc" rows="4" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-sm focus:border-yellow-500 outline-none" placeholder="아이템의 생김새나 유래 등"></textarea>
+        </div>
+
+        <button onclick="createItem()" id="btn-save-item" class="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 rounded mt-2 shadow-lg transition-colors">아이템 저장 및 적용</button>
+    </div>
+
+    <div id="message-box" class="mt-4 p-3 rounded text-sm hidden font-bold text-center animate-fade-in-up"></div>
+</div>
+
+<script>
+    let currentTab = 'npc';
+    let scenarioInfo = { title: '', summary: '' };
+
+    // [MODIFIED] 토큰 조회 경로 통일 (/api/user/status)
+    async function fetchTokenBalance() {
+        try {
+            const res = await fetch('/api/user/status');
+            if(res.ok) {
+                const data = await res.json();
+                if(data.success) {
+                    const balance = data.balance.toLocaleString();
+                    document.getElementById('token-balance').textContent = `${balance} CR`;
+                }
+            } else {
+                document.getElementById('token-balance').textContent = "ERROR";
+            }
+        } catch(e) {
+            console.error("Token fetch failed", e);
+            document.getElementById('token-balance').textContent = "OFFLINE";
+        }
+    }
+
+    window.addEventListener('message', (event) => {
+        if (event.data.type === 'SCENARIO_INFO') {
+            scenarioInfo = event.data.payload;
+            document.getElementById('scenario-info').innerText = `현재 시나리오: ${scenarioInfo.title || '제목 없음'}`;
+        }
+        if (event.data.type === 'SWITCH_TAB') {
+            switchTab(event.data.tab);
+        }
+    });
+
+    window.onload = () => {
+        if (window.parent) window.parent.postMessage({ type: 'GENERATOR_READY' }, '*');
+        fetchTokenBalance();
+    };
+
+    function switchTab(tab) {
+        currentTab = tab;
+        ['npc', 'enemy', 'item'].forEach(t => {
+            document.getElementById(`form-${t}`).classList.add('hidden');
+            const btn = document.getElementById(`tab-${t}`);
+            btn.className = "text-gray-500 hover:text-white font-bold pb-1 transition-colors";
+
+            if (t === tab) {
+                document.getElementById(`form-${t}`).classList.remove('hidden');
+                let activeClass = "";
+                if (t === 'npc') activeClass = "text-green-400 font-bold border-b-2 border-green-400 pb-1";
+                else if (t === 'enemy') activeClass = "text-red-400 font-bold border-b-2 border-red-400 pb-1";
+                else activeClass = "text-yellow-400 font-bold border-b-2 border-yellow-400 pb-1";
+
+                btn.className = `${activeClass} transition-colors`;
+            }
+        });
+    }
+
+    function showMessage(msg, type='error') {
+        const box = document.getElementById('message-box');
+        box.className = `mt-4 p-3 rounded text-sm font-bold text-center animate-fade-in-up ${type === 'error' ? 'bg-red-900/80 text-red-200 border border-red-700' : 'bg-green-900/80 text-green-200 border border-green-700'}`;
+        box.innerText = msg;
+        box.classList.remove('hidden');
+        setTimeout(() => box.classList.add('hidden'), 3000);
+    }
+
+    async function saveToDB(type, data) {
+        try {
+            const response = await fetch('/api/npc/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, ...data })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || '저장 오류');
+            return true;
+        } catch (e) {
+            console.error("DB Save Failed:", e);
+            showMessage(`저장 실패: ${e.message}`, 'error');
+            return false;
+        }
+    }
+
+    function openAiPrompt() {
+        const box = document.getElementById('ai-prompt-box');
+        box.classList.toggle('hidden');
+        if (!box.classList.contains('hidden')) document.getElementById('ai-request-text').focus();
+    }
+
+    async function generateWithAI() {
+        const requestText = document.getElementById('ai-request-text').value;
+        const btn = document.getElementById('btn-ai-gen');
+
+        if (!requestText.trim()) {
+            showMessage("AI에게 요청할 내용을 입력하세요.");
+            return;
+        }
+
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<div class="loader"></div>';
+        btn.disabled = true;
+
+        try {
+            const response = await fetch('/api/npc/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    scenario_title: scenarioInfo.title,
+                    scenario_summary: scenarioInfo.summary,
+                    request: requestText,
+                    type: currentTab
+                })
+            });
+
+            const result = await response.json();
+            if (!result.success) throw new Error(result.error);
+            const data = result.data;
+
+            // [자동 채우기 로직]
+            if (currentTab === 'npc') {
+                document.getElementById('npc-name').value = data.name || '';
+                document.getElementById('npc-role').value = data.role || '';
+                document.getElementById('npc-personality').value = data.personality || '';
+                document.getElementById('npc-bg').value = data.description || '';
+                if (data.appearance) document.getElementById('npc-appearance').value = data.appearance;
+                if (data.dialogue) document.getElementById('npc-dialogue').value = data.dialogue;
+                if (data.secret) document.getElementById('npc-secret').value = data.secret;
+            } else if (currentTab === 'enemy') {
+                document.getElementById('enemy-name').value = data.name || '';
+                document.getElementById('enemy-type').value = data.role || data.type || '';
+                document.getElementById('enemy-desc').value = data.description || '';
+                if (data.weakness) document.getElementById('enemy-weakness').value = data.weakness;
+                if (data.hp) document.getElementById('enemy-hp').value = data.hp;
+                if (data.attack) document.getElementById('enemy-attack').value = data.attack;
+            } else if (currentTab === 'item') {
+                document.getElementById('item-name').value = data.name || '';
+                document.getElementById('item-desc').value = data.description || '';
+                document.getElementById('item-effect').value = data.effect || '';
+                if(data.item_type) document.getElementById('item-type').value = data.item_type;
+            }
+
+            showMessage("AI 생성이 완료되었습니다. 수정 후 저장하세요.", "success");
+            await fetchTokenBalance();
+
+        } catch (e) {
+            showMessage(`AI 생성 실패: ${e.message}`, 'error');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    async function createNPC() {
+        const btn = document.getElementById('btn-save-npc');
+        btn.disabled = true; btn.innerText = "저장 중...";
+
+        const name = document.getElementById('npc-name').value;
+        const role = document.getElementById('npc-role').value;
+        const personality = document.getElementById('npc-personality').value;
+
+        if (!name || !role || !personality) {
+            showMessage("필수 항목(이름, 역할, 성격)을 입력해주세요.");
+            btn.disabled = false; btn.innerText = "NPC 저장 및 적용";
+            return;
+        }
+
+        const npcData = {
+            name, role, personality,
+            description: document.getElementById('npc-bg').value,
+            appearance: document.getElementById('npc-appearance').value,
+            dialogue: document.getElementById('npc-dialogue').value,
+            secret: document.getElementById('npc-secret').value,
+            age: document.getElementById('npc-age').value,
+            cooperation: document.getElementById('npc-coop').value,
+            isEnemy: false
+        };
+
+        const saved = await saveToDB('npc', npcData);
+        if (saved) {
+            window.parent.postMessage({ type: 'ADD_NPC', payload: npcData }, '*');
+            showMessage("NPC가 저장되었습니다!", "success");
+            document.getElementById('form-npc').querySelectorAll('input, textarea').forEach(el => el.value = '');
+            document.getElementById('npc-coop').value = 'medium';
+        }
+        btn.disabled = false; btn.innerText = "NPC 저장 및 적용";
+    }
+
+    async function createEnemy() {
+        const btn = document.getElementById('btn-save-enemy');
+        btn.disabled = true; btn.innerText = "저장 중...";
+
+        const name = document.getElementById('enemy-name').value;
+        const type = document.getElementById('enemy-type').value;
+        const difficulty = document.getElementById('enemy-difficulty').value;
+
+        if (!name || !type || !difficulty) {
+            showMessage("필수 항목(이름, 유형, 난이도)을 입력해주세요.");
+            btn.disabled = false; btn.innerText = "적(Enemy) 저장 및 적용";
+            return;
+        }
+
+        const enemyData = {
+            name, type, difficulty,
+            description: document.getElementById('enemy-desc').value,
+            hp: document.getElementById('enemy-hp').value,
+            attack: document.getElementById('enemy-attack').value,
+            weakness: document.getElementById('enemy-weakness').value,
+            drop_items: document.getElementById('enemy-drop').value,
+            isEnemy: true
+        };
+
+        const saved = await saveToDB('enemy', enemyData);
+        if (saved) {
+            window.parent.postMessage({ type: 'ADD_NPC', payload: enemyData }, '*');
+            showMessage("적이 저장되었습니다!", "success");
+            document.getElementById('form-enemy').querySelectorAll('input, textarea').forEach(el => el.value = '');
+            document.getElementById('enemy-difficulty').value = 'medium';
+        }
+        btn.disabled = false; btn.innerText = "적(Enemy) 저장 및 적용";
+    }
+
+    async function createItem() {
+        const btn = document.getElementById('btn-save-item');
+        btn.disabled = true; btn.innerText = "저장 중...";
+
+        const name = document.getElementById('item-name').value;
+        const itemType = document.getElementById('item-type').value;
+
+        if (!name) {
+            showMessage("아이템 이름을 입력해주세요.");
+            btn.disabled = false; btn.innerText = "아이템 저장 및 적용";
+            return;
+        }
+
+        const itemData = {
+            name,
+            item_type: itemType,
+            effect: document.getElementById('item-effect').value,
+            description: document.getElementById('item-desc').value,
+            type: 'item'
+        };
+
+        const saved = await saveToDB('item', itemData);
+        if (saved) {
+            window.parent.postMessage({ type: 'ADD_ITEM', payload: itemData }, '*');
+            showMessage("아이템이 저장되었습니다!", "success");
+            document.getElementById('form-item').querySelectorAll('input, textarea').forEach(el => el.value = '');
+        }
+        btn.disabled = false; btn.innerText = "아이템 저장 및 적용";
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+// constants.js - 상수 및 전역 변수 관리
+
+// 서버 상태는 무시하고 항상 초기화된 상태로 시작
+const serverHasState = false;  // 항상 false로 설정하여 서버 상태 무시
+
+// 전역 상태 변수
+let isGameEnded = false;
+let isScenarioLoaded = false;
+let isInternalNavigation = false;  // 내부 네비게이션 플래그
+let hasGameStarted = false;  // 게임이 시작되었는지 (채팅 내역이 있는지)
+let isStreaming = false;  // 스트리밍 중 여부 추가
+let responseTimerInterval = null;  // 응답 시간 타이머
+let responseStartTime = null;  // 응답 시작 시간
+let currentSessionKey = '';  // 현재 세션 키 저장
+// ✅ [FIX 2&4] 세션 ID 복원 로직 단순화 - 모든 가능한 키를 체크
+let currentSessionId = sessionStorage.getItem("current_session_id") || sessionStorage.getItem("trpg_session_key") || null;
+let currentScenarioId = sessionStorage.getItem('trpg_scenario_id') || null;  // 현재 로드된 시나리오 ID 저장
+
+// 상수 정의
+const CHAT_LOG_KEY = 'trpg_chat_log';
+const SCENARIO_LOADED_KEY = 'trpg_scenario_loaded';
+const CURRENT_SCENARIO_KEY = 'trpg_current_scenario';
+const CURRENT_SCENARIO_ID_KEY = 'trpg_scenario_id';
+const CURRENT_SESSION_ID_KEY = 'current_session_id';  // ✅ 표준 키 상수
+const SESSION_KEY_STORAGE = 'trpg_session_key';
+const MODEL_PROVIDER_KEY = 'trpg_model_provider';
+const MODEL_VERSION_KEY = 'trpg_model_version';
+const DEBUG_MODE_KEY = 'trpg_debug_mode';
+const GAME_ENDED_KEY = 'trpg_game_ended';
+const NAVIGATION_FLAG_KEY = 'trpg_navigation_flag';
+
+// 새로고침 감지 및 경고
+window.addEventListener('beforeunload', function(e) {
+    // 스트리밍 중이면 무조건 경고
+    if (isStreaming) {
+        e.preventDefault();
+        e.returnValue = 'AI가 답변을 생성하고 있습니다. 페이지를 벗어나시겠습니까?';
+        return e.returnValue;
+    }
+
+    // ✅ [FIX 2] 내부 네비게이션이면 경고 안 함
+    if (isInternalNavigation) {
+        // 내부 네비게이션 플래그 설정 (다음 페이지 로드 시 복원용)
+        sessionStorage.setItem(NAVIGATION_FLAG_KEY, 'true');
+        return;
+    }
+
+    // 게임이 진행 중이면 경고 (채팅 로그가 있고 게임이 시작됨)
+    if (hasGameStarted && isScenarioLoaded) {
+        e.preventDefault();
+        e.returnValue = '페이지를 벗어나면 현재 진행 내역이 초기화됩니다. 계속하시겠습니까?';
+        return e.returnValue;
+    }
+});
+
+// ✅ [FIX 2] 모든 게임 상태 초기화 함수 - 세션 관련 키는 제외
+function clearAllGameState() {
+    sessionStorage.removeItem(CHAT_LOG_KEY);
+    sessionStorage.removeItem(SCENARIO_LOADED_KEY);
+    sessionStorage.removeItem(CURRENT_SCENARIO_KEY);
+    sessionStorage.removeItem(GAME_ENDED_KEY);
+    sessionStorage.removeItem('trpg_world_state');
+    sessionStorage.removeItem('trpg_player_stats');
+
+    // ✅ [FIX 2] 세션/시나리오 ID는 명시적으로 clearAllGameState가 호출될 때만 제거
+    // (새 시나리오 로드 시에만 제거됨)
+    // sessionStorage.removeItem(CURRENT_SCENARIO_ID_KEY);
+    // sessionStorage.removeItem('trpg_session_key');
+    // sessionStorage.removeItem('current_session_id');
+
+    localStorage.removeItem(SESSION_KEY_STORAGE);
+
+    // 메모리 변수도 초기화 (단, session_id/scenario_id는 유지)
+    currentSessionKey = '';
+
+    console.log('🧹 Game state cleared (session/scenario IDs preserved)');
+}
+
+// 외부에서 접근 가능하도록 함수를 window 객체에 할당
+window.clearAllGameState = clearAllGameState;
+
+// ✅ [FIX 2] 페이지 로드 시 상태 복원 또는 초기화 - 절대 세션 ID를 지우지 않도록 개선
+(function() {
+    // 🔍 새로고침(F5) vs 내부 네비게이션 구분
+    const nav = performance.getEntriesByType('navigation')[0];
+    const isPageRefresh = nav && nav.type === 'reload';
+    const isBackForward = nav && nav.type === 'back_forward';
+
+    // 내부 네비게이션으로 돌아온 경우 (전체 씬 보기 -> 플레이어 모드)
+    const isReturningFromNavigation = sessionStorage.getItem(NAVIGATION_FLAG_KEY) === 'true';
+
+    // ✅ [FIX 2] 현재 URL과 세션 존재 여부 체크
+    const isPlayerPage = window.location.pathname.includes('/views/player');
+    const hasSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY) || sessionStorage.getItem('trpg_session_key');
+
+    // ✅ [FIX 2] 절대 초기화하지 않아야 하는 경우들
+    const shouldNotClear = (
+        isBackForward ||  // 브라우저 뒤로/앞으로
+        isReturningFromNavigation ||  // 내부 페이지 복귀
+        (isPlayerPage && hasSessionId)  // 플레이어 페이지이고 세션이 있는 경우
+    );
+
+    if (shouldNotClear) {
+        console.log('✅ [INIT] 상태 유지 모드 - 세션 초기화 안 함 (reason: ' +
+            (isBackForward ? 'back_forward' : isReturningFromNavigation ? 'internal_nav' : 'has_session') + ')');
+        // 플래그 제거 (1회만 사용)
+        sessionStorage.removeItem(NAVIGATION_FLAG_KEY);
+        return;
+    }
+
+    // 🔄 새로고침이면 채팅 로그만 초기화 (세션은 유지)
+    if (isPageRefresh) {
+        console.log('🔄 새로고침 감지 - 채팅 로그만 초기화 (세션 유지)');
+        sessionStorage.removeItem(CHAT_LOG_KEY);
+        sessionStorage.removeItem(GAME_ENDED_KEY);
+        // 세션/시나리오 ID는 유지
+        return;
+    }
+
+    // 저장된 게임 상태가 있는지 확인
+    const hasSavedState = sessionStorage.getItem(SCENARIO_LOADED_KEY) === 'true' ||
+                          sessionStorage.getItem(CHAT_LOG_KEY);
+
+    if (!hasSavedState) {
+        console.log('💾 저장된 게임 상태 없음 - 초기 상태 유지');
+    } else {
+        console.log('✅ 저장된 게임 상태 발견 - 복원 준비');
+    }
+})();

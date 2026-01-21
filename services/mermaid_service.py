@@ -1,139 +1,498 @@
 """
 Mermaid 차트 생성 서비스
 """
-from typing import Dict, Any, List
+import logging
+import re
+from typing import Dict, Any, List, Union, Tuple
 
+logger = logging.getLogger(__name__)
 
 class MermaidService:
     """시나리오를 Mermaid 다이어그램으로 변환"""
 
     @staticmethod
-    def generate_chart(scenario: Dict[str, Any]) -> Dict[str, Any]:
+    def normalize_scenario_graph(data: dict) -> Tuple[List[Dict], List[Dict]]:
         """
-        시나리오 데이터로부터 Mermaid 차트와 관련 정보 생성
+        ✅ [작업 2] 다양한 시나리오 JSON 스키마를 정규화하여 scenes/endings 추출
+        데이터 실종 버그 수정: 최상위 레벨에서 scenes를 먼저 확인, 없을 때만 중첩 구조로 진입
+
+        지원하는 구조:
+        1) data["scenes"], data["endings"] (직접)
+        2) data["scenario"]["scenes"], data["scenario"]["endings"] (한 단계 래핑)
+        3) data["scenario"]["scenario"]["scenes"] (중첩 래핑)
+        4) data["graph"]["scenes"], data["graph"]["endings"]
+        5) data["nodes"], data["edges"] (React Flow 형식)
+        6) scenes가 dict인 경우: { "Scene-1": {...}, "Scene-2": {...} }
+        7) data["scene_map"], data["ending_map"]
 
         Returns:
-            {
-                'mermaid_code': str,
-                'filtered_scenes': List,
-                'incoming_conditions': Dict,
-                'ending_incoming_conditions': Dict,
-                'ending_names': Dict,
-                'scene_names': Dict
-            }
+            (scenes: List[Dict], endings: List[Dict])
         """
-        scenes = scenario.get('scenes', [])
-        endings = scenario.get('endings', [])
+        scenes = []
+        endings = []
 
-        # start/PROLOGUE 노드 제외
-        filtered_scenes = [
-            s for s in scenes
-            if s.get('scene_id') not in ('start', 'PROLOGUE')
+        # ✅ [작업 2-1] 입력 데이터 구조 검사 로그
+        logger.info(f"🔍 [MERMAID] normalize_scenario_graph called with data type: {type(data).__name__}")
+        if isinstance(data, dict):
+            logger.info(f"🔑 [MERMAID] Input data keys: {list(data.keys())[:20]}")
+
+        # ✅ [작업 2-2] 문자열인 경우 json.loads 시도 (방어 코드)
+        if isinstance(data, str):
+            logger.warning(f"⚠️ [MERMAID] Input data is string, attempting json.loads...")
+            try:
+                import json
+                data = json.loads(data)
+                logger.info(f"✅ [MERMAID] Successfully parsed JSON string")
+            except Exception as e:
+                logger.error(f"❌ [MERMAID] Failed to parse JSON string: {e}")
+                return [], []
+
+        if not isinstance(data, dict):
+            logger.error(f"❌ [MERMAID] Input data is not a dict: {type(data).__name__}")
+            return [], []
+
+        # ✅ [작업 2-3] 최상위 레벨에서 scenes/endings 먼저 확인 (데이터 실종 버그 수정)
+        scenes_candidates = [
+            ('scenes', lambda d: d.get('scenes')),
+            ('scene_map', lambda d: d.get('scene_map')),
+            ('nodes', lambda d: d.get('nodes')),
+            ('graph.scenes', lambda d: d.get('graph', {}).get('scenes') if isinstance(d.get('graph'), dict) else None),
+            ('data.scenes', lambda d: d.get('data', {}).get('scenes') if isinstance(d.get('data'), dict) else None),
         ]
 
-        mermaid_lines = ["graph TD"]
-        prologue_text = scenario.get('prologue', scenario.get('prologue_text', ''))
-        prologue_connects_to = scenario.get('prologue_connects_to', [])
+        # 최상위 레벨에서 scenes 탐색
+        for candidate_name, getter in scenes_candidates:
+            scenes_raw = getter(data)
+            if scenes_raw:
+                if isinstance(scenes_raw, list):
+                    scenes = scenes_raw
+                    logger.info(f"✅ [MERMAID] Found scenes at TOP LEVEL '{candidate_name}': list with {len(scenes)} items")
+                    break
+                elif isinstance(scenes_raw, dict):
+                    # dict 형태: { "Scene-1": {...}, "Scene-2": {...} } -> list로 변환
+                    scenes = [
+                        {**scene_data, 'scene_id': scene_id} if isinstance(scene_data, dict) else {'scene_id': scene_id}
+                        for scene_id, scene_data in scenes_raw.items()
+                    ]
+                    logger.info(f"✅ [MERMAID] Found scenes at TOP LEVEL '{candidate_name}': dict converted to list with {len(scenes)} items")
+                    break
 
-        # prologue_connects_to가 없으면 자동 탐지
-        if not prologue_connects_to and filtered_scenes:
-            all_target_ids = set()
-            for scene in filtered_scenes:
-                for trans in scene.get('transitions', []):
-                    target_id = trans.get('target_scene_id')
-                    if target_id:
-                        all_target_ids.add(target_id)
+        # ✅ [작업 2-4] scenes가 없고 'scenario' 키만 있다면 재귀적으로 unwrap
+        if not scenes and 'scenario' in data and isinstance(data.get('scenario'), dict):
+            logger.info(f"📦 [MERMAID] No scenes at top level, unwrapping 'scenario' wrapper...")
 
-            root_scenes = [
-                scene.get('scene_id')
-                for scene in filtered_scenes
-                if scene.get('scene_id') not in all_target_ids
-            ]
-            prologue_connects_to = root_scenes if root_scenes else [filtered_scenes[0].get('scene_id')]
+            # 중첩 구조 unwrap (최대 10단계까지, 병합 방식)
+            unwrapped_data = data['scenario']
+            max_depth = 10
+            depth = 1
 
-        # 매핑 생성
-        ending_names = {e.get('ending_id'): e.get('title', e.get('ending_id')) for e in endings}
-        scene_names = {s.get('scene_id'): s.get('title', s.get('scene_id')) for s in filtered_scenes}
+            # 재귀적으로 'scenario' 키를 풀면서 모든 데이터 병합
+            while depth < max_depth:
+                logger.info(f"🔑 [MERMAID] Unwrap depth {depth}, keys: {list(unwrapped_data.keys())[:20]}")
 
-        # incoming conditions 계산
-        incoming_conditions = {}
-        ending_incoming_conditions = {}
+                # 현재 레벨에서 scenes 확인
+                current_scenes = unwrapped_data.get('scenes')
+                if current_scenes and isinstance(current_scenes, (list, dict)):
+                    logger.info(f"✅ [MERMAID] Found scenes at unwrap depth {depth}")
+                    if isinstance(current_scenes, list):
+                        scenes = current_scenes
+                    else:
+                        scenes = [
+                            {**scene_data, 'scene_id': scene_id} if isinstance(scene_data, dict) else {'scene_id': scene_id}
+                            for scene_id, scene_data in current_scenes.items()
+                        ]
+                    break
 
-        # 프롤로그에서 시작하는 씬들
-        for target_id in prologue_connects_to:
-            if target_id not in incoming_conditions:
-                incoming_conditions[target_id] = []
-            incoming_conditions[target_id].append({
-                'from_scene': 'PROLOGUE',
-                'from_title': '프롤로그',
-                'condition': '게임 시작'
-            })
+                # 더 깊은 'scenario' 키가 있으면 계속 unwrap
+                if 'scenario' in unwrapped_data and isinstance(unwrapped_data.get('scenario'), dict):
+                    logger.info(f"📦 [MERMAID] Found nested 'scenario' at depth {depth}, continuing unwrap...")
+                    unwrapped_data = unwrapped_data['scenario']
+                    depth += 1
+                else:
+                    # 더 이상 중첩이 없으면 종료
+                    break
 
-        # 씬 간 transitions
-        for scene in filtered_scenes:
-            from_id = scene.get('scene_id')
-            from_title = scene.get('title', from_id)
+            # unwrapped_data에서 scenes 재탐색 (모든 후보 경로)
+            if not scenes:
+                for candidate_name, getter in scenes_candidates:
+                    scenes_raw = getter(unwrapped_data)
+                    if scenes_raw:
+                        if isinstance(scenes_raw, list):
+                            scenes = scenes_raw
+                            logger.info(f"✅ [MERMAID] Found scenes in UNWRAPPED data at '{candidate_name}': list with {len(scenes)} items")
+                            break
+                        elif isinstance(scenes_raw, dict):
+                            scenes = [
+                                {**scene_data, 'scene_id': scene_id} if isinstance(scene_data, dict) else {'scene_id': scene_id}
+                                for scene_id, scene_data in scenes_raw.items()
+                            ]
+                            logger.info(f"✅ [MERMAID] Found scenes in UNWRAPPED data at '{candidate_name}': dict converted to list with {len(scenes)} items")
+                            break
 
-            for trans in scene.get('transitions', []):
-                target_id = trans.get('target_scene_id')
-                if not target_id:
-                    continue
+            # unwrapped_data에서 endings도 탐색
+            data = unwrapped_data  # 이후 endings 탐색에서 사용하기 위해 업데이트
 
-                condition_info = {
-                    'from_scene': from_id,
-                    'from_title': from_title,
-                    'condition': trans.get('trigger') or trans.get('condition') or '자유 행동'
+        # ✅ [작업 2-5] endings 후보 경로 탐색
+        endings_candidates = [
+            ('endings', lambda d: d.get('endings')),
+            ('ending_map', lambda d: d.get('ending_map')),
+            ('graph.endings', lambda d: d.get('graph', {}).get('endings') if isinstance(d.get('graph'), dict) else None),
+            ('data.endings', lambda d: d.get('data', {}).get('endings') if isinstance(d.get('data'), dict) else None),
+        ]
+
+        for candidate_name, getter in endings_candidates:
+            endings_raw = getter(data)
+            if endings_raw:
+                if isinstance(endings_raw, list):
+                    endings = endings_raw
+                    logger.info(f"✅ [MERMAID] Found endings at '{candidate_name}': list with {len(endings)} items")
+                    break
+                elif isinstance(endings_raw, dict):
+                    endings = [
+                        {**ending_data, 'ending_id': ending_id} if isinstance(ending_data, dict) else {'ending_id': ending_id}
+                        for ending_id, ending_data in endings_raw.items()
+                    ]
+                    logger.info(f"✅ [MERMAID] Found endings at '{candidate_name}': dict converted to list with {len(endings)} items")
+                    break
+
+        # ✅ [작업 2-6] nodes/edges 구조인 경우 (React Flow) - scenes가 아직 없는 경우에만
+        if not scenes and 'nodes' in data and 'edges' in data:
+            logger.info(f"📦 [MERMAID] Detected nodes/edges structure, converting...")
+            scenes, endings = MermaidService.convert_nodes_to_scenes(data['nodes'], data['edges'])
+
+        # ✅ 정규화 결과 로그 - "씬 4개를 찾았다"는 메시지 명확히 출력
+        logger.info(f"✅ [MERMAID] 정규화 완료: 씬 {len(scenes)}개, 엔딩 {len(endings)}개를 찾았습니다.")
+
+        if scenes:
+            scene_ids_sample = [s.get('scene_id', 'NO_ID') for s in scenes[:5]]
+            logger.info(f"📊 [MERMAID] Scene IDs sample (first 5): {scene_ids_sample}")
+
+        if endings:
+            ending_ids_sample = [e.get('ending_id', 'NO_ID') for e in endings[:3]]
+            logger.info(f"📊 [MERMAID] Ending IDs sample (first 3): {ending_ids_sample}")
+
+        # ✅ [작업 2-7] 0일 때 디버그 정보 상세화
+        if not scenes and not endings:
+            top_keys = list(data.keys())[:20] if isinstance(data, dict) else []
+            logger.warning(f"⚠️ [MERMAID] No scenes/endings found after normalization")
+            logger.warning(f"🔑 [MERMAID] DEBUG: data top_keys={top_keys}")
+
+            # scenes/endings 후보 키 존재 여부 확인
+            for key in ['scenes', 'scene_map', 'nodes', 'endings', 'ending_map']:
+                if key in data:
+                    value_type = type(data[key]).__name__
+                    value_preview = str(data[key])[:200] if data[key] else 'None'
+                    logger.warning(f"🔍 [MERMAID] DEBUG: data['{key}'] exists - type={value_type}, preview={value_preview}")
+                else:
+                    logger.warning(f"🔍 [MERMAID] DEBUG: data['{key}'] not found")
+
+            # 중첩 구조 확인
+            for wrapper_key in ['scenario', 'graph', 'data']:
+                if wrapper_key in data and isinstance(data[wrapper_key], dict):
+                    nested_keys = list(data[wrapper_key].keys())[:10]
+                    logger.warning(f"🔍 [MERMAID] DEBUG: data['{wrapper_key}'] keys={nested_keys}")
+
+        return scenes, endings
+
+    @staticmethod
+    def _safe_node_id(orig_id: str) -> str:
+        """
+        Mermaid flowchart에서 안전하게 사용할 수 있는 노드 ID로 변환
+        하이픈(-), 공백 등 특수문자를 언더스코어로 치환
+
+        Args:
+            orig_id: 원본 ID (예: "Scene-1", "Ending-2")
+
+        Returns:
+            안전한 ID (예: "Scene_1", "Ending_2")
+        """
+        if not orig_id:
+            return "node_" + str(id(orig_id))
+
+        # 특수문자를 언더스코어로 치환
+        safe_id = re.sub(r'[^0-9A-Za-z_]', '_', str(orig_id))
+
+        # 첫 글자가 숫자면 id_ prefix 추가
+        if safe_id and safe_id[0].isdigit():
+            safe_id = 'id_' + safe_id
+
+        return safe_id
+
+    @staticmethod
+    def _escape(text: str) -> str:
+        """Mermaid 문법 파괴 방지를 위한 이스케이프"""
+        if not text: return ""
+        return text.replace('"', "'").replace('\n', ' ').replace('\r', '')
+
+    @staticmethod
+    def convert_nodes_to_scenes(nodes: List[Dict], edges: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
+        """
+        React Flow 노드/엣지 데이터를 시나리오 씬/엔딩 구조로 변환
+        Builder(노드 기반) -> Game Engine(씬 기반) 호환성 보장
+        """
+        scenes = []
+        endings = []
+
+        # 1. 노드 분류
+        node_map = {n['id']: n for n in nodes}
+
+        for node in nodes:
+            if node['type'] == 'scene':
+                # React Flow 노드 데이터를 씬 데이터로 변환
+                scene = {
+                    'scene_id': node['id'],
+                    'title': node['data'].get('title', node['data'].get('label', '')),
+                    'description': node['data'].get('description', node['data'].get('prologue', '')),
+                    'trigger': node['data'].get('trigger', ''),
+                    'transitions': []
+                }
+                # 추가 속성이 있다면 포함 (예: npcs, enemies)
+                if 'npcs' in node['data']:
+                    scene['npcs'] = node['data']['npcs']
+                if 'enemies' in node['data']:
+                    scene['enemies'] = node['data']['enemies']
+
+                scenes.append(scene)
+            elif node['type'] == 'ending':
+                ending = {
+                    'ending_id': node['id'],
+                    'title': node['data'].get('title', ''),
+                    'description': node['data'].get('description', '')
+                }
+                endings.append(ending)
+
+        # 2. 엣지로 Transitions 구성
+        for edge in edges:
+            source_id = edge.get('source')
+            target_id = edge.get('target')
+
+            source_node = node_map.get(source_id)
+            target_node = node_map.get(target_id)
+
+            if not source_node or not target_node:
+                continue
+
+            # Start 노드에서 시작하는 경우 (Prologue 연결)
+            # 보통 Start 노드는 별도 처리가 필요할 수 있으나, 여기서는 엣지 구조만 파악
+
+            if source_node['type'] == 'scene':
+                # 해당 씬 찾기
+                scene = next((s for s in scenes if s['scene_id'] == source_id), None)
+                if scene:
+                    target_trigger = ''
+                    # 타겟 노드의 트리거 정보를 가져옴 (조건)
+                    if target_node['type'] == 'scene':
+                        target_trigger = target_node['data'].get('trigger', '')
+
+                    scene['transitions'].append({
+                        'target_scene_id': target_id,
+                        'trigger': target_trigger or '이동'
+                    })
+
+        return scenes, endings
+
+    @staticmethod
+    def generate_chart(scenario: Union[Dict, Any], current_scene_id: str = None) -> Dict[str, Any]:
+        """
+        ✅ [작업 2] 시나리오 데이터로부터 Mermaid 차트와 관련 정보 생성
+        데이터 추출 로직 개선: normalize_scenario_graph 활용
+        ✅ [NEW] current_scene_id 파라미터로 현재 씬 하이라이트
+        """
+        try:
+            # ✅ [작업 2-1] 입력 데이터 정규화 (Dict로 변환)
+            if hasattr(scenario, 'data') and isinstance(scenario.data, dict):
+                logger.info(f"🔍 [MERMAID] generate_chart: scenario object detected")
+                scenario_data = scenario.data
+            elif isinstance(scenario, dict):
+                logger.info(f"🔍 [MERMAID] generate_chart: dict input detected")
+                scenario_data = scenario
+            else:
+                logger.error(f"❌ [MERMAID] generate_chart: unsupported type {type(scenario).__name__}")
+                return {"mermaid_code": "graph TD\nError[데이터 형식 오류]"}
+
+            logger.info(f"🔑 [MERMAID] scenario_data keys: {list(scenario_data.keys())[:20]}")
+
+            # ✅ [작업 2-2] normalize_scenario_graph로 데이터 추출
+            scenes, endings = MermaidService.normalize_scenario_graph(scenario_data)
+
+            # ✅ [작업 2-3] 추출 실패 시 에러 처리
+            if not scenes and not endings:
+                logger.error(f"❌ [MERMAID] No scenes/endings extracted from scenario_data")
+                return {
+                    "mermaid_code": "graph TD\nError[씬 데이터를 찾을 수 없습니다]",
+                    "filtered_scenes": [],
+                    "scene_names": {},
+                    "ending_names": {},
+                    "scene_display_ids": {},
+                    "ending_display_ids": {},
+                    "incoming_conditions": {},
+                    "ending_incoming_conditions": {}
                 }
 
-                # 엔딩으로의 연결인지 확인
-                if target_id in ending_names:
-                    if target_id not in ending_incoming_conditions:
-                        ending_incoming_conditions[target_id] = []
-                    ending_incoming_conditions[target_id].append(condition_info)
-                else:
-                    if target_id not in incoming_conditions:
-                        incoming_conditions[target_id] = []
-                    incoming_conditions[target_id].append(condition_info)
+            # start/PROLOGUE 노드 제외
+            filtered_scenes = [
+                s for s in scenes
+                if s.get('scene_id') not in ('start', 'PROLOGUE')
+            ]
 
-        # Mermaid 코드 생성
-        if prologue_text:
-            mermaid_lines.append('    PROLOGUE["📖 Prologue"]:::prologueStyle')
+            logger.info(f"✅ [MERMAID] Filtered scenes: {len(filtered_scenes)}, Endings: {len(endings)}")
 
-        # 프롤로그 -> 연결된 씬들
-        if prologue_text and prologue_connects_to:
+            # ✅ 안전한 ID 매핑 생성
+            id_map = {}
+            id_map['PROLOGUE'] = 'Prologue'
+            id_map['prologue'] = 'Prologue'
+
+            for scene in filtered_scenes:
+                orig_id = scene.get('scene_id')
+                id_map[orig_id] = MermaidService._safe_node_id(orig_id)
+
+            for ending in endings:
+                orig_id = ending.get('ending_id')
+                id_map[orig_id] = MermaidService._safe_node_id(orig_id)
+
+            mermaid_lines = ["graph TD"]
+            prologue_text = scenario_data.get('prologue', scenario_data.get('prologue_text', ''))
+            prologue_connects_to = scenario_data.get('prologue_connects_to', [])
+
+            # prologue_connects_to가 없으면 자동 탐지
+            if not prologue_connects_to and filtered_scenes:
+                all_target_ids = set()
+                for scene in filtered_scenes:
+                    for trans in scene.get('transitions', []):
+                        target_id = trans.get('target_scene_id')
+                        if target_id:
+                            all_target_ids.add(target_id)
+
+                root_scenes = [
+                    scene.get('scene_id')
+                    for scene in filtered_scenes
+                    if scene.get('scene_id') not in all_target_ids
+                ]
+                prologue_connects_to = root_scenes if root_scenes else [filtered_scenes[0].get('scene_id')]
+
+            # 매핑 생성
+            ending_names = {e.get('ending_id'): e.get('title', e.get('ending_id')) for e in endings}
+            scene_names = {s.get('scene_id'): s.get('title') or s.get('name') or s.get('scene_id') for s in filtered_scenes}
+
+            # 표시용 ID 생성
+            scene_display_ids = {}
+            for idx, scene in enumerate(filtered_scenes):
+                scene_display_ids[scene.get('scene_id')] = f"Scene-{idx + 1}"
+
+            ending_display_ids = {}
+            for idx, ending in enumerate(endings):
+                ending_display_ids[ending.get('ending_id')] = f"Ending-{idx + 1}"
+
+            # incoming conditions 계산
+            incoming_conditions = {}
+            ending_incoming_conditions = {}
+
+            # 프롤로그 연결
             for target_id in prologue_connects_to:
-                if any(s.get('scene_id') == target_id for s in filtered_scenes):
-                    mermaid_lines.append(f'    PROLOGUE --> {target_id}')
+                if target_id not in incoming_conditions:
+                    incoming_conditions[target_id] = []
+                incoming_conditions[target_id].append({
+                    'from_scene': 'PROLOGUE',
+                    'from_title': '프롤로그',
+                    'condition': '게임 시작'
+                })
 
-        # 씬 노드들
-        for scene in filtered_scenes:
-            scene_id = scene['scene_id']
-            scene_title = scene.get('title', scene_id).replace('"', "'")
-            mermaid_lines.append(f'    {scene_id}["{scene_title}"]:::sceneStyle')
+            # 씬 간 transitions
+            for scene in filtered_scenes:
+                from_id = scene.get('scene_id')
+                from_title = scene.get('title', from_id)
 
-            for trans in scene.get('transitions', []):
-                next_id = trans.get('target_scene_id')
-                trigger = trans.get('trigger', 'action').replace('"', "'")
-                if next_id and next_id != 'start':
-                    mermaid_lines.append(f'    {scene_id} -->|"{trigger}"| {next_id}')
+                for trans in scene.get('transitions', []):
+                    target_id = trans.get('target_scene_id')
+                    if not target_id: continue
 
-        # 엔딩 노드들
-        for ending in endings:
-            ending_id = ending['ending_id']
-            ending_title = ending.get('title', '엔딩').replace('"', "'")
-            mermaid_lines.append(f'    {ending_id}["🏁 {ending_title}"]:::endingStyle')
+                    condition_info = {
+                        'from_scene': from_id,
+                        'from_title': from_title,
+                        'condition': trans.get('trigger') or trans.get('condition') or '자유 행동'
+                    }
 
-        # 스타일 정의
-        mermaid_lines.append("    classDef prologueStyle fill:#0f766e,stroke:#14b8a6,color:#fff")
-        mermaid_lines.append("    classDef sceneStyle fill:#312e81,stroke:#6366f1,color:#fff")
-        mermaid_lines.append("    classDef endingStyle fill:#831843,stroke:#ec4899,color:#fff")
+                    if target_id in ending_names:
+                        if target_id not in ending_incoming_conditions:
+                            ending_incoming_conditions[target_id] = []
+                        ending_incoming_conditions[target_id].append(condition_info)
+                    else:
+                        if target_id not in incoming_conditions:
+                            incoming_conditions[target_id] = []
+                        incoming_conditions[target_id].append(condition_info)
 
-        return {
-            'mermaid_code': "\n".join(mermaid_lines),
-            'filtered_scenes': filtered_scenes,
-            'incoming_conditions': incoming_conditions,
-            'ending_incoming_conditions': ending_incoming_conditions,
-            'ending_names': ending_names,
-            'scene_names': scene_names
-        }
+            # ✅ Mermaid 코드 생성 - 안전한 ID 사용
+            if prologue_text:
+                safe_current = MermaidService._safe_node_id(current_scene_id) if current_scene_id else None
+                prologue_class = "active" if (current_scene_id and current_scene_id.lower() == "prologue") else "prologueStyle"
+                mermaid_lines.append(f'    Prologue["📖 Prologue"]:::{prologue_class}')
 
+            if prologue_text and prologue_connects_to:
+                for target_id in prologue_connects_to:
+                    if any(s.get('scene_id') == target_id for s in filtered_scenes):
+                        safe_target = id_map.get(target_id, MermaidService._safe_node_id(target_id))
+                        mermaid_lines.append(f'    Prologue --> {safe_target}')
+
+            # 씬/엔딩 노드 추가
+            for scene in filtered_scenes:
+                scene_id = scene.get('scene_id')
+                safe_id = id_map.get(scene_id, MermaidService._safe_node_id(scene_id))
+                title = MermaidService._escape(scene.get('title', scene.get('name', scene_id)))
+
+                # ✅ [NEW] 현재 씬인 경우 active 스타일 클래스 추가
+                node_class = "active" if current_scene_id == scene_id else "sceneStyle"
+                mermaid_lines.append(f'    {safe_id}["{title}"]:::{node_class}')
+
+            for ending in endings:
+                ending_id = ending.get('ending_id')
+                safe_id = id_map.get(ending_id, MermaidService._safe_node_id(ending_id))
+                title = MermaidService._escape(ending.get('title', ending_id))
+
+                # ✅ [NEW] 현재 씬이 엔딩인 경우 active 스타일 클래스 추가
+                node_class = "active" if current_scene_id == ending_id else "endingStyle"
+                mermaid_lines.append(f'    {safe_id}["🏁 {title}"]:::{node_class}')
+
+            # 트랜지션 추가
+            for scene in filtered_scenes:
+                safe_id = id_map.get(scene.get('scene_id'), MermaidService._safe_node_id(scene.get('scene_id')))
+
+                for trans in scene.get('transitions', []):
+                    next_id = trans.get('target_scene_id')
+                    if next_id and next_id != 'start':
+                        safe_next_id = id_map.get(next_id, MermaidService._safe_node_id(next_id))
+                        trigger = MermaidService._escape(trans.get('trigger') or 'action')
+                        mermaid_lines.append(f'    {safe_id} -->|"{trigger}"| {safe_next_id}')
+
+            # 스타일 정의 추가
+            mermaid_lines.append("")
+            mermaid_lines.append("classDef prologueStyle fill:#0f766e,stroke:#14b8a6,stroke-width:2px,color:#fff")
+            mermaid_lines.append("classDef sceneStyle fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#fff")
+            mermaid_lines.append("classDef endingStyle fill:#831843,stroke:#f43f5e,stroke-width:2px,color:#fff")
+            # ✅ 현재 씬 하이라이트 스타일 (active 클래스)
+            mermaid_lines.append("classDef active fill:#38bdf8,stroke:#0ea5e9,stroke-width:4px,color:#000,font-weight:bold")
+
+            mermaid_code = "\n".join(mermaid_lines)
+            logger.info(f"✅ [MERMAID] Mermaid code generated: {len(mermaid_lines)} lines")
+
+            return {
+                "mermaid_code": mermaid_code,
+                "filtered_scenes": filtered_scenes,
+                "scene_names": scene_names,
+                "ending_names": ending_names,
+                "scene_display_ids": scene_display_ids,
+                "ending_display_ids": ending_display_ids,
+                "incoming_conditions": incoming_conditions,
+                "ending_incoming_conditions": ending_incoming_conditions
+            }
+
+        except Exception as e:
+            logger.error(f"❌ [MERMAID] generate_chart failed: {e}", exc_info=True)
+            return {"mermaid_code": f"graph TD\nError[차트 생성 오류: {str(e)}]"}
+
+    @staticmethod
+    def generate_mermaid_from_scenario(scenario_data: Dict[str, Any], current_scene_id: str = None) -> str:
+        """
+        ✅ [작업 2] 레거시 호환 메서드 - generate_chart로 위임
+        """
+        result = MermaidService.generate_chart(scenario_data, current_scene_id)
+        return result.get("mermaid_code", "graph TD\nError[차트 생성 실패]")

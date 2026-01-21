@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Dict
 
 
 # --- Basic Components ---
@@ -10,26 +10,30 @@ class GlobalVariable(BaseModel):
     type: str = Field(default="int", description="int, boolean, string")
 
 
-class Item(BaseModel):
-    name: str = Field(description="Unique item name")
-    description: str = Field(description="Item flavor text")
-    is_key_item: bool = Field(default=False, description="If true, critical for progression")
-
-
-# --- Logic Components ---
-
-class Condition(BaseModel):
-    target: str = Field(description="Variable name OR Item name")
-    type: str = Field(description="'variable' or 'item'")
-    operator: str = Field(description=">, <, ==, >=, <=, has, not_has")
-    value: Any = Field(description="Comparison value (e.g., 50, true)")
-
+# --- Logic Components (Effect must be defined before Item) ---
 
 class Effect(BaseModel):
     target: str = Field(description="Variable name OR Item name")
     type: str = Field(description="'variable' or 'item'")
     operation: str = Field(description="add, subtract, set, gain_item, lose_item")
     value: Any
+
+
+class Item(BaseModel):
+    name: str = Field(description="Unique item name")
+    description: str = Field(description="Item flavor text")
+    is_key_item: bool = Field(default=False, description="If true, critical for progression")
+    effects: List[Effect] = Field(default=[], description="Effects when item is used")
+    usable: bool = Field(default=True, description="Whether the item can be used")
+
+
+# --- Logic Components (Condition remains here) ---
+
+class Condition(BaseModel):
+    target: str = Field(description="Variable name OR Item name")
+    type: str = Field(description="'variable' or 'item'")
+    operator: str = Field(description=">, <, ==, >=, <=, has, not_has")
+    value: Any = Field(description="Comparison value (e.g., 50, true)")
 
 
 # --- Scene Components (CHANGED) ---
@@ -53,6 +57,7 @@ class NPC(BaseModel):
     description: str = Field(description="Visual description")
     image_prompt: Optional[str] = Field(None, description="Prompt for generating NPC portrait")
     dialogue_style: str = Field(description="How they speak")
+    drop_items: List[str] = Field(default=[], description="Items dropped when NPC is defeated")
 
 
 class Scene(BaseModel):
@@ -94,3 +99,15 @@ class GameScenario(BaseModel):
     npcs: List[NPC]
     scenes: List[Scene]
     endings: List[Ending]
+
+    world_state: Optional[Dict[str, Any]] = Field(default=None, description="The state of the world, affecting all scenes and characters")
+
+
+# --- Game Action Schema (for API endpoints) ---
+
+class GameAction(BaseModel):
+    action: str = Field(default='', description="Player action text")
+    model: str = Field(default='openai/tngtech/deepseek-r1t2-chimera:free', description="AI model to use")
+    provider: str = Field(default='deepseek', description="AI provider")
+    session_id: Optional[str] = Field(None, description="Session ID for continuing game")
+    session_key: Optional[str] = Field(None, description="Session key for DB persistence")
