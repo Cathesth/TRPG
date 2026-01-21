@@ -654,10 +654,11 @@ async def game_act_stream(
             current_loc = processed_state.get('current_scene_id')
             if current_loc:
                 bg_image_url = ""
-                # 시나리오에서 현재 씬의 background_image 찾기
+                # 시나리오에서 현재 씬의 background_image 또는 image_prompt 찾기
                 for scene in scenario.get('scenes', []):
                     if scene.get('scene_id') == current_loc:
-                        bg_image_url = scene.get('background_image', '')
+                        # background_image가 우선, 없으면 image_prompt 사용
+                        bg_image_url = scene.get('background_image', '') or scene.get('image_prompt', '')
                         break
 
                 # 배경 이미지가 있으면 클라이언트로 전송

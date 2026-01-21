@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Depends, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import logging
@@ -18,8 +18,9 @@ templates = Jinja2Templates(directory="templates")
 
 
 @views_router.get("/", response_class=HTMLResponse)
-async def index(request: Request, user=Depends(get_current_user_optional)):
+async def index(request: Request):
     """메인 페이지"""
+    user = get_current_user_optional(request)
     return templates.TemplateResponse("index.html", {
         "request": request,
         "version": get_full_version(),
@@ -27,13 +28,37 @@ async def index(request: Request, user=Depends(get_current_user_optional)):
     })
 
 
+@views_router.get("/login", response_class=HTMLResponse)
+async def view_login(request: Request):
+    """로그인 페이지"""
+    # 사용자 로그인 상태 확인
+    user = get_current_user_optional(request)
+    
+    # URL 파라미터가 있거나, 비로그인 상태면 모달 표시
+    show_login_param = request.query_params.get("show_login") == "true"
+    is_not_logged_in = not (user and user.is_authenticated)
+    show_login = show_login_param or is_not_logged_in
+    
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "version": get_full_version(),
+        "user": user,
+        "show_login": show_login
+    })
+
+
 @views_router.get("/views/builder", response_class=HTMLResponse)
 async def view_builder(request: Request, user=Depends(get_current_user)):
     """빌더 뷰 (로그인 필수)"""
+    # 로그인하지 않은 경우 로그인 페이지로 리다이렉트
+    if not user or not user.is_authenticated:
+        return RedirectResponse("/login?show_login=true", status_code=302)
+    
     return templates.TemplateResponse("builder_view.html", {
         "request": request,
         "version": get_full_version(),
-        "user": user
+        "user": user,
+        "show_login": False  # 빌더는 로그인 필수이므로 기본적으로 false
     })
 
 

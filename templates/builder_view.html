@@ -1281,7 +1281,20 @@
                                                             className="w-full h-32 object-cover rounded border-2 border-[#4A4A6A] hover:border-[#00FFFF] transition-colors cursor-pointer"
                                                             onClick={() => window.open(getImageUrl(node.data.background_image), '_blank')}
                                                             alt="씬 배경 이미지"
+                                                            onError={(e) => {
+                                                                console.error('Background image load error:', e);
+                                                                console.error('Background image URL:', getImageUrl(node.data.background_image));
+                                                                e.target.style.display = 'none';
+                                                                const errDiv = document.getElementById(`bg-err-${node.id}`);
+                                                                if(errDiv) errDiv.style.display = 'block';
+                                                            }}
                                                         />
+                                                        <div id={`bg-err-${node.id}`} style={{display: 'none'}} className="w-full h-32 flex flex-col items-center justify-center bg-[#1A0B2E] border border-[#FF007F] border-dashed text-center p-2">
+                                                            <div className="text-[10px] text-[#FF007F] flex flex-col items-center">
+                                                                <span className="mb-1 font-bold">배경 이미지 로드 실패</span>
+                                                                <span className="text-[9px] opacity-70 break-all select-all">{node.data.background_image}</span>
+                                                            </div>
+                                                        </div>
                                                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded">
                                                             <span className="text-white text-xs font-bold">클릭하여 원본 보기</span>
                                                         </div>
@@ -1480,6 +1493,8 @@
                                                                 alt="Preview"
                                                                 className={imgClass}
                                                                 onError={(e) => {
+                                                                    console.error('Image load error:', e);
+                                                                    console.error('Image URL:', getImageUrl(currentImageUrl));
                                                                     e.target.style.display = 'none';
                                                                     const errDiv = document.getElementById(`img-err-${selectedNodeId}`);
                                                                     if(errDiv) errDiv.style.display = 'block';
@@ -1830,7 +1845,6 @@
                             </div>
                         </div>
                     )}
-
                 </div>
             );
         }
@@ -1839,5 +1853,49 @@
         root.render(<ScenarioBuilder />);
     </script>
 {% endraw %}
-</body>
-</html>
+
+    <script>
+        // 모달 관리 함수
+        window.openModal = function(id) {
+            const modal = document.getElementById(id);
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            document.body.classList.add('modal-active');
+            setTimeout(() => {
+                modal.querySelector('.modal-container').classList.remove('scale-95', 'opacity-0');
+                modal.querySelector('.modal-container').classList.add('scale-100', 'opacity-100');
+            }, 10);
+        };
+
+        window.closeModal = function(id) {
+            const modal = document.getElementById(id);
+            modal.querySelector('.modal-container').classList.remove('scale-100', 'opacity-100');
+            modal.querySelector('.modal-container').classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.add('opacity-0', 'pointer-events-none');
+                document.body.classList.remove('modal-active');
+            }, 300);
+        };
+
+        // 로그인이 필요할 때 index.html로 리다이렉트
+        window.requireLogin = function() {
+            window.location.href = '/login?show_login=true';
+        };
+    </script>
+
+    {% if show_login %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            window.requireLogin();
+        });
+    </script>
+    {% endif %}
+
+    <script>
+    // Lucide 아이콘 초기화
+    document.addEventListener('DOMContentLoaded', function() {
+        lucide.createIcons();
+    });
+    </script>
+
+    </body>
+    </html>
