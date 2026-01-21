@@ -474,3 +474,33 @@ class ScenarioService:
         finally:
             if should_close_db:
                 db.close()
+
+
+        # services/scenario_service.py 내부
+
+        @staticmethod
+        def toggle_public(scenario_id: int, user_id: str):
+            # [수정] next(get_db()) 대신 SessionLocal() 사용
+            db = SessionLocal()
+            try:
+                scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
+                if not scenario:
+                    return False, "시나리오를 찾을 수 없습니다.", None
+
+                if scenario.author_id != user_id:
+                    return False, "권한이 없습니다.", None
+
+                # 상태 반전 (True <-> False)
+                scenario.is_public = not scenario.is_public
+                db.commit()
+                db.refresh(scenario)
+
+                return True, "상태가 변경되었습니다.", scenario.is_public
+            except Exception as e:
+                db.rollback()
+                return False, str(e), None
+            finally:
+                db.close()
+
+
+

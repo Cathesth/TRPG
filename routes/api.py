@@ -479,6 +479,7 @@ def get_billing_view():
     """
 
 
+
 # ==========================================
 # [API 라우트] 인증 (Auth) - 직접 구현으로 변경
 # ==========================================
@@ -747,6 +748,49 @@ async def reset_build_progress():
         build_progress = {"status": "idle", "progress": 0}
     return {"success": True}
 
+# [1. 헬퍼 함수 추가] 잠금 버튼 HTML 생성기
+def _generate_lock_button(scenario_id: int, is_public: bool):
+    """
+    HTMX로 작동하는 잠금/해제 버튼 HTML을 반환합니다.
+    """
+    if is_public:
+        # 공개 상태 -> 비공개로 전환 버튼
+        return f"""
+        <button hx-post="/api/scenarios/{scenario_id}/toggle-public" 
+                hx-swap="outerHTML"
+                class="p-2 rounded-lg bg-transparent hover:bg-blue-500/10 text-blue-400 hover:text-blue-300 transition-colors" 
+                title="현재 공개됨 (클릭하여 비공개 전환)">
+            <i data-lucide="globe" class="w-4 h-4"></i>
+            <script>lucide.createIcons();</script>
+        </button>
+        """
+    else:
+        # 비공개 상태 -> 공개로 전환 버튼
+        return f"""
+        <button hx-post="/api/scenarios/{scenario_id}/toggle-public" 
+                hx-swap="outerHTML"
+                class="p-2 rounded-lg bg-transparent hover:bg-red-500/10 text-gray-500 hover:text-gray-300 transition-colors" 
+                title="현재 비공개 (클릭하여 공개 전환)">
+            <i data-lucide="lock" class="w-4 h-4"></i>
+            <script>lucide.createIcons();</script>
+        </button>
+        """
+
+# [2. API 엔드포인트 추가] 토글 요청 처리
+@api_router.post('/scenarios/{scenario_id}/toggle-public')
+async def toggle_scenario_public(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
+    if not user.is_authenticated:
+        return HTMLResponse("Login required", status_code=401)
+
+    success, msg, new_state = ScenarioService.toggle_public(scenario_id, user.id)
+
+    if not success:
+        # 에러 시 alert 띄우기 (HTMX 응답 헤더 활용 가능하지만, 간단히 기존 버튼 유지하며 로그)
+        return HTMLResponse(f"<script>alert('{msg}');</script>", status_code=400)
+
+    # 변경된 상태에 맞는 새로운 버튼 HTML 반환 (HTMX가 이 버튼으로 교체함)
+    return HTMLResponse(_generate_lock_button(scenario_id, new_state))
+
 
 # [교체] routes/api.py -> list_scenarios 함수
 @api_router.get('/scenarios', response_class=HTMLResponse)
@@ -894,19 +938,24 @@ def list_scenarios(
 
         # [버튼 구성]
         if is_owner:
-            buttons_html = f"""
-                    <div class="flex flex-wrap items-center gap-2 mt-auto pt-3 border-t border-white/10 shrink-0">
-                        <button onclick="playScenario('{fid}', this)" class="flex-1 py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs min-w-[80px]">
-                            <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
-                        </button>
-                        <button onclick="editScenario('{fid}', this)" class="p-2 rounded-lg bg-transparent hover:bg-white/10 text-gray-400 hover:text-[#38bdf8] transition-colors" title="수정">
-                            <i data-lucide="edit" class="w-4 h-4"></i>
-                        </button>
-                        <button onclick="deleteScenario('{fid}', this)" class="p-2 rounded-lg bg-transparent hover:bg-red-500/10 text-gray-400 hover:text-red-500 transition-colors" title="삭제">
-                            <i data-lucide="trash" class="w-4 h-4"></i>
-                        </button>
-                    </div>
-                    """
+            # 헬퍼 함수로 현재 상태에 맞는 버튼 생성
+            lock_btn = _generate_lock_button(s.id, s.is_public)
+
+            buttons_html = f"""          
+            <div class="flex flex-wrap items-center gap-2 mt-auto pt-3 border-t border-white/10 shrink-0">
+                {lock_btn}
+                
+                <button onclick="playScenario('{fid}', this)" class="flex-1 py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs min-w-[80px]">
+                    <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
+                </button>
+                <button onclick="editScenario('{fid}', this)" class="p-2 rounded-lg bg-transparent hover:bg-white/10 text-gray-400 hover:text-[#38bdf8] transition-colors" title="수정">
+                    <i data-lucide="edit" class="w-4 h-4"></i>
+                </button>
+                <button onclick="deleteScenario('{fid}', this)" class="p-2 rounded-lg bg-transparent hover:bg-red-500/10 text-gray-400 hover:text-red-500 transition-colors" title="삭제">
+                    <i data-lucide="trash" class="w-4 h-4"></i>
+                </button>
+            </div>
+            """
         else:
             buttons_html = f"""
                     <div class="mt-auto pt-3 border-t border-white/10 shrink-0">
