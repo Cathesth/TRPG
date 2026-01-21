@@ -51,18 +51,13 @@ class TokenConfig:
 
     # [2] 모델별 비용 (1,000 토큰 당 소모 Credit)
     MODEL_COSTS = {
-        # 1. Google: Gemini 2.0 Flash ($0.10 / $0.40 per M)
-        # 1K당 $0.0001 / $0.0004 -> 1 / 4 Credits
+        # 1. Google: Gemini 2.0 Flash ($0.10 / $0.40 per M) -> (1 / 4 Cr)
         "gemini-2.0-flash": {"input": 1.0, "output": 4.0},
         "gemini-2.5-flash": {"input": 1.0, "output": 4.0},
 
-        # 2. Anthropic: Claude 3.5 Sonnet ($6.00 / $30.00 per M)
-        # 1K당 $0.006 / $0.03 -> 60 / 300 Credits
-        "claude-3.5-sonnet": {"input": 60.0, "output": 300.0},
-        "claude-3-opus": {"input": 150.0, "output": 750.0},
+        "claude-3.5-sonnet": {"input": 60.0, "output": 150.0},
 
-        # 3. OpenAI: GPT-4o ($2.50 / $10.00 per M)
-        # 1K당 $0.0025 / $0.01 -> 25 / 100 Credits
+        # 3. OpenAI: GPT-4o ($2.50 / $10.00 per M) -> (25 / 100 Cr)
         "gpt-4o": {"input": 25.0, "output": 100.0},
         "gpt-4o-mini": {"input": 1.5, "output": 6.0},
 
@@ -105,3 +100,8 @@ def get_git_commit_hash():
         logger.warning(f"Git 커밋 해시 가져오기 실패: {e}")
 
     return 'dev'
+
+
+# [FIX] app.py에서 호출하는 함수 추가
+def get_full_version():
+    return f"v{VERSION_NUMBER}-{get_git_commit_hash()}"
