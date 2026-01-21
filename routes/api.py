@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 # 빌더 에이전트 및 코어 유틸리티
-from builder_agent import generate_scenario_from_graph, set_progress_callback, generate_single_npc
+from builder_agent import generate_scenario_from_graph, set_progress_callback, generate_single_npc, generate_scene_content
 from core.state import GameState
 from core.utils import parse_request_data, pick_start_scene_id, validate_scenario_graph, can_publish_scenario
 from game_engine import create_game_graph
@@ -1338,13 +1338,36 @@ async def generate_npc_api(data: NPCGenerateRequest, user: CurrentUser = Depends
         )
         return {"success": True, "data": npc_data}
     except Exception as e:
-        logger.error(f"NPC Generation Error: {e}")
+        logger.error(f"Scene Generation Error: {e}")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+@api_router.post('/scene/generate')
+async def generate_scene_content_api(data: NPCGenerateRequest, user: CurrentUser = Depends(get_current_user)):
+    """
+    씬 내용 생성 API (builder_agent.py 사용)
+    """
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
+
+    try:
+        # builder_agent.py의 씬 생성 함수 호출
+        scene_data = await run_in_threadpool(
+            generate_scene_content,
+            scenario_title=data.scenario_title,
+            scenario_summary=data.scenario_summary,
+            user_request=data.request,
+            model_name=data.model,
+            user_id=user.id
+        )
+        return {"success": True, "data": scene_data}
+    except Exception as e:
+        logger.error(f"Scene Generation Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 @api_router.post('/image/generate')
 async def generate_image_api(data: ImageGenerateRequest, user: CurrentUser = Depends(get_current_user)):
-    """AI 이미지 생성 API (Nanobana 모델 사용)"""
     # [추가] 로그인 체크
     if not user.is_authenticated:
         return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
