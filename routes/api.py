@@ -752,26 +752,31 @@ async def reset_build_progress():
 def _generate_lock_button(scenario_id: int, is_public: bool):
     """
     HTMX로 작동하는 잠금/해제 버튼 HTML을 반환합니다.
+    - 위치: 이미지 상단 우측 (하트 버튼 왼쪽: right-14)
+    - 스타일: 원형 반투명 버튼
     """
+    # 하트 버튼과 동일한 스타일 + 위치만 왼쪽(right-14)으로 배치
+    base_style = "absolute top-2 right-14 p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all z-20 flex items-center justify-center"
+
     if is_public:
-        # 공개 상태 -> 비공개로 전환 버튼
+        # [공개 상태] -> 열린 자물쇠 아이콘 (누르면 잠김/비공개)
         return f"""
         <button hx-post="/api/scenarios/{scenario_id}/toggle-public" 
                 hx-swap="outerHTML"
-                class="p-2 rounded-lg bg-transparent hover:bg-blue-500/10 text-blue-400 hover:text-blue-300 transition-colors" 
+                class="{base_style} text-blue-400 hover:text-blue-300" 
                 title="현재 공개됨 (클릭하여 비공개 전환)">
-            <i data-lucide="globe" class="w-4 h-4"></i>
+            <i data-lucide="lock-open" class="w-5 h-5"></i>
             <script>lucide.createIcons();</script>
         </button>
         """
     else:
-        # 비공개 상태 -> 공개로 전환 버튼
+        # [비공개 상태] -> 잠긴 자물쇠 아이콘 (누르면 풀림/공개)
         return f"""
         <button hx-post="/api/scenarios/{scenario_id}/toggle-public" 
                 hx-swap="outerHTML"
-                class="p-2 rounded-lg bg-transparent hover:bg-red-500/10 text-gray-500 hover:text-gray-300 transition-colors" 
+                class="{base_style} text-red-500 hover:text-red-400" 
                 title="현재 비공개 (클릭하여 공개 전환)">
-            <i data-lucide="lock" class="w-4 h-4"></i>
+            <i data-lucide="lock" class="w-5 h-5"></i>
             <script>lucide.createIcons();</script>
         </button>
         """
@@ -905,6 +910,12 @@ def list_scenarios(
         is_new = (current_ts - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
+        # [수정 포인트 1] 잠금 버튼 HTML 생성 (마이페이지에서만 보임)
+        lock_btn_html = ""
+        # "토글버튼은 마이페이지 에만 볼 수 있게" 요청 반영 (filter == 'my' 체크)
+        if is_owner and filter == 'my':
+            lock_btn_html = _generate_lock_button(s.id, s.is_public)
+
         # [디자인 분기 설정]
         if filter == 'my':
             # [마이페이지 수정]
@@ -938,13 +949,8 @@ def list_scenarios(
 
         # [버튼 구성]
         if is_owner:
-            # 헬퍼 함수로 현재 상태에 맞는 버튼 생성
-            lock_btn = _generate_lock_button(s.id, s.is_public)
-
             buttons_html = f"""          
             <div class="flex flex-wrap items-center gap-2 mt-auto pt-3 border-t border-white/10 shrink-0">
-                {lock_btn}
-                
                 <button onclick="playScenario('{fid}', this)" class="flex-1 py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs min-w-[80px]">
                     <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
                 </button>
@@ -957,6 +963,7 @@ def list_scenarios(
             </div>
             """
         else:
+
             buttons_html = f"""
                     <div class="mt-auto pt-3 border-t border-white/10 shrink-0">
                         <button onclick="playScenario('{fid}', this)" class="w-full py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
@@ -971,6 +978,8 @@ def list_scenarios(
         <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_style}">
             <div class="relative {img_height} overflow-hidden bg-black shrink-0">
                 <img src="{img_src}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
+                
+                {lock_btn_html}
                 
                 {like_btn}
                 <div class="absolute top-2 left-2 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-[#38bdf8] border border-[#38bdf8]/30">
