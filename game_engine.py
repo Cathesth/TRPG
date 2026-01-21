@@ -124,6 +124,7 @@ class PlayerState(TypedDict):
     is_game_start: bool  # [추가] 게임 시작 여부 플래그
     target_npc: str  # [추가] 공격 대상 NPC 이름
     user_id: Optional[str]  # [추가] 토큰 과금을 위한 유저 ID
+    death_location_id: Optional[str]  # [추가] 사망한 장소의 scene_id (사망 시퀀스용)
 
 
 def normalize_text(text: str) -> str:
@@ -2247,12 +2248,20 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         world_state.from_dict(state['world_state'])
 
     # ========================================
-    # 💀 [MODE 3] 사망 시퀀스 처리 - death_location_id가 존재하는 경우
+    # 🎯 [우선순위 1] 전투 결과 출력 (사망 여부와 무관하게 가장 먼저)
+    # ========================================
+    system_message = state.get('system_message', '')
+    if system_message:
+        logger.info(f"⚔️ [COMBAT RESULT] Yielding system_message first: {system_message[:50]}...")
+        yield system_message + "\n\n"
+
+    # ========================================
+    # 💀 [우선순위 2] 사망 시퀀스 처리 - death_location_id가 존재하는 경우 (다른 모든 로직보다 우선)
     # ========================================
     death_location_id = state.get('death_location_id')
 
-    if death_location_id and parsed_intent == 'ending':
-        logger.info(f"💀 [DEATH SEQUENCE] Death location detected: {death_location_id}, current ending: {curr_id}")
+    if death_location_id:
+        logger.info(f"💀 [DEATH SEQUENCE] Death location detected: {death_location_id}, current scene: {curr_id}")
 
         # 사망한 장소의 정보 가져오기
         death_scene = all_scenes.get(death_location_id)
@@ -2273,42 +2282,63 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
         if not death_sequence_template:
             logger.error("⚠️ [DEATH SEQUENCE] 'death_sequence' prompt not found in prompt_player.yaml")
-            yield "치명상을 입었습니다. 의식이 흐려집니다..."
-            return
+            yield "치명상을 입었습니다. 의식이 흐려집니다...\n\n"
+        else:
+            # 🔥 전투 문맥을 LLM에 전달 (system_message 포함)
+            combat_context = f"**전투 기록:** {system_message}\n\n" if system_message else ""
 
-        death_sequence_prompt = death_sequence_template.format(
-            death_scene_title=death_scene_title,
-            death_scene_desc=death_scene_desc,
-            player_status=player_status,
-            ending_title=ending_title,
-            ending_desc=ending_desc
-        )
+            death_sequence_prompt = combat_context + death_sequence_template.format(
+                death_scene_title=death_scene_title,
+                death_scene_desc=death_scene_desc,
+                player_status=player_status
+            )
 
-        try:
-            api_key = os.getenv("OPENROUTER_API_KEY")
-            model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
-            llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
+            try:
+                api_key = os.getenv("OPENROUTER_API_KEY")
+                model_name = state.get('model', 'openai/tngtech/deepseek-r1t2-chimera:free')
+                llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=True)
 
-            logger.info(f"💀 [DEATH SEQUENCE] Generating death narrative for location: {death_location_id}")
+                logger.info(f"💀 [DEATH SEQUENCE] Generating death narrative for location: {death_location_id}")
 
-            # 사망 시퀀스 나레이션 생성
-            for chunk in _stream_and_track(llm, death_sequence_prompt, user_id, model_name):
-                yield chunk
+                # 사망 시퀀스 나레이션 생성
+                for chunk in _stream_and_track(llm, death_sequence_prompt, user_id, model_name):
+                    yield chunk
 
-            # 사망 장소 ID 제거 (한 번만 사용)
-            state['death_location_id'] = None
-            logger.info(f"💀 [DEATH SEQUENCE] Death sequence narration complete")
+                yield "\n\n"  # 엔딩 텍스트와 구분을 위한 줄바꿈
 
-            return
+                logger.info(f"💀 [DEATH SEQUENCE] Death sequence narration complete")
 
-        except Exception as e:
-            logger.error(f"💀 [DEATH SEQUENCE] Error generating death narrative: {e}")
-            # 폴백: 간단한 사망 묘사
-            yield f"\n\n당신은 {death_scene_title}에서 마지막 숨을 거두었습니다...\n\n"
-            yield f"**{ending_title}**\n\n{ending_desc}"
+            except Exception as e:
+                logger.error(f"💀 [DEATH SEQUENCE] Error generating death narrative: {e}")
+                # 폴백: 간단한 사망 묘사
+                yield f"\n\n당신은 {death_scene_title}에서 마지막 숨을 거두었습니다...\n\n"
 
-            state['death_location_id'] = None
-            return
+        # 사망 장소 ID 제거 (한 번만 사용)
+        state['death_location_id'] = None
+
+        # ========================================
+        # 💀 [우선순위 3] 엔딩 텍스트 출력 (return 제거로 자연스럽게 연결)
+        # ========================================
+        if parsed_intent == 'ending' and curr_id in all_endings:
+            ending_info = all_endings.get(curr_id, {})
+            ending_title = ending_info.get('title', '끝')
+            ending_desc = ending_info.get('description', '')
+
+            logger.info(f"💀 [DEATH SEQUENCE] Yielding ending description: {ending_title}")
+            yield f"**【 {ending_title} 】**\n\n{ending_desc}"
+            return  # 엔딩 텍스트 출력 후 종료
+
+    # ========================================
+    # [일반 엔딩 처리] 사망이 아닌 일반 엔딩 (death_location_id 없음)
+    # ========================================
+    if parsed_intent == 'ending' and curr_id in all_endings:
+        ending_info = all_endings.get(curr_id, {})
+        ending_title = ending_info.get('title', '끝')
+        ending_desc = ending_info.get('description', '')
+
+        logger.info(f"🏁 [ENDING] Normal ending: {ending_title}")
+        yield f"**【 {ending_title} 】**\n\n{ending_desc}"
+        return
 
     # ========================================
     # 현재 씬 정보 추출 (scene_title, scene_type, npc_names, enemy_names)
@@ -2356,9 +2386,8 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 """
             logger.info(f"💀 [NARRATOR] Dead NPCs in scene: {dead_list}")
 
-    # system_message에 시체 관련 내용이 있으면 최우선 반영
-    system_message = state.get('system_message', '')
-    if "시체" in system_message or "식어버린" in system_message:
+    # system_message에 시체 관련 내용이 있으면 최우선 반영 (사망 처리 후에는 이미 출력되었으므로 중복 방지)
+    if not death_location_id and system_message and ("시체" in system_message or "식어버린" in system_message):
         npc_status_context += f"\n⚠️ **시스템 메시지 최우선 반영:** {system_message}\n"
         logger.info(f"💀 [NARRATOR] Corpse-related system message detected: {system_message}")
 
