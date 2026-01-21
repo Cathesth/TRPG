@@ -606,7 +606,19 @@
                             데이터 없음<br>
                             <span class="text-xs">상단 [불러오기]를 눌러주세요.</span>
                         </div>
-                        {% endif %}
+                    {% endif %}
+                </div>
+
+                <!-- 디버그 정보 영역 -->
+                {% if is_debug_user %}
+                <div id="debug-info-area" class="hidden mt-4 space-y-4">
+                    <!-- 전체 씬 보기 버튼 -->
+                    <div class="border-t-4 border-rpg-700 pt-4">
+                        <button onclick="openDebugScenesView()"
+                                class="w-full bg-gradient-to-r from-pink-900/80 to-purple-900/80 hover:from-pink-800 hover:to-purple-800 text-white py-3 rounded-none pixel-border-accent flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-lg hover:shadow-pink-500/20 font-dot">
+                            <i data-lucide="git-merge" class="w-5 h-5"></i>
+                            <span>전체 씬 보기</span>
+                        </button>
                     </div>
 
                     <!-- 디버그 정보 영역 -->
@@ -660,6 +672,7 @@
                         </div>
                     </div>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>

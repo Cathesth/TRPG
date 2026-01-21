@@ -76,6 +76,14 @@ class User(Base):
     scenarios = relationship('Scenario', back_populates='owner')
     # Flask-Login 관련 속성 삭제됨 (auth.py가 대신 처리함)
 
+    @property
+    def is_debug_user(self) -> bool:
+        """
+        디버그 권한 체크: id가 '11' 또는 'cronos'인 경우에만 True 반환
+        - Railway Postgres 연동 시 users 테이블의 id 컬럼을 참조
+        """
+        return self.id in ('11', 'cronos')
+
 
 class TokenLog(Base):
     """
