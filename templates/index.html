@@ -631,6 +631,21 @@
         }
 
         window.playScenario = async function(filename, btn) {
+            // 로그인 상태 확인
+            try {
+                const userRes = await fetch('/api/user/status');
+                const userData = await userRes.json();
+                if (!userData.logged_in) {
+                    // 로그인 안되어 있으면 로그인 페이지로 이동
+                    window.location.href = '/login';
+                    return;
+                }
+            } catch (e) {
+                console.error('로그인 상태 확인 실패:', e);
+                window.location.href = '/login';
+                return;
+            }
+
             const originalText = btn.innerHTML;
             btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Loading...';
             btn.disabled = true;

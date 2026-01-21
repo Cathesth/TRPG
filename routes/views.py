@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Depends, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import logging
@@ -30,6 +30,10 @@ async def index(request: Request, user=Depends(get_current_user_optional)):
 @views_router.get("/views/builder", response_class=HTMLResponse)
 async def view_builder(request: Request, user=Depends(get_current_user)):
     """빌더 뷰 (로그인 필수)"""
+    # 로그인하지 않은 경우 로그인 페이지로 리다이렉트
+    if not user or not user.is_authenticated:
+        return RedirectResponse("/login", status_code=302)
+    
     return templates.TemplateResponse("builder_view.html", {
         "request": request,
         "version": get_full_version(),

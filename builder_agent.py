@@ -806,7 +806,7 @@ def generate_scenario_from_graph(api_key, user_data, model_name=None, user_id=No
 
     # 기본 모델 fallback
     if not model_name:
-        model_name = "gpt-4o-mini"
+        model_name = "openai/google/gemini-2.0-flash"
 
     initial_state = {
         "graph_data": user_data,
@@ -861,14 +861,14 @@ def generate_scene_content(scenario_title, scenario_summary, user_request="", mo
     씬 내용 생성 (토큰 계산 포함)
     """
     if not model_name:
-        model_name = "gpt-4o-mini"
+        model_name = "openai/google/gemini-2.0-flash"
 
     llm = LLMFactory.get_llm(model_name)
     
     # 씬 내용은 간단한 텍스트이므로 JSON 파서 없이 직접 생성
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "당신은 TRPG 시나리오 작가입니다. 요청에 따라 자연스러운 씬 묘사를 작성해주세요."),
-        ("user", f"시나리오 제목: {scenario_title}\n시나리오 배경: {scenario_summary}\n요청: {user_request}")
+        ("system", "You are a TRPG scenario writer. Create natural and immersive scene descriptions based on the request."),
+        ("user", f"Scenario Title: {scenario_title}\nScenario Background: {scenario_summary}\nRequest: {user_request}")
     ])
 
     chain = prompt | llm
@@ -952,14 +952,14 @@ def generate_single_npc(scenario_title, scenario_summary, user_request="", model
     단일 NPC 생성 (토큰 계산 포함)
     """
     if not model_name:
-        model_name = "gpt-4o-mini"
+        model_name = "openai/google/gemini-2.0-flash-001"
 
     llm = LLMFactory.get_llm(model_name)
     parser = JsonOutputParser(pydantic_object=NPC)
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", PROMPTS.get("generate_single_npc", "Create a TRPG NPC.")),
-        ("user", f"제목:{scenario_title}\n요청:{user_request}")
+        ("user", f"Title: {scenario_title}\nRequest: {user_request}")
     ]).partial(format_instructions=parser.get_format_instructions())
 
     chain = prompt | llm | parser

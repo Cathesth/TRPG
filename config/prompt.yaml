@@ -65,8 +65,8 @@ extract_stats: |
 
 # 6. 단일 NPC 생성
 generate_single_npc: |
-  입체적이고 매력적인 TRPG NPC를 생성하세요. 
-  진부한 설정보다는, 의외의 면모나 트라우마, 비밀을 포함하여 캐릭터를 입체적으로 만드세요.
+  Create an engaging and immersive TRPG NPC character. 
+  Go beyond basic stats - include unique appearance, personality traits, backstory elements, and secrets that make the character feel alive and memorable.
   {format_instructions}
 
 # 7. 씬 내용 자동 생성 (문맥 기반)
