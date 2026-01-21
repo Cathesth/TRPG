@@ -482,6 +482,7 @@ class ScenarioService:
 
 
             # [중요] @staticmethod와 def가 class ScenarioService: 보다 안쪽(들여쓰기 된 상태)이어야 합니다.
+
     @staticmethod
     def toggle_public(scenario_id: int, user_id: str):
         """시나리오 공개/비공개 토글 메서드"""
