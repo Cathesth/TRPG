@@ -764,17 +764,18 @@
                     sessionStorage.setItem('trpg_scenario_loaded', 'true');
 
                     // 2단계: 저장 완료 후 URL 파라미터에 session_id와 scenario_id를 포함하여 리다이렉트
+                    // [TUTORIAL] 플레이 버튼 클릭 시 'start_tutorial=true' 파라미터 추가
                     if (sessionId && scenarioId) {
                         console.log('🚀 [LOAD] Redirecting to player view with session_id:', sessionId, 'scenario_id:', scenarioId);
-                        window.location.href = `/views/player?session_id=${sessionId}&scenario_id=${scenarioId}`;
+                        window.location.href = `/views/player?session_id=${sessionId}&scenario_id=${scenarioId}&start_tutorial=true`;
                     } else if (sessionId) {
                         // scenario_id가 없는 경우 (하위 호환성)
                         console.warn('⚠️ [LOAD] No scenario_id received, redirecting with session_id only');
-                        window.location.href = `/views/player?session_id=${sessionId}`;
+                        window.location.href = `/views/player?session_id=${sessionId}&start_tutorial=true`;
                     } else {
                         // session_id가 없는 경우 폴백
                         console.warn('⚠️ [LOAD] No session_id received, redirecting without parameter');
-                        window.location.href = '/views/player';
+                        window.location.href = '/views/player?start_tutorial=true';
                     }
                 } else {
                     alert('로드 실패: ' + await res.text());

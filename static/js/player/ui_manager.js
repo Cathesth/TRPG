@@ -3,6 +3,10 @@
 // [헬퍼] 이미지 URL 변환 (백엔드 프록시 사용)
 function getImageUrl(url) {
     if (!url) return '';
+    // 이미 base64 데이터이거나, 이미 프록시 경로이거나, 정적 파일 경로인 경우 그대로 사용
+    if (url.startsWith('data:') || url.startsWith('/image/serve/') || url.startsWith('/static/')) {
+        return url;
+    }
     return `/image/serve/${encodeURIComponent(url)}`;
 }
 
