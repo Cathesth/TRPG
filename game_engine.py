@@ -124,7 +124,6 @@ class PlayerState(TypedDict):
     is_game_start: bool  # [추가] 게임 시작 여부 플래그
     target_npc: str  # [추가] 공격 대상 NPC 이름
     user_id: Optional[str]  # [추가] 토큰 과금을 위한 유저 ID
-    victory_immediate_log: Optional[str]  # [추가] 전투 승리 메시지 백업용
 
 
 def normalize_text(text: str) -> str:
@@ -926,66 +925,11 @@ def rule_node(state: PlayerState):
         logger.info(f"💾 [FINAL HP SYNC] Final Player HP sync before save: {world_state.player['hp']}")
         logger.info(f"💾 [DB PRE-SAVE] Final Player HP in state (rule_node): {state['player_vars']['hp']}")
 
-        # ========================================
-        # 🎯 [NEW] 전투 승리 시 자동 이동 로직 (내부 워프)
-        # ========================================
-        if npc_state_after and npc_state_after.get('status') == 'dead':
-            logger.info(f"🏆 [AUTO TRANSITION] Victory detected, checking for auto-transition...")
-
-            # 1. 현재 system_message를 백업
-            state['victory_immediate_log'] = state['system_message']
-            logger.info(f"💾 [VICTORY BACKUP] Saved combat result to victory_immediate_log")
-
-            # 2. 현재 씬의 transitions 확인 (엔딩 제외)
-            valid_transitions = []
-            for trans in transitions:
-                target_id = trans.get('target_scene_id')
-                if target_id and target_id not in all_endings:
-                    valid_transitions.append(trans)
-
-            # 3. 유효한 경로가 정확히 1개인 경우 자동 이동
-            if len(valid_transitions) == 1:
-                next_trans = valid_transitions[0]
-                next_scene_id = next_trans.get('target_scene_id')
-
-                logger.info(f"🚀 [AUTO TRANSITION] Single valid path found: {curr_scene_id} -> {next_scene_id}")
-
-                # 씬 이동 실행
-                state['current_scene_id'] = next_scene_id
-                world_state.location = next_scene_id
-
-                # parsed_intent를 transition으로 강제 설정
-                state['parsed_intent'] = 'transition'
-
-                # stuck_count 초기화 (이동 성공)
-                state['stuck_count'] = 0
-
-                # 내러티브 기록
-                trigger_name = next_trans.get('trigger', '전투 승리')
-                world_state.add_narrative_event(
-                    f"유저가 '{trigger_name}'을(를) 통해 [{curr_scene_id}]에서 [{next_scene_id}]로 이동함"
-                )
-
-                # 출력 필드 초기화 (새 장면 준비)
-                state['npc_output'] = ''
-                state['narrator_output'] = ''
-
-                logger.info(f"✅ [AUTO TRANSITION] Successfully moved to {next_scene_id}, intent set to 'transition'")
-            else:
-                # 경로가 0개 또는 2개 이상이면 자동 이동 안 함
-                logger.info(f"⏸️ [AUTO TRANSITION] Valid transitions: {len(valid_transitions)}, no auto-transition")
-
-                # 일반적인 stuck_count 증가
-                old_stuck_count = state.get('stuck_count', 0)
-                state['stuck_count'] = old_stuck_count + 1
-                world_state.stuck_count = state['stuck_count']
-                logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (attack intent)")
-        else:
-            # 전투 승리가 아닌 경우 기존 로직 유지
-            old_stuck_count = state.get('stuck_count', 0)
-            state['stuck_count'] = old_stuck_count + 1
-            world_state.stuck_count = state['stuck_count']
-            logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (attack intent)")
+        # ✅ 작업 1: attack 의도 시 stuck_count 증가 (장면 이동 없음)
+        old_stuck_count = state.get('stuck_count', 0)
+        state['stuck_count'] = old_stuck_count + 1
+        world_state.stuck_count = state['stuck_count']
+        logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (attack intent)")
 
         # (h) world_state 갱신
         state['world_state'] = world_state.to_dict()
@@ -1491,67 +1435,6 @@ def npc_node(state: PlayerState):
         state['player_vars']['hp'] = world_state.player["hp"]
         logger.info(f"💾 [FINAL HP SYNC] Final Player HP sync before save: {world_state.player['hp']}")
         logger.info(f"💾 [DB PRE-SAVE] Final Player HP in state (npc_node): {state['player_vars']['hp']}")
-
-        # ========================================
-        # 🎯 [NEW] 전투 승리 시 자동 이동 로직 (내부 워프)
-        # ========================================
-        if npc_state_after and npc_state_after.get('status') == 'dead':
-            logger.info(f"🏆 [AUTO TRANSITION] Victory detected, checking for auto-transition...")
-
-            # 1. 현재 system_message를 백업
-            state['victory_immediate_log'] = state['system_message']
-            logger.info(f"💾 [VICTORY BACKUP] Saved combat result to victory_immediate_log")
-
-            # 2. 현재 씬의 transitions 확인 (엔딩 제외)
-            valid_transitions = []
-            for trans in transitions:
-                target_id = trans.get('target_scene_id')
-                if target_id and target_id not in all_endings:
-                    valid_transitions.append(trans)
-
-            # 3. 유효한 경로가 정확히 1개인 경우 자동 이동
-            if len(valid_transitions) == 1:
-                next_trans = valid_transitions[0]
-                next_scene_id = next_trans.get('target_scene_id')
-
-                logger.info(f"🚀 [AUTO TRANSITION] Single valid path found: {curr_scene_id} -> {next_scene_id}")
-
-                # 씬 이동 실행
-                state['current_scene_id'] = next_scene_id
-                world_state.location = next_scene_id
-
-                # parsed_intent를 transition으로 강제 설정
-                state['parsed_intent'] = 'transition'
-
-                # stuck_count 초기화 (이동 성공)
-                state['stuck_count'] = 0
-
-                # 내러티브 기록
-                trigger_name = next_trans.get('trigger', '전투 승리')
-                world_state.add_narrative_event(
-                    f"유저가 '{trigger_name}'을(를) 통해 [{curr_scene_id}]에서 [{next_scene_id}]로 이동함"
-                )
-
-                # 출력 필드 초기화 (새 장면 준비)
-                state['npc_output'] = ''
-                state['narrator_output'] = ''
-
-                logger.info(f"✅ [AUTO TRANSITION] Successfully moved to {next_scene_id}, intent set to 'transition'")
-            else:
-                # 경로가 0개 또는 2개 이상이면 자동 이동 안 함
-                logger.info(f"⏸️ [AUTO TRANSITION] Valid transitions: {len(valid_transitions)}, no auto-transition")
-
-                # 일반적인 stuck_count 증가
-                old_stuck_count = state.get('stuck_count', 0)
-                state['stuck_count'] = old_stuck_count + 1
-                world_state.stuck_count = state['stuck_count']
-                logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (attack intent)")
-        else:
-            # 전투 승리가 아닌 경우 기존 로직 유지
-            old_stuck_count = state.get('stuck_count', 0)
-            state['stuck_count'] = old_stuck_count + 1
-            world_state.stuck_count = state['stuck_count']
-            logger.info(f"📈 [PROGRESS] stuck_count increased: {old_stuck_count} -> {state['stuck_count']} (attack intent)")
 
         # (h) world_state 갱신
         state['world_state'] = world_state.to_dict()
@@ -2100,24 +1983,6 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     [MODE 1] 씬 유지 + 의도별 분기 (investigate/attack/defend/chat/near_miss)
     [MODE 2] 씬 변경 -> 장면 묘사
     """
-    # ========================================
-    # 🎯 [NEW] 전투 승리 메시지 우선 출력 (순차 스트리밍)
-    # ========================================
-    victory_log = state.get('victory_immediate_log')
-    if victory_log:
-        logger.info(f"🏆 [VICTORY OUTPUT] Yielding combat result first: {victory_log[:50]}...")
-        # 1. 전투 결과 메시지를 먼저 출력
-        yield victory_log
-
-        # 2. 백업 데이터 초기화
-        state['victory_immediate_log'] = None
-
-        # 3. 유저 인풋 메시지는 출력하지 않음 (프론트엔드에 "Player: 이동" 노출 방지)
-        logger.info(f"🚫 [VICTORY OUTPUT] Skipping user input echo to prevent 'Player: 이동' message")
-
-        # 4. 다음 장면 묘사로 바로 진행 (아래 MODE 2 로직이 실행됨)
-        logger.info(f"🎬 [VICTORY OUTPUT] Proceeding to next scene description...")
-
     # [NEW] user_id 추출 (함수 인자 또는 state에서)
     if not user_id:
         user_id = state.get('user_id')
@@ -2200,8 +2065,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     # =============================================================================
     # [MODE 1] 씬 유지됨 -> 의도(parsed_intent)에 따른 전용 서사 프롬프트 선택
     # =============================================================================
-    # 🎯 [수정] victory_log가 있었다면 씬이 변경된 것이므로 MODE 1 스킵
-    if prev_id == curr_id and user_input and not victory_log:
+    if prev_id == curr_id and user_input:
         prompts = load_player_prompts()
         weakness_hint = get_npc_weakness_hint(scenario, enemy_names) or "주변을 살펴보니 활용할 수 있는 것이 보입니다."
 
