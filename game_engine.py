@@ -2223,7 +2223,13 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     # ========================================
     # 현재 씬 정보 추출 (scene_title, scene_type, npc_names, enemy_names)
     # ========================================
-    curr_scene = all_scenes.get(curr_id) if curr_id not in all_endings else None
+    
+    # [FIX] 엔딩 씬을 포함하여 현재 씬 정보 가져오기
+    if curr_id in all_endings:
+        curr_scene = all_endings[curr_id]
+        logger.info(f"🏁 [SCENE INFO] Ending Scene detected: {curr_id}")
+    else:
+        curr_scene = all_scenes.get(curr_id)
     scene_title = ""
     scene_type = "normal"
     npc_names = []
@@ -2531,7 +2537,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     # [NEW] 배경 이미지 출력 (MinIO)
     # [NEW] 배경 이미지 출력 (MinIO)
     if curr_scene:
-        background_image = curr_scene.get('background_image', '')
+        background_image = curr_scene.get('background_image') or curr_scene.get('image', '')
         
         # [FALLBACK] curr_scene에 이미지가 없으면 raw_graph의 nodes에서 검색
         if not background_image and 'raw_graph' in scenario and 'nodes' in scenario['raw_graph']:

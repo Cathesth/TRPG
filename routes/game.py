@@ -91,7 +91,7 @@ def enrich_inventory(player_vars: dict, scenario: dict) -> dict:
     if scenario and 'items' in scenario:
         for item in scenario['items']:
              if isinstance(item, dict) and 'name' in item:
-                 scenario_items[item['name']] = item
+                 scenario_items[item['name'].strip()] = item
 
     enriched_inventory = []
     for item in inventory:
@@ -100,7 +100,7 @@ def enrich_inventory(player_vars: dict, scenario: dict) -> dict:
             enriched_inventory.append(item)
             continue
             
-        item_name = str(item)
+        item_name = str(item).strip()
         item_data = {'name': item_name}
         
         # 상세 정보 병합
@@ -709,8 +709,16 @@ async def game_act_stream(
                 for scene in scenario.get('scenes', []):
                     if scene.get('scene_id') == current_loc:
                         # background_image가 우선, 없으면 image_prompt 사용
-                        bg_image_url = scene.get('background_image', '') or scene.get('image_prompt', '')
+                        bg_image_url = scene.get('background_image') or scene.get('image_prompt', '') or scene.get('image', '')
+                        scene_found = True
                         break
+
+                # 2. endings 검색 (scenes에서 못 찾았을 경우)
+                if not scene_found:
+                    for ending in scenario.get('endings', []):
+                        if ending.get('ending_id') == current_loc:
+                            bg_image_url = ending.get('background_image') or ending.get('image', '')
+                            break
 
                 # 배경 이미지가 있으면 클라이언트로 전송
                 if bg_image_url:
