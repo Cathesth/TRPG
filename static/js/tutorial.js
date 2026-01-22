@@ -153,131 +153,116 @@ const TutorialSystem = (function () {
         start(mode, true);
     }
 
-    function showStep(stepIndex) {
+    async function showStep(stepIndex, retryCount = 0) {
         if (stepIndex >= tutorialSteps.length) {
             end();
             return;
         }
 
         const step = tutorialSteps[stepIndex];
-        const target = document.querySelector(step.target);
+        let target = document.querySelector(step.target);
+
+        // [안전성] 타겟 요소가 렌더링될 때까지 잠시 대기 (최대 2.5초)
+        // 타겟을 못 찾아도 바로 포기하지 않고 재시도
+        if (!target && retryCount < 5) {
+            setTimeout(() => showStep(stepIndex, retryCount + 1), 500);
+            return;
+        }
 
         // 하이라이트 초기화
         if (currentHighlightElement) {
             currentHighlightElement.style.zIndex = '';
             currentHighlightElement.style.position = '';
-            currentHighlightElement.style.boxShadow = ''; // 효과 제거
-            currentHighlightElement.style.outline = '';   // 아웃라인 제거
+            currentHighlightElement.style.boxShadow = '';
+            currentHighlightElement.style.outline = '';
+            currentHighlightElement.style.borderRadius = '';
             currentHighlightElement.classList.remove('tutorial-highlight');
+            currentHighlightElement = null;
         }
 
+        // 툴팁 내용 설정
+        tooltipElement.innerHTML = `
+            <div style="margin-bottom: 10px; line-height: 1.4;">
+                <span style="color: #00FFFF; font-weight: bold;">[STEP ${stepIndex + 1}/${tutorialSteps.length}]</span><br>
+                ${step.text}
+            </div>
+            <div style="text-align: right;">
+                <button id="tutorial-next-btn" style="
+                    background: #00FFFF; color: #000; border: none; padding: 5px 10px; 
+                    font-family: inherit; font-weight: bold; cursor: pointer; 
+                    border: 2px solid #fff;">
+                    ${stepIndex === tutorialSteps.length - 1 ? '완료' : '다음'}
+                </button>
+                ${stepIndex < tutorialSteps.length - 1 ?
+                '<button id="tutorial-skip-btn" style="background:transparent; color:#888; border:none; margin-right:10px; cursor:pointer;">건너뛰기</button>' : ''}
+            </div>
+        `;
+
         if (target) {
-            // 요소 하이라이트
-            target.style.position = 'relative'; // z-index 적용을 위해 relative 필요
+            // [정상] 타겟이 있으면 해당 위치에 표시 및 하이라이트
+            tooltipElement.style.transform = 'none'; // 중앙 정렬 해제
+
+            target.style.position = 'relative';
             const computedStyle = window.getComputedStyle(target);
-            if (computedStyle.position === 'static') {
-                target.style.position = 'relative';
-            }
+            if (computedStyle.position === 'static') target.style.position = 'relative';
             target.style.zIndex = '9999';
 
-            // [VISUAL] 시각적 강조 효과 추가 (색 대비, 글로우)
-            // 배경 오버레이가 있으므로 과도한 그림자 대신 글로우와 테두리로 강조
+            // 시각적 강조
             target.style.boxShadow = '0 0 30px rgba(0, 255, 255, 0.6)';
             target.style.outline = '3px solid #00FFFF';
-            target.style.borderRadius = '4px'; // 약간의 둥글기 추가
+            target.style.borderRadius = '4px';
 
             target.classList.add('tutorial-highlight');
             currentHighlightElement = target;
 
-            // 툴팁 위치 계산 (최적화)
+            // 위치 계산
             const rect = target.getBoundingClientRect();
             let top, left;
 
-            tooltipElement.innerHTML = `
-                <div style="margin-bottom: 10px; line-height: 1.4;">
-                    <span style="color: #00FFFF; font-weight: bold;">[STEP ${stepIndex + 1}/${tutorialSteps.length}]</span><br>
-                    ${step.text}
-                </div>
-                <div style="text-align: right;">
-                    <button id="tutorial-next-btn" style="
-                        background: #00FFFF; 
-                        color: #000; 
-                        border: none; 
-                        padding: 5px 10px; 
-                        font-family: inherit; 
-                        font-weight: bold; 
-                        cursor: pointer;
-                        border: 2px solid #fff;
-                    ">${stepIndex === tutorialSteps.length - 1 ? '완료' : '다음'}</button>
-                    ${stepIndex < tutorialSteps.length - 1 ? '<button id="tutorial-skip-btn" style="background:transparent; color:#888; border:none; margin-right:10px; cursor:pointer;">건너뛰기</button>' : ''}
-                </div>
-            `;
+            if (step.position === 'bottom') { top = rect.bottom + 10; left = rect.left + (rect.width / 2) - 150; }
+            else if (step.position === 'top') { top = rect.top - 100; left = rect.left + (rect.width / 2) - 150; }
+            else if (step.position === 'left') { top = rect.top; left = rect.left - 320; }
+            else if (step.position === 'right') { top = rect.top; left = rect.right + 10; }
+            else { top = rect.bottom + 10; left = rect.left; } // Default
 
-            tooltipElement.style.display = 'block';
-
-            // 위치 계산 로직 유지
-            if (step.position === 'bottom') {
-                top = rect.bottom + 10;
-                left = rect.left + (rect.width / 2) - 150;
-            } else if (step.position === 'top') {
-                top = rect.top - 100; // 예상 높이 감안
-                left = rect.left + (rect.width / 2) - 150;
-            } else if (step.position === 'left') {
-                top = rect.top;
-                left = rect.left - 320;
-            } else if (step.position === 'right') {
-                top = rect.top;
-                left = rect.right + 10;
-            }
-
-            // 화면 밖으로 나가지 않게 보정
+            // 화면 보정
             if (left < 10) left = 10;
             if (left + 300 > window.innerWidth) left = window.innerWidth - 320;
             if (top < 10) top = 10;
 
-            // [UI 개선] 하단 여백을 더 확보하여 툴팁이 잘리지 않게 조정 (기존 120 -> 200)
-            // 또한 툴팁 높이가 동적이므로 offsetHeight를 사용해 정확히 계산
-            const tooltipHeight = tooltipElement.offsetHeight || 150; // 렌더링 직후라 정확하지 않을 수 있어 기본값 설정
+            const tooltipHeight = tooltipElement.offsetHeight || 150;
             if (top + tooltipHeight > window.innerHeight) {
                 top = window.innerHeight - tooltipHeight - 20;
-                // 만약 그래도 위에 공간이 부족하면 요소 위로 강제 이동 시도
-                if (top < 10 && rect.top > tooltipHeight + 20) {
-                    top = rect.top - tooltipHeight - 10;
-                }
+                if (top < 10 && rect.top > tooltipHeight + 20) top = rect.top - tooltipHeight - 10;
             }
 
             tooltipElement.style.top = `${top}px`;
             tooltipElement.style.left = `${left}px`;
-
-            // 버튼 이벤트 연결 (확실한 클릭 처리를 위해 addEventListener 사용 및 전파 방지)
-            setTimeout(() => {
-                const nextBtn = document.getElementById('tutorial-next-btn');
-                if (nextBtn) {
-                    nextBtn.onclick = null; // 기존 핸들러 제거
-                    nextBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        nextStep();
-                    });
-                    nextBtn.style.pointerEvents = 'auto'; // 클릭 보장
-                }
-
-                const skipBtn = document.getElementById('tutorial-skip-btn');
-                if (skipBtn) {
-                    skipBtn.onclick = null;
-                    skipBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        end();
-                    });
-                    skipBtn.style.pointerEvents = 'auto';
-                }
-            }, 0); // DOM 렌더링 직후 실행 보장
-
         } else {
-            console.warn(`Target ${step.target} not found, skipping step.`);
-            nextStep();
+            // [Fallback] 타겟이 없으면 화면 중앙에 표시 (적어도 튜토리얼 내용은 보이게)
+            console.warn(`Target ${step.target} not found. Showing centered tooltip.`);
+            tooltipElement.style.top = '50%';
+            tooltipElement.style.left = '50%';
+            tooltipElement.style.transform = 'translate(-50%, -50%)';
         }
+
+        tooltipElement.style.display = 'block';
+        tooltipElement.style.zIndex = '2147483647';
+        overlayElement.style.display = 'block'; // 오버레이 확실히 켜기
+
+        // 버튼 이벤트 연결 (DOM 렌더링 후)
+        setTimeout(() => {
+            const nextBtn = document.getElementById('tutorial-next-btn');
+            if (nextBtn) {
+                nextBtn.onclick = null;
+                nextBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); nextStep(); });
+            }
+            const skipBtn = document.getElementById('tutorial-skip-btn');
+            if (skipBtn) {
+                skipBtn.onclick = null;
+                skipBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); end(); });
+            }
+        }, 50);
     }
 
     function nextStep() {
@@ -292,11 +277,14 @@ const TutorialSystem = (function () {
 
         if (currentHighlightElement) {
             currentHighlightElement.style.zIndex = '';
+            currentHighlightElement.style.position = '';
+            currentHighlightElement.style.boxShadow = '';
+            currentHighlightElement.style.outline = '';
+            currentHighlightElement.style.borderRadius = '';
             currentHighlightElement.classList.remove('tutorial-highlight');
             currentHighlightElement = null;
         }
 
-        // 완료 시 로컬 스토리지 및 서버에 저장
         if (currentMode) {
             localStorage.setItem(`trpg_tutorial_completed_${currentMode}`, 'true');
 
@@ -329,15 +317,21 @@ const TutorialSystem = (function () {
     };
 })();
 
-// 자동 초기화
-document.addEventListener('DOMContentLoaded', () => {
-    if (window.TutorialSystem) {
-        window.TutorialSystem.init();
-    }
-});
-
-// 페이지 로드 시 초기화
-document.addEventListener('DOMContentLoaded', () => {
-    TutorialSystem.init();
+// 안전한 초기화 및 전역 할당
+(function initializeTutorial() {
+    // 전역 객체에 할당
     window.TutorialSystem = TutorialSystem;
-});
+
+    // 초기화 함수 실행
+    const init = () => {
+        if (window.TutorialSystem && window.TutorialSystem.init) {
+            window.TutorialSystem.init();
+        }
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
