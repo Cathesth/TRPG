@@ -315,19 +315,52 @@ async def proxy_trpg_assets(file_path: str):
     bucket_name = s3.bucket 
     
     try:
+        # [FIX] URL 디코딩
+        import urllib.parse
+        decoded_path = urllib.parse.unquote(file_path)
+        
         async with s3._session.client(
                 's3',
                 endpoint_url=s3.endpoint,
                 region_name=s3.region,
                 use_ssl=s3.use_ssl
         ) as client:
+            # 1. 원본 키로 시도
             try:
-                response = await client.get_object(Bucket=bucket_name, Key=file_path)
+                response = await client.get_object(Bucket=bucket_name, Key=decoded_path)
                 content = await response['Body'].read()
                 return Response(content=content, media_type=response.get('ContentType', 'image/png'))
             except client.exceptions.NoSuchKey:
-                logger.warning(f"⚠️ [Proxy] S3 Key Not Found: {file_path}")
-                return Response(status_code=404)
+                # 2. 소문자로 변환하여 시도 (Linux FS 대응)
+                try:
+                    lower_key = decoded_path.lower()
+                    if lower_key == decoded_path: raise Exception("Same key") # 이미 소문자면 패스
+                    logger.info(f"⚠️ [Proxy] Retrying with lowercase key: {lower_key}")
+                    response = await client.get_object(Bucket=bucket_name, Key=lower_key)
+                    content = await response['Body'].read()
+                    return Response(content=content, media_type=response.get('ContentType', 'image/png'))
+                except:
+                    # 3. 대문자로 시작하는 파일명 시도 (G-72.png) - 경로의 마지막 부분만 대문자화
+                    try:
+                        parts = decoded_path.split('/')
+                        filename = parts[-1]
+                        if filename:
+                            # 첫 글자만 대문자로 (S3 업로드 시 자동 변경 가능성)
+                            capitalized_filename = filename[0].upper() + filename[1:]
+                            parts[-1] = capitalized_filename
+                            cap_key = '/'.join(parts)
+                            
+                            if cap_key == decoded_path: raise Exception("Same key")
+                            
+                            logger.info(f"⚠️ [Proxy] Retrying with capitalized key: {cap_key}")
+                            response = await client.get_object(Bucket=bucket_name, Key=cap_key)
+                            content = await response['Body'].read()
+                            return Response(content=content, media_type=response.get('ContentType', 'image/png'))
+                    except:
+                        pass
+                        
+                    logger.warning(f"⚠️ [Proxy] S3 Key Not Found (All attempts failed): {decoded_path}")
+                    return Response(status_code=404)
             except Exception as e:
                 logger.error(f"❌ [Proxy] S3 Error: {str(e)}")
                 return Response(status_code=500)

@@ -2495,25 +2495,30 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
     # [MODE 2] 씬 변경됨 -> 장면 묘사
     # =============================================================================
+    
+    # [FLICKER FIX] 배경과 NPC 등장을 하나의 HTML 덩어리로 묶어서 전송
+    prefix_html_buffer = ""
+
     # [NEW] 배경 이미지 출력 (MinIO)
     if curr_scene:
         background_image = curr_scene.get('background_image', '')
         if background_image:
             minio_bg_url = get_minio_url('backgrounds', background_image)
-            # [FIX] HTML 구조 개선 (요청 사항 반영) - onerror 제거 및 스타일 보완
-            # [FLICKER FIX] 프리픽스 마커 추가
-            yield f"""__PREFIX_START__
+            prefix_html_buffer += f"""
             <div class="scene-background mb-4 rounded-lg overflow-hidden border border-gray-700 shadow-lg relative bg-gray-900" style="min-height: 12rem;">
                 <img src="{minio_bg_url}" alt="background" class="w-full h-48 object-cover object-center scale-in block" style="display: block;">
             </div>
-            __PREFIX_END__"""
+            """
 
     scene_desc = curr_scene.get('description', '')  # <--- scene_desc 변수 선언 추가
 
     npc_intro = check_npc_appearance(state)
     if npc_intro: 
-        # [FLICKER FIX] 프리픽스 마커 추가
-        yield f"__PREFIX_START__{npc_intro}__PREFIX_END__"
+        prefix_html_buffer += npc_intro
+
+    # 버퍼에 내용이 있으면 한 번에 전송
+    if prefix_html_buffer:
+        yield f"__PREFIX_START__{prefix_html_buffer}__PREFIX_END__"
 
     # YAML에서 씬 묘사 프롬프트 로드
     npc_list = ', '.join(npc_names) if npc_names else '없음'
