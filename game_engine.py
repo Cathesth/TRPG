@@ -27,9 +27,22 @@ def get_minio_url(category: str, filename: str) -> str:
     if not filename:
         return ""
 
-    minio_endpoint = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+    minio_endpoint = os.getenv("MINIO_ENDPOINT")
     minio_bucket = os.getenv("MINIO_BUCKET", "trpg-assets")
     minio_use_ssl = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
+
+    # [SAFETY] MINIO_ENDPOINT가 없거나 내부용(internal/localhost)인 경우 Railway Public Domain 확인
+    if not minio_endpoint or "internal" in minio_endpoint or "localhost" in minio_endpoint:
+        railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        if railway_domain:
+            minio_endpoint = railway_domain
+            # Railway Public Domain은 HTTPS 기본
+            minio_use_ssl = True
+            logger.info(f"🔧 [MINIO] Used RAILWAY_PUBLIC_DOMAIN fallback: {minio_endpoint}")
+
+    # 여전히 없으면 기본값
+    if not minio_endpoint:
+        minio_endpoint = "localhost:9000"
 
     protocol = "https" if minio_use_ssl else "http"
 
@@ -1918,7 +1931,9 @@ def check_npc_appearance(state: PlayerState) -> str:
                     npc_action = llm.invoke(npc_prompt).content.strip()
                     intro_html = f"""
                     <div class='npc-intro flex items-center gap-3 my-2 p-3 bg-green-900/20 rounded border-l-2 border-green-500'>
-                        <img src="{minio_npc_url}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-green-500/50 object-cover" onerror="this.style.display='none'">
+                        <div class="relative w-12 h-12 flex-shrink-0">
+                            <img src="{minio_npc_url}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-green-500/50 object-cover block" alt="{real_npc_name}">
+                        </div>
                         <span class="text-green-300 italic">👀 {npc_action}</span>
                     </div>
                     """
@@ -1927,7 +1942,9 @@ def check_npc_appearance(state: PlayerState) -> str:
                     logger.error(f"NPC appearance generation error: {e}")
                     intro_html = f"""
                     <div class='npc-intro flex items-center gap-3 my-2 p-3 bg-green-900/20 rounded border-l-2 border-green-500'>
-                        <img src="{minio_npc_url}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-green-500/50 object-cover" onerror="this.style.display='none'">
+                        <div class="relative w-12 h-12 flex-shrink-0">
+                            <img src="{minio_npc_url}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-green-500/50 object-cover block" alt="{real_npc_name}">
+                        </div>
                         <div class="text-green-300 italic">
                             👀 <span class='font-bold'>{real_npc_name}</span>이(가) 당신을 바라봅니다.
                         </div>
@@ -1937,7 +1954,9 @@ def check_npc_appearance(state: PlayerState) -> str:
             else:
                 intro_html = f"""
                 <div class='npc-intro flex items-center gap-3 my-2 p-3 bg-green-900/20 rounded border-l-2 border-green-500'>
-                    <img src="{minio_npc_url}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-green-500/50 object-cover" onerror="this.style.display='none'">
+                    <div class="relative w-12 h-12 flex-shrink-0">
+                        <img src="{minio_npc_url}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-green-500/50 object-cover block" alt="{real_npc_name}">
+                    </div>
                     <div class="text-green-300 italic">
                         👀 <span class='font-bold'>{real_npc_name}</span>이(가) 당신을 바라봅니다.
                     </div>
@@ -1972,7 +1991,9 @@ def check_npc_appearance(state: PlayerState) -> str:
                     enemy_action = llm.invoke(enemy_prompt).content.strip()
                     intro_html = f"""
                     <div class='enemy-intro flex items-center gap-3 my-2 p-3 bg-red-900/30 rounded border-l-2 border-red-500'>
-                        <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover" onerror="this.style.display='none'">
+                        <div class="relative w-12 h-12 flex-shrink-0">
+                            <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover block" alt="{real_enemy_name}">
+                        </div>
                         <span class="text-red-400 font-bold">⚔️ {enemy_action}</span>
                     </div>
                     """
@@ -1980,8 +2001,11 @@ def check_npc_appearance(state: PlayerState) -> str:
                 except Exception as e:
                     logger.error(f"Enemy appearance generation error: {e}")
                     intro_html = f"""
+                    intro_html = f"""
                     <div class='enemy-intro flex items-center gap-3 my-2 p-3 bg-red-900/30 rounded border-l-2 border-red-500'>
-                        <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover" onerror="this.style.display='none'">
+                        <div class="relative w-12 h-12 flex-shrink-0">
+                            <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover block" alt="{real_enemy_name}">
+                        </div>
                         <div class="text-red-400 font-bold">
                             ⚔️ <span class='font-bold'>{real_enemy_name}</span>이(가) 나타났습니다!
                         </div>
@@ -1990,8 +2014,11 @@ def check_npc_appearance(state: PlayerState) -> str:
                     introductions.append(intro_html)
             else:
                 intro_html = f"""
+                intro_html = f"""
                 <div class='enemy-intro flex items-center gap-3 my-2 p-3 bg-red-900/30 rounded border-l-2 border-red-500'>
-                    <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover" onerror="this.style.display='none'">
+                    <div class="relative w-12 h-12 flex-shrink-0">
+                        <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover block" alt="{real_enemy_name}">
+                    </div>
                     <div class="text-red-400 font-bold">
                         ⚔️ <span class='font-bold'>{real_enemy_name}</span>이(가) 나타났습니다!
                     </div>
@@ -2467,9 +2494,10 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         if background_image:
             minio_bg_url = get_minio_url('backgrounds', background_image)
             # [FIX] HTML 구조 개선 (요청 사항 반영)
+            # [FIX] HTML 구조 개선 (요청 사항 반영) - onerror 제거 및 스타일 보완
             yield f"""
-            <div class="scene-background mb-4 rounded-lg overflow-hidden border border-gray-700 shadow-lg">
-                <img src="{minio_bg_url}" alt="background" class="w-full h-48 object-cover object-center scale-in" onerror="this.style.display='none'">
+            <div class="scene-background mb-4 rounded-lg overflow-hidden border border-gray-700 shadow-lg relative bg-gray-900" style="min-height: 12rem;">
+                <img src="{minio_bg_url}" alt="background" class="w-full h-48 object-cover object-center scale-in block" style="display: block;">
             </div>
             """
 
