@@ -339,6 +339,9 @@ def create_tables():
                 # [NEW] scenarios 테이블에 is_recommended 추가
                 conn.execute(text("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS is_recommended BOOLEAN DEFAULT FALSE"))
 
+                # ▼▼▼ [추가] view_count 컬럼 자동 추가 (마이그레이션) ▼▼▼
+                conn.execute(text("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0"))
+
                 conn.commit()
                 logger.info("✅ Checked/Added 'avatar_url', 'email', 'token_balance' columns to 'users' table.")
             except Exception as ex:
