@@ -621,53 +621,41 @@
                             </button>
                         </div>
 
-                        <!-- 디버그 정보 영역 -->
-                        <div id="debug-info-area" class="hidden mt-4 space-y-4">
-                            <!-- 전체 씬 보기 버튼 -->
-                            <div class="border-t-4 border-rpg-700 pt-4">
-                                <button onclick="openDebugScenesView()"
-                                    class="w-full bg-gradient-to-r from-pink-900/80 to-purple-900/80 hover:from-pink-800 hover:to-purple-800 text-white py-3 rounded-none pixel-border-accent flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-lg hover:shadow-pink-500/20 font-dot">
-                                    <i data-lucide="git-merge" class="w-5 h-5"></i>
-                                    <span>전체 씬 보기</span>
-                                </button>
+                        <!-- 세션 ID 표시 -->
+                        <div class="bg-rpg-900/50 rounded-none p-2 pixel-border">
+                            <div class="text-gray-500 text-[10px] mb-1 flex items-center gap-1 font-pixel">
+                                <i data-lucide="key" class="w-3 h-3"></i>
+                                Session ID
                             </div>
-
-                            <!-- 세션 ID 표시 -->
-                            <div class="bg-rpg-900/50 rounded-none p-2 pixel-border">
-                                <div class="text-gray-500 text-[10px] mb-1 flex items-center gap-1 font-pixel">
-                                    <i data-lucide="key" class="w-3 h-3"></i>
-                                    Session ID
-                                </div>
-                                <div id="session-id-display" class="text-gray-300 text-xs font-mono break-all font-dot">
-                                    세션 없음
-                                </div>
+                            <div id="session-id-display" class="text-gray-300 text-xs font-mono break-all font-dot">
+                                세션 없음
                             </div>
+                        </div>
 
-                            <!-- NPC 상태 -->
-                            <div class="border-t-4 border-rpg-700 pt-4">
-                                <h4 class="text-gray-400 font-bold text-sm mb-3 flex items-center gap-2 font-pixel">
-                                    <i data-lucide="users" class="w-4 h-4"></i>
-                                    NPC STATUS
-                                </h4>
-                                <div id="npc-status-area" class="space-y-2">
-                                    <div
-                                        class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
-                                        NPC 데이터 없음
-                                    </div>
+                        <!-- NPC 상태 -->
+                        <div class="border-t-4 border-rpg-700 pt-4">
+                            <h4 class="text-gray-400 font-bold text-sm mb-3 flex items-center gap-2 font-pixel">
+                                <i data-lucide="users" class="w-4 h-4"></i>
+                                NPC STATUS
+                            </h4>
+                            <div id="npc-status-area" class="space-y-2">
+                                <div
+                                    class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
+                                    NPC 데이터 없음
                                 </div>
                             </div>
+                        </div>
 
-                            <!-- World State Manager -->
-                            <div class="border-t-4 border-rpg-700 pt-4 mb-10">
-                                <h4 class="text-gray-400 font-bold text-sm mb-3 flex items-center gap-2 font-pixel">
-                                    <i data-lucide="globe" class="w-4 h-4"></i>
-                                    WORLD STATE
-                                </h4>
-                                <div id="world-state-area" class="text-xs">
-                                    <div
-                                        class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
-                                        World State 데이터 없음
-                                    </div>
+                        <!-- World State Manager -->
+                        <div class="border-t-4 border-rpg-700 pt-4 mb-10">
+                            <h4 class="text-gray-400 font-bold text-sm mb-3 flex items-center gap-2 font-pixel">
+                                <i data-lucide="globe" class="w-4 h-4"></i>
+                                WORLD STATE
+                            </h4>
+                            <div id="world-state-area" class="text-xs">
+                                <div
+                                    class="text-gray-500 text-xs text-center py-2 bg-rpg-900/50 rounded-none pixel-border font-dot">
+                                    World State 데이터 없음
                                 </div>
                             </div>
                         </div>
