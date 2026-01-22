@@ -1007,6 +1007,14 @@
                         }
                     }
 
+                    // ▼▼▼ [추가] 좋아요 숫자 즉시 업데이트 ▼▼▼
+                    if (data.count !== undefined) {
+                        const countSpan = document.getElementById(`like-count-${scenarioId}`);
+                        if (countSpan) {
+                            countSpan.innerText = data.count;
+                        }
+                    }
+
                     // 2. 이벤트 발생 및 아이콘 갱신
                     document.body.dispatchEvent(new Event('refresh_likes'));
                     // lucide.createIcons(); // 이미 svg로 변환된 상태면 굳이 호출 안 해도 됨

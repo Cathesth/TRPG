@@ -19,6 +19,8 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from sqlalchemy import func, or_
+
 from starlette.concurrency import run_in_threadpool
 
 # 빌더 에이전트 및 코어 유틸리티
@@ -1085,6 +1087,29 @@ def list_scenarios(
         is_new = (current_ts - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
+        # ▼▼▼ [수정 코드] 좋아요/조회수 계산 로직 추가 ▼▼▼
+        # [수정 완료] ScenarioLike.scenario_id 컬럼을 기준으로 개수를 셉니다.
+        like_count = db.query(func.count(ScenarioLike.scenario_id)).filter(ScenarioLike.scenario_id == s.id).scalar()
+
+
+        # [수정] view_count 속성이 DB 모델에 없으면 기본값 0을 사용 (에러 방지)
+        # 기존: view_count = s.view_count if s.view_count else 0
+        view_count = getattr(s, 'view_count', 0)
+        if view_count is None: view_count = 0
+
+        # 숫자 포맷팅 (예: 1000 -> 1k) - 필요시 사용, 여기선 간단히 처리
+        stats_badge_html = f"""
+                <div class="flex items-center gap-2 mb-2 text-[10px] font-bold text-gray-400">
+                    <span class="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/5">
+                        <i data-lucide="heart" class="w-3 h-3 text-red-500 fill-current"></i> 
+                        <span id="like-count-{s.id}">{like_count}</span>
+                    </span>
+                    <span class="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/5">
+                        <i data-lucide="eye" class="w-3 h-3 text-rpg-accent"></i> {view_count}
+                    </span>
+                </div>
+                """
+
         # [수정 포인트 1] 잠금 버튼 HTML 생성 (마이페이지에서만 보임)
         lock_btn_html = ""
         # "토글버튼은 마이페이지 에만 볼 수 있게" 요청 반영 (filter == 'my' 체크)
@@ -1149,6 +1174,8 @@ def list_scenarios(
             </div>
             <div class="{content_padding} flex-1 flex flex-col justify-between">
                 <div>
+                
+                    {stats_badge_html}
                     <div class="flex justify-between items-start mb-1">
                         <h3 class="text-base font-bold text-white tracking-wide truncate w-full group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
                     </div>
@@ -1191,7 +1218,11 @@ def toggle_like(
         liked = True
 
     db.commit()
-    return {"success": True, "liked": liked}
+    # ▼▼▼ [추가] 최신 좋아요 개수 집계 ▼▼▼
+    new_count = db.query(func.count(ScenarioLike.scenario_id)).filter(ScenarioLike.scenario_id == scenario_id).scalar()
+
+    # 응답에 count 포함
+    return {"success": True, "liked": liked, "count": new_count}
 
 
 @api_router.get('/scenarios/data')
@@ -1221,6 +1252,21 @@ async def load_scenario(
         return JSONResponse({"error": error}, status_code=400)
 
     scenario = result['scenario']
+
+    # [수정] 안전한 조회수 증가 로직 (컬럼이 없으면 pass)
+    try:
+        # DB 세션 내의 객체를 확실하게 가져옴
+        db_scenario = db.query(Scenario).filter(Scenario.id == scenario.get('id')).first()
+
+        if db_scenario:
+            # hasattr로 컬럼 존재 여부 확인 후 증가
+            if hasattr(db_scenario, 'view_count'):
+                current_views = db_scenario.view_count if db_scenario.view_count else 0
+                db_scenario.view_count = current_views + 1
+                db.commit()
+    except Exception as e:
+        logger.error(f"View count update failed: {e}")
+
     start_id = pick_start_scene_id(scenario)
 
     new_session_key = str(uuid.uuid4())

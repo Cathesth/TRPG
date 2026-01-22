@@ -111,6 +111,8 @@ class Scenario(Base):
     filename = Column(String(100), unique=True, index=True)  # UUID
     title = Column(String(100), nullable=False, index=True)
     author_id = Column(String(50), ForeignKey('users.id'), nullable=True)
+    # [추가] 조회수 컬럼 정의
+    view_count = Column(Integer, default=0)
 
     # 시나리오 전체 데이터 (scenes, endings, variables 등 구조화된 JSON)
     data = Column(JSON_TYPE, nullable=False)
@@ -336,6 +338,9 @@ def create_tables():
 
                 # [NEW] scenarios 테이블에 is_recommended 추가
                 conn.execute(text("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS is_recommended BOOLEAN DEFAULT FALSE"))
+
+                # ▼▼▼ [추가] view_count 컬럼 자동 추가 (마이그레이션) ▼▼▼
+                conn.execute(text("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0"))
 
                 conn.commit()
                 logger.info("✅ Checked/Added 'avatar_url', 'email', 'token_balance' columns to 'users' table.")
