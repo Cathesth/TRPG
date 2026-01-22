@@ -163,8 +163,12 @@ function openDebugScenesView() {
     isInternalNavigation = true;
     sessionStorage.setItem(NAVIGATION_FLAG_KEY, 'true');
 
-    // 시나리오 ID를 쿼리 파라미터로 전달
-    window.location.href = `/views/debug_scenes?scenario_id=${currentScenarioId}`;
+    // ✅ [FIX] 디버그 페이지로 이동 시 세션 ID와 시나리오 ID를 쿼리 파라미터로 명시적 전달
+    // sessionStorage에 의존하면 가끔 타이밍 이슈가 발생하므로 URL 파라미터가 가장 확실함
+    const targetUrl = `/views/debug_scenes?scenario_id=${currentScenarioId}&session_id=${currentSessionId}`;
+    console.log('🔗 [Navigation] Redirecting to:', targetUrl);
+
+    window.location.href = targetUrl;
 }
 
 // NPC 상태 업데이트 함수
@@ -228,12 +232,12 @@ function updateNPCStatus(npcData) {
 
         // 상태에 따른 색상
         const statusColor = status === 'alive' ? 'text-green-400' :
-                          status === 'dead' ? 'text-red-400' : 'text-yellow-400';
+            status === 'dead' ? 'text-red-400' : 'text-yellow-400';
 
         // 관계도에 따른 색상
         const relationColor = relationship >= 70 ? 'text-green-400' :
-                            relationship >= 40 ? 'text-blue-400' :
-                            relationship >= 20 ? 'text-yellow-400' : 'text-red-400';
+            relationship >= 40 ? 'text-blue-400' :
+                relationship >= 20 ? 'text-yellow-400' : 'text-red-400';
 
         // AI 이미지 URL 확인 (npc_image 또는 enemy_image)
         const imageUrl = npcData.npc_image || npcData.enemy_image;
@@ -287,7 +291,7 @@ function updateWorldState(worldStateData) {
     // ✅ [FIX 2] 잘못된 입력 방지 가드 - statsData가 아닌 실제 world_state인지 검증
     // world_state 고유 속성이 하나라도 있는지 확인
     const worldStateKeys = ['turn_count', 'time', 'time_period', 'location', 'current_scene_id',
-                           'identity_count', 'hint_level', 'stuck_count', 'global_flags', 'npcs'];
+        'identity_count', 'hint_level', 'stuck_count', 'global_flags', 'npcs'];
 
     let hasWorldStateKey = false;
 
@@ -366,11 +370,11 @@ function updateWorldState(worldStateData) {
 
     // 시간대에 따른 아이콘
     const phaseIcon = phase === 'morning' ? 'sunrise' :
-                     phase === 'afternoon' ? 'sun' : 'moon';
+        phase === 'afternoon' ? 'sun' : 'moon';
 
     // 시간대 한글 변환
     const phaseText = phase === 'morning' ? '아침' :
-                     phase === 'afternoon' ? '오후' : '밤';
+        phase === 'afternoon' ? '오후' : '밤';
 
     // stuck_count에 따른 레벨 텍스트 및 색상
     let stuckLevelText = '초기 시도';
