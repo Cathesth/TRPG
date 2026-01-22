@@ -27,6 +27,10 @@ def get_minio_url(category: str, filename: str) -> str:
     if not filename:
         return ""
 
+    # [FIX] 이미 URL 형식이면 그대로 반환
+    if str(filename).startswith("http://") or str(filename).startswith("https://"):
+        return filename
+
     # [FIX] 파일명 공백 처리 (언더바 치환)
     filename = str(filename).strip().replace(" ", "_")
 
@@ -228,7 +232,32 @@ def format_player_status(scenario: Dict[str, Any], player_vars: Dict[str, Any] =
         items_html_list = []
         for item in inventory:
             item_name = str(item)
-            item_img_url = get_minio_url('items', item_name)
+            item_img_url = ""
+
+            # 🛠️ [Improvement] 시나리오 데이터에서 아이템 이미지 검색 (우선순위 1)
+            # scenario 구조: items 리스트가 최상위에 있거나 raw_graph 안에 있을 수 있음
+            found_image = False
+            
+            # 1. raw_graph > items 검색
+            if 'raw_graph' in scenario and 'items' in scenario['raw_graph']:
+                for item_def in scenario['raw_graph']['items']:
+                    if item_def.get('name') == item_name and item_def.get('image'):
+                        item_img_url = item_def['image']
+                        found_image = True
+                        break
+            
+            # 2. scenario > items 검색 (구조에 따라 다름)
+            if not found_image and 'items' in scenario:
+                for item_def in scenario['items']:
+                    if isinstance(item_def, dict) and item_def.get('name') == item_name and item_def.get('image'):
+                        item_img_url = item_def['image']
+                        found_image = True
+                        break
+
+            # 3. MinIO URL 자동 생성 (폴백)
+            if not found_image:
+                item_img_url = get_minio_url('items', item_name)
+
             # 아이템 아이콘 + 이름 형태로 구성
             items_html_list.append(
                 f'<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-800/50 rounded border border-gray-600">'
@@ -1846,41 +1875,59 @@ def check_npc_appearance(state: PlayerState) -> str:
     # NPC 등장 - LLM으로 생성
     if npc_names:
         npc_appearance_template = prompts.get('npc_appearance', '')
-        for npc_name in npc_names:
+        for npc_data in npc_names:
+            # 🔴 [CRITICAL] NPC 데이터 정규화 및 이미지 추출
+            if isinstance(npc_data, dict):
+                real_npc_name = npc_data.get('name', 'Unknown NPC')
+                if 'image' in npc_data and npc_data['image']:
+                    minio_npc_url = npc_data['image']
+                else:
+                    minio_npc_url = get_minio_url('npcs', real_npc_name)
+            else:
+                real_npc_name = str(npc_data)
+                minio_npc_url = get_minio_url('npcs', real_npc_name)
+
             # NPC 역할 찾기
             npc_role = "Unknown"
             for npc in get_scenario_by_id(scenario_id).get('npcs', []):
-                if npc.get('name') == npc_name:
+                if npc.get('name') == real_npc_name:
                     npc_role = npc.get('role', 'Unknown')
                     break
 
             if npc_appearance_template:
                 npc_prompt = npc_appearance_template.format(
                     scene_title=scene_title,
-                    npc_name=npc_name,
+                    npc_name=real_npc_name,
                     npc_role=npc_role
                 )
                 try:
                     llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
                     npc_action = llm.invoke(npc_prompt).content.strip()
                     intro_html = f"""
-                    <div class='npc-intro text-green-300 italic my-2 p-2 bg-green-900/20 rounded border-l-2 border-green-500'>
-                        👀 {npc_action}
+                    <div class='npc-intro flex items-center gap-3 my-2 p-3 bg-green-900/20 rounded border-l-2 border-green-500'>
+                        <img src="{minio_npc_url}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-green-500/50 object-cover" onerror="this.style.display='none'">
+                        <span class="text-green-300 italic">👀 {npc_action}</span>
                     </div>
                     """
                     introductions.append(intro_html)
                 except Exception as e:
                     logger.error(f"NPC appearance generation error: {e}")
                     intro_html = f"""
-                    <div class='npc-intro text-green-300 italic my-2 p-2 bg-green-900/20 rounded border-l-2 border-green-500'>
-                        👀 <span class='font-bold'>{npc_name}</span>이(가) 당신을 바라봅니다.
+                    <div class='npc-intro flex items-center gap-3 my-2 p-3 bg-green-900/20 rounded border-l-2 border-green-500'>
+                        <img src="{minio_npc_url}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-green-500/50 object-cover" onerror="this.style.display='none'">
+                        <div class="text-green-300 italic">
+                            👀 <span class='font-bold'>{real_npc_name}</span>이(가) 당신을 바라봅니다.
+                        </div>
                     </div>
                     """
                     introductions.append(intro_html)
             else:
                 intro_html = f"""
-                <div class='npc-intro text-green-300 italic my-2 p-2 bg-green-900/20 rounded border-l-2 border-green-500'>
-                    👀 <span class='font-bold'>{npc_name}</span>이(가) 당신을 바라봅니다.
+                <div class='npc-intro flex items-center gap-3 my-2 p-3 bg-green-900/20 rounded border-l-2 border-green-500'>
+                    <img src="{minio_npc_url}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-green-500/50 object-cover" onerror="this.style.display='none'">
+                    <div class="text-green-300 italic">
+                        👀 <span class='font-bold'>{real_npc_name}</span>이(가) 당신을 바라봅니다.
+                    </div>
                 </div>
                 """
                 introductions.append(intro_html)
@@ -1888,13 +1935,23 @@ def check_npc_appearance(state: PlayerState) -> str:
     # [FIX] 적 등장 처리 - LLM으로 생성
     if enemy_names:
         enemy_appearance_template = prompts.get('enemy_appearance', '')
-        for enemy_name in enemy_names:
-            minio_enemy_url = get_minio_url('enemies', enemy_name)
-            
+        for enemy_data in enemy_names:
+            # 🔴 [CRITICAL] enemy_data가 딕셔너리인지 문자열인지 확인하여 정규화
+            if isinstance(enemy_data, dict):
+                real_enemy_name = enemy_data.get('name', 'Unknown Enemy')
+                # 딕셔너리에 image 필드가 있으면 우선 사용, 없으면 MinIO 생성
+                if 'image' in enemy_data and enemy_data['image']:
+                    minio_enemy_url = enemy_data['image']
+                else:
+                    minio_enemy_url = get_minio_url('enemies', real_enemy_name)
+            else:
+                real_enemy_name = str(enemy_data)
+                minio_enemy_url = get_minio_url('enemies', real_enemy_name)
+
             if enemy_appearance_template:
                 enemy_prompt = enemy_appearance_template.format(
                     scene_title=scene_title,
-                    enemy_name=enemy_name
+                    enemy_name=real_enemy_name
                 )
                 try:
                     llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
@@ -1912,7 +1969,7 @@ def check_npc_appearance(state: PlayerState) -> str:
                     <div class='enemy-intro flex items-center gap-3 my-2 p-3 bg-red-900/30 rounded border-l-2 border-red-500'>
                         <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover" onerror="this.style.display='none'">
                         <div class="text-red-400 font-bold">
-                            ⚔️ <span class='font-bold'>{enemy_name}</span>이(가) 나타났습니다!
+                            ⚔️ <span class='font-bold'>{real_enemy_name}</span>이(가) 나타났습니다!
                         </div>
                     </div>
                     """
@@ -1922,7 +1979,7 @@ def check_npc_appearance(state: PlayerState) -> str:
                 <div class='enemy-intro flex items-center gap-3 my-2 p-3 bg-red-900/30 rounded border-l-2 border-red-500'>
                     <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover" onerror="this.style.display='none'">
                     <div class="text-red-400 font-bold">
-                        ⚔️ <span class='font-bold'>{enemy_name}</span>이(가) 나타났습니다!
+                        ⚔️ <span class='font-bold'>{real_enemy_name}</span>이(가) 나타났습니다!
                     </div>
                 </div>
                 """
