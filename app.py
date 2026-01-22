@@ -171,7 +171,7 @@ templates = Jinja2Templates(directory="templates")
 # =================================================================
 
 # 라우터 등록
-from routes import api_router, game_router, views_router
+from routes import api_router, game_router, views_router, admin_router
 # [추가] api.py에 정의한 mypage_router를 직접 가져옵니다.
 #from routes.api import mypage_router
 
@@ -187,6 +187,7 @@ from routes.api import api_router, mypage_router
 app.include_router(views_router)
 app.include_router(api_router)
 app.include_router(game_router)
+app.include_router(admin_router) # [NEW] 관리자 라우터
 
 # [중요] 마이페이지 라우터를 명시적으로 등록하여 404 에러 해결
 app.include_router(mypage_router)

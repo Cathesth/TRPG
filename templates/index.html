@@ -315,7 +315,7 @@
         </div>
 
         <div class="container mx-auto px-8 mt-8">
-            <a href="#" onclick="checkLoginAndRedirect('/views/builder'); return false;"
+            <a href="#" id="create-scenario-btn" onclick="checkLoginAndRedirect('/views/builder'); return false;"
                 class="block w-full bg-rpg-800 hover:bg-rpg-700 border border-rpg-700 hover:border-rpg-accent rounded-xl p-6 text-center group transition-all shadow-lg hover:shadow-[0_0_20px_rgba(56,189,248,0.15)]">
                 <div class="flex flex-col items-center justify-center gap-3">
                     <div
@@ -357,6 +357,35 @@
         </div>
 
         <div class="space-y-16 mt-12 pb-20">
+
+            <section class="container mx-auto pl-8 pr-8">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-2xl font-title font-bold text-white flex items-center gap-2">
+                        <span class="w-1 h-6 bg-purple-500 rounded-full shadow-[0_0_10px_#a855f7]"></span> 추천 시나리오
+                    </h2>
+                    <span class="text-xs text-gray-500">Drag to scroll <i data-lucide="arrow-right"
+                            class="inline w-3 h-3"></i></span>
+                </div>
+                <div class="relative group">
+                    <button onclick="scrollListByArrows('recommended-grid', -1)"
+                        class="absolute -left-6 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/50 backdrop-blur-sm text-gray-400 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 hover:scale-110 shadow-lg">
+                        <i data-lucide="chevron-left" class="w-8 h-8"></i>
+                    </button>
+
+                    <div id="recommended-grid" class="horizontal-scroll-container flex no-scrollbar"
+                        hx-get="/api/scenarios?filter=recommended&limit=10" hx-include="#search-input"
+                        hx-trigger="load, new_search from:body">
+                        <div
+                            class="bg-rpg-800 border border-rpg-700 rounded-xl min-w-[16rem] h-[20rem] animate-pulse flex-shrink-0">
+                        </div>
+                    </div>
+
+                    <button onclick="scrollListByArrows('recommended-grid', 1)"
+                        class="absolute -right-6 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full border-2 border-gray-600 bg-black/50 backdrop-blur-sm text-gray-400 hover:text-white hover:border-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 duration-300 hover:scale-110 shadow-lg">
+                        <i data-lucide="chevron-right" class="w-8 h-8"></i>
+                    </button>
+                </div>
+            </section>
 
             <section class="container mx-auto pl-8 pr-8">
                 <div class="flex items-center justify-between mb-4">
@@ -955,6 +984,12 @@
                 alert('로그인이 필요하거나 서버 오류입니다.');
             }
         }
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.TutorialSystem) {
+                // 인덱스 페이지 튜토리얼 시작
+                window.TutorialSystem.checkAndStart('index');
+            }
+        });
     </script>
 
     {% if show_login %}

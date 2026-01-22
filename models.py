@@ -116,6 +116,7 @@ class Scenario(Base):
     data = Column(JSON_TYPE, nullable=False)
 
     is_public = Column(Boolean, default=False)
+    is_recommended = Column(Boolean, default=False) # [NEW] 추천 시나리오 여부
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -132,6 +133,7 @@ class Scenario(Base):
             'author': self.author_id or 'Anonymous',
             'data': self.data,
             'is_public': self.is_public,
+            'is_recommended': self.is_recommended, # [NEW]
             'created_at': self.created_at.timestamp() if self.created_at else None,
             'updated_at': self.updated_at.timestamp() if self.updated_at else None
         }
@@ -331,6 +333,9 @@ def create_tables():
                 
                 # [NEW] tutorial_completed 추가
                 conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS tutorial_completed BOOLEAN DEFAULT FALSE"))
+
+                # [NEW] scenarios 테이블에 is_recommended 추가
+                conn.execute(text("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS is_recommended BOOLEAN DEFAULT FALSE"))
 
                 conn.commit()
                 logger.info("✅ Checked/Added 'avatar_url', 'email', 'token_balance' columns to 'users' table.")

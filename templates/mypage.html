@@ -290,10 +290,10 @@
                         </li>
                         {% if user and user.id|string == '11' %}
                         <li>
-                            <button hx-get="/api/admin/transfer_view" hx-target="#main-content-area"
-                                class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-rpg-700/50 text-yellow-400 hover:text-yellow-200 font-bold border border-transparent hover:border-rpg-700/50 transition-all text-left focus:bg-rpg-700 focus:text-white">
-                                <i data-lucide="crown" class="w-5 h-5"></i>
-                                ADMIN (시나리오 선택권)
+                            <button onclick="openAdminRecommendModal()"
+                                class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-rpg-700/50 text-purple-400 hover:text-purple-200 font-bold border border-transparent hover:border-rpg-700/50 transition-all text-left focus:bg-rpg-700 focus:text-white">
+                                <i data-lucide="star" class="w-5 h-5"></i>
+                                ADMIN (추천 시나리오)
                             </button>
                         </li>
                         {% endif %}
@@ -707,6 +707,103 @@
 
             // 클릭된 버튼만 활성 상태로 변경
             btn.className = activeClass;
+        }
+    </script>
+    <!-- 관리자 추천 시나리오 모달 -->
+    <div id="admin-recommend-modal"
+        class="modal opacity-0 pointer-events-none fixed inset-0 z-[100] flex items-center justify-center">
+        <div class="modal-overlay absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onclick="closeModal('admin-recommend-modal')">
+        </div>
+        <div
+            class="modal-container bg-rpg-900 w-full max-w-4xl h-[80vh] mx-4 rounded-2xl border border-rpg-700 shadow-2xl transform scale-95 opacity-0 transition-all duration-300 relative z-10 flex flex-col">
+            <div class="p-6 border-b border-rpg-700 flex justify-between items-center bg-rpg-800 rounded-t-2xl">
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <i data-lucide="star" class="w-6 h-6 text-purple-500"></i> 추천 시나리오 관리 (By 11)
+                </h3>
+                <button onclick="closeModal('admin-recommend-modal')" class="text-gray-400 hover:text-white"><i
+                        data-lucide="x" class="w-6 h-6"></i></button>
+            </div>
+
+            <div class="p-6 overflow-y-auto flex-1 custom-scrollbar">
+                <div class="flex justify-between items-center mb-4">
+                    <p class="text-sm text-gray-400">체크된 시나리오가 메인 페이지 '추천 시나리오' 탭에 표시됩니다.</p>
+                    <button onclick="saveRecommendations()"
+                        class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg shadow-lg transition-all">
+                        저장하기
+                    </button>
+                </div>
+
+                <div id="admin-scenario-list" class="space-y-2">
+                    <!-- JS로 로드 -->
+                    <div class="text-center py-10 text-gray-500">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openAdminRecommendModal() {
+            openModal('admin-recommend-modal');
+            loadAdminScenarios();
+        }
+
+        async function loadAdminScenarios() {
+            const listEl = document.getElementById('admin-scenario-list');
+            try {
+                const res = await fetch('/api/admin/scenarios');
+                if (!res.ok) throw new Error('Failed to load');
+                const scenarios = await res.json();
+
+                if (scenarios.length === 0) {
+                    listEl.innerHTML = '<div class="text-gray-500 text-center">공개된 시나리오가 없습니다.</div>';
+                    return;
+                }
+
+                listEl.innerHTML = scenarios.map(s => `
+                    <label class="flex items-center gap-4 p-4 bg-rpg-800 border border-rpg-700 rounded-xl hover:border-purple-500 cursor-pointer transition-all">
+                        <input type="checkbox" value="${s.id}" ${s.is_recommended ? 'checked' : ''} class="w-5 h-5 rounded border-gray-600 text-purple-600 focus:ring-purple-500 bg-gray-700">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-white">${s.title.replace(/</g, '&lt;')}</span>
+                                <span class="text-xs text-gray-500">by ${s.author || 'Anonymous'}</span>
+                            </div>
+                            <div class="text-xs text-gray-600">ID: ${s.id} | Updated: ${new Date(s.updated_at * 1000).toLocaleDateString()}</div>
+                        </div>
+                        ${s.is_recommended ? '<span class="text-xs font-bold text-purple-400 border border-purple-400/30 px-2 py-1 rounded">추천 중</span>' : ''}
+                    </label>
+                `).join('');
+                lucide.createIcons();
+
+            } catch (e) {
+                listEl.innerHTML = '<div class="text-red-500 text-center">로드 실패</div>';
+                console.error(e);
+            }
+        }
+
+        async function saveRecommendations() {
+            const checkboxes = document.querySelectorAll('#admin-scenario-list input[type="checkbox"]:checked');
+            const selectedIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+
+            if (!confirm(`총 ${selectedIds.length}개의 시나리오를 추천 시나리오로 설정하시겠습니까?`)) return;
+
+            try {
+                const res = await fetch('/api/admin/recommend', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scenario_ids: selectedIds })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('저장되었습니다.');
+                    closeModal('admin-recommend-modal');
+                    // loadAdminScenarios(); 
+                } else {
+                    alert('실패');
+                }
+            } catch (e) {
+                alert('에러 발생');
+            }
         }
     </script>
 </body>
