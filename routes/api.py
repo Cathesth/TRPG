@@ -19,6 +19,8 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from sqlalchemy import func, or_
+
 from starlette.concurrency import run_in_threadpool
 
 # 빌더 에이전트 및 코어 유틸리티
@@ -1085,6 +1087,25 @@ def list_scenarios(
         is_new = (current_ts - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
+        # ▼▼▼ [수정 코드] 좋아요/조회수 계산 로직 추가 ▼▼▼
+        # 1. 좋아요 수 (ScenarioLike 테이블 카운트)
+        like_count = db.query(func.count(ScenarioLike.id)).filter(ScenarioLike.scenario_id == s.id).scalar()
+
+        # 2. 조회수 (DB 컬럼 값)
+        view_count = s.view_count if s.view_count else 0
+
+        # 숫자 포맷팅 (예: 1000 -> 1k) - 필요시 사용, 여기선 간단히 처리
+        stats_badge_html = f"""
+                <div class="flex items-center gap-2 mb-2 text-[10px] font-bold text-gray-400">
+                    <span class="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/5">
+                        <i data-lucide="heart" class="w-3 h-3 text-red-500 fill-current"></i> {like_count}
+                    </span>
+                    <span class="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/5">
+                        <i data-lucide="eye" class="w-3 h-3 text-rpg-accent"></i> {view_count}
+                    </span>
+                </div>
+                """
+
         # [수정 포인트 1] 잠금 버튼 HTML 생성 (마이페이지에서만 보임)
         lock_btn_html = ""
         # "토글버튼은 마이페이지 에만 볼 수 있게" 요청 반영 (filter == 'my' 체크)
@@ -1149,6 +1170,8 @@ def list_scenarios(
             </div>
             <div class="{content_padding} flex-1 flex flex-col justify-between">
                 <div>
+                
+                    {stats_badge_html}
                     <div class="flex justify-between items-start mb-1">
                         <h3 class="text-base font-bold text-white tracking-wide truncate w-full group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
                     </div>
@@ -1221,6 +1244,21 @@ async def load_scenario(
         return JSONResponse({"error": error}, status_code=400)
 
     scenario = result['scenario']
+
+    # ▼▼▼ [수정 코드] 조회수 증가 로직 추가 ▼▼▼
+    # ---------------------------------------------------------
+    try:
+        # DB에서 해당 시나리오 조회하여 조회수 +1
+        db_scenario = db.query(Scenario).filter(Scenario.filename == filename).first()
+        if db_scenario:
+            # 기존 값이 None이면 0으로 초기화 후 증가
+            current_views = db_scenario.view_count if db_scenario.view_count else 0
+            db_scenario.view_count = current_views + 1
+            db.commit()
+    except Exception as e:
+        # 조회수 업데이트 실패가 게임 실행을 막지 않도록 로깅만 하고 넘어감
+        logger.error(f"View count update failed: {e}")
+
     start_id = pick_start_scene_id(scenario)
 
     new_session_key = str(uuid.uuid4())
