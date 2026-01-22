@@ -21,7 +21,7 @@ const TutorialSystem = (function () {
             },
             {
                 target: '#action-input',
-                text: '이곳에 당신의 행동이나 대사를 입력하세요. "주변을 둘러본다"라고 입력해볼까요?',
+                text: '이곳에 당신의 행동이나 대사를 입력하세요. 주변을 탐색, 빛을 따라 이동 등의 행동을 간단히 작성해 주시면 됩니다.',
                 position: 'top'
             },
             {
@@ -31,7 +31,7 @@ const TutorialSystem = (function () {
             },
             {
                 target: '#load-btn',
-                text: '저장된 시나리오를 불러오거나 새로운 게임을 시작하려면 이 버튼을 누르세요.',
+                text: '저장된 시나리오를 불러오거나 새로운 게임을 시작하려면 [불러오기] 버튼을 누르세요.',
                 position: 'bottom'
             }
         ],
@@ -53,7 +53,7 @@ const TutorialSystem = (function () {
             },
             {
                 target: '#builder-publish-btn',
-                text: '작업이 완료되면 이 버튼으로 변경사항을 저장하고 플레이 가능한 상태로 만듭니다.',
+                text: '작업이 완료되면 왼쪽 하단의 [최종 반영] 버튼으로 변경사항을 저장하고 플레이 가능한 상태로 만듭니다.',
                 position: 'bottom'
             }
         ]
