@@ -11,6 +11,9 @@ const TutorialSystem = (function () {
     let tooltipElement = null;
     let currentHighlightElement = null;
 
+    // [NEW] 튜토리얼 버전 관리 (버전 올리면 기존 완료 기록 무시하고 다시 뜸)
+    const STORAGE_KEY_PREFIX = 'trpg_tutorial_completed_v2_';
+
     // 튜토리얼 데이터
     const tutorials = {
         'player': [
@@ -222,15 +225,14 @@ const TutorialSystem = (function () {
                 <span style="color: #00FFFF; font-weight: bold;">[STEP ${stepIndex + 1}/${tutorialSteps.length}]</span><br>
                 ${step.text}
             </div>
-            <div style="text-align: right;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                <button onclick="window.TutorialSystem.end()" style="background: transparent; border: 1px solid #666; color: #aaa; padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 4px;">건너뛰기</button>
                 <button id="tutorial-next-btn" onclick="window.TutorialSystem.nextStep()" style="
-                    background: #00FFFF; color: #000; border: none; padding: 5px 10px; 
+                    background: #00FFFF; color: #000; border: none; padding: 5px 15px; 
                     font-family: inherit; font-weight: bold; cursor: pointer; 
-                    border: 2px solid #fff;">
-                    ${stepIndex === tutorialSteps.length - 1 ? '완료' : '다음'}
+                    border-radius: 4px; box-shadow: 0 0 10px rgba(0,255,255,0.5);">
+                    ${(stepIndex === tutorialSteps.length - 1) ? '완료' : '다음'}
                 </button>
-                ${stepIndex < tutorialSteps.length - 1 ?
-                '<button id="tutorial-skip-btn" onclick="window.TutorialSystem.end()"  style="background:transparent; color:#888; border:none; margin-right:10px; cursor:pointer;">건너뛰기</button>' : ''}
             </div>
         `;
 
