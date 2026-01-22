@@ -24,14 +24,20 @@ def get_minio_url(category: str, filename: str) -> str:
     category: backgrounds, npcs, enemies, items
     filename: 이미지 파일명 (확장자 제외 시 .png 자동 추가)
     """
+    if not filename:
+        return ""
+
+    # [FIX] 파일명 공백 처리 (언더바 치환)
+    filename = str(filename).strip().replace(" ", "_")
+
     minio_endpoint = os.getenv("MINIO_ENDPOINT", "localhost:9000")
     minio_bucket = os.getenv("MINIO_BUCKET", "trpg-assets")
     minio_use_ssl = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
 
     protocol = "https" if minio_use_ssl else "http"
 
-    # 파일명에 확장자가 없으면 .png 추가
-    if '.' not in filename:
+    # [FIX] 확장자 방어적 추가 (png, jpg, jpeg, webp, gif 지원)
+    if not any(filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif']):
         filename = f"{filename}.png"
 
     # 파일명 URL 인코딩 (한글 등 특수문자 처리)
@@ -1883,6 +1889,8 @@ def check_npc_appearance(state: PlayerState) -> str:
     if enemy_names:
         enemy_appearance_template = prompts.get('enemy_appearance', '')
         for enemy_name in enemy_names:
+            minio_enemy_url = get_minio_url('enemies', enemy_name)
+            
             if enemy_appearance_template:
                 enemy_prompt = enemy_appearance_template.format(
                     scene_title=scene_title,
@@ -1892,23 +1900,30 @@ def check_npc_appearance(state: PlayerState) -> str:
                     llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
                     enemy_action = llm.invoke(enemy_prompt).content.strip()
                     intro_html = f"""
-                    <div class='enemy-intro text-red-400 font-bold my-2 p-2 bg-red-900/30 rounded border-l-2 border-red-500'>
-                        ⚔️ {enemy_action}
+                    <div class='enemy-intro flex items-center gap-3 my-2 p-3 bg-red-900/30 rounded border-l-2 border-red-500'>
+                        <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover" onerror="this.style.display='none'">
+                        <span class="text-red-400 font-bold">⚔️ {enemy_action}</span>
                     </div>
                     """
                     introductions.append(intro_html)
                 except Exception as e:
                     logger.error(f"Enemy appearance generation error: {e}")
                     intro_html = f"""
-                    <div class='enemy-intro text-red-400 font-bold my-2 p-2 bg-red-900/30 rounded border-l-2 border-red-500'>
-                        ⚔️ <span class='font-bold'>{enemy_name}</span>이(가) 나타났습니다!
+                    <div class='enemy-intro flex items-center gap-3 my-2 p-3 bg-red-900/30 rounded border-l-2 border-red-500'>
+                        <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover" onerror="this.style.display='none'">
+                        <div class="text-red-400 font-bold">
+                            ⚔️ <span class='font-bold'>{enemy_name}</span>이(가) 나타났습니다!
+                        </div>
                     </div>
                     """
                     introductions.append(intro_html)
             else:
                 intro_html = f"""
-                <div class='enemy-intro text-red-400 font-bold my-2 p-2 bg-red-900/30 rounded border-l-2 border-red-500'>
-                    ⚔️ <span class='font-bold'>{enemy_name}</span>이(가) 나타났습니다!
+                <div class='enemy-intro flex items-center gap-3 my-2 p-3 bg-red-900/30 rounded border-l-2 border-red-500'>
+                    <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover" onerror="this.style.display='none'">
+                    <div class="text-red-400 font-bold">
+                        ⚔️ <span class='font-bold'>{enemy_name}</span>이(가) 나타났습니다!
+                    </div>
                 </div>
                 """
                 introductions.append(intro_html)
@@ -2379,8 +2394,13 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     if curr_scene:
         background_image = curr_scene.get('background_image', '')
         if background_image:
-            bg_url = get_minio_url('backgrounds', background_image)
-            yield f'<div class="mb-4"><img src="{bg_url}" class="w-full h-48 object-cover rounded-lg" onerror="this.style.display=\'none\'"></div>'
+            minio_bg_url = get_minio_url('backgrounds', background_image)
+            # [FIX] HTML 구조 개선 (요청 사항 반영)
+            yield f"""
+            <div class="scene-background mb-4 rounded-lg overflow-hidden border border-gray-700 shadow-lg">
+                <img src="{minio_bg_url}" alt="background" class="w-full h-48 object-cover object-center scale-in" onerror="this.style.display='none'">
+            </div>
+            """
 
     scene_desc = curr_scene.get('description', '')  # <--- scene_desc 변수 선언 추가
 
