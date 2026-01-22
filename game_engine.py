@@ -2264,7 +2264,9 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 dead_npcs.append(npc_name)
 
         if dead_npcs:
-            dead_list = ", ".join(dead_npcs)
+            # [FIX] dead_npcs 요소가 딕셔너리일 경우 안전하게 이름 추출
+            safe_dead_npcs = [d.get('name', str(d)) if isinstance(d, dict) else str(d) for d in dead_npcs]
+            dead_list = ", ".join(safe_dead_npcs)
             npc_status_context = f"""
 ⚠️ **[CRITICAL INSTRUCTION - NPC STATUS]**
 다음 NPC들은 현재 'dead' 상태입니다: {dead_list}
