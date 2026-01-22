@@ -111,6 +111,8 @@ class Scenario(Base):
     filename = Column(String(100), unique=True, index=True)  # UUID
     title = Column(String(100), nullable=False, index=True)
     author_id = Column(String(50), ForeignKey('users.id'), nullable=True)
+    # [추가] 조회수 컬럼 정의
+    view_count = Column(Integer, default=0)
 
     # 시나리오 전체 데이터 (scenes, endings, variables 등 구조화된 JSON)
     data = Column(JSON_TYPE, nullable=False)

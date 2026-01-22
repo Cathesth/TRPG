@@ -1091,8 +1091,11 @@ def list_scenarios(
         # [수정 완료] ScenarioLike.scenario_id 컬럼을 기준으로 개수를 셉니다.
         like_count = db.query(func.count(ScenarioLike.scenario_id)).filter(ScenarioLike.scenario_id == s.id).scalar()
 
-        # 2. 조회수 (DB 컬럼 값)
-        view_count = s.view_count if s.view_count else 0
+
+        # [수정] view_count 속성이 DB 모델에 없으면 기본값 0을 사용 (에러 방지)
+        # 기존: view_count = s.view_count if s.view_count else 0
+        view_count = getattr(s, 'view_count', 0)
+        if view_count is None: view_count = 0
 
         # 숫자 포맷팅 (예: 1000 -> 1k) - 필요시 사용, 여기선 간단히 처리
         stats_badge_html = f"""
@@ -1245,18 +1248,18 @@ async def load_scenario(
 
     scenario = result['scenario']
 
-    # ▼▼▼ [수정 코드] 조회수 증가 로직 추가 ▼▼▼
-    # ---------------------------------------------------------
+    # [수정] 안전한 조회수 증가 로직 (컬럼이 없으면 pass)
     try:
-        # DB에서 해당 시나리오 조회하여 조회수 +1
-        db_scenario = db.query(Scenario).filter(Scenario.filename == filename).first()
+        # DB 세션 내의 객체를 확실하게 가져옴
+        db_scenario = db.query(Scenario).filter(Scenario.id == scenario.get('id')).first()
+
         if db_scenario:
-            # 기존 값이 None이면 0으로 초기화 후 증가
-            current_views = db_scenario.view_count if db_scenario.view_count else 0
-            db_scenario.view_count = current_views + 1
-            db.commit()
+            # hasattr로 컬럼 존재 여부 확인 후 증가
+            if hasattr(db_scenario, 'view_count'):
+                current_views = db_scenario.view_count if db_scenario.view_count else 0
+                db_scenario.view_count = current_views + 1
+                db.commit()
     except Exception as e:
-        # 조회수 업데이트 실패가 게임 실행을 막지 않도록 로깅만 하고 넘어감
         logger.error(f"View count update failed: {e}")
 
     start_id = pick_start_scene_id(scenario)
