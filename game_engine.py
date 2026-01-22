@@ -1505,10 +1505,17 @@ def npc_node(state: PlayerState):
                 npc_list = curr_scene.get('npcs', []) + curr_scene.get('enemies', [])
 
                 # user_input에서 NPC 이름 매칭 시도
-                for npc_name in npc_list:
+                for npc_item in npc_list:
+                    # [FIX] 딕셔너리인 경우 이름 추출
+                    if isinstance(npc_item, dict):
+                        npc_name = npc_item.get('name', '')
+                    else:
+                        npc_name = str(npc_item)
+                        
+                    if not npc_name: continue
+
                     # 부분 매칭 (예: "노인" -> "노인 J")
-                    if npc_name in user_input or npc_name.replace(' ', '').lower() in user_input.lower().replace(' ',
-                                                                                                                 ''):
+                    if npc_name in user_input or npc_name.replace(' ', '').lower() in user_input.lower().replace(' ', ''):
                         target_npc = npc_name
                         logger.info(f"🎯 [COMBAT] Target extracted from input: '{target_npc}'")
                         break
