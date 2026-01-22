@@ -1088,8 +1088,8 @@ def list_scenarios(
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
 
         # ▼▼▼ [수정 코드] 좋아요/조회수 계산 로직 추가 ▼▼▼
-        # 1. 좋아요 수 (ScenarioLike 테이블 카운트)
-        like_count = db.query(func.count(ScenarioLike.id)).filter(ScenarioLike.scenario_id == s.id).scalar()
+        # [수정 완료] ScenarioLike.scenario_id 컬럼을 기준으로 개수를 셉니다.
+        like_count = db.query(func.count(ScenarioLike.scenario_id)).filter(ScenarioLike.scenario_id == s.id).scalar()
 
         # 2. 조회수 (DB 컬럼 값)
         view_count = s.view_count if s.view_count else 0
