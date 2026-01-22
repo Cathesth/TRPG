@@ -2526,11 +2526,31 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 node_id = node.get('id', '').lower()
                 curr_id_lower = curr_id.lower() if curr_id else ''
                 
+                # 1. 완전 일치
                 if node_id == curr_id_lower:
                     background_image = node.get('data', {}).get('background_image', '')
                     if background_image:
-                        logger.info(f"🖼️ [BACKGROUND] Found image in raw_graph for {curr_id}: {background_image}")
+                        logger.info(f"🖼️ [BACKGROUND] Found image in raw_graph for {curr_id} (Exact Match): {background_image}")
                         break
+                        
+                # 2. 접두어/접미어 불일치 케이스 (scene-1 vs 1, scene-1 vs Scene-1)
+                # curr_id가 'Scene-1'이고 node_id가 'scene-1'인 경우 위에서 잡힘
+                # 하지만 curr_id가 그냥 숫자 '1'이거나 node_id가 랜덤 생성 ID인 경우 등 고려
+                if node_id.endswith(f"-{curr_id_lower}") or curr_id_lower.endswith(f"-{node_id}"):
+                     background_image = node.get('data', {}).get('background_image', '')
+                     if background_image:
+                        logger.info(f"🖼️ [BACKGROUND] Found image in raw_graph for {curr_id} (Loose Match): {background_image}")
+                        break
+                
+                # 3. Scene title 매칭 (최후의 수단)
+                node_title = node.get('data', {}).get('title', '').strip()
+                curr_title = curr_scene.get('title', '').strip()
+                if node_title and curr_title and node_title == curr_title:
+                     background_image = node.get('data', {}).get('background_image', '')
+                     if background_image:
+                        logger.info(f"🖼️ [BACKGROUND] Found image in raw_graph by Title ({curr_title}): {background_image}")
+                        break
+
         
         if background_image:
             minio_bg_url = get_minio_url('backgrounds', background_image)
