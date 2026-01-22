@@ -2515,8 +2515,23 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     prefix_html_buffer = ""
 
     # [NEW] 배경 이미지 출력 (MinIO)
+    # [NEW] 배경 이미지 출력 (MinIO)
     if curr_scene:
         background_image = curr_scene.get('background_image', '')
+        
+        # [FALLBACK] curr_scene에 이미지가 없으면 raw_graph의 nodes에서 검색
+        if not background_image and 'raw_graph' in scenario and 'nodes' in scenario['raw_graph']:
+            for node in scenario['raw_graph']['nodes']:
+                # ID 매칭 (대소문자 무시) - scene-1 vs Scene-1
+                node_id = node.get('id', '').lower()
+                curr_id_lower = curr_id.lower() if curr_id else ''
+                
+                if node_id == curr_id_lower:
+                    background_image = node.get('data', {}).get('background_image', '')
+                    if background_image:
+                        logger.info(f"🖼️ [BACKGROUND] Found image in raw_graph for {curr_id}: {background_image}")
+                        break
+        
         if background_image:
             minio_bg_url = get_minio_url('backgrounds', background_image)
             prefix_html_buffer += f"""
