@@ -65,12 +65,12 @@ const TutorialSystem = (function () {
             },
             {
                 target: '#recommended-grid .scenario-card-base button',
-                text: '[시나리오 플레이] 버튼을 눌러 모험을 바로 시작할 수 있습니다.',
+                text: '[play now] 버튼을 눌러 모험을 바로 시작할 수 있습니다.',
                 position: 'top'
             },
             {
                 target: '#create-scenario-btn',
-                text: '[시나리오 만들기] 버튼을 눌러 당신만의 새로운 세계를 창조해보세요.',
+                text: '[create new scenario] 버튼을 눌러 당신만의 새로운 세계를 창조해보세요.',
                 position: 'bottom'
             },
             {
@@ -193,7 +193,15 @@ const TutorialSystem = (function () {
         // [안전성] 타겟 요소가 렌더링될 때까지 잠시 대기 (최대 2.5초)
         // 타겟을 못 찾아도 바로 포기하지 않고 재시도
         if (!target && retryCount < 5) {
+            console.log(`[Tutorial] Target not found: ${step.target}, retrying... (${retryCount + 1}/5)`);
             setTimeout(() => showStep(stepIndex, retryCount + 1), 500);
+            return;
+        }
+
+        if (!target) {
+            console.error(`[Tutorial] Target NOT found after retries: ${step.target}. Skipping step.`);
+            // 타겟을 못 찾았으면 에러 띄우지 말고 다음 스텝으로
+            nextStep();
             return;
         }
 
