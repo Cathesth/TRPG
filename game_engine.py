@@ -2001,7 +2001,6 @@ def check_npc_appearance(state: PlayerState) -> str:
                 except Exception as e:
                     logger.error(f"Enemy appearance generation error: {e}")
                     intro_html = f"""
-                    intro_html = f"""
                     <div class='enemy-intro flex items-center gap-3 my-2 p-3 bg-red-900/30 rounded border-l-2 border-red-500'>
                         <div class="relative w-12 h-12 flex-shrink-0">
                             <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover block" alt="{real_enemy_name}">
@@ -2013,7 +2012,6 @@ def check_npc_appearance(state: PlayerState) -> str:
                     """
                     introductions.append(intro_html)
             else:
-                intro_html = f"""
                 intro_html = f"""
                 <div class='enemy-intro flex items-center gap-3 my-2 p-3 bg-red-900/30 rounded border-l-2 border-red-500'>
                     <div class="relative w-12 h-12 flex-shrink-0">
