@@ -823,6 +823,13 @@ def stream_scene_with_retry(state):
             if "__RETRY_SIGNAL__" in chunk:
                 need_retry = True
                 break
+            
+            # [FIX] 프리픽스 마커 처리 (이미지 플리커링 방지)
+            if "__PREFIX_START__" in chunk:
+                content = chunk.replace("__PREFIX_START__", "").replace("__PREFIX_END__", "")
+                if content.strip():
+                    yield f"data: {json.dumps({'type': 'prefix', 'content': content})}\n\n"
+                continue
 
             buffer += chunk
             yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"

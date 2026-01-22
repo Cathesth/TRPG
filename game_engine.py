@@ -62,12 +62,15 @@ def get_minio_url(category: str, filename: str) -> str:
                 
         return filename
 
-    # [FIX] 파일명 공백 처리 (언더바 치환)
+    # [FIX] 파일명 공백 처리 (언더바 치환) & 소문자 변환 (S3/MinIO 호환성)
     filename = str(filename).strip().replace(" ", "_")
+    # URL이 아닌 파일명의 경우 소문자로 변환하여 매칭 확률 높임
+    if '.' in filename:
+        filename = filename.lower()
 
     # [FIX] 확장자 방어적 추가 (png, jpg, jpeg, webp, gif 지원)
     if not any(filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif']):
-        filename = f"{filename}.png"
+        filename = f"{filename.lower()}.png"
 
     # 파일명 URL 인코딩 (한글 등 특수문자 처리)
     from urllib.parse import quote
@@ -2486,6 +2489,10 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                         yield "주변을 둘러보니 여러 가지 시도해볼 수 있을 것 같습니다."
                         return
         # =============================================================================
+
+
+
+
     # [MODE 2] 씬 변경됨 -> 장면 묘사
     # =============================================================================
     # [NEW] 배경 이미지 출력 (MinIO)
@@ -2493,18 +2500,20 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         background_image = curr_scene.get('background_image', '')
         if background_image:
             minio_bg_url = get_minio_url('backgrounds', background_image)
-            # [FIX] HTML 구조 개선 (요청 사항 반영)
             # [FIX] HTML 구조 개선 (요청 사항 반영) - onerror 제거 및 스타일 보완
-            yield f"""
+            # [FLICKER FIX] 프리픽스 마커 추가
+            yield f"""__PREFIX_START__
             <div class="scene-background mb-4 rounded-lg overflow-hidden border border-gray-700 shadow-lg relative bg-gray-900" style="min-height: 12rem;">
                 <img src="{minio_bg_url}" alt="background" class="w-full h-48 object-cover object-center scale-in block" style="display: block;">
             </div>
-            """
+            __PREFIX_END__"""
 
     scene_desc = curr_scene.get('description', '')  # <--- scene_desc 변수 선언 추가
 
     npc_intro = check_npc_appearance(state)
-    if npc_intro: yield npc_intro + "<br><br>"
+    if npc_intro: 
+        # [FLICKER FIX] 프리픽스 마커 추가
+        yield f"__PREFIX_START__{npc_intro}__PREFIX_END__"
 
     # YAML에서 씬 묘사 프롬프트 로드
     npc_list = ', '.join(npc_names) if npc_names else '없음'
