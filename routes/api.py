@@ -1102,7 +1102,7 @@ def list_scenarios(
                 <div class="flex items-center gap-2 mb-2 text-[10px] font-bold text-gray-400">
                     <span class="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/5">
                         <i data-lucide="heart" class="w-3 h-3 text-red-500 fill-current"></i> 
-                        <span id="like-count-{s.id}">{like_count}</span>
+                        <span class="like-count-{s.id}">{like_count}</span>
                     </span>
                     <span class="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/5">
                         <i data-lucide="eye" class="w-3 h-3 text-rpg-accent"></i> {view_count}
@@ -1129,12 +1129,12 @@ def list_scenarios(
         is_liked = s.id in liked_scenario_ids
         heart_class = "fill-red-500 text-red-500" if is_liked else "text-white/70 hover:text-red-500"
 
+
         like_btn = f"""
-        <button onclick="toggleLike({s.id}, this); event.stopPropagation();" 
-                class="absolute top-2 right-2 p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all z-10">
-             <i data-lucide="heart" class="w-5 h-5 transition-transform active:scale-90 {heart_class}"></i>
-        </button>
-        """
+            <button onclick="toggleLike({s.id}, this); event.stopPropagation();" 
+                    class="absolute top-2 right-2 p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all z-10 like-btn-{s.id}"> <i data-lucide="heart" class="w-5 h-5 transition-transform active:scale-90 {heart_class}"></i>
+            </button>
+            """
 
         if is_owner:
             buttons_html = f"""          
