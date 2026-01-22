@@ -60,6 +60,7 @@ const TutorialSystem = (function () {
     };
 
     function init() {
+        console.log('[Tutorial] Initialized');
         createOverlay();
     }
 
@@ -108,6 +109,7 @@ const TutorialSystem = (function () {
     let currentMode = null; // 현재 모드 추적
 
     function start(mode, force = false) {
+        console.log(`[Tutorial] Starting tutorial. Mode: ${mode}, Force: ${force}`);
         if (!tutorials[mode]) {
             console.error(`Tutorial mode '${mode}' not found.`);
             return;
@@ -128,9 +130,11 @@ const TutorialSystem = (function () {
     }
 
     async function checkAndStart(mode) {
+        console.log(`[Tutorial] Checking status for mode: ${mode}`);
         // 1. 로컬 스토리지 확인
         const isLocallyCompleted = localStorage.getItem(`trpg_tutorial_completed_${mode}`);
         if (isLocallyCompleted === 'true') {
+            console.log('[Tutorial] Skipped (Local storage found).');
             return;
         }
 
@@ -140,6 +144,7 @@ const TutorialSystem = (function () {
                 const res = await fetch('/api/user/status');
                 const data = await res.json();
                 if (data.success && data.tutorial_completed) {
+                    console.log('[Tutorial] Skipped (Server record found).');
                     // 서버에 이미 완료 기록이 있으면 로컬에도 저장하고 실행 안 함
                     localStorage.setItem(`trpg_tutorial_completed_${mode}`, 'true');
                     return;
@@ -154,6 +159,7 @@ const TutorialSystem = (function () {
     }
 
     async function showStep(stepIndex, retryCount = 0) {
+        console.log(`[Tutorial] Showing step ${stepIndex}. Retry: ${retryCount}`);
         if (stepIndex >= tutorialSteps.length) {
             end();
             return;
@@ -187,18 +193,19 @@ const TutorialSystem = (function () {
                 ${step.text}
             </div>
             <div style="text-align: right;">
-                <button id="tutorial-next-btn" style="
+                <button id="tutorial-next-btn" onclick="window.TutorialSystem.nextStep()" style="
                     background: #00FFFF; color: #000; border: none; padding: 5px 10px; 
                     font-family: inherit; font-weight: bold; cursor: pointer; 
                     border: 2px solid #fff;">
                     ${stepIndex === tutorialSteps.length - 1 ? '완료' : '다음'}
                 </button>
                 ${stepIndex < tutorialSteps.length - 1 ?
-                '<button id="tutorial-skip-btn" style="background:transparent; color:#888; border:none; margin-right:10px; cursor:pointer;">건너뛰기</button>' : ''}
+                '<button id="tutorial-skip-btn" onclick="window.TutorialSystem.end()"  style="background:transparent; color:#888; border:none; margin-right:10px; cursor:pointer;">건너뛰기</button>' : ''}
             </div>
         `;
 
         if (target) {
+            console.log(`[Tutorial] Target found:`, target);
             // [정상] 타겟이 있으면 해당 위치에 표시 및 하이라이트
             tooltipElement.style.transform = 'none'; // 중앙 정렬 해제
 
@@ -251,26 +258,17 @@ const TutorialSystem = (function () {
         overlayElement.style.display = 'block'; // 오버레이 확실히 켜기
 
         // 버튼 이벤트 연결 (DOM 렌더링 후)
-        setTimeout(() => {
-            const nextBtn = document.getElementById('tutorial-next-btn');
-            if (nextBtn) {
-                nextBtn.onclick = null;
-                nextBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); nextStep(); });
-            }
-            const skipBtn = document.getElementById('tutorial-skip-btn');
-            if (skipBtn) {
-                skipBtn.onclick = null;
-                skipBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); end(); });
-            }
-        }, 50);
+        // Event listeners removed (using inline onclick)
     }
 
     function nextStep() {
+        console.log('[Tutorial] Next step requested.');
         currentStep++;
         showStep(currentStep);
     }
 
     async function end() {
+        console.log('[Tutorial] Ending tutorial.');
         isTutorialActive = false;
         overlayElement.style.display = 'none';
         tooltipElement.style.display = 'none';
@@ -312,7 +310,8 @@ const TutorialSystem = (function () {
     return {
         init: init,
         start: start,
-        end: end, // end 함수도 노출 필요 (건너뛰기 버튼 등 외부 호출 가능성 대비)
+        end: end,
+        nextStep: nextStep, // end 함수도 노출 필요 (건너뛰기 버튼 등 외부 호출 가능성 대비)
         checkAndStart: checkAndStart
     };
 })();
