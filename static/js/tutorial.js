@@ -69,8 +69,8 @@ const TutorialSystem = (function () {
                 position: 'top'
             },
             {
-                target: '#create-scenario-btn',
-                text: '[create new scenario] 버튼을 눌러 당신만의 새로운 세계를 창조해보세요.',
+                target: '#hero-create-btn',
+                text: '[Start Creation] 버튼을 눌러 당신만의 새로운 세계를 창조해보세요.',
                 position: 'bottom'
             },
             {
@@ -138,7 +138,7 @@ const TutorialSystem = (function () {
         }
 
         // 이미 완료했고, 강제 실행이 아니면 실행 안 함
-        if (!force && localStorage.getItem(`trpg_tutorial_completed_${mode}`) === 'true') {
+        if (!force && localStorage.getItem(`${STORAGE_KEY_PREFIX}${mode}`) === 'true') {
             return;
         }
 
@@ -154,7 +154,7 @@ const TutorialSystem = (function () {
     async function checkAndStart(mode) {
         console.log(`[Tutorial] Checking status for mode: ${mode}`);
         // 1. 로컬 스토리지 확인
-        const isLocallyCompleted = localStorage.getItem(`trpg_tutorial_completed_${mode}`);
+        const isLocallyCompleted = localStorage.getItem(`${STORAGE_KEY_PREFIX}${mode}`);
         if (isLocallyCompleted === 'true') {
             console.log('[Tutorial] Skipped (Local storage found).');
             return;
@@ -168,7 +168,7 @@ const TutorialSystem = (function () {
                 if (data.success && data.tutorial_completed) {
                     console.log('[Tutorial] Skipped (Server record found).');
                     // 서버에 이미 완료 기록이 있으면 로컬에도 저장하고 실행 안 함
-                    localStorage.setItem(`trpg_tutorial_completed_${mode}`, 'true');
+                    localStorage.setItem(`${STORAGE_KEY_PREFIX}${mode}`, 'true');
                     return;
                 }
             } catch (e) {
@@ -314,7 +314,7 @@ const TutorialSystem = (function () {
         }
 
         if (currentMode) {
-            localStorage.setItem(`trpg_tutorial_completed_${currentMode}`, 'true');
+            localStorage.setItem(`${STORAGE_KEY_PREFIX}${currentMode}`, 'true');
 
             // Player 모드 완료 시 서버에 저장
             if (currentMode === 'player') {
