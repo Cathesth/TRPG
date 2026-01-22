@@ -89,11 +89,14 @@ async def lifespan(app: FastAPI):
 
 
 # FastAPI 앱 초기화
+# FastAPI 앱 초기화
 app = FastAPI(
     title="TRPG Studio",
     description="TRPG 시나리오 빌더 및 플레이어",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/my-secret-testing-docs", # [Security] API 문서 경로 변경
+    redoc_url=None # [Security] Redoc 비활성화
 )
 
 
