@@ -9,7 +9,8 @@ const TutorialSystem = (function () {
     let isTutorialActive = false;
     let overlayElement = null;
     let tooltipElement = null;
-    let currentHighlightElement = null;
+    let currentHighlightElement = null; // 현재 하이라이트된 요소
+    let lastTimeoutId = null; // [NEW] 재시도 타이머 관리용
 
     // [NEW] 튜토리얼 버전 관리 (버전 올리면 기존 완료 기록 무시하고 다시 뜸)
     const STORAGE_KEY_PREFIX = 'trpg_tutorial_completed_v2_';
@@ -55,8 +56,8 @@ const TutorialSystem = (function () {
                 position: 'left'
             },
             {
-                target: '#builder-publish-btn',
-                text: '작업이 완료되면 왼쪽 하단의 [최종 반영] 버튼으로 변경사항을 저장하고 플레이 가능한 상태로 만듭니다.',
+                target: '#builder-publish-btn, #builder-create-btn',
+                text: '작업이 완료되면 [시나리오 생성] 또는 [최종 반영] 버튼으로 내용을 저장하고 플레이 가능한 상태로 만듭니다.',
                 position: 'bottom'
             }
         ],
@@ -185,19 +186,33 @@ const TutorialSystem = (function () {
 
     async function showStep(stepIndex, retryCount = 0) {
         console.log(`[Tutorial] Showing step ${stepIndex}. Retry: ${retryCount}`);
+
+        // [Safety] 이전 재시도 타이머가 있다면 취소
+        if (lastTimeoutId) {
+            clearTimeout(lastTimeoutId);
+            lastTimeoutId = null;
+        }
+
         if (stepIndex >= tutorialSteps.length) {
             end();
             return;
         }
 
         const step = tutorialSteps[stepIndex];
-        let target = document.querySelector(step.target);
+
+        // [Support] 다중 타겟 지원 (콤마로 구분된 선택자 중 하나라도 찾으면 성공)
+        let target = null;
+        const selectors = step.target.split(',').map(s => s.trim());
+        for (const selector of selectors) {
+            target = document.querySelector(selector);
+            if (target) break; // 찾았으면 중단
+        }
 
         // [안전성] 타겟 요소가 렌더링될 때까지 잠시 대기 (최대 2.5초)
         // 타겟을 못 찾아도 바로 포기하지 않고 재시도
         if (!target && retryCount < 5) {
             console.log(`[Tutorial] Target not found: ${step.target}, retrying... (${retryCount + 1}/5)`);
-            setTimeout(() => showStep(stepIndex, retryCount + 1), 500);
+            lastTimeoutId = setTimeout(() => showStep(stepIndex, retryCount + 1), 500);
             return;
         }
 
@@ -301,6 +316,13 @@ const TutorialSystem = (function () {
 
     async function end() {
         console.log('[Tutorial] Ending tutorial.');
+
+        // [Safety] 타이머 정리
+        if (lastTimeoutId) {
+            clearTimeout(lastTimeoutId);
+            lastTimeoutId = null;
+        }
+
         isTutorialActive = false;
         overlayElement.style.display = 'none';
         tooltipElement.style.display = 'none';
