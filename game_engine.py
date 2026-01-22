@@ -46,21 +46,34 @@ def get_minio_url(category: str, filename: str) -> str:
 
     protocol = "https" if minio_use_ssl else "http"
 
-    # [FIX] 이미 URL 형식이면 그대로 반환하되, 내부망 도메인인 경우 외부 도메인으로 치환
+    # [FIX] 이미 URL 형식이면 프록시 처리 또는 도메인 치환
     if str(filename).startswith("http://") or str(filename).startswith("https://"):
-        if "bucket.railway.internal" in filename:
-            # 1. 포트 번호가 포함된 내부 도메인 치환
-            if "bucket.railway.internal:9000" in filename:
-                 filename = filename.replace("bucket.railway.internal:9000", minio_endpoint)
-            # 2. 포트 번호 없는 내부 도메인 치환
-            else:
-                 filename = filename.replace("bucket.railway.internal", minio_endpoint)
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(filename)
             
-            # 3. SSL 환경이면 http -> https 강제 변환 (프로토콜이 맞지 않는 경우 수정)
-            if minio_use_ssl and filename.startswith("http:"):
-                filename = filename.replace("http:", "https:", 1)
+            # 내부망 도메인의 경우 (bucket.railway.internal 등)
+            if "internal" in parsed.netloc or "localhost" in parsed.netloc:
+                # 시나리오 JSON의 URL이 이미 완전한 경로를 가지고 있다면
+                # app.py의 프록시 라우트(/trpg-assets/)를 타도록 경로만 추출해서 반환
+                # 예: http://internal:9000/trpg-assets/ai-images/... -> /trpg-assets/ai-images/...
                 
-        return filename
+                # 경로가 이미 /trpg-assets/를 포함하고 있다면 해당 경로를 그대로 사용 (상대 경로)
+                # 브라우저가 현재 도메인 + 이 경로로 요청 -> app.py가 받음 -> MinIO 프록시
+                if parsed.path.startswith("/trpg-assets"):
+                    return parsed.path
+                
+                # 만약 /ai-images/로 시작한다면 /trpg-assets/를 붙여줌 (시나리오 데이터별 상이함 대응)
+                if parsed.path.startswith("/ai-images"):
+                    return f"/trpg-assets{parsed.path}"
+                
+                # 그 외의 경우 (bucket 이름이 경로에 포함된 경우 등)
+                return f"/trpg-assets{parsed.path}"
+
+            # 외부 도메인은 그대로 사용
+            return filename
+        except:
+            return filename
 
     # [FIX] 파일명 공백 처리 (언더바 치환) & 소문자 변환 (S3/MinIO 호환성)
     filename = str(filename).strip().replace(" ", "_")
@@ -2518,6 +2531,7 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
     # 버퍼에 내용이 있으면 한 번에 전송
     if prefix_html_buffer:
+        # [FLICKER FIX] 이미지 전송 (스팬 제거 - JS가 처리함)
         yield f"__PREFIX_START__{prefix_html_buffer}__PREFIX_END__"
 
     # YAML에서 씬 묘사 프롬프트 로드
