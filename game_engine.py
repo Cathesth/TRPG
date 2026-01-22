@@ -621,12 +621,16 @@ def intent_parser_node(state: PlayerState):
         scenario = get_scenario_by_id(scenario_id)
         player_status = format_player_status(scenario, state.get('player_vars', {}))
 
+        # [FIX] npc_names와 enemy_names가 딕셔너리일 경우 안전하게 이름 추출
+        safe_npc_names = [n.get('name', str(n)) if isinstance(n, dict) else str(n) for n in npc_names]
+        safe_enemy_names = [e.get('name', str(e)) if isinstance(e, dict) else str(e) for e in enemy_names]
+
         intent_prompt = intent_classifier_template.format(
             player_status=player_status,
             scene_title=scene_title,
             scene_type=scene_type,
-            npc_list=', '.join(npc_names) if npc_names else '없음',
-            enemy_list=', '.join(enemy_names) if enemy_names else '없음',
+            npc_list=', '.join(safe_npc_names) if safe_npc_names else '없음',
+            enemy_list=', '.join(safe_enemy_names) if safe_enemy_names else '없음',
             transitions_list=transitions_list,
             user_input=user_input
         )
