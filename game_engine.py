@@ -27,18 +27,28 @@ def get_minio_url(category: str, filename: str) -> str:
     if not filename:
         return ""
 
-    # [FIX] 이미 URL 형식이면 그대로 반환
-    if str(filename).startswith("http://") or str(filename).startswith("https://"):
-        return filename
-
-    # [FIX] 파일명 공백 처리 (언더바 치환)
-    filename = str(filename).strip().replace(" ", "_")
-
     minio_endpoint = os.getenv("MINIO_ENDPOINT", "localhost:9000")
     minio_bucket = os.getenv("MINIO_BUCKET", "trpg-assets")
     minio_use_ssl = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
 
     protocol = "https" if minio_use_ssl else "http"
+
+    # [FIX] 이미 URL 형식이면 그대로 반환하되, 내부망 도메인인 경우 외부 도메인으로 치환
+    if str(filename).startswith("http://") or str(filename).startswith("https://"):
+        if "bucket.railway.internal" in filename:
+            # 1. 포트 번호가 포함된 내부 도메인 치환
+            filename = filename.replace("bucket.railway.internal:9000", minio_endpoint)
+            # 2. 포트 번호 없는 내부 도메인 치환
+            filename = filename.replace("bucket.railway.internal", minio_endpoint)
+            
+            # 3. SSL 환경이면 http -> https 강제 변환
+            if minio_use_ssl and filename.startswith("http:"):
+                filename = filename.replace("http:", "https:")
+                
+        return filename
+
+    # [FIX] 파일명 공백 처리 (언더바 치환)
+    filename = str(filename).strip().replace(" ", "_")
 
     # [FIX] 확장자 방어적 추가 (png, jpg, jpeg, webp, gif 지원)
     if not any(filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif']):
@@ -242,7 +252,8 @@ def format_player_status(scenario: Dict[str, Any], player_vars: Dict[str, Any] =
             if 'raw_graph' in scenario and 'items' in scenario['raw_graph']:
                 for item_def in scenario['raw_graph']['items']:
                     if item_def.get('name') == item_name and item_def.get('image'):
-                        item_img_url = item_def['image']
+                        # [FIX] 내부 URL 치환을 위해 get_minio_url 호출
+                        item_img_url = get_minio_url('items', item_def['image'])
                         found_image = True
                         break
             
@@ -250,7 +261,8 @@ def format_player_status(scenario: Dict[str, Any], player_vars: Dict[str, Any] =
             if not found_image and 'items' in scenario:
                 for item_def in scenario['items']:
                     if isinstance(item_def, dict) and item_def.get('name') == item_name and item_def.get('image'):
-                        item_img_url = item_def['image']
+                        # [FIX] 내부 URL 치환을 위해 get_minio_url 호출
+                        item_img_url = get_minio_url('items', item_def['image'])
                         found_image = True
                         break
 
@@ -1880,7 +1892,8 @@ def check_npc_appearance(state: PlayerState) -> str:
             if isinstance(npc_data, dict):
                 real_npc_name = npc_data.get('name', 'Unknown NPC')
                 if 'image' in npc_data and npc_data['image']:
-                    minio_npc_url = npc_data['image']
+                    # [FIX] 내부 URL 치환을 위해 get_minio_url 호출
+                    minio_npc_url = get_minio_url('npcs', npc_data['image'])
                 else:
                     minio_npc_url = get_minio_url('npcs', real_npc_name)
             else:
@@ -1941,7 +1954,8 @@ def check_npc_appearance(state: PlayerState) -> str:
                 real_enemy_name = enemy_data.get('name', 'Unknown Enemy')
                 # 딕셔너리에 image 필드가 있으면 우선 사용, 없으면 MinIO 생성
                 if 'image' in enemy_data and enemy_data['image']:
-                    minio_enemy_url = enemy_data['image']
+                    # [FIX] 내부 URL 치환을 위해 get_minio_url 호출
+                    minio_enemy_url = get_minio_url('enemies', enemy_data['image'])
                 else:
                     minio_enemy_url = get_minio_url('enemies', real_enemy_name)
             else:
