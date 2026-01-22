@@ -297,9 +297,43 @@ async def serve_image(file_path: str):
         return Response(status_code=404)
 
 
-@app.get("/")
-async def root():
-    return {"message": "정상 가동 중!"}
+@app.get("/trpg-assets/{file_path:path}")
+async def proxy_trpg_assets(file_path: str):
+    """
+    MinIO 내부망 이미지를 외부에서 접근할 수 있도록 하는 중계(Proxy) 라우트
+    URL: /trpg-assets/{file_path} -> MinIO: {bucket}/{file_path}
+    """
+    from core.s3_client import get_s3_client
+    from fastapi.responses import Response
+
+    s3 = get_s3_client()
+    # 세션 초기화
+    if not s3._session:
+        await s3.initialize()
+
+    # 버킷명 확인 (S3 클라이언트에 설정된 버킷 사용)
+    bucket_name = s3.bucket 
+    
+    try:
+        async with s3._session.client(
+                's3',
+                endpoint_url=s3.endpoint,
+                region_name=s3.region,
+                use_ssl=s3.use_ssl
+        ) as client:
+            try:
+                response = await client.get_object(Bucket=bucket_name, Key=file_path)
+                content = await response['Body'].read()
+                return Response(content=content, media_type=response.get('ContentType', 'image/png'))
+            except client.exceptions.NoSuchKey:
+                logger.warning(f"⚠️ [Proxy] S3 Key Not Found: {file_path}")
+                return Response(status_code=404)
+            except Exception as e:
+                logger.error(f"❌ [Proxy] S3 Error: {str(e)}")
+                return Response(status_code=500)
+    except Exception as e:
+        logger.error(f"❌ [Proxy] General Error: {str(e)}")
+        return Response(status_code=500)
 
 
 if __name__ == '__main__':
