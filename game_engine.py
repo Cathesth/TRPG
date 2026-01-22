@@ -2221,15 +2221,16 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         scene_title = curr_scene.get('title', curr_id)
         scene_type = curr_scene.get('type', 'normal')
 
-        # 🔴 [CRITICAL] NPC 이름 정규화: 딕셔너리면 name 필드 추출
-        raw_npcs = curr_scene.get('npcs', [])
-        npc_names = [n.get('name') if isinstance(n, dict) else n for n in raw_npcs]
+        # 🔴 [CRITICAL] NPC/적 데이터 원본 유지 (이미지 URL 보존 위해)
+        # 단순히 이름만 추출하면 check_npc_appearance에서 이미지 정보를 잃게 됨
+        npc_names = curr_scene.get('npcs', [])
+        enemy_names = curr_scene.get('enemies', [])
+        
+        # 로깅용 이름 리스트 (디버깅 편의성)
+        npc_names_log = [n.get('name') if isinstance(n, dict) else n for n in npc_names]
+        enemy_names_log = [e.get('name') if isinstance(e, dict) else e for e in enemy_names]
 
-        # 🔴 [CRITICAL] 적 이름 정규화: 딕셔너리면 name 필드 추출
-        raw_enemies = curr_scene.get('enemies', [])
-        enemy_names = [e.get('name') if isinstance(e, dict) else e for e in raw_enemies]
-
-        logger.info(f"🎬 [SCENE INFO] NPCs: {npc_names}, Enemies: {enemy_names}")
+        logger.info(f"🎬 [SCENE INFO] NPCs: {npc_names_log}, Enemies: {enemy_names_log}")
 
     # ========================================
     # 💀 작업 2: 죽은 NPC 상태 정보 수집 (환각 방지)
@@ -2535,7 +2536,9 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         yield f"__PREFIX_START__{prefix_html_buffer}__PREFIX_END__"
 
     # YAML에서 씬 묘사 프롬프트 로드
-    npc_list = ', '.join(npc_names) if npc_names else '없음'
+    # [FIX] npc_names가 딕셔너리 리스트일 수 있으므로 이름만 추출하여 문자열 변환
+    safe_npc_names = [n.get('name') if isinstance(n, dict) else n for n in npc_names]
+    npc_list = ', '.join(safe_npc_names) if safe_npc_names else '없음'
     prompts = load_player_prompts()
     scene_prompt_template = prompts.get('scene_description', '')
 
