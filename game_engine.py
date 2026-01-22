@@ -50,13 +50,15 @@ def get_minio_url(category: str, filename: str) -> str:
     if str(filename).startswith("http://") or str(filename).startswith("https://"):
         if "bucket.railway.internal" in filename:
             # 1. 포트 번호가 포함된 내부 도메인 치환
-            filename = filename.replace("bucket.railway.internal:9000", minio_endpoint)
+            if "bucket.railway.internal:9000" in filename:
+                 filename = filename.replace("bucket.railway.internal:9000", minio_endpoint)
             # 2. 포트 번호 없는 내부 도메인 치환
-            filename = filename.replace("bucket.railway.internal", minio_endpoint)
+            else:
+                 filename = filename.replace("bucket.railway.internal", minio_endpoint)
             
-            # 3. SSL 환경이면 http -> https 강제 변환
+            # 3. SSL 환경이면 http -> https 강제 변환 (프로토콜이 맞지 않는 경우 수정)
             if minio_use_ssl and filename.startswith("http:"):
-                filename = filename.replace("http:", "https:")
+                filename = filename.replace("http:", "https:", 1)
                 
         return filename
 
