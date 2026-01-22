@@ -76,6 +76,50 @@ def enrich_world_state(world_state: dict, player_state: dict, scenario: dict = N
     return enriched
 
 
+def enrich_inventory(player_vars: dict, scenario: dict) -> dict:
+    """
+    인벤토리 아이템을 상세 정보(이미지 포함)로 변환
+    """
+    enriched = player_vars.copy() if player_vars else {}
+    inventory = enriched.get('inventory', [])
+    
+    if not inventory:
+        return enriched
+
+    # 시나리오 아이템 데이터 매핑 (name -> data)
+    scenario_items = {}
+    if scenario and 'items' in scenario:
+        for item in scenario['items']:
+             if isinstance(item, dict) and 'name' in item:
+                 scenario_items[item['name']] = item
+
+    enriched_inventory = []
+    for item in inventory:
+        # 이미 객체라면 스킵
+        if isinstance(item, dict):
+            enriched_inventory.append(item)
+            continue
+            
+        item_name = str(item)
+        item_data = {'name': item_name}
+        
+        # 상세 정보 병합
+        if item_name in scenario_items:
+            # 설명 등 기본 정보 복사
+            item_data.update(scenario_items[item_name])
+            
+            # 이미지 URL 변환
+            if 'image' in scenario_items[item_name]:
+                image_file = scenario_items[item_name]['image']
+                # [FIX] 카테고리 명시: 'ai-images/item' (MinIO 경로 규칙에 따름)
+                item_data['image'] = game_engine.get_minio_url('ai-images/item', image_file)
+        
+        enriched_inventory.append(item_data)
+        
+    enriched['inventory'] = enriched_inventory
+    return enriched
+
+
 @game_router.get('/session_state')
 async def get_session_state(
         session_id: str = Query(..., description="세션 ID"),
@@ -112,12 +156,17 @@ async def get_session_state(
             db_session=game_session
         )
 
+        # [FIX] inventory Enrich (이미지 처리)
+        player_state = game_session.player_state.copy() if game_session.player_state else {}
+        if 'player_vars' in player_state:
+             player_state['player_vars'] = enrich_inventory(player_state['player_vars'], scenario)
+
         # player_state와 world_state를 함께 반환
         return JSONResponse(content={
             "success": True,
             "session_id": game_session.session_key,
             "scenario_id": game_session.scenario_id,
-            "player_state": game_session.player_state,
+            "player_state": player_state,
             "world_state": enriched_world_state,  # ✅ 보강된 world_state
             "turn_count": game_session.turn_count,
             "current_scene_id": game_session.current_scene_id,
@@ -644,7 +693,9 @@ async def game_act_stream(
                     yield result
 
             # F. 스탯 업데이트 및 세션 키 전송
-            stats_data = processed_state.get('player_vars', {})
+            player_vars = processed_state.get('player_vars', {})
+            # [FIX] inventory Enrich (이미지 처리)
+            stats_data = enrich_inventory(player_vars, scenario)
             yield f"data: {json.dumps({'type': 'stats', 'content': stats_data})}\n\n"
 
             # ✅ [수정 3] World State 전송 시 processed_state의 world_state를 그대로 사용
