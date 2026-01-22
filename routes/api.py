@@ -19,7 +19,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, desc
 
 from starlette.concurrency import run_in_threadpool
 
@@ -1017,6 +1017,34 @@ def list_scenarios(
         # 이 코드가 없어서 메인화면에 비공개 시나리오가 노출되었습니다.
         query = query.filter(Scenario.is_public == True)
 
+    from datetime import datetime, timedelta
+
+    if sort == 'popular':
+        # [수정] 인기순: (좋아요 수 * 10) + (조회수 * 1) 점수 계산하여 정렬
+        # desc(...) 함수 대신 .desc() 메서드를 사용하여 오류 해결
+        query = query.outerjoin(ScenarioLike, Scenario.id == ScenarioLike.scenario_id) \
+            .group_by(Scenario.id) \
+            .order_by(
+            (
+                    (func.count(ScenarioLike.user_id) * 10) +
+                    func.coalesce(Scenario.view_count, 0)
+            ).desc(),  # <--- 이렇게 끝에 .desc()를 붙입니다.
+            Scenario.created_at.desc()
+        )
+
+    elif sort == 'steady':
+        # [수정] 스테디셀러: 출시 2주 이상 + (좋아요*10 + 조회수) 점수순
+        two_weeks_ago = datetime.now() - timedelta(days=14)
+        query = query.filter(Scenario.created_at <= two_weeks_ago) \
+            .outerjoin(ScenarioLike, Scenario.id == ScenarioLike.scenario_id) \
+            .group_by(Scenario.id) \
+            .order_by(
+            (
+                    (func.count(ScenarioLike.user_id) * 10) +
+                    func.coalesce(Scenario.view_count, 0)
+            ).desc()  # <--- 여기도 마찬가지로 .desc() 사용
+        )
+
     # 3. 정렬
     if sort == 'oldest':
         query = query.order_by(Scenario.created_at.asc())
@@ -1056,7 +1084,6 @@ def list_scenarios(
             f'<div class="col-span-full text-center text-gray-500 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
 
     # HTML 생성
-    from datetime import datetime
     import time as time_module
     current_ts = time_module.time()
     NEW_THRESHOLD = 30 * 60
