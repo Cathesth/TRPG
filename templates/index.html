@@ -37,7 +37,7 @@
                     keyframes: {
                         slide: {
                             '0%': { transform: 'translateX(0)' },
-                            '100%': { transform: 'translateX(-100%)' }
+                            '100%': { transform: 'translateX(-50%)' }
                         },
                         /* 둥둥 뜨는 키프레임 추가 */
                         float: {
@@ -285,32 +285,44 @@
                 </div>
 
                 <div class="flex w-[200%] h-full animate-slide-infinite will-change-transform">
+
                     <div class="w-1/5 h-full relative flex-shrink-0">
-                        <img src="https://images.unsplash.com/photo-1555680202-c86f0e12f086?q=80&w=1600"
-                            class="w-full h-full object-cover" alt="RPG Fantasy Image 1">
+                        <img src="https://images.unsplash.com/photo-1555680202-c86f0e12f086?q=80&w=1600" class="w-full h-full object-cover" alt="RPG 1">
                     </div>
                     <div class="w-1/5 h-full relative flex-shrink-0">
-                        <img src="https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=1600"
-                            class="w-full h-full object-cover" alt="RPG Fantasy Image 2">
+                        <img src="https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=1600" class="w-full h-full object-cover" alt="RPG 2">
                     </div>
                     <div class="w-1/5 h-full relative flex-shrink-0">
-                        <img src="https://images.unsplash.com/photo-1504333638930-c8787321eee0?q=80&w=1600"
-                            class="w-full h-full object-cover" alt="RPG Fantasy Image 3">
+                        <img src="https://images.unsplash.com/photo-1504333638930-c8787321eee0?q=80&w=1600" class="w-full h-full object-cover" alt="RPG 3">
                     </div>
                     <div class="w-1/5 h-full relative flex-shrink-0">
-                        <img src="https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=1600"
-                            class="w-full h-full object-cover" alt="RPG Fantasy Image 4">
+                        <img src="https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=1600" class="w-full h-full object-cover" alt="RPG 4">
                     </div>
                     <div class="w-1/5 h-full relative flex-shrink-0">
-                        <img src="https://images.unsplash.com/photo-1550745165-9bc0b252726f?q=80&w=1600"
-                            class="w-full h-full object-cover" alt="RPG Fantasy Image 5">
+                        <img src="https://images.unsplash.com/photo-1550745165-9bc0b252726f?q=80&w=1600" class="w-full h-full object-cover" alt="RPG 5">
                     </div>
 
                     <div class="w-1/5 h-full relative flex-shrink-0">
-                        <img src="https://images.unsplash.com/photo-1555680202-c86f0e12f086?q=80&w=1600"
-                            class="w-full h-full object-cover" alt="RPG Fantasy Image 1 duplicate">
+                        <img src="https://images.unsplash.com/photo-1555680202-c86f0e12f086?q=80&w=1600" class="w-full h-full object-cover" alt="RPG 1 Clone">
                     </div>
+                    <div class="w-1/5 h-full relative flex-shrink-0">
+                        <img src="https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=1600" class="w-full h-full object-cover" alt="RPG 2 Clone">
+                    </div>
+                    <div class="w-1/5 h-full relative flex-shrink-0">
+                        <img src="https://images.unsplash.com/photo-1504333638930-c8787321eee0?q=80&w=1600" class="w-full h-full object-cover" alt="RPG 3 Clone">
+                    </div>
+                    <div class="w-1/5 h-full relative flex-shrink-0">
+                        <img src="https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=1600" class="w-full h-full object-cover" alt="RPG 4 Clone">
+                    </div>
+                    <div class="w-1/5 h-full relative flex-shrink-0">
+                        <img src="https://images.unsplash.com/photo-1550745165-9bc0b252726f?q=80&w=1600" class="w-full h-full object-cover" alt="RPG 5 Clone">
+                    </div>
+
                 </div>
+
+                ```
+
+**핵심은 CSS의 `translateX(-50%)`입니다.** 이 값을 수정하면 10개의 이미지 중 절반(5개)이 지나갔을 때(즉, 복제본의 시작점인 1번 이미지가 화면에 꽉 찼을 때) 애니메이션이 `0%` 위치(원본 1번 이미지)로 초기화되면서, 사용자 눈에는 끊김 없이 계속 흘러가는 것처럼 보이게 됩니다.
 
                 <div class="absolute bottom-0 left-0 w-full p-10 md:p-16 z-30">
                     <div class="max-w-4xl animate-float">
