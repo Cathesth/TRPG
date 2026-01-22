@@ -2219,7 +2219,8 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     enemy_names = []
 
     if curr_scene:
-        scene_title = curr_scene.get('title', curr_id)
+        # [FIX] title이 없으면 name 필드 사용 (시나리오 JSON 구조 대응)
+        scene_title = curr_scene.get('title', curr_scene.get('name', curr_id))
         scene_type = curr_scene.get('type', 'normal')
 
         # 🔴 [CRITICAL] NPC/적 데이터 원본 유지 (이미지 URL 보존 위해)
@@ -2542,9 +2543,11 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                         logger.info(f"🖼️ [BACKGROUND] Found image in raw_graph for {curr_id} (Loose Match): {background_image}")
                         break
                 
-                # 3. Scene title 매칭 (최후의 수단)
+                # 3. Scene title 매칭 (최후의 수단 - scenes의 name과 nodes의 title 비교)
                 node_title = node.get('data', {}).get('title', '').strip()
-                curr_title = curr_scene.get('title', '').strip()
+                # [FIX] curr_scene에는 'title' 대신 'name'이 들어있는 경우가 많음
+                curr_title = curr_scene.get('title', curr_scene.get('name', '')).strip()
+                
                 if node_title and curr_title and node_title == curr_title:
                      background_image = node.get('data', {}).get('background_image', '')
                      if background_image:
