@@ -46,21 +46,34 @@ def get_minio_url(category: str, filename: str) -> str:
 
     protocol = "https" if minio_use_ssl else "http"
 
-    # [FIX] 이미 URL 형식이면 그대로 반환하되, 내부망 도메인인 경우 외부 도메인으로 치환
+    # [FIX] 이미 URL 형식이면 프록시 처리 또는 도메인 치환
     if str(filename).startswith("http://") or str(filename).startswith("https://"):
-        if "bucket.railway.internal" in filename:
-            # 1. 포트 번호가 포함된 내부 도메인 치환
-            if "bucket.railway.internal:9000" in filename:
-                 filename = filename.replace("bucket.railway.internal:9000", minio_endpoint)
-            # 2. 포트 번호 없는 내부 도메인 치환
-            else:
-                 filename = filename.replace("bucket.railway.internal", minio_endpoint)
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(filename)
             
-            # 3. SSL 환경이면 http -> https 강제 변환 (프로토콜이 맞지 않는 경우 수정)
-            if minio_use_ssl and filename.startswith("http:"):
-                filename = filename.replace("http:", "https:", 1)
+            # 내부망 도메인의 경우 (bucket.railway.internal 등)
+            if "internal" in parsed.netloc or "localhost" in parsed.netloc:
+                # 시나리오 JSON의 URL이 이미 완전한 경로를 가지고 있다면
+                # app.py의 프록시 라우트(/trpg-assets/)를 타도록 경로만 추출해서 반환
+                # 예: http://internal:9000/trpg-assets/ai-images/... -> /trpg-assets/ai-images/...
                 
-        return filename
+                # 경로가 이미 /trpg-assets/를 포함하고 있다면 해당 경로를 그대로 사용 (상대 경로)
+                # 브라우저가 현재 도메인 + 이 경로로 요청 -> app.py가 받음 -> MinIO 프록시
+                if parsed.path.startswith("/trpg-assets"):
+                    return parsed.path
+                
+                # 만약 /ai-images/로 시작한다면 /trpg-assets/를 붙여줌 (시나리오 데이터별 상이함 대응)
+                if parsed.path.startswith("/ai-images"):
+                    return f"/trpg-assets{parsed.path}"
+                
+                # 그 외의 경우 (bucket 이름이 경로에 포함된 경우 등)
+                return f"/trpg-assets{parsed.path}"
+
+            # 외부 도메인은 그대로 사용
+            return filename
+        except:
+            return filename
 
     # [FIX] 파일명 공백 처리 (언더바 치환) & 소문자 변환 (S3/MinIO 호환성)
     filename = str(filename).strip().replace(" ", "_")
@@ -2208,15 +2221,16 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
         scene_title = curr_scene.get('title', curr_id)
         scene_type = curr_scene.get('type', 'normal')
 
-        # 🔴 [CRITICAL] NPC 이름 정규화: 딕셔너리면 name 필드 추출
-        raw_npcs = curr_scene.get('npcs', [])
-        npc_names = [n.get('name') if isinstance(n, dict) else n for n in raw_npcs]
+        # 🔴 [CRITICAL] NPC/적 데이터 원본 유지 (이미지 URL 보존 위해)
+        # 단순히 이름만 추출하면 check_npc_appearance에서 이미지 정보를 잃게 됨
+        npc_names = curr_scene.get('npcs', [])
+        enemy_names = curr_scene.get('enemies', [])
+        
+        # 로깅용 이름 리스트 (디버깅 편의성)
+        npc_names_log = [n.get('name') if isinstance(n, dict) else n for n in npc_names]
+        enemy_names_log = [e.get('name') if isinstance(e, dict) else e for e in enemy_names]
 
-        # 🔴 [CRITICAL] 적 이름 정규화: 딕셔너리면 name 필드 추출
-        raw_enemies = curr_scene.get('enemies', [])
-        enemy_names = [e.get('name') if isinstance(e, dict) else e for e in raw_enemies]
-
-        logger.info(f"🎬 [SCENE INFO] NPCs: {npc_names}, Enemies: {enemy_names}")
+        logger.info(f"🎬 [SCENE INFO] NPCs: {npc_names_log}, Enemies: {enemy_names_log}")
 
     # ========================================
     # 💀 작업 2: 죽은 NPC 상태 정보 수집 (환각 방지)
@@ -2518,10 +2532,13 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
     # 버퍼에 내용이 있으면 한 번에 전송
     if prefix_html_buffer:
+        # [FLICKER FIX] 이미지 전송 (스팬 제거 - JS가 처리함)
         yield f"__PREFIX_START__{prefix_html_buffer}__PREFIX_END__"
 
     # YAML에서 씬 묘사 프롬프트 로드
-    npc_list = ', '.join(npc_names) if npc_names else '없음'
+    # [FIX] npc_names가 딕셔너리 리스트일 수 있으므로 이름만 추출하여 문자열 변환
+    safe_npc_names = [n.get('name') if isinstance(n, dict) else n for n in npc_names]
+    npc_list = ', '.join(safe_npc_names) if safe_npc_names else '없음'
     prompts = load_player_prompts()
     scene_prompt_template = prompts.get('scene_description', '')
 
