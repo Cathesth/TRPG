@@ -1101,7 +1101,8 @@ def list_scenarios(
         stats_badge_html = f"""
                 <div class="flex items-center gap-2 mb-2 text-[10px] font-bold text-gray-400">
                     <span class="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/5">
-                        <i data-lucide="heart" class="w-3 h-3 text-red-500 fill-current"></i> {like_count}
+                        <i data-lucide="heart" class="w-3 h-3 text-red-500 fill-current"></i> 
+                        <span id="like-count-{s.id}">{like_count}</span>
                     </span>
                     <span class="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/5">
                         <i data-lucide="eye" class="w-3 h-3 text-rpg-accent"></i> {view_count}
@@ -1217,7 +1218,11 @@ def toggle_like(
         liked = True
 
     db.commit()
-    return {"success": True, "liked": liked}
+    # ▼▼▼ [추가] 최신 좋아요 개수 집계 ▼▼▼
+    new_count = db.query(func.count(ScenarioLike.scenario_id)).filter(ScenarioLike.scenario_id == scenario_id).scalar()
+
+    # 응답에 count 포함
+    return {"success": True, "liked": liked, "count": new_count}
 
 
 @api_router.get('/scenarios/data')
