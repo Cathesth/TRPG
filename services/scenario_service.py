@@ -25,6 +25,8 @@ class ScenarioService:
             # 필터링 로직
             if filter_mode == 'my' and user_id:
                 query = query.filter(Scenario.author_id == user_id)
+            elif filter_mode == 'recommended':
+                query = query.filter(Scenario.is_public == True, Scenario.is_recommended == True)
             elif filter_mode == 'public':
                 query = query.filter(Scenario.is_public == True)
             else:  # all

@@ -56,6 +56,28 @@ const TutorialSystem = (function () {
                 text: '작업이 완료되면 왼쪽 하단의 [최종 반영] 버튼으로 변경사항을 저장하고 플레이 가능한 상태로 만듭니다.',
                 position: 'bottom'
             }
+        ],
+        index: [
+            {
+                target: '#recommended-grid',
+                text: '이곳은 [추천 시나리오] 탭입니다. 관리자가 엄선한 최고의 시나리오들을 만나보세요!',
+                position: 'top'
+            },
+            {
+                target: '#recommended-grid .scenario-card-base button',
+                text: '[시나리오 플레이] 버튼을 눌러 모험을 바로 시작할 수 있습니다.',
+                position: 'top'
+            },
+            {
+                target: '#create-scenario-btn',
+                text: '[시나리오 만들기] 버튼을 눌러 당신만의 새로운 세계를 창조해보세요.',
+                position: 'bottom'
+            },
+            {
+                target: '#header-mypage-btn',
+                text: '마이페이지 아이콘을 눌러 회원 정보와 플레이 기록을 확인할 수 있습니다.',
+                position: 'bottom'
+            }
         ]
     };
 

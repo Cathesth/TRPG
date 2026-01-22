@@ -210,7 +210,7 @@ def header_profile_view(
             inner_html = '<i data-lucide="user" class="w-6 h-6"></i>'
 
         return f"""
-        <div class="flex items-center gap-3 cursor-pointer group" onclick="location.href='/views/mypage'" title="마이페이지">
+        <div id="header-mypage-btn" class="flex items-center gap-3 cursor-pointer group" onclick="location.href='/views/mypage'" title="마이페이지">
             <button class="text-gray-400 group-hover:text-white transition-colors p-0.5 rounded-full bg-rpg-800 border border-rpg-700 group-hover:border-rpg-accent shadow-md overflow-hidden w-10 h-10 flex items-center justify-center">
                 {inner_html}
             </button>
