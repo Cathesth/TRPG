@@ -1059,13 +1059,17 @@
     </script>
     {% endif %}
 
-        <div id="chatbot-modal" class="fixed bottom-6 right-6 z-[200] w-96 h-[600px] bg-rpg-900 border-2 border-rpg-accent rounded-xl shadow-2xl flex flex-col transform transition-transform duration-300 translate-y-[120%] opacity-0 pointer-events-none origin-bottom-right">
-        <div class="p-4 bg-rpg-800 border-b border-rpg-700 flex justify-between items-center rounded-t-xl">
-            <div class="flex items-center gap-2">
+        <div id="chatbot-modal" class="fixed bottom-6 right-6 z-[200] bg-rpg-900 border-2 border-rpg-accent rounded-xl shadow-2xl flex flex-col transition-all duration-300 translate-y-[120%] opacity-0 pointer-events-none origin-bottom-right"
+         style="width: 24rem; height: 600px; min-width: 300px; min-height: 400px;">
+
+        <div id="chatbot-header" class="p-4 bg-rpg-800 border-b border-rpg-700 flex justify-between items-center rounded-t-xl cursor-move select-none active:cursor-grabbing">
+            <div class="flex items-center gap-2 pointer-events-none">
                 <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                 <h3 class="text-white font-bold font-title text-sm">AI SUPPORT AGENT</h3>
             </div>
-            <button onclick="toggleChatbot()" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            <button onclick="toggleChatbot()" onmousedown="event.stopPropagation()" class="text-gray-400 hover:text-white cursor-pointer">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
         </div>
 
         <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-black/20">
@@ -1080,7 +1084,7 @@
             </div>
         </div>
 
-        <div class="p-3 bg-rpg-800 border-t border-rpg-700 rounded-b-xl">
+        <div class="p-3 bg-rpg-800 border-t border-rpg-700 relative rounded-b-xl">
             <form onsubmit="handleChatSubmit(event)" class="relative">
                 <input type="text" id="chat-input"
                        class="w-full bg-rpg-900 text-white text-sm rounded-lg pl-4 pr-10 py-3 border border-rpg-700 focus:border-rpg-accent focus:outline-none placeholder-gray-600"
@@ -1089,6 +1093,10 @@
                     <i data-lucide="send" class="w-4 h-4"></i>
                 </button>
             </form>
+
+            <div id="resize-handle" class="absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize z-50 flex items-end justify-end p-1 rounded-br-xl hover:bg-white/10">
+                <div class="w-2 h-2 bg-rpg-accent/50 rounded-full"></div>
+            </div>
         </div>
     </div>
 
@@ -1211,6 +1219,117 @@
             lucide.createIcons();
             chatBox.scrollTop = chatBox.scrollHeight;
         }
+
+        // ▼▼▼ [추가] 챗봇 드래그 및 리사이즈 로직 ▼▼▼
+        document.addEventListener('DOMContentLoaded', function() {
+            const modal = document.getElementById('chatbot-modal');
+            const header = document.getElementById('chatbot-header');
+            const resizeHandle = document.getElementById('resize-handle');
+
+            // 1. 드래그 기능 (Drag)
+            let isDragging = false;
+            let startX, startY, initialLeft, initialTop;
+
+            header.addEventListener('mousedown', function(e) {
+                // 우클릭 방지
+                if (e.button !== 0) return;
+
+                isDragging = true;
+
+                // [핵심 수정] 드래그 시작 시 transform 클래스를 제거하여 좌표 충돌 방지
+                modal.classList.remove('transition-all', 'duration-300', 'translate-y-[120%]');
+
+                // 현재 위치 계산 및 고정 (bottom/right -> top/left)
+                const rect = modal.getBoundingClientRect();
+                modal.style.bottom = 'auto';
+                modal.style.right = 'auto';
+                modal.style.left = rect.left + 'px';
+                modal.style.top = rect.top + 'px';
+                modal.style.transform = 'none'; // transform 초기화
+
+                startX = e.clientX;
+                startY = e.clientY;
+                initialLeft = rect.left;
+                initialTop = rect.top;
+
+                document.body.style.userSelect = 'none';
+            });
+
+            // 2. 리사이즈 기능 (Resize)
+            let isResizing = false;
+            let startW, startH, resizeStartX, resizeStartY;
+
+            resizeHandle.addEventListener('mousedown', function(e) {
+                if (e.button !== 0) return;
+                isResizing = true;
+                e.stopPropagation();
+
+                // 리사이즈 시작 시 위치 고정
+                const rect = modal.getBoundingClientRect();
+                modal.classList.remove('transition-all', 'duration-300', 'translate-y-[120%]');
+                modal.style.bottom = 'auto';
+                modal.style.right = 'auto';
+                modal.style.left = rect.left + 'px';
+                modal.style.top = rect.top + 'px';
+                modal.style.transform = 'none';
+
+                startW = rect.width;
+                startH = rect.height;
+                resizeStartX = e.clientX;
+                resizeStartY = e.clientY;
+
+                document.body.style.userSelect = 'none';
+            });
+
+            // 마우스 이동 (전역)
+            document.addEventListener('mousemove', function(e) {
+                if (isDragging) {
+                    const dx = e.clientX - startX;
+                    const dy = e.clientY - startY;
+                    modal.style.left = `${initialLeft + dx}px`;
+                    modal.style.top = `${initialTop + dy}px`;
+                }
+                if (isResizing) {
+                    const dx = e.clientX - resizeStartX;
+                    const dy = e.clientY - resizeStartY;
+                    // 최소 크기 제한 (300x400)
+                    modal.style.width = `${Math.max(300, startW + dx)}px`;
+                    modal.style.height = `${Math.max(400, startH + dy)}px`;
+                }
+            });
+
+            // 마우스 놓기 (전역)
+            document.addEventListener('mouseup', function() {
+                if (isDragging || isResizing) {
+                    isDragging = false;
+                    isResizing = false;
+                    document.body.style.userSelect = 'auto';
+                    // 드래그 종료 후 다시 부드러운 효과 적용 (선택사항)
+                    // modal.classList.add('transition-all', 'duration-300');
+                }
+            });
+        });
+
+        // [수정] 챗봇 토글 함수 (메인으로 이동 로직 추가)
+        function toggleChatbot() {
+            const modal = document.getElementById('chatbot-modal');
+
+            // 닫혀있으면 열기
+            if (modal.classList.contains('opacity-0') || modal.style.display === 'none') {
+                modal.style.display = 'flex';
+                // 약간의 지연 후 opacity 변경으로 페이드인 효과
+                setTimeout(() => {
+                    modal.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-[120%]');
+                }, 10);
+                document.getElementById('chat-input').focus();
+            }
+            // 열려있으면 닫기
+            else {
+                modal.classList.add('opacity-0', 'pointer-events-none', 'translate-y-[120%]');
+                // 애니메이션 후 display none (필요시)
+            }
+        }
+
     </script>
     </body>
 

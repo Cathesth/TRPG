@@ -1,6 +1,17 @@
 import json
 import logging
 
+# [추가] DB 접근을 위한 임포트
+try:
+    from models import get_db, Scenario, ScenarioLike
+    from sqlalchemy import func
+    from core.vector_db import get_vector_db_client
+    from llm_factory import LLMFactory
+except ImportError:
+    pass
+
+logger = logging.getLogger(__name__)
+
 # 필요한 모듈 임포트
 try:
     from core.vector_db import get_vector_db_client
@@ -104,6 +115,47 @@ class ChatbotService:
             return {
                 "answer": "🤖 **AI 보조 도구 소개**\n\n창작자를 위한 강력한 AI 기능들을 지원합니다.\n\n1. **NPC 제네레이터**: 이름만 넣으면 성격/배경 자동 생성\n2. **자동 씬 묘사**: 키워드로 몰입감 있는 지문 작성\n3. **로직 검수기**: 시나리오 분기 및 오류 자동 분석\n\n빌더 모드에서 이 기능들을 활용해 보세요.",
                 "choices": ["빌더 모드 이동", "시나리오 제작 방법", "처음으로"]
+            }
+
+        # ▼▼▼ [수정] 실제 DB 조회 기반 인기 시나리오 추천 로직 ▼▼▼
+        if any(w in query for w in ['인기', '추천', '랭킹', '순위', 'popular', 'top', '1위']):
+            try:
+                # 1. DB 세션 생성
+                db = next(get_db())
+
+                # 2. 인기순 정렬 쿼리 (api.py와 동일 로직: 좋아요*10 + 조회수)
+                # 공개된(is_public=True) 시나리오 중 1위 조회
+                top_scenario = db.query(Scenario).filter(Scenario.is_public == True) \
+                    .outerjoin(ScenarioLike, Scenario.id == ScenarioLike.scenario_id) \
+                    .group_by(Scenario.id) \
+                    .order_by(
+                    (func.count(ScenarioLike.scenario_id) * 10 + func.coalesce(Scenario.view_count, 0)).desc()) \
+                    .first()
+
+                if top_scenario:
+                    # 데이터 파싱
+                    s_data = top_scenario.data if isinstance(top_scenario.data, dict) else {}
+                    inner = s_data.get('scenario', s_data)
+                    title = top_scenario.title or "제목 없음"
+                    desc = inner.get('prologue', inner.get('desc', '설명이 없습니다.'))
+                    if len(desc) > 80: desc = desc[:80] + "..."
+
+                    answer_text = (
+                        f"🏆 **현재 인기 1위 시나리오**\n\n"
+                        f"✨ **{title}**\n"
+                        f"📖 {desc}\n\n"
+                        f"지금 가장 핫한 이 모험을 떠나보시겠어요?"
+                    )
+                else:
+                    answer_text = "아직 등록된 공개 시나리오가 없습니다. 첫 번째 모험을 만들어보세요!"
+
+            except Exception as e:
+                logger.error(f"DB Query Error: {e}")
+                answer_text = "인기 시나리오 정보를 불러오는 중 오류가 발생했습니다."
+
+            return {
+                "answer": answer_text,
+                "choices": ["메인으로 이동", "게임 플레이 방법", "처음으로"]
             }
 
         # 6. 플레이 / 게임 시작
