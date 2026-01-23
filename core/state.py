@@ -956,8 +956,8 @@ class WorldState:
             # ========================================
             # 💥 작업 2: NPC 반격 로직 (살아있을 때만)
             # ========================================
-            # 70% 확률로 반격
-            if random.random() < 0.7:
+            # [BALANCE] 50% 확률로 반격 (기존 70%에서 하향)
+            if random.random() < 0.5:
                 # 🔴 [FIX] NPC 공격력을 안전하게 가져오기 (빈 값 방어)
                 npc_attack_raw = npc.get("attack", 10)
 
@@ -975,12 +975,26 @@ class WorldState:
                     npc_attack = 10
                     logger.warning(f"[COMBAT] Invalid attack value for NPC '{npc_key}': {npc_attack_raw}, using default: 10")
 
-                # 반격 데미지 계산: NPC 공격력 ± 50% 랜덤 변동
-                damage_variance = int(npc_attack * 0.5)
-                counter_damage = random.randint(
-                    max(1, npc_attack - damage_variance),
-                    npc_attack + damage_variance
+                # [BALANCE] 반격 데미지 하향 조정 (공격력의 60% 수준)
+                # 스크랩 스매셔(15) -> 9 정도로 낮춤
+                adjusted_attack = int(npc_attack * 0.6)
+                
+                # 반격 데미지 계산: 조정된 공격력 ± 30% 랜덤 변동
+                damage_variance = int(adjusted_attack * 0.3)
+                raw_damage = random.randint(
+                    max(1, adjusted_attack - damage_variance),
+                    adjusted_attack + damage_variance
                 )
+                
+                # 플레이어 방어력 적용
+                player_def = self.player.get("defense", 0)
+                if not isinstance(player_def, int):
+                    try:
+                        player_def = int(player_def)
+                    except:
+                        player_def = 0
+                    
+                counter_damage = max(1, raw_damage - player_def)
 
                 # 플레이어 HP 감소
                 player_hp = self.player.get("hp", 100)
@@ -988,7 +1002,7 @@ class WorldState:
                 self.player["hp"] = new_player_hp
 
                 result_text += f"\n⚔️ {npc_key}의 반격! 플레이어가 {counter_damage} 피해를 입었습니다! (남은 HP: {new_player_hp})"
-                logger.info(f"💥 [COUNTER ATTACK] {npc_key} (attack={npc_attack}) counter-attacked player: {counter_damage} damage (Player HP: {player_hp} -> {new_player_hp})")
+                logger.info(f"💥 [COUNTER ATTACK] {npc_key} (atk={npc_attack}->{adjusted_attack}) dealt {counter_damage} dmg (Player HP: {player_hp} -> {new_player_hp})")
                 logger.info(f"[SYNC CHECK] Player HP synced: {new_player_hp}")
 
                 # 플레이어 사망 체크

@@ -1534,6 +1534,19 @@ def npc_node(state: PlayerState):
                             target_npc = potential_target
                             logger.info(f"🎯 [COMBAT] Target found via find_npc_key: '{target_npc}'")
                             break
+                            
+                # [FIX] 여전히 타겟이 없으면 씬에 있는 적들 중 첫 번째를 자동 선택
+                if not target_npc and curr_scene:
+                    enemies = curr_scene.get('enemies', [])
+                    if enemies:
+                        # enemies 리스트의 첫 번째 항목 사용
+                        first_enemy = enemies[0]
+                        if isinstance(first_enemy, dict):
+                            target_npc = first_enemy.get('name')
+                        else:
+                            target_npc = str(first_enemy)
+                        
+                        logger.info(f"🎯 [COMBAT] Auto-targeting first enemy: '{target_npc}'")
 
         # (c) target_npc가 확정되지 않으면 에러 처리
         if not target_npc:
