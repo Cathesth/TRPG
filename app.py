@@ -182,18 +182,10 @@ from routes import api_router, game_router, views_router, admin_router
 #from routes.views import views_router
 from routes.game import game_router
 from routes.api import api_router, mypage_router
+from routes.views import views_router
+from routes.admin import router as admin_router
+from routes.chatbot import router as chatbot_router  # [확인] 챗봇 라우터
 
-
-# [추가] Vector DB 라우터 등록
-#from routes.vector_api import router as vector_router (아래 try-except에서 처리함)
-
-app.include_router(views_router)
-app.include_router(api_router)
-app.include_router(game_router)
-app.include_router(admin_router) # [NEW] 관리자 라우터
-
-# [중요] 마이페이지 라우터를 명시적으로 등록하여 404 에러 해결
-app.include_router(mypage_router)
 
 
 
@@ -208,6 +200,7 @@ app.include_router(mypage_router)
 #app.include_router(api.api_router) <----- 삭제필요 (위에서 app.include_router(api_router)로 이미 등록됨)
 #app.include_router(api.mypage_router) # 마이페이지 라우터도 등록 <----- 삭제필요 (위에서 app.include_router(mypage_router)로 이미 등록됨)
 
+
 # 3. [선택] Assets 라우터 (파일이 없어도 에러 안 나게 처리)
 try:
     from routes.assets import router as assets_router
@@ -216,7 +209,7 @@ try:
 except ImportError:
     logger.warning("⚠️ routes.assets module not found. Assets router skipped.")
 
-# 4. [Vector DB] 라우터 (파일이 없을 경우 대비하여 try-except 처리 권장)
+# 4. [Vector DB] 라우터 (파일이 없을 경우 대비)
 try:
     from routes.vector_api import router as vector_router
     app.include_router(vector_router)
@@ -224,20 +217,13 @@ try:
 except ImportError:
     logger.warning("routes.vector_api module not found. Vector DB router skipped.")
 
-# ... (위쪽 코드 생략) ...
-
-# 라우터 등록
-app.include_router(views_router)
-app.include_router(api_router)
-app.include_router(game_router)
-app.include_router(admin_router) # [NEW] 관리자 라우터
-
-# [중요] 마이페이지 라우터를 명시적으로 등록하여 404 에러 해결
-app.include_router(mypage_router)
-
-# ▼▼▼ [추가] 챗봇 라우터 등록 ▼▼▼
-app.include_router(chatbot_router)
-
+# 2. 메인 라우터 등록 (여기가 진짜 등록 부분입니다. 이 부분은 남겨두세요)
+app.include_router(views_router)   # 화면(View) 관련
+app.include_router(api_router)     # API 관련
+app.include_router(game_router)    # 게임 로직 관련
+app.include_router(admin_router)   # 관리자 기능
+app.include_router(mypage_router)  # 마이페이지 기능
+app.include_router(chatbot_router) # [추가] 챗봇 기
 
 # Health check 엔드포인트 (Railway 모니터링용)
 @app.get("/health")

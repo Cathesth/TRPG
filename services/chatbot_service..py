@@ -10,6 +10,11 @@ class ChatbotService:
         # vector_db = get_vector_db_client()
         # context_docs = await vector_db.search(user_query, top_k=3)
         # context_text = "\n".join([doc.content for doc in context_docs])
+        # [임시 로직] 실제 RAG/LLM 연동 전 테스트용 응답
+        return {
+            "answer": f"안녕하세요! 질문하신 '{user_query}'에 대한 AI 가이드의 답변입니다. (현재 데모 모드)",
+            "choices": ["시나리오 생성법", "요금제 문의", "기타 질문"]
+        }
 
         context_text = "TRPG Studio는 AI 기반 시나리오 저작 도구입니다..."  # (임시 컨텍스트)
 
