@@ -336,8 +336,26 @@ async def serve_image(file_path: str):
                 if found_content:
                     return Response(content=found_content, media_type=found_type)
 
-                # 최종 실패
+                # 최종 실패 - 디버깅을 위해 해당 경로의 파일 목록 조회
                 logger.error(f"❌ [Image Serve] Final Failure. Key not found: {real_key}")
+                
+                try:
+                    # 디렉토리 경로 추출 (예: ai-images/item/)
+                    prefix = "/".join(real_key.split("/")[:-1])
+                    if prefix:
+                        prefix += "/"
+                    
+                    logger.info(f"📂 [DEBUG] Listing files in prefix: '{prefix}'")
+                    list_resp = await client.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+                    
+                    if 'Contents' in list_resp:
+                        files = [obj['Key'] for obj in list_resp['Contents']]
+                        logger.info(f"📄 [DEBUG] Found files ({len(files)}): {files}")
+                    else:
+                        logger.warning(f"📂 [DEBUG] No files found in prefix: '{prefix}'")
+                except Exception as list_err:
+                    logger.error(f"⚠️ [DEBUG] Failed to list objects: {list_err}")
+
                 return Response(status_code=404)
             except Exception as e:
                 logger.error(f"❌ [Image Serve] S3 Error: {str(e)}")
