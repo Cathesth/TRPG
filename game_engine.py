@@ -1625,6 +1625,39 @@ def npc_node(state: PlayerState):
                         logger.info(f"💰 [LOOT] No items to drop from {target_npc}")
                     break
 
+        # (j) [FIX] 적 처치 시 승리 조건(Transitions) 즉시 확인 및 이동 트리거
+        if npc_state and npc_state.get('status') == 'dead':
+            # 현재 씬의 transitions 확인
+            all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
+            curr_scene = all_scenes.get(curr_id)
+            if curr_scene:
+                transitions = curr_scene.get('transitions', [])
+                for idx, trans in enumerate(transitions):
+                    trigger = trans.get('trigger', '').lower()
+                    
+                    # 트리거에 적 이름이나 '처치', '파괴', '승리' 등의 키워드가 포함되어 있으면 이동
+                    # 예: "스크랩 스매셔 파괴", "전투 승리", "적 처치"
+                    keywords = ['처치', '파괴', '승리', 'kill', 'destroy', 'win', 'victory', 'defeat']
+                    
+                    # 적 이름이 트리거에 포함되거나, 일반적인 승리 키워드가 포함된 경우
+                    if target_npc.lower() in trigger or any(k in trigger for k in keywords):
+                        # [SAFETY] 전투 후 추가 행동(조사, 획득 등)이 필요한 트리거라면 자동 이동 금지
+                        # 예: "적 처치 후 열쇠 획득", "승리하고 아이템 줍기"
+                        exclude_keywords = ['획득', '조사', '얻', '찾', '줍', 'get', 'take', 'loot', 'search', 'investigate', '후', 'then', 'and', '그리고']
+                        
+                        if any(ex_kw in trigger for ex_kw in exclude_keywords):
+                            logger.info(f"⚔️ [COMBAT] Victory condition met but requires extra action ('{trigger}'). Auto-transition skipped.")
+                            state['system_message'] += f"\n❓ 적이 쓰러졌습니다. 하지만 아직 끝난 것 같지 않습니다. ({trigger})"
+                        else:
+                            # 순수 전투 승리 조건인 경우 자동 이동
+                            logger.info(f"⚔️ [COMBAT] Victory condition met! Triggering auto-transition: '{trigger}' -> {trans.get('target_scene_id')}")
+                            state['parsed_intent'] = 'transition'
+                            state['last_user_choice_idx'] = idx
+                            
+                            # 시스템 메시지에 이동 알림 추가
+                            state['system_message'] += f"\n✨ [전투 승리] {trigger}... 다음 장면으로 이동합니다."
+                        break
+
         logger.info(f"✅ [COMBAT] Attack processing complete. Damage: {damage}, Target: {target_npc}")
 
         return state
