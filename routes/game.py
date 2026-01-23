@@ -113,6 +113,11 @@ def enrich_inventory(player_vars: dict, scenario: dict) -> dict:
                 image_file = scenario_items[item_name]['image']
                 # [FIX] 카테고리 명시: 'ai-images/item' (MinIO 경로 규칙에 따름)
                 item_data['image'] = game_engine.get_minio_url('ai-images/item', image_file)
+                logger.info(f"🖼️ [INVENTORY] Generated image URL for '{item_name}': {item_data['image']}")
+            else:
+                logger.info(f"⚠️ [INVENTORY] Item '{item_name}' found in scenario but has no 'image' field.")
+        else:
+            logger.info(f"⚠️ [INVENTORY] Item '{item_name}' NOT found in scenario items definition.")
         
         enriched_inventory.append(item_data)
         
@@ -705,6 +710,7 @@ async def game_act_stream(
             current_loc = processed_state.get('current_scene_id')
             if current_loc:
                 bg_image_url = ""
+                scene_found = False
                 # 시나리오에서 현재 씬의 background_image 또는 image_prompt 찾기
                 for scene in scenario.get('scenes', []):
                     if scene.get('scene_id') == current_loc:

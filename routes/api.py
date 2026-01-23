@@ -1101,7 +1101,6 @@ def list_scenarios(
         fid = str(s.id)
         title = s.title or "제목 없음"
         desc = s_data.get('prologue', s_data.get('desc', '설명이 없습니다.'))
-        if len(desc) > 60: desc = desc[:60] + "..."
 
         author = s.author_id or "System"
         is_owner = (user.is_authenticated and s.author_id == user.id)
@@ -1217,7 +1216,7 @@ def list_scenarios(
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
                     </div>
                     
-                    <p class="text-sm text-gray-400 line-clamp-2 leading-relaxed">
+                    <p class="text-sm text-gray-400 line-clamp-2 leading-relaxed min-h-[3rem]">
                         {desc}
                     </p>
                 </div>

@@ -341,16 +341,21 @@ function updateStats(statsData) {
             <div class="flex flex-wrap gap-1">`;
 
         for (const item of statsData.inventory) {
+            // [DEBUG] 아이템 데이터 로깅
+            console.log(`🎒 [INVENTORY] Rendering item:`, item);
+
             // item이 객체이고 image가 있으면 이미지 아이콘 표시
             if (typeof item === 'object' && item.image) {
+                console.log(`🖼️ [INVENTORY] Image URL found for ${item.name}:`, getImageUrl(item.image));
+
                 html += `
                 <div class="group relative bg-rpg-800 border-2 border-gray-600 w-10 h-10 flex items-center justify-center cursor-help hover:border-yellow-400 transition-colors">
                     <img src="${getImageUrl(item.image)}"
                          class="w-full h-full object-cover pixel-avatar"
                          alt="${item.name}"
-                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                    <div class="hidden w-full h-full items-center justify-center bg-rpg-800">
-                        <i data-lucide="box" class="w-4 h-4 text-gray-400"></i>
+                         onerror="console.error('❌ [INVENTORY] Image failed to load:', this.src); this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div class="hidden w-full h-full items-center justify-center bg-rpg-800 text-gray-300">
+                        <i data-lucide="box" class="w-5 h-5"></i>
                     </div>
                     <span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black border border-white text-[10px] whitespace-nowrap hidden group-hover:block z-20 font-dot">
                         ${item.name}
@@ -385,15 +390,15 @@ function updateStats(statsData) {
             <div class="flex flex-col items-center group relative">
                 <div class="w-12 h-12 bg-rpg-900 border-2 ${borderClass} overflow-hidden mb-1 relative transition-transform hover:scale-110 cursor-help">
                     ${hasImage
-                        ? `<img src="${getImageUrl(npc.image)}"
+                    ? `<img src="${getImageUrl(npc.image)}"
                                 class="w-full h-full object-cover pixel-avatar"
                                 alt="${npc.name}"
                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                            <div class="hidden w-full h-full items-center justify-center text-gray-600 bg-rpg-900 absolute top-0 left-0">
                                 <i data-lucide="${iconType}" class="w-6 h-6"></i>
                            </div>`
-                        : `<div class="w-full h-full flex items-center justify-center text-gray-600"><i data-lucide="${iconType}" class="w-6 h-6"></i></div>`
-                    }
+                    : `<div class="w-full h-full flex items-center justify-center text-gray-600"><i data-lucide="${iconType}" class="w-6 h-6"></i></div>`
+                }
                 </div>
                 <span class="text-[9px] text-gray-400 truncate w-full text-center font-dot bg-black/50 px-1 rounded">${npc.name}</span>
 
@@ -406,7 +411,7 @@ function updateStats(statsData) {
         });
         npcHtml += '</div>';
 
-        if(statsData.npcs.length === 0) {
+        if (statsData.npcs.length === 0) {
             npcArea.innerHTML = '<div class="text-gray-500 text-xs text-center py-2 font-dot">주변에 아무도 없습니다.</div>';
         } else {
             npcArea.innerHTML = npcHtml;
@@ -449,7 +454,7 @@ function openLoadModal() {
         modal.style.display = 'flex';
         const sortSelect = document.getElementById('scenario-sort');
         const sortValue = sortSelect ? sortSelect.value : 'newest';
-        htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, {target: '#scenario-list-container', swap: 'innerHTML'});
+        htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, { target: '#scenario-list-container', swap: 'innerHTML' });
     }
 }
 
@@ -464,16 +469,16 @@ function closeLoadModal() {
 function reloadScenarioList() {
     const sortSelect = document.getElementById('scenario-sort');
     const sortValue = sortSelect ? sortSelect.value : 'newest';
-    htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, {target: '#scenario-list-container', swap: 'innerHTML'});
+    htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, { target: '#scenario-list-container', swap: 'innerHTML' });
 }
 
 function showToast(message, type = 'info') {
     const bgColor = type === 'success' ? 'bg-green-900/90 border-green-500/30 text-green-100' :
-                   type === 'error' ? 'bg-red-900/90 border-red-500/30 text-red-100' :
-                   'bg-blue-900/90 border-blue-500/30 text-blue-100';
+        type === 'error' ? 'bg-red-900/90 border-red-500/30 text-red-100' :
+            'bg-blue-900/90 border-blue-500/30 text-blue-100';
 
     const icon = type === 'success' ? 'check-circle' :
-                type === 'error' ? 'alert-circle' : 'info';
+        type === 'error' ? 'alert-circle' : 'info';
 
     const toast = document.createElement('div');
     toast.className = `fixed bottom-4 right-4 z-[100] ${bgColor} border px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3`;
