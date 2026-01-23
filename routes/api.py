@@ -1126,7 +1126,7 @@ def list_scenarios(
 
         # 숫자 포맷팅 (예: 1000 -> 1k) - 필요시 사용, 여기선 간단히 처리
         stats_badge_html = f"""
-                <div class="flex items-center gap-2 mb-2 text-[10px] font-bold text-gray-400">
+                <div class="flex items-center gap-2 mb-1.5 text-[10px] font-bold text-gray-400">
                     <span class="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/5">
                         <i data-lucide="heart" class="w-3 h-3 text-red-500 fill-current"></i> 
                         <span class="like-count-{s.id}">{like_count}</span>
@@ -1147,11 +1147,14 @@ def list_scenarios(
         if filter == 'my':
             card_style = "w-full aspect-square"
             img_height = "h-[45%]"
-            content_padding = "p-4"
+            # 기존 p-4 -> px-4 pt-3 pb-5 (위는 좁게, 아래는 넓게)
+            content_padding = "px-4 pt-3 pb-5"
         else:
-            card_style = "w-96 h-[26rem] flex-shrink-0 snap-center"
-            img_height = "h-52"
-            content_padding = "p-5"
+            # 메인화면 가로 스크롤용 고정 너비
+            card_style = "w-72 h-[24rem] flex-shrink-0 snap-center mr-4"
+            img_height = "h-48"
+            # 기존 p-4 -> px-4 pt-3 pb-5 (위는 좁게, 아래는 넓게)
+            content_padding = "px-4 pt-3 pb-5"
 
         is_liked = s.id in liked_scenario_ids
         heart_class = "fill-red-500 text-red-500" if is_liked else "text-white/70 hover:text-red-500"
@@ -1202,26 +1205,27 @@ def list_scenarios(
                     Fantasy
                 </div>
             </div>
-            
+
             <div class="{content_padding} flex-1 flex flex-col justify-between">
-                
+
                 <div class="flex-1 min-h-0 flex flex-col">
-                
+
                     {stats_badge_html}
-                    
-                    <div class="flex justify-between items-start mb-1 shrink-0">
+
+                    <div class="flex justify-between items-start mb-0.5 shrink-0">
                         <h3 class="text-base font-bold text-white tracking-wide truncate w-full group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
                     </div>
+
                     <div class="flex justify-between items-center text-xs text-gray-400 mb-2 shrink-0">
                         <span>{author}</span>
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
                     </div>
-                    
+
                     <p class="text-sm text-gray-400 line-clamp-2 leading-relaxed">
                         {desc}
                     </p>
                 </div>
-                
+
                 {buttons_html}
             </div>
         </div>
