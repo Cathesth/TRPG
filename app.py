@@ -270,6 +270,10 @@ async def serve_image(file_path: str):
                 real_key = full_path.replace(f"{bucket_name}/", "", 1)
             else:
                 real_key = full_path
+            
+            # [FIX] URL 경로에 포함된 한글 등은 여전히 인코딩된 상태일 수 있으므로 한 번 더 디코딩
+            # S3/MinIO 키는 보통 유니코드로 저장됨
+            real_key = urllib.parse.unquote(real_key)
         
         # 디버그 로그
         # logger.info(f"🔍 [Image Serve] Request: {file_path} -> Decoded: {decoded_path} -> Key: {real_key}")
