@@ -1121,20 +1121,26 @@
             if (!text) return;
 
             // ▼▼▼ [추가] "빌더 모드 이동" 키워드 감지 시 페이지 이동 처리 ▼▼▼
-            if (text === '빌더 모드 이동') {
-                // 로그인 여부 확인 후 빌더 페이지(/views/builder)로 이동
-                // (index.html 상단에 정의된 checkLoginAndRedirect 함수 활용)
+            // 1. 빌더 모드로 이동 (텍스트가 정확히 일치하거나 포함될 경우)
+            if (text === '빌더 모드 이동' || text === '빌더 모드') {
                 if (typeof window.checkLoginAndRedirect === 'function') {
                     window.checkLoginAndRedirect('/views/builder');
                 } else {
-                    // 함수가 없을 경우 바로 이동 시도
                     window.location.href = '/views/builder';
                 }
-                input.value = ''; // 입력창 초기화
+                input.value = '';
+                return; // 챗봇 메시지 전송 막고 함수 종료
+            }
 
-                // 챗봇 모달 닫기 (선택사항 - 이동하면서 자연스럽게 닫힘)
-                // toggleChatbot();
-                return;
+            // 2. 마이페이지로 이동 (텍스트가 정확히 일치하거나 포함될 경우)
+            if (text === '마이페이지로 이동' || text === '마이페이지') {
+                if (typeof window.checkLoginAndRedirect === 'function') {
+                    window.checkLoginAndRedirect('/views/mypage');
+                } else {
+                    window.location.href = '/views/mypage';
+                }
+                input.value = '';
+                return; // 챗봇 메시지 전송 막고 함수 종료
             }
 
             await sendMessage(text);
