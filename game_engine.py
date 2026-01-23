@@ -5,6 +5,7 @@ import os
 import re
 import difflib
 import yaml
+import urllib.parse
 from typing import TypedDict, List, Dict, Any, Optional, Generator
 from langgraph.graph import StateGraph, END
 from llm_factory import LLMFactory
@@ -1606,6 +1607,10 @@ def npc_node(state: PlayerState):
                 if npc_data.get('name') == target_npc:
                     drop_items = npc_data.get('drop_items', [])
 
+                    # [FIX] drop_items가 문자열인 경우 처리 (예: "데이터 칩, 고철 부품")
+                    if drop_items and isinstance(drop_items, str):
+                        drop_items = [item.strip() for item in drop_items.split(',')]
+                    
                     if drop_items and isinstance(drop_items, list):
                         # 아이템 드랍 처리
                         for item_name in drop_items:
@@ -2135,6 +2140,58 @@ def narrator_node(state: PlayerState):
         logger.info(f"⏱️ [TURN] Turn count increased to {world_state.turn_count} at narrator_node start")
     else:
         logger.info(f"⏱️ [TURN] Game start - turn count not increased (current: {world_state.turn_count})")
+
+    # ========================================
+    # 🎉 [FIX] 엔딩 씬 처리 (HTML 카드 출력)
+    # ========================================
+    curr_id = state.get('current_scene_id')
+    scenario = get_scenario_by_id(scenario_id)
+    all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
+    
+    if curr_id in all_endings:
+        ending = all_endings[curr_id]
+        logger.info(f"🏁 [NARRATOR] Ending scene detected: {curr_id}. Generating HTML card.")
+        
+        # 1. 엔딩 텍스트 (줄바꿈 처리)
+        desc_html = ending.get('description', '').replace('\n', '<br>')
+        
+        # 2. 엔딩 이미지 (있으면)
+        img_html = ""
+        bg_image_url = ending.get('background_image', ending.get('image'))
+        if bg_image_url:
+             # [FIX] 이미지 URL 프록시 처리
+            if bg_image_url.startswith("http://bucket.railway.internal:9000"):
+                bg_image_url = bg_image_url.replace("http://bucket.railway.internal:9000", "/image/serve/http://bucket.railway.internal:9000")
+            elif bg_image_url.startswith("https://develop-prod.up.railway.app"): # 외부 도메인인 경우
+                 bg_image_url = f"/image/serve/{urllib.parse.quote(bg_image_url, safe='')}"
+            
+            img_html = f"""
+            <div class="mb-6 rounded-lg overflow-hidden shadow-lg border-2 border-yellow-600/30">
+                <img src="{bg_image_url}" alt="Ending Image" class="w-full h-auto object-cover opacity-90 hover:opacity-100 transition-opacity duration-700">
+            </div>
+            """
+
+        # 3. 최종 HTML 조합
+        state['narrator_output'] = f"""
+        <div class="my-8 p-8 border-2 border-yellow-500/50 bg-gradient-to-b from-yellow-900/40 to-black rounded-xl text-center fade-in shadow-2xl relative overflow-hidden">
+            <h3 class="text-3xl font-black text-yellow-400 mb-4 tracking-[0.2em] uppercase drop-shadow-md">🎉 ENDING 🎉</h3>
+            <div class="w-16 h-1 bg-yellow-500 mx-auto mb-6 rounded-full"></div>
+            {img_html}
+            <div class="text-2xl font-bold text-white mb-4 drop-shadow-sm">"{ending.get('title')}"</div>
+            <p class="text-gray-200 leading-relaxed text-lg serif-font">
+                {desc_html}
+            </p>
+             <div class="mt-8">
+                <button onclick="window.location.reload()" class="px-6 py-2 bg-yellow-600 hover:bg-yellow-500 text-white font-bold rounded-full transition-colors duration-300 shadow-md">
+                    다시 시작하기
+                </button>
+            </div>
+        </div>
+        """
+        
+        # WorldState 저장 후 조기 리턴
+        state['world_state'] = world_state.to_dict()
+        return state
 
     # WorldState 스냅샷 저장
     state['world_state'] = world_state.to_dict()
