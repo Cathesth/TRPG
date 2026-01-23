@@ -43,19 +43,24 @@ class ChatbotService:
             """
 
             # 3. LLM 호출
-            # LLMFactory가 정상적으로 구현되어 있다면 gpt-4o 또는 설정된 모델 사용
-            if 'LLMFactory' in globals():
-                llm = LLMFactory.create_llm("gpt-4o")
-                response_text = await llm.chat_completion(
-                    system_prompt=system_prompt,
-                    user_input=f"Context: {context_text}\n\nQuestion: {user_query}"
-                )
+            # LLMFactory가 있고 create_llm 메서드가 존재하는지 확인
+            if 'LLMFactory' in globals() and hasattr(LLMFactory, 'create_llm'):
+                try:
+                    llm = LLMFactory.create_llm("gpt-4o")
+                    response_text = await llm.chat_completion(
+                        system_prompt=system_prompt,
+                        user_input=f"Context: {context_text}\n\nQuestion: {user_query}"
+                    )
+                except Exception as llm_error:
+                    logger.error(f"LLM Call Failed: {llm_error}")
+                    raise llm_error  # 아래 Fallback으로 이동
             else:
-                # LLMFactory가 없는 경우 (테스트용)
+                # LLMFactory가 없거나 메서드가 없는 경우 (테스트용 가짜 응답)
+                # [수정] 여기가 실행되어 에러 없이 기본 답변이 나갑니다.
                 response_text = json.dumps({
-                    "answer": f"현재 AI 모델을 불러올 수 없어 기본 응답을 드립니다. (질문: {user_query})",
+                    "answer": f"현재 AI 모델을 연결할 수 없어 기본 응답을 드립니다.\n질문하신 '{user_query}'에 대한 답변은 준비 중입니다.",
                     "choices": ["시나리오 제작", "요금제 안내"]
-                })
+                }, ensure_ascii=False)
 
             # [전처리] LLM이 ```json ... ``` 으로 감싸서 줄 경우 제거
             cleaned_text = response_text.replace("```json", "").replace("```", "").strip()
