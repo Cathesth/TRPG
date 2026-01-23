@@ -1656,6 +1656,12 @@ def npc_node(state: PlayerState):
                             
                             # 시스템 메시지에 이동 알림 추가
                             state['system_message'] += f"\n✨ [전투 승리] {trigger}... 다음 장면으로 이동합니다."
+                            
+                            # [CRITICAL] 즉시 씬 이동 처리 (npc_node는 rule_engine을 거치지 않으므로 직접 ID 변경)
+                            target_id = trans.get('target_scene_id')
+                            if target_id:
+                                state['current_scene_id'] = target_id
+                                logger.info(f"🚀 [COMBAT] Immediate scene switch: {curr_id} -> {target_id}")
                         break
 
         logger.info(f"✅ [COMBAT] Attack processing complete. Damage: {damage}, Target: {target_npc}")

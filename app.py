@@ -290,7 +290,35 @@ async def serve_image(file_path: str):
                 content = await response['Body'].read()
                 return Response(content=content, media_type=response.get('ContentType', 'image/png'))
             except client.exceptions.NoSuchKey:
-                logger.warning(f"⚠️ [Image Serve] S3 Key Not Found: {real_key}")
+                # [FIX] 키 불일치 시 폴백 시도 (공백 <-> 언더바 치환)
+                logger.warning(f"⚠️ [Image Serve] S3 Key Not Found: {real_key}. Retrying with variations...")
+                
+                # 변형 시도 리스트
+                variations = []
+                if '_' in real_key:
+                    variations.append(real_key.replace('_', ' '))
+                if ' ' in real_key:
+                    variations.append(real_key.replace(' ', '_'))
+                
+                found_content = None
+                found_type = None
+
+                for var_key in variations:
+                    try:
+                        logger.info(f"🔄 [Image Serve] Retrying with key: {var_key}")
+                        response = await client.get_object(Bucket=bucket_name, Key=var_key)
+                        found_content = await response['Body'].read()
+                        found_type = response.get('ContentType', 'image/png')
+                        logger.info(f"✅ [Image Serve] Found with key: {var_key}")
+                        break
+                    except client.exceptions.NoSuchKey:
+                        continue
+                
+                if found_content:
+                    return Response(content=found_content, media_type=found_type)
+
+                # 최종 실패
+                logger.error(f"❌ [Image Serve] Final Failure. Key not found: {real_key}")
                 return Response(status_code=404)
             except Exception as e:
                 logger.error(f"❌ [Image Serve] S3 Error: {str(e)}")
