@@ -261,6 +261,13 @@
 
             <div class="h-6 w-px bg-rpg-700 hidden md:block"></div>
 
+            <button onclick="toggleChatbot()"
+                    class="text-gray-400 hover:text-rpg-accent transition-colors p-2 rounded-full hover:bg-white/5 relative group"
+                    title="AI 가이드">
+                <i data-lucide="help-circle" class="w-6 h-6 transition-transform group-hover:rotate-12"></i>
+                <span class="absolute top-1 right-1 w-2 h-2 bg-rpg-accent rounded-full animate-ping"></span>
+            </button>
+
             <button onclick="openModal('likes-modal'); htmx.trigger('#liked-grid', 'load');"
                 class="text-gray-400 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-white/5 relative group"
                 title="찜한 목록">
@@ -1051,6 +1058,137 @@
         });
     </script>
     {% endif %}
-</body>
+
+        <div id="chatbot-modal" class="fixed bottom-6 right-6 z-[200] w-96 h-[600px] bg-rpg-900 border-2 border-rpg-accent rounded-xl shadow-2xl flex flex-col transform transition-transform duration-300 translate-y-[120%] opacity-0 pointer-events-none origin-bottom-right">
+        <div class="p-4 bg-rpg-800 border-b border-rpg-700 flex justify-between items-center rounded-t-xl">
+            <div class="flex items-center gap-2">
+                <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <h3 class="text-white font-bold font-title text-sm">AI SUPPORT AGENT</h3>
+            </div>
+            <button onclick="toggleChatbot()" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+
+        <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-black/20">
+            <div class="flex flex-col gap-2 items-start animate-fade-in">
+                <div class="bg-rpg-800 text-gray-200 p-3 rounded-2xl rounded-tl-none border border-rpg-700 text-xs leading-relaxed max-w-[85%]">
+                    안녕하세요! 무엇을 도와드릴까요?<br>아래 키워드를 선택하거나 질문을 입력해주세요.
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="sendChoice('시나리오 제작 방법')" class="px-3 py-1 bg-rpg-700 hover:bg-rpg-accent hover:text-black border border-rpg-600 rounded-full text-[10px] transition-colors">시나리오 제작</button>
+                    <button onclick="sendChoice('요금제 안내')" class="px-3 py-1 bg-rpg-700 hover:bg-rpg-accent hover:text-black border border-rpg-600 rounded-full text-[10px] transition-colors">요금제</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-3 bg-rpg-800 border-t border-rpg-700 rounded-b-xl">
+            <form onsubmit="handleChatSubmit(event)" class="relative">
+                <input type="text" id="chat-input"
+                       class="w-full bg-rpg-900 text-white text-sm rounded-lg pl-4 pr-10 py-3 border border-rpg-700 focus:border-rpg-accent focus:outline-none placeholder-gray-600"
+                       placeholder="질문을 입력하세요..." autocomplete="off">
+                <button type="submit" class="absolute right-2 top-1/2 -translate-y-1/2 text-rpg-accent hover:text-white p-1">
+                    <i data-lucide="send" class="w-4 h-4"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // 챗봇 토글
+        function toggleChatbot() {
+            const modal = document.getElementById('chatbot-modal');
+            if (modal.classList.contains('translate-y-[120%]')) {
+                // 열기
+                modal.classList.remove('translate-y-[120%]', 'opacity-0', 'pointer-events-none');
+                document.getElementById('chat-input').focus();
+            } else {
+                // 닫기
+                modal.classList.add('translate-y-[120%]', 'opacity-0', 'pointer-events-none');
+            }
+        }
+
+        // 선택지 클릭
+        function sendChoice(text) {
+            const input = document.getElementById('chat-input');
+            input.value = text; // 입력창에 텍스트 채우고
+            handleChatSubmit(new Event('submit')); // 전송
+        }
+
+        // 메시지 전송 핸들러
+        async function handleChatSubmit(e) {
+            e.preventDefault();
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text) return;
+
+            await sendMessage(text);
+            input.value = '';
+        }
+
+        // 메시지 처리 및 API 호출
+        async function sendMessage(text) {
+            const chatBox = document.getElementById('chat-messages');
+
+            // 1. 사용자 메시지 표시
+            chatBox.insertAdjacentHTML('beforeend', `
+                <div class="flex justify-end animate-fade-in">
+                    <div class="bg-rpg-accent text-black p-3 rounded-2xl rounded-tr-none text-xs font-bold max-w-[85%]">
+                        ${text}
+                    </div>
+                </div>
+            `);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // 2. 로딩 표시
+            const loadingId = 'loading-' + Date.now();
+            chatBox.insertAdjacentHTML('beforeend', `
+                <div id="${loadingId}" class="flex justify-start animate-fade-in">
+                    <div class="bg-rpg-800 text-gray-400 p-3 rounded-2xl rounded-tl-none border border-rpg-700 text-xs">
+                        <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
+                    </div>
+                </div>
+            `);
+            lucide.createIcons();
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            try {
+                // 3. API 호출 (실제 구현된 엔드포인트로 교체 필요)
+                const res = await fetch('/api/chatbot/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: text })
+                });
+                const data = await res.json();
+
+                // 4. 로딩 제거
+                const loadingEl = document.getElementById(loadingId);
+                if (loadingEl) loadingEl.remove();
+
+                // 5. 답변 및 선택지 렌더링
+                let choicesHtml = '';
+                if (data.choices && data.choices.length > 0) {
+                    choicesHtml = `<div class="flex flex-wrap gap-2 mt-2">
+                        ${data.choices.map(c => `<button onclick="sendChoice('${c}')" class="px-3 py-1 bg-rpg-700 hover:bg-rpg-accent hover:text-black border border-rpg-600 rounded-full text-[10px] transition-colors">${c}</button>`).join('')}
+                    </div>`;
+                }
+
+                chatBox.insertAdjacentHTML('beforeend', `
+                    <div class="flex flex-col gap-2 items-start animate-fade-in">
+                        <div class="bg-rpg-800 text-gray-200 p-3 rounded-2xl rounded-tl-none border border-rpg-700 text-xs leading-relaxed max-w-[90%]">
+                            ${data.answer}
+                        </div>
+                        ${choicesHtml}
+                    </div>
+                `);
+            } catch (e) {
+                const loadingEl = document.getElementById(loadingId);
+                if (loadingEl) loadingEl.remove();
+                chatBox.insertAdjacentHTML('beforeend', `<div class="text-red-500 text-xs p-2">오류가 발생했습니다: ${e.message}</div>`);
+            }
+
+            lucide.createIcons();
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    </script>
+    </body>
 
 </html>

@@ -13,7 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, RedirectResponse, StreamingResponse, HTMLResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-
+# app.py 상단 import 부분
+from routes.chatbot import router as chatbot_router  # [추가]
 
 from config import LOG_FORMAT, LOG_DATE_FORMAT, get_full_version
 
@@ -46,6 +47,8 @@ logging.basicConfig(
     datefmt=LOG_DATE_FORMAT
 )
 logger = logging.getLogger(__name__)
+
+
 
 
 # Lifespan 컨텍스트 (앱 시작/종료 시 실행)
@@ -220,6 +223,20 @@ try:
     logger.info("✅ Vector DB router loaded.")
 except ImportError:
     logger.warning("routes.vector_api module not found. Vector DB router skipped.")
+
+# ... (위쪽 코드 생략) ...
+
+# 라우터 등록
+app.include_router(views_router)
+app.include_router(api_router)
+app.include_router(game_router)
+app.include_router(admin_router) # [NEW] 관리자 라우터
+
+# [중요] 마이페이지 라우터를 명시적으로 등록하여 404 에러 해결
+app.include_router(mypage_router)
+
+# ▼▼▼ [추가] 챗봇 라우터 등록 ▼▼▼
+app.include_router(chatbot_router)
 
 
 # Health check 엔드포인트 (Railway 모니터링용)
