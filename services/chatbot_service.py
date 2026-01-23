@@ -1,7 +1,7 @@
 import json
 import logging
 
-# 필요한 모듈 임포트 (파일이 없을 경우를 대비해 try-except 처리)
+# 필요한 모듈 임포트
 try:
     from core.vector_db import get_vector_db_client
     from llm_factory import LLMFactory
@@ -20,7 +20,7 @@ class ChatbotService:
         2. 실패하거나 설정되지 않은 경우, '키워드 분석 규칙'을 통해 정해진 답변을 반환합니다.
         """
 
-        # ▼▼▼ [학습 내용] AI에게 주입할 프로젝트 지식 정보 ▼▼▼
+        # [학습 내용] AI에게 주입할 프로젝트 지식 정보
         context_text = """
         [TRPG Studio 서비스 정보]
         1. 서비스 개요: 여울(YEOUL)은 멀티 에이전트 AI 기반의 인터랙티브 TRPG 플랫폼입니다.
@@ -42,7 +42,7 @@ class ChatbotService:
         """
 
         try:
-            # 2. 시스템 프롬프트 구성
+            # 시스템 프롬프트 구성
             system_prompt = """
             당신은 TRPG Studio의 친절한 AI 가이드 '여울'입니다. 
             제공된 [TRPG Studio 서비스 정보]를 바탕으로 사용자의 질문에 친절하게 답변하세요.
@@ -55,8 +55,7 @@ class ChatbotService:
             }
             """
 
-            # 3. LLM 호출 시도
-            # LLMFactory가 있고, create_llm 메서드가 실제로 존재하는지 체크
+            # LLM 호출 시도
             if 'LLMFactory' in globals() and hasattr(LLMFactory, 'create_llm'):
                 try:
                     llm = LLMFactory.create_llm("gpt-4o")
@@ -71,25 +70,28 @@ class ChatbotService:
 
                 except Exception as e:
                     logger.warning(f"LLM 호출 실패 (Fallback 전환): {e}")
-                    # LLM 실패 시 아래 '키워드 분석 로직'으로 넘어감
                     return ChatbotService.get_keyword_response(user_query)
             else:
-                # LLMFactory가 없는 경우 바로 키워드 분석
                 return ChatbotService.get_keyword_response(user_query)
 
         except Exception as e:
             logger.error(f"Chatbot Critical Error: {e}")
-            # 최후의 수단
             return ChatbotService.get_keyword_response(user_query)
 
-    # ▼▼▼ [추가] AI 연결 실패 시 작동하는 '똑똑한 대체 로직' ▼▼▼
+    # ▼▼▼ [핵심 수정] 똑똑한 대체 로직 ▼▼▼
     @staticmethod
     def get_keyword_response(query: str) -> dict:
         """
-        AI 모델 연결이 안 될 때, 질문에 포함된 단어를 보고
-        미리 준비된 답변을 찾아주는 함수입니다.
+        AI 모델 연결이 안 될 때, 질문 키워드를 분석하여 답변을 제공합니다.
         """
-        query = query.lower()  # 소문자로 변환하여 비교
+        query = query.lower()
+
+        # 0. [NEW] 무료 기능 상세 (가장 먼저 체크하여 중복 답변 방지)
+        if '무료 기능' in query or '무료기능' in query or 'adventurer' in query:
+            return {
+                "answer": "🎒 **Adventurer (Free)**\n\n입문자를 위한 기본 플랜입니다.\n\n✅ **주요 혜택**\n• 시나리오 생성 3개\n• 기본 AI 모델 사용\n• 커뮤니티 접근\n\n부담 없이 TRPG의 세계를 경험해보세요!",
+                "choices": ["시나리오 제작 방법", "다른 요금제 보기", "처음으로"]
+            }
 
         # 1. 시나리오 제작 관련 질문
         if any(word in query for word in ['제작', '만들기', '생성', '빌더', 'create']):
@@ -98,28 +100,28 @@ class ChatbotService:
                 "choices": ["빌더 모드 이동", "AI 도구가 뭔가요?", "다른 기능"]
             }
 
-        # 2. 요금제 관련 질문
+        # 2. 요금제 관련 질문 (무료 기능 체크가 위에서 처리되지 않은 일반 질문)
         elif any(word in query for word in ['요금', '가격', '비용', '무료', '결제', 'plan']):
             return {
                 "answer": "💳 **요금제 안내**\n\n모험가님의 스타일에 맞는 플랜을 선택하세요!\n\n🔹 **Adventurer (Free)**: 무료, 시나리오 3개 생성 가능\n🔹 **Dungeon Master (9,900원/월)**: 무제한 생성, GPT-4 모델, 이미지 생성 50회\n🔹 **World Creator (29,900원/월)**: 모든 기능 무제한 + 전용 파인튜닝 모델\n\n자세한 내용은 마이페이지에서 확인 가능합니다.",
                 "choices": ["마이페이지로 이동", "무료 기능 더보기", "처음으로"]
             }
 
-        # ▼▼▼ [추가] AI 도구 관련 질문 처리 로직 (여기부터 복사해서 붙여넣으세요) ▼▼▼
+        # 3. AI 도구 관련 질문
         elif any(word in query for word in ['ai', '도구', 'tool', '인공지능', '기능']):
             return {
                 "answer": "🤖 **AI 보조 도구 소개**\n\nTRPG Studio는 창작자를 위한 강력한 AI 도구들을 제공합니다.\n\n1. **NPC 제네레이터**: 이름과 직업만 입력하면 성격, 말투, 배경 스토리를 AI가 자동으로 생성합니다.\n2. **자동 씬 묘사**: '어두운 숲' 같은 키워드만으로 몰입감 있는 장면 지문을 작성해줍니다.\n3. **로직 검수기**: 시나리오의 분기가 끊기거나 논리적 오류가 없는지 AI가 분석해줍니다.\n\n지금 '빌더 모드'에서 이 기능들을 체험해보세요!",
                 "choices": ["시나리오 제작 방법", "요금제 안내", "처음으로"]
             }
 
-        # 3. 플레이 관련 질문
+        # 4. 플레이 관련 질문
         elif any(word in query for word in ['플레이', '게임', '시작', 'play']):
             return {
                 "answer": "🎮 **게임 플레이 방법**\n\n메인 화면에 있는 다양한 장르(판타지, 스릴러 등)의 시나리오 중 하나를 선택해 보세요. **'PLAY'** 버튼을 누르면 AI 게임마스터와 함께 1:1 모험이 시작됩니다.",
                 "choices": ["인기 시나리오 추천", "내 시나리오 보기", "처음으로"]
             }
 
-        # 4. 기본 응답 (키워드를 못 찾았을 때)
+        # 5. 기본 응답
         else:
             return {
                 "answer": f"죄송합니다, 현재 AI 통신 상태가 원활하지 않아 '{query}'에 대한 정확한 답변을 생성하지 못했습니다.\n하지만 아래 메뉴를 통해 도움을 드릴 수 있습니다.",
