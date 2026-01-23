@@ -88,10 +88,20 @@ def enrich_inventory(player_vars: dict, scenario: dict) -> dict:
 
     # 시나리오 아이템 데이터 매핑 (name -> data)
     scenario_items = {}
-    if scenario and 'items' in scenario:
-        for item in scenario['items']:
-             if isinstance(item, dict) and 'name' in item:
-                 scenario_items[item['name']] = item
+    
+    # [FIX] raw_graph 내의 items도 검색 (시나리오 구조에 따라 items 위치가 다를 수 있음)
+    if scenario and 'raw_graph' in scenario and 'items' in scenario['raw_graph']:
+        for item in scenario['raw_graph']['items']:
+            if isinstance(item, dict) and 'name' in item:
+                item_name = item['name'].strip()
+                # 이미 있으면(최상위 items 우선), raw_graph 것은 덮어쓰지 않거나 병합
+                # 여기서는 raw_graph에만 이미지 정보가 있을 수도 있으므로, 없는 필드만 보강하도록 처리
+                if item_name not in scenario_items:
+                    scenario_items[item_name] = item
+                else:
+                    # 기존 정보에 이미지가 없으면 raw_graph 정보 사용
+                    if 'image' not in scenario_items[item_name] and 'image' in item:
+                        scenario_items[item_name]['image'] = item['image']
 
     enriched_inventory = []
     for item in inventory:
@@ -105,19 +115,21 @@ def enrich_inventory(player_vars: dict, scenario: dict) -> dict:
         
         # 상세 정보 병합
         if item_name in scenario_items:
-            # 설명 등 기본 정보 복사
+            # 설명 등 기본 정보 복사 (image 필드가 있으면 덮어씌워짐)
             item_data.update(scenario_items[item_name])
-            
-            # 이미지 URL 변환
-            if 'image' in scenario_items[item_name]:
-                image_file = scenario_items[item_name]['image']
-                # [FIX] 카테고리 명시: 'ai-images/item' (MinIO 경로 규칙에 따름)
-                item_data['image'] = game_engine.get_minio_url('ai-images/item', image_file)
-                logger.info(f"🖼️ [INVENTORY] Generated image URL for '{item_name}': {item_data['image']}")
-            else:
-                logger.info(f"⚠️ [INVENTORY] Item '{item_name}' found in scenario but has no 'image' field.")
+
+        # [FIX] 이미지 필드가 없거나 비어있으면 자동 생성 URL 시도
+        if 'image' not in item_data or not item_data['image']:
+            # 시나리오에 정의된 이미지가 없으면 MinIO 경로 규칙에 따라 자동 생성
+            # 예: '데이터 칩' -> '.../ai-images/item/데이터_칩.png'
+            item_data['image'] = game_engine.get_minio_url('ai-images/item', item_name)
+            logger.info(f"🖼️ [INVENTORY] Generated fallback image URL for '{item_name}': {item_data['image']}")
         else:
-            logger.info(f"⚠️ [INVENTORY] Item '{item_name}' NOT found in scenario items definition.")
+            # 이미지가 경로 형태가 아니라 파일명만 있는 경우 변환 필요
+            original_image = item_data['image']
+            if not original_image.startswith('http') and not original_image.startswith('/'):
+                item_data['image'] = game_engine.get_minio_url('ai-images/item', original_image)
+                logger.info(f"🖼️ [INVENTORY] Resolved scenario image URL for '{item_name}': {item_data['image']}")
         
         enriched_inventory.append(item_data)
         
