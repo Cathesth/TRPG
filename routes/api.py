@@ -1168,7 +1168,7 @@ def list_scenarios(
 
         if is_owner:
             buttons_html = f"""          
-            <div class="flex flex-wrap items-center gap-2 mt-auto pt-3 border-t border-white/10 shrink-0">
+            <div class="flex items-center gap-2 mt-auto pt-3 border-t border-white/10 shrink-0">
                 <button onclick="playScenario('{fid}', this)" class="flex-1 py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs min-w-[80px]">
                     <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
                 </button>
@@ -1181,7 +1181,6 @@ def list_scenarios(
             </div>
             """
         else:
-
             buttons_html = f"""
                     <div class="mt-auto pt-3 border-t border-white/10 shrink-0">
                         <button onclick="playScenario('{fid}', this)" class="w-full py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
@@ -1190,9 +1189,8 @@ def list_scenarios(
                     </div>
                     """
 
-        # [수정] 카드 HTML 구조 개선
-        # 1. 텍스트 영역을 감싸는 div에 'flex-1 min-h-0' 추가 (공간 확보 및 넘침 방지)
-        # 2. 제목, 작성자 등 고정되어야 할 요소에 'shrink-0' 추가
+            # [수정] 카드 HTML 생성 (if/else 바깥, for 루프 안쪽)
+            # 들여쓰기 레벨: for문 바로 아래 레벨 (탭 1번 또는 공백 4칸)
         card_html = f"""
         <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_style}">
             <div class="relative {img_height} overflow-hidden bg-black shrink-0">
