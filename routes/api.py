@@ -1147,14 +1147,12 @@ def list_scenarios(
         if filter == 'my':
             card_style = "w-full aspect-square"
             img_height = "h-[45%]"
-            #content_padding = "px-4 pt-3 pb-7"
-            content_padding = "p-5"
+            content_padding = "px-4 pt-3 pb-7"
         else:
             # 메인화면 가로 스크롤용 고정 너비
-            card_style = "w-72 h-[28rem] flex-shrink-0 snap-center mr-4"
+            card_style = "w-72 h-[24rem] flex-shrink-0 snap-center mr-4"
             img_height = "h-48"
-            #content_padding = "px-4 pt-3 pb-7"
-            content_padding = "p-5"
+            content_padding = "px-4 pt-3 pb-7"
 
         is_liked = s.id in liked_scenario_ids
         heart_class = "fill-red-500 text-red-500" if is_liked else "text-white/70 hover:text-red-500"
@@ -1168,7 +1166,7 @@ def list_scenarios(
 
         if is_owner:
             buttons_html = f"""          
-            <div class="flex flex-wrap items-center gap-2 mt-auto pt-4 border-t border-white/10 shrink-0 mb-2">
+            <div class="flex flex-wrap items-center gap-2 mt-auto pt-3 border-t border-white/10 shrink-0 mb-1">
                 <button onclick="playScenario('{fid}', this)" class="flex-1 py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs min-w-[80px]">
                     <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY
                 </button>
@@ -1182,41 +1180,41 @@ def list_scenarios(
             """
         else:
             buttons_html = f"""
-                    <div class="mt-auto pt-4 border-t border-white/10 shrink-0 mb-2">
+                    <div class="mt-auto pt-3 border-t border-white/10 shrink-0 mb-1">
                         <button onclick="playScenario('{fid}', this)" class="w-full py-2 bg-[#1e293b] hover:bg-[#38bdf8] hover:text-black text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md border border-[#1e293b] text-xs">
                             <i data-lucide="play" class="w-3 h-3 fill-current"></i> PLAY NOW
                         </button>
                     </div>
                     """
 
-            # [수정 3] justify-between 제거 (flex-1과 mt-auto로 자연스럽게 배치)
+            # [수정] 카드 HTML 생성 (if/else 바깥, for 루프 안쪽)
+            # 들여쓰기 레벨: for문 바로 아래 레벨 (탭 1번 또는 공백 4칸)
         card_html = f"""
         <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_style}">
-
             <div class="relative {img_height} overflow-hidden bg-black shrink-0">
                 <img src="{img_src}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-80 group-hover:opacity-100">
+
                 {lock_btn_html}
+
                 {like_btn}
                 <div class="absolute top-2 left-2 bg-black/70 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-[#38bdf8] border border-[#38bdf8]/30">
                     Fantasy
                 </div>
             </div>
 
-            <div class="{content_padding} flex-1 flex flex-col">
-
+            <div class="{content_padding} flex-1 flex flex-col justify-between">
                 <div class="flex-1 min-h-0 flex flex-col">
                     {stats_badge_html}
-
-                    <div class="flex justify-between items-start mb-1 shrink-0">
+                    <div class="flex justify-between items-start mb-0.5 shrink-0">
                         <h3 class="text-base font-bold text-white tracking-wide truncate w-full group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
                     </div>
 
-                    <div class="flex justify-between items-center text-xs text-gray-400 mb-3 shrink-0">
+                    <div class="flex justify-between items-center text-xs text-gray-400 mb-2 shrink-0">
                         <span>{author}</span>
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
                     </div>
 
-                    <p class="text-sm text-gray-400 line-clamp-3 leading-relaxed">
+                    <p class="text-sm text-gray-400 line-clamp-2 leading-relaxed">
                         {desc}
                     </p>
                 </div>
