@@ -1089,6 +1089,10 @@
                     <i data-lucide="send" class="w-4 h-4"></i>
                 </button>
             </form>
+
+            <div id="resize-handle" class="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-50 flex items-end justify-end p-0.5">
+                <div class="w-1.5 h-1.5 bg-rpg-accent/50 rounded-full"></div>
+            </div>
         </div>
     </div>
 
@@ -1211,6 +1215,81 @@
             lucide.createIcons();
             chatBox.scrollTop = chatBox.scrollHeight;
         }
+
+        // ▼▼▼ [추가] 챗봇 드래그 및 리사이즈 로직 ▼▼▼
+        document.addEventListener('DOMContentLoaded', function() {
+            const modal = document.getElementById('chatbot-modal');
+            const header = document.getElementById('chatbot-header');
+            const resizeHandle = document.getElementById('resize-handle');
+
+            // 1. 드래그 기능 (Drag)
+            let isDragging = false;
+            let startX, startY, initialLeft, initialTop;
+
+            header.addEventListener('mousedown', function(e) {
+                isDragging = true;
+
+                // 처음 드래그 시 bottom/right 속성을 top/left로 변환하여 고정
+                const rect = modal.getBoundingClientRect();
+                modal.style.bottom = 'auto';
+                modal.style.right = 'auto';
+                modal.style.left = rect.left + 'px';
+                modal.style.top = rect.top + 'px';
+
+                startX = e.clientX;
+                startY = e.clientY;
+                initialLeft = rect.left;
+                initialTop = rect.top;
+
+                document.body.style.userSelect = 'none'; // 드래그 중 텍스트 선택 방지
+            });
+
+            // 2. 리사이즈 기능 (Resize)
+            let isResizing = false;
+            let startW, startH, resizeStartX, resizeStartY;
+
+            resizeHandle.addEventListener('mousedown', function(e) {
+                isResizing = true;
+                e.stopPropagation(); // 드래그 이벤트와 겹치지 않게
+
+                // 처음 리사이즈 시 위치 고정 (혹시 드래그 안 했을 경우 대비)
+                const rect = modal.getBoundingClientRect();
+                modal.style.bottom = 'auto';
+                modal.style.right = 'auto';
+                modal.style.left = rect.left + 'px';
+                modal.style.top = rect.top + 'px';
+
+                startW = parseInt(document.defaultView.getComputedStyle(modal).width, 10);
+                startH = parseInt(document.defaultView.getComputedStyle(modal).height, 10);
+                resizeStartX = e.clientX;
+                resizeStartY = e.clientY;
+
+                document.body.style.userSelect = 'none';
+            });
+
+            // 마우스 이동 및 놓기 (공통 처리)
+            document.addEventListener('mousemove', function(e) {
+                if (isDragging) {
+                    const dx = e.clientX - startX;
+                    const dy = e.clientY - startY;
+                    modal.style.left = `${initialLeft + dx}px`;
+                    modal.style.top = `${initialTop + dy}px`;
+                }
+                if (isResizing) {
+                    const dx = e.clientX - resizeStartX;
+                    const dy = e.clientY - resizeStartY;
+                    modal.style.width = `${startW + dx}px`;
+                    modal.style.height = `${startH + dy}px`;
+                }
+            });
+
+            document.addEventListener('mouseup', function() {
+                isDragging = false;
+                isResizing = false;
+                document.body.style.userSelect = 'auto';
+            });
+        });
+
     </script>
     </body>
 
