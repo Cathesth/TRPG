@@ -1187,6 +1187,9 @@ def list_scenarios(
                     </div>
                     """
 
+        # [수정] 카드 HTML 구조 개선
+        # 1. 텍스트 영역을 감싸는 div에 'flex-1 min-h-0' 추가 (공간 확보 및 넘침 방지)
+        # 2. 제목, 작성자 등 고정되어야 할 요소에 'shrink-0' 추가
         card_html = f"""
         <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_style}">
             <div class="relative {img_height} overflow-hidden bg-black shrink-0">
@@ -1199,23 +1202,31 @@ def list_scenarios(
                     Fantasy
                 </div>
             </div>
+            
             <div class="{content_padding} flex-1 flex flex-col justify-between">
-                <div>
+                
+                <div class="flex-1 min-h-0 flex flex-col">
                 
                     {stats_badge_html}
-                    <div class="flex justify-between items-start mb-1">
+                    
+                    <div class="flex justify-between items-start mb-1 shrink-0">
                         <h3 class="text-base font-bold text-white tracking-wide truncate w-full group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
                     </div>
-                    <div class="flex justify-between items-center text-xs text-gray-400 mb-2">
+                    <div class="flex justify-between items-center text-xs text-gray-400 mb-2 shrink-0">
                         <span>{author}</span>
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
                     </div>
-                    <p class="text-sm text-gray-400 line-clamp-2 leading-relaxed min-h-[3em]">{desc}</p>
+                    
+                    <p class="text-sm text-gray-400 line-clamp-2 leading-relaxed">
+                        {desc}
+                    </p>
                 </div>
+                
                 {buttons_html}
             </div>
         </div>
         """
+        
         html += card_html
 
     html += '<script>lucide.createIcons();</script>'
