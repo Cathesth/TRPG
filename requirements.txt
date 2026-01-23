@@ -5,7 +5,6 @@ langchain
 langchain-openai
 langchain-community
 langgraph
-werkzeug
 sqlalchemy
 psycopg2-binary
 python-multipart
@@ -24,5 +23,3 @@ google-genai
 
 Authlib
 httpx
-Flask
-Flask-Login
