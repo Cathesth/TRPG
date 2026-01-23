@@ -241,6 +241,7 @@ async def serve_image(file_path: str):
     from fastapi.responses import Response, FileResponse
     import urllib.parse
     import botocore.exceptions
+    import unicodedata  # [FIX] 한글 자소 분리 문제 해결용
 
     # 0. 로컬 Static 파일인 경우 처리 (static/으로 시작하는 경우)
     if file_path.startswith("static/") or file_path.startswith("/static/"):
@@ -297,11 +298,26 @@ async def serve_image(file_path: str):
                 logger.warning(f"⚠️ [Image Serve] S3 Key Not Found: {real_key}. Retrying with variations...")
                 
                 # 변형 시도 리스트
-                variations = []
+                variations = set()
+                
+                # 1. 기본 치환
                 if '_' in real_key:
-                    variations.append(real_key.replace('_', ' '))
+                    variations.add(real_key.replace('_', ' '))
                 if ' ' in real_key:
-                    variations.append(real_key.replace(' ', '_'))
+                    variations.add(real_key.replace(' ', '_'))
+                
+                # 2. 유니코드 정규화 (NFC <-> NFD)
+                variations.add(unicodedata.normalize('NFC', real_key))
+                variations.add(unicodedata.normalize('NFD', real_key))
+
+                # 치환된 버전들의 정규화 버전도 추가
+                temp_vars = list(variations)
+                for v in temp_vars:
+                    variations.add(unicodedata.normalize('NFC', v))
+                    variations.add(unicodedata.normalize('NFD', v))
+                
+                if real_key in variations:
+                    variations.remove(real_key)
                 
                 found_content = None
                 found_type = None

@@ -1627,11 +1627,16 @@ def npc_node(state: PlayerState):
 
         # (j) [FIX] 적 처치 시 승리 조건(Transitions) 즉시 확인 및 이동 트리거
         if npc_state and npc_state.get('status') == 'dead':
+            # [DEBUG] 전투 승리 체크 진입
+            logger.info(f"💀 [COMBAT CHECK] NPC {target_npc} is dead. Checking transitions...")
+            
             # 현재 씬의 transitions 확인
             all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
             curr_scene = all_scenes.get(curr_id)
             if curr_scene:
                 transitions = curr_scene.get('transitions', [])
+                logger.info(f"💀 [COMBAT CHECK] Scene {curr_id} has {len(transitions)} transitions: {transitions}")
+                
                 for idx, trans in enumerate(transitions):
                     trigger = trans.get('trigger', '').lower()
                     
@@ -1639,8 +1644,11 @@ def npc_node(state: PlayerState):
                     # 예: "스크랩 스매셔 파괴", "전투 승리", "적 처치"
                     keywords = ['처치', '파괴', '승리', 'kill', 'destroy', 'win', 'victory', 'defeat']
                     
+                    is_match = target_npc.lower() in trigger or any(k in trigger for k in keywords)
+                    logger.info(f"❓ [COMBAT CHECK] Trigger: '{trigger}' vs Target: '{target_npc}' -> Match: {is_match}")
+                    
                     # 적 이름이 트리거에 포함되거나, 일반적인 승리 키워드가 포함된 경우
-                    if target_npc.lower() in trigger or any(k in trigger for k in keywords):
+                    if is_match:
                         # [SAFETY] 전투 후 추가 행동(조사, 획득 등)이 필요한 트리거라면 자동 이동 금지
                         # 예: "적 처치 후 열쇠 획득", "승리하고 아이템 줍기"
                         exclude_keywords = ['획득', '조사', '얻', '찾', '줍', 'get', 'take', 'loot', 'search', 'investigate', '후', 'then', 'and', '그리고']
@@ -2773,7 +2781,7 @@ def create_game_graph():
     def route_action(state):
         intent = state.get('parsed_intent')
         # ✅ item_action 의도를 rule_engine으로 라우팅 추가
-        if intent in ['transition', 'ending', 'investigate', 'attack', 'item_action']:
+        if intent in ['transition', 'ending']:
             return "rule_engine"
         else:
             return "npc_actor"
