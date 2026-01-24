@@ -106,7 +106,7 @@ class ChatbotService:
 
         # 4. 시나리오 제작 (일반)
         if any(w in query for w in ['제작', '만들기', '생성', '빌더', 'create', '노드']) and not any(
-                w in query for w in ['씬', '내용', 'npc', '엔딩', '이미지']):
+                w in query for w in ['씬', '내용', 'npc', '엔딩', '이미지', '적', '아이템']):
             return {
                 "answer": "🛠️ **시나리오 제작 (Builder Mode)**\n\nTRPG Studio는 **노드(Node) 기반 편집기**를 제공합니다.\n코딩 없이 이야기의 흐름을 시각적으로 연결하여 나만의 모험을 만들 수 있습니다.\n\n상단의 **'Start Creation'** 버튼을 눌러 캔버스를 열어보세요!",
                 "choices": ["빌더 모드 이동", "씬 추가 방법", "AI 도구가 뭔가요?"]
@@ -121,14 +121,14 @@ class ChatbotService:
                 "choices": ["엔딩은 어떻게 만드나요?", "이미지 생성 방법", "빌더 모드 이동"]
             }
 
-        # 5-2. 엔딩 추가 [NEW]
+        # 5-2. 엔딩 추가
         if any(w in query for w in ['엔딩', 'ending', '결말', '끝', 'finish']):
             return {
                 "answer": "🏁 **Ending(엔딩) 추가 방법**\n\n이야기의 끝을 만드는 방법은 간단합니다.\n\n1. 새로운 씬을 추가하여 결말 내용을 작성하세요.\n2. 해당 씬에서 **다른 씬으로 연결되는 선택지(Choice)를 만들지 않으면**, 자동으로 엔딩으로 처리됩니다.",
                 "choices": ["씬 추가 방법", "내용 AI 작성", "빌더 모드 이동"]
             }
 
-        # 5-3. 내용/지문 AI 작성 [NEW]
+        # 5-3. 내용/지문 AI 작성 (Magic Write)
         if any(w in query for w in ['내용', '지문', '본문', 'text', '작성']) and any(
                 w in query for w in ['ai', '자동', 'auto', '추천']):
             return {
@@ -136,21 +136,21 @@ class ChatbotService:
                 "choices": ["이미지 생성 방법", "AI 제안 노트", "빌더 모드 이동"]
             }
 
-        # 5-4. AI 제안 노트 [NEW]
+        # 5-4. AI 제안 노트 (Brainstorming)
         if any(w in query for w in ['제안', '노트', 'note', '아이디어', '브레인', 'brain']):
             return {
                 "answer": "💡 **AI 제안 노트 (Brainstorming)**\n\n다음 이야기가 떠오르지 않을 때 사용하세요!\n\n우측 패널의 **'AI Note'** 탭을 클릭하면, 현재까지의 스토리를 분석하여 AI가 **3가지 흥미로운 전개**를 제안해 줍니다. 마음에 드는 제안은 바로 적용할 수 있습니다.",
                 "choices": ["내용 AI 작성", "엔딩 추가 방법", "처음으로"]
             }
 
-        # 5-5. 씬 배경 설정 [NEW]
+        # 5-5. 씬 배경 설정
         if any(w in query for w in ['배경', 'background', 'bg']):
             return {
                 "answer": "🖼️ **씬 배경(Background) 설정**\n\n씬 에디터의 **'이미지/배경'** 섹션에서 설정할 수 있습니다.\n\n1. **URL 입력**: 외부 이미지 주소를 직접 입력합니다.\n2. **AI 생성**: 씬 내용을 기반으로 AI가 배경을 그려주도록 할 수 있습니다.",
                 "choices": ["이미지 생성 방법", "AI 제안 노트", "빌더 모드 이동"]
             }
 
-        # 5-6. 이미지 생성 [NEW]
+        # 5-6. 이미지 생성
         if any(w in query for w in ['이미지', '그림', '삽화', 'image', 'picture']) and any(
                 w in query for w in ['생성', '만들', 'gen', '그려']):
             return {
@@ -158,21 +158,45 @@ class ChatbotService:
                 "choices": ["씬 배경 설정", "내용 AI 작성", "빌더 모드 이동"]
             }
 
-        # 5-7. 진입 조건 (기존 유지)
+        # 5-7. 진입 조건 (Entry Condition)
         if any(w in query for w in ['진입', '조건', '분기', '연결']):
             return {
                 "answer": "🔀 **진입 조건 (Entry Condition)**\n\n이전 씬에서의 선택지나 변수 상태에 따라 해당 씬으로의 진입 여부를 결정합니다.",
                 "choices": ["씬 추가 방법", "AI 제안 노트", "처음으로"]
             }
 
-        # 5-8. 오브젝트 (NPC, 적, 아이템 - 기존 유지)
-        if any(w in query for w in ['npc', '적', 'enemy', '몬스터', '아이템', 'item', '등장인물']):
+        # ▼▼▼ [신규/확장] 오브젝트 및 AI 생성 상세 가이드 ▼▼▼
+
+        # 5-8. AI 자동 생성 팁 (NPC/적/아이템 공통)
+        if any(w in query for w in ['ai', '자동', 'auto']) and any(
+                w in query for w in ['팁', 'tip', '요청', 'request', '어떻게', '잘']):
             return {
-                "answer": "👥 **오브젝트 관리**\n\n'등장인물' 탭에서 NPC 생성(AI 성격 자동 생성 지원), '전투' 탭에서 적 유닛 배치, 또는 아이템을 설정할 수 있습니다.",
-                "choices": ["AI 도구가 뭔가요?", "진입 조건 설정", "빌더 모드 이동"]
+                "answer": "✨ **AI 자동 생성 활용 팁**\n\n'AI 자동 생성' 버튼을 누르고 요청사항을 입력하면 상세 설정을 자동으로 채워줍니다.\n\n**💡 요청 작성 팁**\n• **구체적인 키워드**: '전설의 녹슨 검', '비열한 고블린 상인'\n• **분위기 묘사**: '음산한 숲을 지키는 유령'\n\n시나리오의 제목과 줄거리를 바탕으로 AI가 가장 어울리는 설정을 제안해 드립니다!",
+                "choices": ["NPC 생성 방법", "적 생성 방법", "아이템 생성 방법"]
             }
 
-        # ▲▲▲ [수정 끝] ▲▲▲
+        # 5-9. NPC 생성 가이드
+        if any(w in query for w in ['npc', '등장인물']):
+            return {
+                "answer": "👥 **NPC 생성 가이드**\n\nNPC 생성 탭에서 다음 정보를 입력하여 모험을 돕거나 방해하는 인물을 만듭니다.\n\n• **필수**: 이름, 역할/직업, 성격/특징, 대표 대사\n• **상세**: 외모 묘사, 배경 설정, 숨겨진 비밀\n• **설정**: 나이대, 협력도(우호/중립/비협조)\n\n생성된 NPC는 시나리오에 생동감을 더하고 플레이어와 상호작용합니다.",
+                "choices": ["AI 자동 생성 팁", "적(Enemy) 생성 방법", "아이템 생성 방법"]
+            }
+
+        # 5-10. 적(Enemy) 생성 가이드
+        if any(w in query for w in ['적', 'enemy', '몬스터', 'monster', '전투']):
+            return {
+                "answer": "⚔️ **적(Enemy) 생성 가이드**\n\n전투 탭에서 플레이어를 위협하는 적을 생성합니다.\n\n• **기본**: 이름, 종족/유형, 난이도(하~보스)\n• **스탯**: 체력(HP), 공격력(ATK)\n• **상세**: 특징/공격 패턴, 약점, 드랍 아이템\n\n생성된 적은 전투 이벤트 발생 시 등장하여 긴장감을 줍니다.",
+                "choices": ["AI 자동 생성 팁", "NPC 생성 방법", "아이템 생성 방법"]
+            }
+
+        # 5-11. 아이템(Item) 생성 가이드
+        if any(w in query for w in ['아이템', 'item', '보상']):
+            return {
+                "answer": "💎 **아이템(Item) 생성 가이드**\n\n아이템 탭에서 보상이나 중요 물품을 생성합니다.\n\n• **정보**: 이름, 유형(무기/방어구/소모품 등)\n• **상세**: 효과/능력치, 설명/외형\n\n적 처치 보상이나 이벤트 획득 아이템으로 활용됩니다.",
+                "choices": ["AI 자동 생성 팁", "NPC 생성 방법", "적 생성 방법"]
+            }
+
+        # ▲▲▲ [신규 추가 끝] ▲▲▲
 
         # 6. AI 도구 (일반)
         if any(w in query for w in ['ai', '도구', 'tool', '인공지능', '기능']):
