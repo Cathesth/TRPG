@@ -104,15 +104,7 @@ class ChatbotService:
                 "choices": ["마이페이지로 이동", "무료 기능 더보기", "처음으로"]
             }
 
-        # 4. 시나리오 제작 (일반)
-        if any(w in query for w in ['제작', '만들기', '생성', '빌더', 'create', '노드']) and not any(
-                w in query for w in ['씬', '내용', 'npc', '엔딩', '이미지', '적', '아이템']):
-            return {
-                "answer": "🛠️ **시나리오 제작 (Builder Mode)**\n\nTRPG Studio는 **노드(Node) 기반 편집기**를 제공합니다.\n코딩 없이 이야기의 흐름을 시각적으로 연결하여 나만의 모험을 만들 수 있습니다.\n\n상단의 **'Start Creation'** 버튼을 눌러 캔버스를 열어보세요!",
-                "choices": ["빌더 모드 이동", "씬 추가 방법", "AI 도구가 뭔가요?"]
-            }
-
-        # ▼▼▼ [수정] 빌더 기능별 상세 답변 (질문별 개별 답변) ▼▼▼
+        # ▼▼▼ [순서 변경] 상세 기능을 먼저 체크하도록 위로 올림 ▼▼▼
 
         # 5-1. 씬 추가 방법
         if any(w in query for w in ['씬', 'scene']) and any(w in query for w in ['추가', '생성', '만들']):
@@ -165,9 +157,7 @@ class ChatbotService:
                 "choices": ["씬 추가 방법", "AI 제안 노트", "처음으로"]
             }
 
-        # ▼▼▼ [확장/수정됨] 오브젝트 및 AI 생성 상세 가이드 ▼▼▼
-
-        # 5-8. AI 자동 생성 팁 (NPC/적/아이템 공통) - [내용 대폭 보강]
+        # 5-8. AI 자동 생성 팁 (NPC/적/아이템 공통) - [이제 여기가 먼저 실행됩니다!]
         if any(w in query for w in ['ai', '자동', 'auto']) and any(
                 w in query for w in ['팁', 'tip', '요청', 'request', '어떻게', '잘']):
             return {
@@ -196,7 +186,14 @@ class ChatbotService:
                 "choices": ["AI 자동 생성 팁", "NPC 생성 방법", "적 생성 방법"]
             }
 
-        # ▲▲▲ [신규 추가 끝] ▲▲▲
+        # ▲▲▲ [상세 기능 체크 끝] ▲▲▲
+
+        # 4. 시나리오 제작 (일반) - [이제 여기는 위의 상세 기능을 모두 통과한 뒤에 체크합니다]
+        if any(w in query for w in ['제작', '만들기', '생성', '빌더', 'create', '노드']):
+            return {
+                "answer": "🛠️ **시나리오 제작 (Builder Mode)**\n\nTRPG Studio는 **노드(Node) 기반 편집기**를 제공합니다.\n코딩 없이 이야기의 흐름을 시각적으로 연결하여 나만의 모험을 만들 수 있습니다.\n\n상단의 **'Start Creation'** 버튼을 눌러 캔버스를 열어보세요!",
+                "choices": ["빌더 모드 이동", "씬 추가 방법", "AI 도구가 뭔가요?"]
+            }
 
         # 6. AI 도구 (일반)
         if any(w in query for w in ['ai', '도구', 'tool', '인공지능', '기능']):
