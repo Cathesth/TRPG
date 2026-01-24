@@ -68,7 +68,7 @@ class ChatbotService:
             logger.error(f"Chatbot Critical Error: {e}")
             return ChatbotService.get_keyword_response(user_query)
 
-    # ▼▼▼ [확장됨] 키워드 분석 로직 (빌더 관련 질문 세분화) ▼▼▼
+    # ▼▼▼ [확장됨] 키워드 분석 로직 (순서 중요!) ▼▼▼
     @staticmethod
     def get_keyword_response(query: str) -> dict:
         """
@@ -76,64 +76,35 @@ class ChatbotService:
         """
         query = query.lower().strip()  # 소문자 변환 및 공백 제거
 
-        # 0. 초기화 / 인사
-        if any(w in query for w in ['처음', '시작', 'start', 'home', '메인', 'reset', '리셋', '안녕', '반가', 'hi']):
-            return {
-                "answer": "안녕하세요! 모험가님. 👋\n저는 TRPG Studio의 안내를 돕는 AI 가이드 '여울'입니다.\n무엇을 도와드릴까요?",
-                "choices": ["시나리오 제작 방법", "요금제 안내", "게임 플레이 방법"]
-            }
+        # [우선순위 1] 구체적인 기능 질문 먼저 체크 (프리셋/시나리오 로드 등)
 
-        # 1. 계정 관리
-        if any(w in query for w in ['탈퇴', '비밀번호', '비번', 'password', '수정', '변경', '프로필', 'account']):
-            return {
-                "answer": "🔐 **계정 관리 안내**\n\n회원 탈퇴 및 비밀번호 수정은 **마이페이지**에서 가능합니다.\n\n1. 우측 상단 프로필 클릭 > **마이페이지** 이동\n2. 좌측 메뉴에서 **'프로필 수정'** 클릭\n3. 해당 화면에서 비밀번호 변경 및 회원 탈퇴(하단)를 하실 수 있습니다.",
-                "choices": ["마이페이지로 이동", "처음으로"]
-            }
-
-        # 2. 무료 기능
-        if any(w in query for w in ['무료', 'free', 'adventurer', '공짜']):
-            return {
-                "answer": "🎒 **Adventurer (Free) 플랜**\n\n입문자를 위한 기본 플랜입니다.\n\n✅ **주요 혜택**\n• 시나리오 생성 3개\n• 기본 AI 모델 사용\n• 커뮤니티 접근\n\n부담 없이 TRPG의 세계를 경험해보세요!",
-                "choices": ["시나리오 제작 방법", "다른 요금제 보기", "처음으로"]
-            }
-
-        # 3. 요금제
-        if any(w in query for w in ['요금', '가격', '비용', '결제', 'plan', '구독']):
-            return {
-                "answer": "💳 **요금제 안내**\n\n모험가님의 스타일에 맞는 플랜을 선택하세요!\n\n🔹 **Adventurer (Free)**: 무료, 기본 기능\n🔹 **Dungeon Master (9,900원/월)**: 무제한 생성, GPT-4, 이미지 50회\n🔹 **World Creator (29,900원/월)**: 모든 기능 + 전용 파인튜닝 모델\n\n자세한 내용은 마이페이지에서 확인 가능합니다.",
-                "choices": ["마이페이지로 이동", "무료 기능 더보기", "처음으로"]
-            }
-
-        # ▼▼▼ [신규] 프리셋 및 시나리오 로드/저장 가이드 ▼▼▼
-
-        # 4-0. 프리셋 vs 시나리오 로드 차이점 (가장 구체적이므로 먼저 체크)
+        # 4-0. 프리셋 vs 시나리오 로드 차이점
         if all(w in query for w in ['프리셋', '시나리오']) and any(w in query for w in ['차이', '다른', 'vs', '비교']):
-             return {
+            return {
                 "answer": "⚖️ **프리셋 로드 vs 시나리오 로드 차이점**\n\n두 기능은 **'어디서'** 데이터를 가져오느냐가 다릅니다.\n\n• **프리셋 로드**: 내 컴퓨터에 저장된 **JSON 파일(구조)**을 캔버스로 불러옵니다. (로컬 파일)\n• **시나리오 로드**: 서버에 저장된 **내 프로젝트**를 편집기로 불러옵니다. (클라우드 DB)\n\n즉, 프리셋은 '단순 도면 백업', 시나리오는 '진행 중인 프로젝트 전체'라고 이해하시면 됩니다!",
                 "choices": ["프리셋 저장이 뭔가요?", "시나리오 제작 방법", "빌더 모드 이동"]
             }
 
-        # 4-1. 프리셋 저장/로드
-        if '프리셋' in query or 'preset' in query:
-            if any(w in query for w in ['저장', 'save']):
-                return {
-                    "answer": "💾 **프리셋(Preset) 저장**\n\n현재 캔버스에 그려진 **노드와 연결 구조**를 내 컴퓨터에 **JSON 파일**로 다운로드하는 기능입니다.\n\n작업 중인 배치를 백업하거나, 다른 사람에게 시나리오 구조를 공유할 때 유용합니다.",
-                    "choices": ["프리셋 로드가 뭔가요?", "시나리오 로드란?", "빌더 모드 이동"]
-                }
-            if any(w in query for w in ['로드', 'load', '불러오기']):
-                return {
-                    "answer": "📂 **프리셋(Preset) 로드**\n\n컴퓨터에 가지고 있는 **프리셋 파일(.json)**을 캔버스에 적용하는 기능입니다.\n\n⚠️ **주의:** 프리셋을 로드하면 현재 캔버스의 내용은 사라지고 프리셋의 구조로 덮어씌워집니다.",
-                    "choices": ["프리셋 저장이 뭔가요?", "시나리오 로드란?", "빌더 모드 이동"]
-                }
+        # 4-1. 프리셋 저장
+        if ('프리셋' in query or 'preset' in query) and any(w in query for w in ['저장', 'save']):
+            return {
+                "answer": "💾 **프리셋(Preset) 저장**\n\n현재 캔버스에 그려진 **노드와 연결 구조**를 내 컴퓨터에 **JSON 파일**로 다운로드하는 기능입니다.\n\n작업 중인 배치를 백업하거나, 다른 사람에게 시나리오 구조를 공유할 때 유용합니다.",
+                "choices": ["프리셋 로드가 뭔가요?", "시나리오 로드란?", "빌더 모드 이동"]
+            }
 
-        # 4-2. 시나리오 로드
+        # 4-2. 프리셋 로드
+        if ('프리셋' in query or 'preset' in query) and any(w in query for w in ['로드', 'load', '불러오기']):
+            return {
+                "answer": "📂 **프리셋(Preset) 로드**\n\n컴퓨터에 가지고 있는 **프리셋 파일(.json)**을 캔버스에 적용하는 기능입니다.\n\n⚠️ **주의:** 프리셋을 로드하면 현재 캔버스의 내용은 사라지고 프리셋의 구조로 덮어씌워집니다.",
+                "choices": ["프리셋 저장이 뭔가요?", "시나리오 로드란?", "빌더 모드 이동"]
+            }
+
+        # 4-3. 시나리오 로드
         if '시나리오' in query and any(w in query for w in ['로드', 'load', '불러오기', '열기']):
-             return {
+            return {
                 "answer": "📖 **시나리오 로드 (Load Scenario)**\n\nTRPG Studio 서버에 저장된 **모험가님의 프로젝트**를 불러오는 기능입니다.\n\n메인 화면이나 마이페이지의 **'내 시나리오 목록'**에서 작업을 이어서 할 프로젝트를 클릭하면 에디터가 열립니다.",
                 "choices": ["프리셋 로드와 차이점", "시나리오 제작 방법", "빌더 모드 이동"]
             }
-
-        # ▼▼▼ [상세 기능 체크] ▼▼▼
 
         # 5-1. 씬 추가 방법
         if any(w in query for w in ['씬', 'scene']) and any(w in query for w in ['추가', '생성', '만들']):
@@ -215,7 +186,34 @@ class ChatbotService:
                 "choices": ["AI 자동 생성 팁", "NPC 생성 방법", "적 생성 방법"]
             }
 
-        # ▲▲▲ [상세 기능 체크 끝] ▲▲▲
+        # [우선순위 2] 일반 인사 및 초기화 (상세 질문이 아닐 때만 실행)
+        # 0. 초기화 / 인사
+        if any(w in query for w in ['처음', '시작', 'start', 'home', '메인', 'reset', '리셋', '안녕', '반가', 'hi']):
+            return {
+                "answer": "안녕하세요! 모험가님. 👋\n저는 TRPG Studio의 안내를 돕는 AI 가이드 '여울'입니다.\n무엇을 도와드릴까요?",
+                "choices": ["시나리오 제작 방법", "요금제 안내", "게임 플레이 방법"]
+            }
+
+        # 1. 계정 관리
+        if any(w in query for w in ['탈퇴', '비밀번호', '비번', 'password', '수정', '변경', '프로필', 'account']):
+            return {
+                "answer": "🔐 **계정 관리 안내**\n\n회원 탈퇴 및 비밀번호 수정은 **마이페이지**에서 가능합니다.\n\n1. 우측 상단 프로필 클릭 > **마이페이지** 이동\n2. 좌측 메뉴에서 **'프로필 수정'** 클릭\n3. 해당 화면에서 비밀번호 변경 및 회원 탈퇴(하단)를 하실 수 있습니다.",
+                "choices": ["마이페이지로 이동", "처음으로"]
+            }
+
+        # 2. 무료 기능
+        if any(w in query for w in ['무료', 'free', 'adventurer', '공짜']):
+            return {
+                "answer": "🎒 **Adventurer (Free) 플랜**\n\n입문자를 위한 기본 플랜입니다.\n\n✅ **주요 혜택**\n• 시나리오 생성 3개\n• 기본 AI 모델 사용\n• 커뮤니티 접근\n\n부담 없이 TRPG의 세계를 경험해보세요!",
+                "choices": ["시나리오 제작 방법", "다른 요금제 보기", "처음으로"]
+            }
+
+        # 3. 요금제
+        if any(w in query for w in ['요금', '가격', '비용', '결제', 'plan', '구독']):
+            return {
+                "answer": "💳 **요금제 안내**\n\n모험가님의 스타일에 맞는 플랜을 선택하세요!\n\n🔹 **Adventurer (Free)**: 무료, 기본 기능\n🔹 **Dungeon Master (9,900원/월)**: 무제한 생성, GPT-4, 이미지 50회\n🔹 **World Creator (29,900원/월)**: 모든 기능 + 전용 파인튜닝 모델\n\n자세한 내용은 마이페이지에서 확인 가능합니다.",
+                "choices": ["마이페이지로 이동", "무료 기능 더보기", "처음으로"]
+            }
 
         # 4. 시나리오 제작 (일반) - [이제 여기는 위의 상세 기능을 모두 통과한 뒤에 체크합니다]
         if any(w in query for w in ['제작', '만들기', '생성', '빌더', 'create', '노드']):
