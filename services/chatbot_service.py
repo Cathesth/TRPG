@@ -21,7 +21,6 @@ class ChatbotService:
         """
 
         # [학습 내용] AI에게 주입할 프로젝트 지식 정보 (LLM 연결 시 사용됨)
-        # 사용자 요청: 빌더 상세 가이드는 제거하고 기본 정보만 유지
         context_text = """
         [TRPG Studio 서비스 정보]
         1. 서비스 개요: 여울(YEOUL)은 멀티 에이전트 AI 기반의 인터랙티브 TRPG 플랫폼입니다.
@@ -107,7 +106,7 @@ class ChatbotService:
 
         # 4. 시나리오 제작 (일반)
         if any(w in query for w in ['제작', '만들기', '생성', '빌더', 'create', '노드']) and not any(
-                w in query for w in ['씬', '내용', 'npc']):
+                w in query for w in ['씬', '내용', 'npc', '엔딩', '이미지']):
             return {
                 "answer": "🛠️ **시나리오 제작 (Builder Mode)**\n\nTRPG Studio는 **노드(Node) 기반 편집기**를 제공합니다.\n코딩 없이 이야기의 흐름을 시각적으로 연결하여 나만의 모험을 만들 수 있습니다.\n\n상단의 **'Start Creation'** 버튼을 눌러 캔버스를 열어보세요!",
                 "choices": ["빌더 모드 이동", "씬 추가 방법", "AI 도구가 뭔가요?"]
@@ -118,43 +117,59 @@ class ChatbotService:
         # 5-1. 씬 추가 방법
         if any(w in query for w in ['씬', 'scene']) and any(w in query for w in ['추가', '생성', '만들']):
             return {
-                "answer": "🎬 **Scene(장면) 추가 방법**\n\n캔버스 빈 곳을 우클릭하거나 상단 **'+' 버튼**을 눌러 노드를 생성할 수 있습니다.",
-                "choices": ["내용은 무얼 추가하나요?", "진입 조건 설정", "빌더 모드 이동"]
+                "answer": "🎬 **Scene(장면) 추가 방법**\n\n캔버스 빈 곳을 우클릭하거나 상단 **'+' 버튼**을 눌러 노드를 생성할 수 있습니다.\n생성된 노드를 클릭하면 내용을 편집할 수 있습니다.",
+                "choices": ["엔딩은 어떻게 만드나요?", "이미지 생성 방법", "빌더 모드 이동"]
             }
 
-        # 5-2. 내용/제목 작성
-        if any(w in query for w in ['제목', '내용', '본문', 'text']):
+        # 5-2. 엔딩 추가 [NEW]
+        if any(w in query for w in ['엔딩', 'ending', '결말', '끝', 'finish']):
             return {
-                "answer": "📝 **내용 작성 가이드**\n\n상황 묘사, 대사 등 메인 텍스트를 작성하세요.\nMarkdown 문법을 지원하여 텍스트를 꾸밀 수 있습니다.",
-                "choices": ["씬 추가 방법", "이미지 생성", "빌더 모드 이동"]
+                "answer": "🏁 **Ending(엔딩) 추가 방법**\n\n이야기의 끝을 만드는 방법은 간단합니다.\n\n1. 새로운 씬을 추가하여 결말 내용을 작성하세요.\n2. 해당 씬에서 **다른 씬으로 연결되는 선택지(Choice)를 만들지 않으면**, 자동으로 엔딩으로 처리됩니다.",
+                "choices": ["씬 추가 방법", "내용 AI 작성", "빌더 모드 이동"]
             }
 
-        # 5-3. 진입 조건
+        # 5-3. 내용/지문 AI 작성 [NEW]
+        if any(w in query for w in ['내용', '지문', '본문', 'text', '작성']) and any(
+                w in query for w in ['ai', '자동', 'auto', '추천']):
+            return {
+                "answer": "✨ **AI 지문 작성 (Magic Write)**\n\n글쓰기가 막막하신가요?\n\n씬 내용 입력창 옆의 **'AI 작성(마법봉 아이콘)'**을 클릭해 보세요.\n'어두운 숲, 긴장감' 같은 키워드만 입력하면 AI가 몰입감 있는 묘사를 자동으로 작성해 줍니다.",
+                "choices": ["이미지 생성 방법", "AI 제안 노트", "빌더 모드 이동"]
+            }
+
+        # 5-4. AI 제안 노트 [NEW]
+        if any(w in query for w in ['제안', '노트', 'note', '아이디어', '브레인', 'brain']):
+            return {
+                "answer": "💡 **AI 제안 노트 (Brainstorming)**\n\n다음 이야기가 떠오르지 않을 때 사용하세요!\n\n우측 패널의 **'AI Note'** 탭을 클릭하면, 현재까지의 스토리를 분석하여 AI가 **3가지 흥미로운 전개**를 제안해 줍니다. 마음에 드는 제안은 바로 적용할 수 있습니다.",
+                "choices": ["내용 AI 작성", "엔딩 추가 방법", "처음으로"]
+            }
+
+        # 5-5. 씬 배경 설정 [NEW]
+        if any(w in query for w in ['배경', 'background', 'bg']):
+            return {
+                "answer": "🖼️ **씬 배경(Background) 설정**\n\n씬 에디터의 **'이미지/배경'** 섹션에서 설정할 수 있습니다.\n\n1. **URL 입력**: 외부 이미지 주소를 직접 입력합니다.\n2. **AI 생성**: 씬 내용을 기반으로 AI가 배경을 그려주도록 할 수 있습니다.",
+                "choices": ["이미지 생성 방법", "AI 제안 노트", "빌더 모드 이동"]
+            }
+
+        # 5-6. 이미지 생성 [NEW]
+        if any(w in query for w in ['이미지', '그림', '삽화', 'image', 'picture']) and any(
+                w in query for w in ['생성', '만들', 'gen', '그려']):
+            return {
+                "answer": "🎨 **AI 이미지 생성**\n\n텍스트만으로는 부족하다면 이미지를 생성해 보세요.\n\n씬 에디터 하단의 **'이미지 생성'** 버튼을 누르면, 현재 작성된 **상황 묘사와 분위기**를 AI가 분석하여 어울리는 일러스트를 즉석에서 생성해 줍니다.",
+                "choices": ["씬 배경 설정", "내용 AI 작성", "빌더 모드 이동"]
+            }
+
+        # 5-7. 진입 조건 (기존 유지)
         if any(w in query for w in ['진입', '조건', '분기', '연결']):
             return {
                 "answer": "🔀 **진입 조건 (Entry Condition)**\n\n이전 씬에서의 선택지나 변수 상태에 따라 해당 씬으로의 진입 여부를 결정합니다.",
                 "choices": ["씬 추가 방법", "AI 제안 노트", "처음으로"]
             }
 
-        # 5-4. 오브젝트 (NPC, 적, 아이템)
+        # 5-8. 오브젝트 (NPC, 적, 아이템 - 기존 유지)
         if any(w in query for w in ['npc', '적', 'enemy', '몬스터', '아이템', 'item', '등장인물']):
             return {
                 "answer": "👥 **오브젝트 관리**\n\n'등장인물' 탭에서 NPC 생성(AI 성격 자동 생성 지원), '전투' 탭에서 적 유닛 배치, 또는 아이템을 설정할 수 있습니다.",
                 "choices": ["AI 도구가 뭔가요?", "진입 조건 설정", "빌더 모드 이동"]
-            }
-
-        # 5-5. 배경/이미지
-        if any(w in query for w in ['배경', '이미지', '그림', 'image', '삽화']):
-            return {
-                "answer": "🎨 **배경 및 이미지**\n\n이미지 URL을 직접 입력하거나, **AI 이미지 생성** 기능을 사용하여 씬 내용을 분석한 삽화를 자동으로 생성할 수 있습니다.",
-                "choices": ["요금제 안내", "AI 제안 노트", "빌더 모드 이동"]
-            }
-
-        # 5-6. AI 제안 노트
-        if any(w in query for w in ['제안', '노트', 'note', '아이디어', '추천']):
-            return {
-                "answer": "💡 **AI 제안 노트**\n\n작성 중 막힐 때 AI가 다음 전개를 추천해주는 브레인스토밍 도구입니다.",
-                "choices": ["NPC 추가 방법", "이미지 생성", "처음으로"]
             }
 
         # ▲▲▲ [수정 끝] ▲▲▲
