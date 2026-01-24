@@ -1,17 +1,6 @@
 import json
 import logging
 
-# [추가] DB 접근을 위한 임포트
-try:
-    from models import get_db, Scenario, ScenarioLike
-    from sqlalchemy import func
-    from core.vector_db import get_vector_db_client
-    from llm_factory import LLMFactory
-except ImportError:
-    pass
-
-logger = logging.getLogger(__name__)
-
 # 필요한 모듈 임포트
 try:
     from core.vector_db import get_vector_db_client
@@ -32,12 +21,18 @@ class ChatbotService:
         """
 
         # [학습 내용] AI에게 주입할 프로젝트 지식 정보 (LLM 연결 시 사용됨)
+        # 사용자 요청: 빌더 상세 가이드는 제거하고 기본 정보만 유지
         context_text = """
         [TRPG Studio 서비스 정보]
         1. 서비스 개요: 여울(YEOUL)은 멀티 에이전트 AI 기반의 인터랙티브 TRPG 플랫폼입니다.
         2. 시나리오 제작 (Builder Mode): 노드 기반 편집기, AI 보조 도구(NPC/지문 생성), 로직 검수 제공.
         3. 요금제: Free(3개 생성), Pro(9,900원/무제한/GPT-4), Biz(29,900원/파인튜닝).
         4. 플레이: 메인 화면 리스트 선택 -> 1:1 AI GM과 플레이.
+
+        [계정 관리 가이드]
+        * 위치: 우측 상단 프로필 아이콘 클릭 -> '마이페이지' 이동.
+        * 비밀번호 수정: 마이페이지 -> 좌측 '프로필 수정' 탭 -> 비밀번호 변경 섹션.
+        * 회원 탈퇴: 마이페이지 -> 좌측 '프로필 수정' 탭 -> 화면 최하단 '회원 탈퇴' 버튼 (주의: 복구 불가).
         """
 
         try:
@@ -74,7 +69,7 @@ class ChatbotService:
             logger.error(f"Chatbot Critical Error: {e}")
             return ChatbotService.get_keyword_response(user_query)
 
-    # ▼▼▼ [확장됨] 다양한 질문에 대응하는 똑똑한 답변 로직 ▼▼▼
+    # ▼▼▼ [확장됨] 키워드 분석 로직 (빌더 관련 질문 세분화) ▼▼▼
     @staticmethod
     def get_keyword_response(query: str) -> dict:
         """
@@ -82,49 +77,104 @@ class ChatbotService:
         """
         query = query.lower().strip()  # 소문자 변환 및 공백 제거
 
-        # 1. 인사말 처리
-        if any(w in query for w in ['안녕', '반가', 'hi', 'hello', 'ㅎㅇ']):
+        # 0. 초기화 / 인사
+        if any(w in query for w in ['처음', '시작', 'start', 'home', '메인', 'reset', '리셋', '안녕', '반가', 'hi']):
             return {
                 "answer": "안녕하세요! 모험가님. 👋\n저는 TRPG Studio의 안내를 돕는 AI 가이드 '여울'입니다.\n무엇을 도와드릴까요?",
                 "choices": ["시나리오 제작 방법", "요금제 안내", "게임 플레이 방법"]
             }
 
-        # 2. 무료 기능 / Adventurer
+        # 1. 계정 관리
+        if any(w in query for w in ['탈퇴', '비밀번호', '비번', 'password', '수정', '변경', '프로필', 'account']):
+            return {
+                "answer": "🔐 **계정 관리 안내**\n\n회원 탈퇴 및 비밀번호 수정은 **마이페이지**에서 가능합니다.\n\n1. 우측 상단 프로필 클릭 > **마이페이지** 이동\n2. 좌측 메뉴에서 **'프로필 수정'** 클릭\n3. 해당 화면에서 비밀번호 변경 및 회원 탈퇴(하단)를 하실 수 있습니다.",
+                "choices": ["마이페이지로 이동", "처음으로"]
+            }
+
+        # 2. 무료 기능
         if any(w in query for w in ['무료', 'free', 'adventurer', '공짜']):
             return {
                 "answer": "🎒 **Adventurer (Free) 플랜**\n\n입문자를 위한 기본 플랜입니다.\n\n✅ **주요 혜택**\n• 시나리오 생성 3개\n• 기본 AI 모델 사용\n• 커뮤니티 접근\n\n부담 없이 TRPG의 세계를 경험해보세요!",
                 "choices": ["시나리오 제작 방법", "다른 요금제 보기", "처음으로"]
             }
 
-        # 3. 요금제 / 비용 / 결제
-        if any(w in query for w in ['요금', '가격', '비용', '결제', 'plan', '구독', '프로', 'pro']):
+        # 3. 요금제
+        if any(w in query for w in ['요금', '가격', '비용', '결제', 'plan', '구독']):
             return {
                 "answer": "💳 **요금제 안내**\n\n모험가님의 스타일에 맞는 플랜을 선택하세요!\n\n🔹 **Adventurer (Free)**: 무료, 기본 기능\n🔹 **Dungeon Master (9,900원/월)**: 무제한 생성, GPT-4, 이미지 50회\n🔹 **World Creator (29,900원/월)**: 모든 기능 + 전용 파인튜닝 모델\n\n자세한 내용은 마이페이지에서 확인 가능합니다.",
                 "choices": ["마이페이지로 이동", "무료 기능 더보기", "처음으로"]
             }
 
-        # 4. 시나리오 제작 / 빌더 / 노드
-        if any(w in query for w in ['제작', '만들기', '생성', '빌더', 'create', '노드', '에디터', '편집']):
+        # 4. 시나리오 제작 (일반)
+        if any(w in query for w in ['제작', '만들기', '생성', '빌더', 'create', '노드']) and not any(
+                w in query for w in ['씬', '내용', 'npc']):
             return {
-                "answer": "🛠️ **시나리오 제작 (Builder Mode)**\n\nTRPG Studio는 **노드(Node) 기반 편집기**를 제공합니다.\n코딩 없이 이야기의 흐름을 시각적으로 연결하여 나만의 모험을 만들 수 있습니다.\n\n상단의 **'Start Creation'** 버튼을 눌러 지금 시작해보세요!",
-                "choices": ["빌더 모드 이동", "AI 도구가 뭔가요?", "다른 기능"]
+                "answer": "🛠️ **시나리오 제작 (Builder Mode)**\n\nTRPG Studio는 **노드(Node) 기반 편집기**를 제공합니다.\n코딩 없이 이야기의 흐름을 시각적으로 연결하여 나만의 모험을 만들 수 있습니다.\n\n상단의 **'Start Creation'** 버튼을 눌러 캔버스를 열어보세요!",
+                "choices": ["빌더 모드 이동", "씬 추가 방법", "AI 도구가 뭔가요?"]
             }
 
-        # 5. AI 도구 / NPC 생성 / 검수
-        if any(w in query for w in ['ai', '도구', 'tool', '인공지능', 'npc', '자동', '검수', '기능']):
+        # ▼▼▼ [수정] 빌더 기능별 상세 답변 (질문별 개별 답변) ▼▼▼
+
+        # 5-1. 씬 추가 방법
+        if any(w in query for w in ['씬', 'scene']) and any(w in query for w in ['추가', '생성', '만들']):
             return {
-                "answer": "🤖 **AI 보조 도구 소개**\n\n창작자를 위한 강력한 AI 기능들을 지원합니다.\n\n1. **NPC 제네레이터**: 이름만 넣으면 성격/배경 자동 생성\n2. **자동 씬 묘사**: 키워드로 몰입감 있는 지문 작성\n3. **로직 검수기**: 시나리오 분기 및 오류 자동 분석\n\n빌더 모드에서 이 기능들을 활용해 보세요.",
+                "answer": "🎬 **Scene(장면) 추가 방법**\n\n캔버스 빈 곳을 우클릭하거나 상단 **'+' 버튼**을 눌러 노드를 생성할 수 있습니다.",
+                "choices": ["내용은 무얼 추가하나요?", "진입 조건 설정", "빌더 모드 이동"]
+            }
+
+        # 5-2. 내용/제목 작성
+        if any(w in query for w in ['제목', '내용', '본문', 'text']):
+            return {
+                "answer": "📝 **내용 작성 가이드**\n\n상황 묘사, 대사 등 메인 텍스트를 작성하세요.\nMarkdown 문법을 지원하여 텍스트를 꾸밀 수 있습니다.",
+                "choices": ["씬 추가 방법", "이미지 생성", "빌더 모드 이동"]
+            }
+
+        # 5-3. 진입 조건
+        if any(w in query for w in ['진입', '조건', '분기', '연결']):
+            return {
+                "answer": "🔀 **진입 조건 (Entry Condition)**\n\n이전 씬에서의 선택지나 변수 상태에 따라 해당 씬으로의 진입 여부를 결정합니다.",
+                "choices": ["씬 추가 방법", "AI 제안 노트", "처음으로"]
+            }
+
+        # 5-4. 오브젝트 (NPC, 적, 아이템)
+        if any(w in query for w in ['npc', '적', 'enemy', '몬스터', '아이템', 'item', '등장인물']):
+            return {
+                "answer": "👥 **오브젝트 관리**\n\n'등장인물' 탭에서 NPC 생성(AI 성격 자동 생성 지원), '전투' 탭에서 적 유닛 배치, 또는 아이템을 설정할 수 있습니다.",
+                "choices": ["AI 도구가 뭔가요?", "진입 조건 설정", "빌더 모드 이동"]
+            }
+
+        # 5-5. 배경/이미지
+        if any(w in query for w in ['배경', '이미지', '그림', 'image', '삽화']):
+            return {
+                "answer": "🎨 **배경 및 이미지**\n\n이미지 URL을 직접 입력하거나, **AI 이미지 생성** 기능을 사용하여 씬 내용을 분석한 삽화를 자동으로 생성할 수 있습니다.",
+                "choices": ["요금제 안내", "AI 제안 노트", "빌더 모드 이동"]
+            }
+
+        # 5-6. AI 제안 노트
+        if any(w in query for w in ['제안', '노트', 'note', '아이디어', '추천']):
+            return {
+                "answer": "💡 **AI 제안 노트**\n\n작성 중 막힐 때 AI가 다음 전개를 추천해주는 브레인스토밍 도구입니다.",
+                "choices": ["NPC 추가 방법", "이미지 생성", "처음으로"]
+            }
+
+        # ▲▲▲ [수정 끝] ▲▲▲
+
+        # 6. AI 도구 (일반)
+        if any(w in query for w in ['ai', '도구', 'tool', '인공지능', '기능']):
+            return {
+                "answer": "🤖 **AI 보조 도구 소개**\n\nTRPG Studio는 창작자를 위한 강력한 AI 도구들을 제공합니다.\n\n1. **NPC 제네레이터**: 성격/배경 자동 생성\n2. **자동 씬 묘사**: 키워드로 지문 작성\n3. **로직 검수기**: 오류 자동 분석\n\n빌더 모드에서 이 기능들을 체험해보세요!",
                 "choices": ["빌더 모드 이동", "시나리오 제작 방법", "처음으로"]
             }
 
-        # ▼▼▼ [수정] 실제 DB 조회 기반 인기 시나리오 추천 로직 ▼▼▼
+        # 7. 인기/추천 시나리오 로직
         if any(w in query for w in ['인기', '추천', '랭킹', '순위', 'popular', 'top', '1위']):
             try:
                 # 1. DB 세션 생성
+                from models import get_db, Scenario, ScenarioLike
+                from sqlalchemy import func
                 db = next(get_db())
 
-                # 2. 인기순 정렬 쿼리 (api.py와 동일 로직: 좋아요*10 + 조회수)
-                # 공개된(is_public=True) 시나리오 중 1위 조회
+                # 2. 인기순 정렬 쿼리
                 top_scenario = db.query(Scenario).filter(Scenario.is_public == True) \
                     .outerjoin(ScenarioLike, Scenario.id == ScenarioLike.scenario_id) \
                     .group_by(Scenario.id) \
@@ -158,35 +208,21 @@ class ChatbotService:
                 "choices": ["메인으로 이동", "게임 플레이 방법", "처음으로"]
             }
 
-        # 6. 플레이 / 게임 시작
-        if any(w in query for w in ['플레이', '게임', '시작', 'play', '하기', '참여']):
+        # 8. 플레이 / 게임
+        if any(w in query for w in ['플레이', '게임', '시작', 'play', '하기']):
             return {
                 "answer": "🎮 **게임 플레이 방법**\n\n메인 화면에 있는 다양한 장르(판타지, 스릴러 등)의 시나리오 중 하나를 선택해 보세요.\n**'PLAY'** 버튼을 누르면 AI 게임마스터와 함께 1:1 모험이 시작됩니다.",
                 "choices": ["인기 시나리오 추천", "내 시나리오 보기", "처음으로"]
             }
 
-        # 7. 로그인 / 계정 / 회원가입
-        if any(w in query for w in ['로그인', '계정', '가입', '아이디', '비번', 'password', 'sign']):
+        # 9. 계정 관련 (일반)
+        if any(w in query for w in ['로그인', '계정', '가입', '아이디', 'password']):
             return {
-                "answer": "🔐 **계정 관리**\n\n우측 상단의 **LOGIN** 버튼을 통해 로그인하거나 회원가입할 수 있습니다.\n구글, 카카오, 네이버 소셜 로그인도 지원합니다.\n로그인 후 나만의 시나리오를 저장하고 공유해보세요.",
+                "answer": "🔐 **계정 관리**\n\n우측 상단의 **LOGIN** 버튼을 통해 로그인하거나 회원가입할 수 있습니다.\n구글, 카카오, 네이버 소셜 로그인도 지원합니다.",
                 "choices": ["마이페이지로 이동", "처음으로"]
             }
 
-        # 8. 이미지 / 그림
-        if any(w in query for w in ['이미지', '그림', '일러스트', 'image', 'picture']):
-            return {
-                "answer": "🎨 **이미지 생성 기능**\n\n시나리오의 상황에 맞는 이미지를 AI가 실시간으로 생성해줍니다.\n이 기능은 **Dungeon Master (Pro)** 플랜 이상에서 월 50회 제공됩니다.",
-                "choices": ["요금제 안내", "시나리오 제작 방법"]
-            }
-
-        # ▼▼▼ [추가] '처음으로' 키워드 처리 (여기부터 복사해서 붙여넣으세요) ▼▼▼
-        if any(w in query for w in ['처음', '시작', 'start', 'home', '메인', 'reset', '리셋']):
-            return {
-                "answer": "안녕하세요! 모험가님. 👋\n무엇을 도와드릴까요?",
-                "choices": ["시나리오 제작 방법", "요금제 안내", "게임 플레이 방법"]
-            }
-
-        # 9. 기본 응답 (매칭되는 키워드가 없을 때)
+        # 기본 응답
         return {
             "answer": f"죄송합니다. 말씀하신 '{query}'에 대한 정확한 정보를 찾지 못했습니다.\n하지만 아래 메뉴를 통해 도움을 드릴 수 있습니다.",
             "choices": ["시나리오 제작 방법", "요금제 안내", "문의하기"]
