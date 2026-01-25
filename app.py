@@ -39,12 +39,12 @@ MAINTENANCE_HTML = """
 
 
 # [중요] 작성하신 api.py를 가져오기 위한 임포트 (이게 없어서 빨간줄 발생)
-from routes import api
+#from routes import api
 
 # [추가] 뷰 로직 처리를 위한 서비스 Import
 #from services.mermaid_service import MermaidService
-from core.state import GameState
-from routes.auth import get_current_user_optional, CurrentUser
+#from core.state import GameState
+#from routes.auth import get_current_user_optional, CurrentUser
 
 
 
