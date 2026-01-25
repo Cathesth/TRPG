@@ -13,10 +13,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, RedirectResponse, StreamingResponse, HTMLResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-# app.py 상단 import 부분
-from routes.chatbot import router as chatbot_router  # [추가]
 
 from config import LOG_FORMAT, LOG_DATE_FORMAT, get_full_version
+from models import Base, engine # DB 모델 초기화용
+
+# 로깅 설정
+logging.basicConfig(
+    level=logging.INFO,
+    format=LOG_FORMAT,
+    datefmt=LOG_DATE_FORMAT
+)
+logger = logging.getLogger(__name__)
 
 # 점검 페이지 HTML (위트 있는 TRPG 컨셉)
 MAINTENANCE_HTML = """
@@ -29,25 +36,15 @@ MAINTENANCE_HTML = """
     </body>
 </html>
 """
-from models import create_tables
+
 
 # [중요] 작성하신 api.py를 가져오기 위한 임포트 (이게 없어서 빨간줄 발생)
 from routes import api
-from models import Base, engine # DB 모델 초기화용
 
 # [추가] 뷰 로직 처리를 위한 서비스 Import
-from services.mermaid_service import MermaidService
+#from services.mermaid_service import MermaidService
 from core.state import GameState
 from routes.auth import get_current_user_optional, CurrentUser
-
-# 로깅 설정
-logging.basicConfig(
-    level=logging.INFO,
-    format=LOG_FORMAT,
-    datefmt=LOG_DATE_FORMAT
-)
-logger = logging.getLogger(__name__)
-
 
 
 
@@ -56,8 +53,20 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # 앱 시작 시 DB 테이블 생성
     try:
+        logger.info("🚀 Starting application startup sequence...")
+
+        # [핵심 수정] 함수 내부에서 Import하여 순환 참조 완벽 차단
+        from models import create_tables
+        from migrate_db import run_migrations
+
         create_tables()
         logger.info("DB Tables created successfully.")
+
+        # [추가] 초기 데이터 마이그레이션 실행
+        logger.info("🔄 Running DB migrations...")
+        run_migrations()
+        logger.info("✅ DB Migrations completed.")
+
     except Exception as e:
         logger.error(f"DB Creation Failed: {e}")
 
