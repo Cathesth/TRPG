@@ -8,8 +8,10 @@ import json
 from config import get_full_version
 from routes.auth import get_current_user_optional, get_current_user
 from models import get_db, Scenario
-from services.mermaid_service import MermaidService
-from services.scenario_service import ScenarioService
+
+# [수정 1] 상단의 Service Import 구문을 삭제하여 순환 참조를 방지합니다.
+# from services.mermaid_service import MermaidService
+# from services.scenario_service import ScenarioService
 
 logger = logging.getLogger(__name__)
 
@@ -328,6 +330,9 @@ async def view_scenes_edit(request: Request, scenario_id: str, user=Depends(get_
     """
     기존 씬 맵 편집 라우트를 시나리오 빌더(builder_view.html)로 연결
     """
+    # [수정 3] 여기서 Local Import로 서비스를 가져옵니다.
+    from services.scenario_service import ScenarioService
+
     # 1. 시나리오 권한 및 존재 여부 확인
     result, error = ScenarioService.get_scenario_for_edit(scenario_id, user.id)
     if error:
