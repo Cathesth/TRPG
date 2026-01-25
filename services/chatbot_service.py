@@ -1,5 +1,7 @@
 import json
 import logging
+# [수정] Typing 힌트 추가
+from typing import List, Dict, Optional
 
 # 필요한 모듈 임포트
 try:
@@ -12,12 +14,15 @@ logger = logging.getLogger(__name__)
 
 
 class ChatbotService:
+    # [수정] generate_response 함수 시그니처 변경: chat_history 파라미터 추가
     @staticmethod
-    async def generate_response(user_query: str) -> dict:
+    async def generate_response(user_query: str, chat_history: List[Dict] = None) -> dict:
         """
         사용자의 질문을 받아 답변을 생성합니다.
-        1. LLM(AI) 연결을 시도합니다.
-        2. 실패하거나 설정되지 않은 경우, 확장된 '키워드 분석 규칙'을 통해 답변을 반환합니다.
+
+        Args:
+            user_query (str): 사용자의 현재 질문
+            chat_history (List[Dict]): 이전 대화 내역 [{'role': 'user', 'content': '...'}, ...]
         """
 
         # [학습 내용] AI에게 주입할 프로젝트 지식 정보 (LLM 연결 시 사용됨)
@@ -41,22 +46,38 @@ class ChatbotService:
         """
 
         try:
-            # 시스템 프롬프트 구성
-            system_prompt = """
-            당신은 TRPG Studio의 친절한 AI 가이드 '여울'입니다. 
-            제공된 정보를 바탕으로 사용자의 질문에 친절하게 답변하세요.
-            답변 후에는 사용자가 이어서 질문할 만한 '추가 선택지(choices)'를 2~3개 제안해주세요.
-
-            반드시 아래 JSON 형식을 지켜서 응답하세요. (마크다운 없이 순수 JSON만)
-            {
-                "answer": "답변 내용...",
-                "choices": ["선택지1", "선택지2"]
-            }
-            """
-
             # LLM 호출 시도
             if 'LLMFactory' in globals() and hasattr(LLMFactory, 'create_llm'):
                 try:
+                    # [수정] 대화 히스토리 포맷팅 (최근 3개만 참조하여 토큰 절약)
+                    history_text = ""
+                    if chat_history:
+                        recent_history = chat_history[-3:]
+                        for msg in recent_history:
+                            role = "User" if msg.get('role') == 'user' else "AI"
+                            history_text += f"{role}: {msg.get('content')}\n"
+
+                    # [수정] 시스템 프롬프트 강화 (페르소나 부여)
+                    system_prompt = f"""
+                    당신은 TRPG Studio의 친절하고 재치 있는 AI 가이드 '여울'입니다.
+                    사용자는 TRPG 게임을 만들거나 플레이하는 유저입니다.
+
+                    [지침]
+                    1. 제공된 'Context' 정보를 기반으로 정확하게 답변하세요.
+                    2. 정보가 없다면 솔직히 모르겠다고 하고, 메뉴 이용을 권장하세요.
+                    3. 말투는 친절하고 격려하는 톤("~해요", "~해보세요!")을 사용하세요.
+                    4. 답변 끝에는 항상 사용자가 이어서 할 법한 질문 2~3개를 'choices'에 담아 주세요.
+
+                    [이전 대화 참고]
+                    {history_text}
+
+                    반드시 아래 JSON 형식을 지켜서 응답하세요. (마크다운 없이 순수 JSON만)
+                    {{
+                        "answer": "답변 내용... (줄바꿈은 \\n 사용)",
+                        "choices": ["선택지1", "선택지2"]
+                    }}
+                    """
+
                     llm = LLMFactory.create_llm("gpt-4o")
                     response_text = await llm.chat_completion(
                         system_prompt=system_prompt,
@@ -74,34 +95,75 @@ class ChatbotService:
             logger.error(f"Chatbot Critical Error: {e}")
             return ChatbotService.get_keyword_response(user_query)
 
-    # ▼▼▼ [확장됨] 키워드 분석 로직 (순서 중요!) ▼▼▼
+    # ▼▼▼ [업그레이드] 키워드 분석 로직 (점수 기반 매칭으로 변경) ▼▼▼
     @staticmethod
     def get_keyword_response(query: str) -> dict:
         """
         AI 모델 연결 불가 시, 질문의 핵심 단어를 분석하여 준비된 답변을 제공합니다.
+        단순 포함 여부가 아니라 '우선순위'를 두어 더 정확한 의도를 파악합니다.
         """
         query = query.lower().strip()  # 소문자 변환 및 공백 제거
 
-        # [우선순위 1] 디버그 모드 질문 처리
-        if any(w in query for w in ['디버그', 'debug', '버그', '시각화', 'viz', '그래프', '노드']):
-            if any(w in query for w in ['안', '오류', 'error', '표시', '나오']):
-                return {
-                    "answer": "🛠️ **디버그 시각화 오류 해결**\n\n그래프가 보이지 않는다면 다음을 확인해 주세요.\n\n1. **PC 환경 권장**: 모바일에서는 화면이 작아 보이지 않을 수 있습니다.\n2. **새로고침**: 일시적인 로딩 오류일 수 있습니다.\n3. **시나리오 데이터**: 비어있는 시나리오는 그래프가 그려지지 않습니다.",
-                    "choices": ["디버그 모드가 뭔가요?", "플레이 방법", "문의하기"]
-                }
-            return {
-                "answer": "🐛 **디버그 모드 (Scene Visualizer)**\n\n현재 플레이 중인 시나리오의 **구조와 상태를 실시간으로 확인**하는 기능입니다.\n\n• **위치**: 플레이 화면 우측 하단의 **벌레 아이콘** 클릭\n• **기능**: 현재 위치한 씬(노드) 하이라이트, 변수 값 확인, 이동 경로 추적\n\n제작자가 시나리오를 테스트할 때 매우 유용합니다!",
-                "choices": ["시각화가 안 나와요", "플레이 방법", "처음으로"]
-            }
-
-        # [우선순위 2] 구체적인 기능 질문 (프리셋/시나리오 로드 등)
-
-        # 4-0. 프리셋 vs 시나리오 로드 차이점
-        if all(w in query for w in ['프리셋', '시나리오']) and any(w in query for w in ['차이', '다른', 'vs', '비교']):
-            return {
+        # 답변 템플릿 정의 (키워드 리스트와 매핑)
+        responses = [
+            {
+                "keywords": ['디버그', 'debug', '버그', '시각화', 'viz', '그래프', '노드', '오류', '안', 'error'],
+                "required": ['디버그', 'debug', '시각화', '버그'],  # 필수 포함 단어 중 하나는 있어야 함
+                "answer": "🛠️ **디버그(Debug) 도구 안내**\n\n플레이 화면 우측 하단의 **벌레(Bug) 아이콘**을 클릭해 보세요.\n현재 씬의 상태, 변수 값, 진행 경로를 시각적으로 확인할 수 있습니다.\n\n(그래프가 안 보인다면 PC 환경에서 새로고침을 시도해 주세요!)",
+                "choices": ["플레이 방법", "문의하기"]
+            },
+            # 4-0. 프리셋 vs 시나리오 차이
+            {
+                "keywords": ['프리셋', '시나리오', '차이', 'vs', '비교'],
+                "required": ['프리셋', '시나리오'],
                 "answer": "⚖️ **프리셋 로드 vs 시나리오 로드 차이점**\n\n두 기능은 **'어디서'** 데이터를 가져오느냐가 다릅니다.\n\n• **프리셋 로드**: 내 컴퓨터에 저장된 **JSON 파일(구조)**을 캔버스로 불러옵니다. (로컬 파일)\n• **시나리오 로드**: 서버에 저장된 **내 프로젝트**를 편집기로 불러옵니다. (클라우드 DB)\n\n즉, 프리셋은 '단순 도면 백업', 시나리오는 '진행 중인 프로젝트 전체'라고 이해하시면 됩니다!",
                 "choices": ["프리셋 저장이 뭔가요?", "시나리오 제작 방법", "빌더 모드 이동"]
+            },
+            # ... (나머지 4-1, 4-2, 4-3 항목들도 이 구조로 변환 가능하지만, 기존 로직 유지해도 무방함) ...
+
+            # [분리됨] 10-2-B. 도망/회피 (점수 매칭으로 변경)
+            {
+                "keywords": ['도망', 'run', 'escape', '피하', '회피', '살려'],
+                "required": [],
+                "answer": "🏃 **도망치기**\n\n위험한 상황인가요?\n\n**\"뒤도 돌아보지 않고 전력 질주해 도망친다\"** 또는 **\"연막탄을 뿌리고 숨는다\"** 처럼 구체적으로 입력해 보세요.\nAI가 상황과 민첩성을 고려해 성공 여부를 판정해 줄 것입니다.",
+                "choices": ["전투는 어떻게 해요?", "아이템 사용법"]
+            },
+            # [분리됨] 10-2-A. 전투/공격
+            {
+                "keywords": ['전투', '공격', '싸움', 'attack', 'fight', '죽이'],
+                "required": [],
+                "answer": "⚔️ **전투 및 공격 방법**\n\n적을 만났다면 공격 방식을 묘사하세요.\n\n예시:\n• \"들고 있는 검을 휘둘러 적을 베어버린다.\"\n• \"화염구 주문을 외워 적에게 날린다.\"\n\n플레이어의 행동 -> AI의 판정(명중 여부) -> 적의 반격 순서로 진행됩니다.",
+                "choices": ["도망칠 수 있나요?", "주사위 굴리는 법"]
             }
+        ]
+
+        # [수정] 매칭 로직: 가장 많은 키워드가 포함된 답변을 선택 (Best Match)
+        best_match = None
+        max_score = 0
+
+        for item in responses:
+            score = 0
+            # 필수 단어 체크 (있다면)
+            if item.get("required") and not any(r in query for r in item["required"]):
+                continue
+
+            # 키워드 점수 계산
+            for k in item["keywords"]:
+                if k in query:
+                    score += 1
+
+            if score > max_score:
+                max_score = score
+                best_match = item
+
+        # 점수 기반 매칭 결과가 있다면 반환
+        if best_match:
+            return {
+                "answer": best_match["answer"],
+                "choices": best_match["choices"]
+            }
+
+        # --- (기존의 단순 IF문 로직 유지: 점수 매칭에 없는 나머지 항목들 처리) ---
 
         # 4-1. 프리셋 저장
         if ('프리셋' in query or 'preset' in query) and any(w in query for w in ['저장', 'save']):
@@ -125,27 +187,11 @@ class ChatbotService:
                 "choices": ["마이페이지로 이동", "프리셋 로드와 차이점", "빌더 모드 이동"]
             }
 
-        # ▼▼▼ 인게임 플레이 관련 질문 처리 ▼▼▼
-
         # 10-1. 주사위/판정/룰
         if any(w in query for w in ['주사위', '다이스', 'dice', '굴리', '판정', 'rule', '룰', '성공']):
             return {
                 "answer": "🎲 **행동 판정 안내**\n\nTRPG Studio는 **자동 판정 시스템**을 사용합니다.\n\n따로 주사위 버튼을 누를 필요 없이, **\"문을 발로 찹니다\"** 또는 **\"고블린을 검으로 찌른다\"** 같이 행동을 글로 적으세요.\nAI GM이 상황에 맞춰 자동으로 주사위를 굴리고 결과를 알려줍니다!",
                 "choices": ["전투는 어떻게 해요?", "아이템 사용법", "힌트가 필요해요"]
-            }
-
-        # [분리됨] 10-2-A. 전투/공격
-        if any(w in query for w in ['전투', '공격', '싸움', 'attack', 'fight', '죽이']):
-            return {
-                "answer": "⚔️ **전투 및 공격 방법**\n\n적과 조우했다면 공격 방식을 구체적으로 묘사하세요.\n\n예시:\n• \"들고 있는 검을 휘둘러 적을 공격한다.\"\n• \"화염구 주문을 외워 적에게 날린다.\"\n\n플레이어의 행동 -> AI의 판정(명중 여부) -> 적의 반격 순서로 턴이 진행됩니다.",
-                "choices": ["도망칠 수 있나요?", "주사위는 어떻게 굴려요?", "아이템 사용법"]
-            }
-
-        # [분리됨] 10-2-B. 도망/회피
-        if any(w in query for w in ['도망', 'run', 'escape', '피하', '회피', '살려']):
-            return {
-                "answer": "🏃 **도망치기**\n\n불리한 상황이라면 도망칠 수 있습니다!\n\n**\"뒤도 돌아보지 않고 전력 질주해 도망친다\"** 또는 **\"연막탄을 뿌리고 숨는다\"** 처럼 입력해 보세요.\nAI가 상황과 민첩성을 고려해 성공 여부를 판정합니다. (실패 시 공격받을 수 있습니다!)",
-                "choices": ["공격은 어떻게 해요?", "아이템 사용법", "이전 대화 보기"]
             }
 
         # 10-3. 저장/불러오기/이전 대화 (인게임)
@@ -278,7 +324,7 @@ class ChatbotService:
                 "choices": ["마이페이지로 이동", "무료 기능 더보기", "처음으로"]
             }
 
-        # 4. 시나리오 제작 (일반) - [이제 여기는 위의 상세 기능을 모두 통과한 뒤에 체크합니다]
+        # 4. 시나리오 제작 (일반)
         if any(w in query for w in ['제작', '만들기', '생성', '빌더', 'create', '노드']):
             return {
                 "answer": "🛠️ **시나리오 제작 (Builder Mode)**\n\nTRPG Studio는 **노드(Node) 기반 편집기**를 제공합니다.\n코딩 없이 이야기의 흐름을 시각적으로 연결하여 나만의 모험을 만들 수 있습니다.\n\n상단의 **'Start Creation'** 버튼을 눌러 캔버스를 열어보세요!",
