@@ -790,7 +790,11 @@ async def game_act_stream(
                 for item in search_list:
                     # scene_id 또는 ending_id 매칭
                     if item.get('scene_id') == current_loc or item.get('ending_id') == current_loc:
-                        bg_image_url = item.get('background_image', '') or item.get('image_prompt', '')
+                        # [FIX] Endings often use 'image' instead of 'background_image'
+                        bg_image_url = item.get('background_image', '') or item.get('image', '') or item.get('image_prompt', '')
+                        if bg_image_url:
+                            # [FIX] URL resolution for internal/external paths
+                            bg_image_url = game_engine.get_minio_url('bg', bg_image_url)
                         break
                 
                 # B. [FIX] raw_graph 내의 nodes에서도 검색 (누락 방지)
@@ -808,8 +812,9 @@ async def game_act_stream(
                                  is_match = True
                                  
                          if is_match and 'data' in node:
-                             bg_image_url = node['data'].get('background_image', '')
+                             bg_image_url = node['data'].get('background_image', '') or node['data'].get('image', '')
                              if bg_image_url:
+                                 bg_image_url = game_engine.get_minio_url('bg', bg_image_url)
                                  break
 
                 # 배경 이미지가 있으면 클라이언트로 전송

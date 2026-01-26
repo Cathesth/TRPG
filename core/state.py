@@ -295,11 +295,11 @@ class WorldState:
                 hp_mult = 0.8
                 atk_mult = 0.8
             elif difficulty_raw in ['hard', '상', '어려움']:
-                hp_mult = 1.5
-                atk_mult = 1.2
-            elif difficulty_raw in ['boss', '보스', '극악']:
-                hp_mult = 2.0
+                hp_mult = 2.5
                 atk_mult = 1.5
+            elif difficulty_raw in ['boss', '보스', '극악']:
+                hp_mult = 4.0
+                atk_mult = 2.0
 
             real_hp = int(npc_hp * hp_mult)
             real_max_hp = int(npc_max_hp * hp_mult)

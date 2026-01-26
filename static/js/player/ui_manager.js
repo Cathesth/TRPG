@@ -24,9 +24,9 @@ function updateBackgroundImage(url) {
     img.onload = () => {
         document.body.style.backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('${proxyUrl}')`;
         document.body.style.backgroundSize = 'cover';
-        document.body.style.backgroundPosition = 'center top'; // [FIX] 상단 고정 (잘림 방지)
-        document.body.style.backgroundAttachment = 'fixed';
-        document.body.style.transition = 'background-image 0.5s ease-in-out'; // 부드러운 전환 효과
+        document.body.style.backgroundPosition = 'center top'; // 상단 기준 정렬
+        document.body.style.backgroundAttachment = 'scroll'; // [FIX] fixed 제거로 모바일/창 크기 변경 시 잘림 방지 (scroll이 기본값)
+        document.body.style.transition = 'background-image 0.5s ease-in-out';
     };
 }
 
