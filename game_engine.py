@@ -2267,11 +2267,12 @@ def narrator_node(state: PlayerState):
         img_html = ""
         bg_image_url = ending.get('background_image', ending.get('image'))
         if bg_image_url:
-             # [FIX] 이미지 URL 프록시 처리
-            if bg_image_url.startswith("http://bucket.railway.internal:9000"):
-                bg_image_url = bg_image_url.replace("http://bucket.railway.internal:9000", "/image/serve/http://bucket.railway.internal:9000")
-            elif bg_image_url.startswith("https://develop-prod.up.railway.app"): # 외부 도메인인 경우
-                 bg_image_url = f"/image/serve/{urllib.parse.quote(bg_image_url, safe='')}"
+             # [FIX] 이미지 URL 프록시 처리 (get_minio_url 사용)
+            if bg_image_url.startswith("http") or bg_image_url.startswith("/"):
+                 # get_minio_url이 http/https나 내부 경로를 처리하도록 함
+                 # 단, get_minio_url은 bucket_key를 기대하므로, full url인 경우 처리가 필요할 수 있음
+                 # get_minio_url 내부 로직 상 http로 시작하면 내부 도메인 체크 후 변환함
+                 bg_image_url = get_minio_url('bg', bg_image_url)
             
             img_html = f"""
             <div class="mb-6 rounded-lg overflow-hidden shadow-lg border-2 border-yellow-600/30">
@@ -2824,9 +2825,9 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             if filtered_transitions:
                 available_transitions = "\n".join([f"- {t.get('trigger', '')}" for t in filtered_transitions])
             else:
-                available_transitions = "현재 특별한 선택지가 없습니다."
+                available_transitions = ""
         else:
-            available_transitions = "현재 특별한 선택지가 없습니다."
+            available_transitions = ""
 
         # 씬 변경 시 유저 입력 컨텍스트 포함
         if user_input:
