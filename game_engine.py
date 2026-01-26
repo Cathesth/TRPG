@@ -31,7 +31,11 @@ def get_minio_url(category: str, filename: str) -> str:
     filename = str(filename)
 
     # [FIX] 이미 URL 형식이면 프록시 처리 또는 도메인 치환
-    if filename.startswith("http://") or filename.startswith("https://"):
+    if filename.startswith("http://") or filename.startswith("https://") or filename.startswith("/"):
+        # [NEW] 절대 경로인 경우 (/로 시작), 그대로 반환 (프론트엔드용 상대 경로)
+        if filename.startswith("/"):
+            return filename
+
         try:
             from urllib.parse import urlparse
             parsed = urlparse(filename)
@@ -520,9 +524,15 @@ def intent_parser_node(state: PlayerState):
         state['current_scene_id'] = curr_scene_id_from_state
         wsm.location = curr_scene_id_from_state
 
-    # previous_scene_id 설정
+    # previous_scene_id 설정 (현재 씬 ID를 이전 씬 ID로 스냅샷)
+    # [FIX] 턴 시작 시점의 current_scene_id가 '진실'이므로, 이것이 곧 이번 턴의 previous_scene_id가 됨
     if curr_scene_id_from_state:
         state['previous_scene_id'] = curr_scene_id_from_state
+        logger.info(f"📸 [SNAPSHOT] previous_scene_id set to: {curr_scene_id_from_state}")
+    else:
+        # 만약 여전히 비어있다면(prologue 등), world_state.location 사용
+        state['previous_scene_id'] = wsm.location
+        logger.info(f"📸 [SNAPSHOT] previous_scene_id set to world_state.location: {wsm.location}")
 
     user_input = state.get('last_user_input', '').strip()
 
