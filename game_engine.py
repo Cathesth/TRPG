@@ -1587,12 +1587,16 @@ def npc_node(state: PlayerState):
         damage = base_damage
         weakness_msg = ""
 
-        # 약점 체크 (Weakness System)
+        # [FIX] NPC 정적 데이터 미리 로드 (Weakness 및 Trigger에서 공유)
         try:
             scenario_data = get_scenario_by_id(scenario_id)
-            # NPC/Enemy 데이터 검색
-            target_data = next((n for n in scenario_data.get('npcs', []) + scenario_data.get('enemies', []) if n.get('name') == target_npc), {})
-            weakness_text = target_data.get('weakness', '')
+            npc_static_data = next((n for n in scenario_data.get('npcs', []) + scenario_data.get('enemies', []) if n.get('name') == target_npc), {})
+        except Exception:
+            npc_static_data = {}
+
+        # 약점 체크 (Weakness System)
+        try:
+            weakness_text = npc_static_data.get('weakness', '')
             
             if weakness_text:
                 # 약점 키워드 추출 (콤마, 공백 구분)

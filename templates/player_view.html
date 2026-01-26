@@ -43,8 +43,16 @@
     </script>
 
     <style>
+        /* [FIX] 화면 전체 높이 보장 */
+        html {
+            height: 100%;
+        }
+
         /* Pixel Art Base */
         body {
+            /* body도 전체 높이 확보 */
+            min-height: 100vh;
+
             /* [FIX] 배경 이미지 스타일 개선: Cover + 상단 중심 */
             background-color: #000000 !important;
             background-size: cover !important;
@@ -67,30 +75,7 @@
             transition: background-image 0.5s ease-in-out;
         }
 
-        /* [NEW] 배경 여백을 채워줄 블러 레이어 (가상 요소 활용) */
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: -1;
-            /* 내용 뒤로 보냄 */
-
-            /* 메인 배경과 동일한 이미지를 상속받아 확대 및 블러 처리 */
-            background: inherit;
-            background-size: cover !important;
-            /* 화면 꽉 채움 */
-            background-position: center center !important;
-
-            /* 흐림 효과 및 어둡게 처리 */
-            filter: blur(20px) brightness(0.4);
-            transform: scale(1.1);
-            /* 블러로 인한 테두리 번짐 방지 */
-
-            pointer-events: none;
-        }
+        /* [DEL] body::before (블러 레이어) 제거 - 배경 잘림/위치 불일치 원인 */
 
         /* [기존] CRT Scanlines Effect (z-index 수정) */
         body::after {
