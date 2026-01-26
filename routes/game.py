@@ -605,6 +605,9 @@ async def game_act_stream(
                         user_input=desc_prompt,
                         max_tokens=100
                     )
+
+                    # [LOGGING] 전투 묘사 로그 출력 (User Request)
+                    logger.info(f"⚔️ [COMBAT DESC] Generated: {llm_desc}")
                     
                     if llm_desc:
                          # 묘사를 별도 메시지로 전송 (강조 스타일 적용)
