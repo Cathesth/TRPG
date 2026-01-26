@@ -1574,19 +1574,85 @@ def npc_node(state: PlayerState):
 
             return state
 
-        # (d) 데미지 산정 (random 2~6, 재현성을 위해 seed 옵션)
+        # (d) 데미지 산정 (속도 향상을 위해 상향: 15~30) 및 약점 공략 체크
         import hashlib
 
-        # 재현 가능한 난수 생성 (session_id + turn_count 기반)
+        # 재현 가능한 난수 생성
         seed_string = f"{scenario_id}_{world_state.turn_count}_{target_npc}"
         seed_value = int(hashlib.md5(seed_string.encode()).hexdigest()[:8], 16)
         rng = random.Random(seed_value)
-        damage = rng.randint(2, 6)
+        
+        # [BALANCE] 기본 데미지 상향 (기존 2~6 -> 15~30) : 7턴 이내 종료 목표
+        base_damage = rng.randint(15, 30)
+        damage = base_damage
+        weakness_msg = ""
+
+        # 약점 체크 (Weakness System)
+        try:
+            scenario_data = get_scenario_by_id(scenario_id)
+            # NPC/Enemy 데이터 검색
+            target_data = next((n for n in scenario_data.get('npcs', []) + scenario_data.get('enemies', []) if n.get('name') == target_npc), {})
+            weakness_text = target_data.get('weakness', '')
+            
+            if weakness_text:
+                # 약점 키워드 추출 (콤마, 공백 구분)
+                import re
+                keywords = [k.strip() for k in re.split(r'[,\\s]+', weakness_text) if k.strip()]
+                
+                # 사용자 입력에 약점 키워드가 포함되었는지 확인
+                if any(k in user_input for k in keywords):
+                    damage = int(base_damage * 1.5)
+                    weakness_msg = f"\n⚡ [WEAKNESS] {weakness_text}을(를) 공략하여 치명적인 피해를 입혔습니다! (Damage x1.5)"
+                    logger.info(f"⚡ [COMBAT] Weakness hit! {user_input} matched {weakness_text}")
+        except Exception as e:
+            logger.error(f"⚠️ [COMBAT] Error check weakness: {e}")
 
         logger.info(f"🎲 [COMBAT] Damage roll: {damage} (seed: {seed_string})")
 
+        # [HP TRACKING] 공격 전 상태 저장
+        prev_npc_state = world_state.get_npc_state(target_npc)
+        prev_hp = prev_npc_state.get('hp', 100)
+        prev_max_hp = prev_npc_state.get('max_hp', 100)
+        prev_ratio = prev_hp / prev_max_hp if prev_max_hp > 0 else 0
+
         # (e) world_state.damage_npc 호출
         combat_result = world_state.damage_npc(target_npc, damage)
+        
+        # [HP TRACKING] 공격 후 상태 확인 및 Threshold 체크
+        curr_npc_state = world_state.get_npc_state(target_npc)
+        
+        if curr_npc_state and curr_npc_state.get('status') != 'dead':
+            curr_hp = curr_npc_state.get('hp', 0)
+            max_hp = curr_npc_state.get('max_hp', 100)
+            curr_ratio = curr_hp / max_hp if max_hp > 0 else 0
+            
+            # 5단계 묘사 구간: 80%, 60%, 40%, 20%, 0%(사망은 별도 처리됨)
+            thresholds = [0.8, 0.6, 0.4, 0.2]
+            crossed_threshold = None
+            
+            for th in thresholds:
+                if prev_ratio > th and curr_ratio <= th:
+                    crossed_threshold = th
+                    break
+            
+            # [LLM TRIGGER] 임계점을 넘었을 때만 묘사 생성 (API 레벨로 위임)
+            if crossed_threshold:
+                npc_type = npc_static_data.get('type', '적')
+                npc_desc = npc_static_data.get('description', '')
+                
+                state['combat_desc_trigger'] = {
+                    "npc_name": target_npc,
+                    "npc_type": npc_type,
+                    "npc_desc": npc_desc,
+                    "user_input": user_input,
+                    "threshold": crossed_threshold,
+                    "curr_hp": curr_hp,
+                    "max_hp": max_hp
+                }
+                logger.info(f"✨ [COMBAT DESC] Trigger Set for threshold {crossed_threshold} (Delegated to API)")
+
+        if weakness_msg:
+            combat_result += weakness_msg
 
         logger.info(f"⚔️ [COMBAT] Result: {combat_result}")
 
@@ -1643,6 +1709,9 @@ def npc_node(state: PlayerState):
                         for item_name in drop_items:
                             world_state._add_item(item_name)
                             logger.info(f"💰 [LOOT] {target_npc} dropped item: '{item_name}'")
+
+                        # [FIX] 인벤토리 동기화 (프론트엔드 반영용)
+                        state['player_vars']['inventory'] = list(world_state.player["inventory"])
 
                         # system_message에 전리품 정보 추가
                         items_text = ', '.join(drop_items)
@@ -2844,6 +2913,10 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
 
 # --- Graph Construction ---
+
+def load_game_engine():
+    """게임 엔진 초기화 (필요 시)"""
+    pass
 
 def create_game_graph():
     """

@@ -488,7 +488,7 @@ async def game_act_stream(
             current_state.get('system_message') in ['Loaded', 'Init']
     )
 
-    def generate():
+    async def generate():
         nonlocal session_id
 
         try:
@@ -611,6 +611,41 @@ async def game_act_stream(
             is_ending = (intent == 'ending')
 
             # --- [스트리밍 응답 전송] ---
+
+            # [NEW] 전투 묘사 트리거 처리 (API 레벨에서 비동기 LLM 호출)
+            combat_trigger = processed_state.get('combat_desc_trigger')
+            if combat_trigger:
+                try:
+                    from llm_factory import LLMFactory
+                    logger.info(f"✨ [API] Detecting combat trigger: {combat_trigger.get('threshold')}")
+                    
+                    llm = LLMFactory.create_llm("gpt-4o-mini") # 속도/비용 최적화 모델 사용
+                    desc_prompt = f"""
+                    [TRPG 전투 상황]
+                    적: {combat_trigger.get('npc_name')} ({combat_trigger.get('npc_type')})
+                    특징: {combat_trigger.get('npc_desc')}
+                    플레이어 행동: {combat_trigger.get('user_input')}
+                    상황: 체력이 {int(combat_trigger.get('threshold', 0) * 100)}% 이하로 떨어졌습니다!
+                    
+                    이 긴박한 순간의 적의 반응이나 파손 상태를 1문장으로 생동감 있게 묘사하세요. (문학적 표현 사용)
+                    """
+                    
+                    # Async generation
+                    llm_desc = await llm.chat_completion(
+                        system_prompt="당신은 TRPG 전투 내레이터입니다.",
+                        user_input=desc_prompt,
+                        max_tokens=100
+                    )
+                    
+                    if llm_desc:
+                         # 묘사를 별도 메시지로 전송 (강조 스타일 적용)
+                        desc_html = f"<div class='text-gray-300 italic mb-4 p-3 border-l-4 border-red-800 bg-red-900/20 font-serif leading-relaxed'>{llm_desc.strip()}</div>"
+                        yield f"data: {json.dumps({'type': 'prefix', 'content': desc_html})}\n\n"
+                        
+                        # Trigger 소비 (혹시 모를 재전송 방지)
+                        processed_state.pop('combat_desc_trigger', None)
+                except Exception as e:
+                    logger.error(f"❌ [API] Combat Desc Generation Failed: {e}")
 
             # ✅ [중요] 세션 ID 전송 (프론트엔드에서 저장)
             if session_id:

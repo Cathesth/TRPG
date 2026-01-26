@@ -331,16 +331,18 @@ function updateStats(statsData) {
 
     html += '</div>'; // End space-y-3
 
-    // 2. 인벤토리 렌더링 (이미지 지원 + 에러 핸들링)
-    if (statsData.inventory && statsData.inventory.length > 0) {
-        html += `
-        <div class="border-t-4 border-rpg-700 pt-3 mt-3">
-            <div class="text-[10px] text-gray-500 mb-2 flex items-center gap-1 font-pixel">
-                <i data-lucide="backpack" class="w-3 h-3"></i>INVENTORY
-            </div>
-            <div class="flex flex-wrap gap-1">`;
+    // 2. 인벤토리 렌더링 (항상 표시 + 에러 핸들링)
+    const inventory = statsData.inventory || [];
 
-        for (const item of statsData.inventory) {
+    html += `
+    <div class="border-t-4 border-rpg-700 pt-3 mt-3">
+        <div class="text-[10px] text-gray-500 mb-2 flex items-center gap-1 font-pixel">
+            <i data-lucide="backpack" class="w-3 h-3"></i>INVENTORY
+        </div>
+        <div class="flex flex-wrap gap-1">`;
+
+    if (inventory.length > 0) {
+        for (const item of inventory) {
             // [DEBUG] 아이템 데이터 로깅
             console.log(`🎒 [INVENTORY] Rendering item:`, item);
 
@@ -369,8 +371,10 @@ function updateStats(statsData) {
                 </span>`;
             }
         }
-        html += '</div></div>';
+    } else {
+        html += `<div class="text-gray-600 text-[10px] text-center italic py-2 font-dot w-full">- 비어있음 -</div>`;
     }
+    html += '</div></div>';
     html += '</div>';
 
     statsArea.innerHTML = html;
