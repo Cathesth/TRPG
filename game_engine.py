@@ -1417,6 +1417,20 @@ def npc_node(state: PlayerState):
     user_input = state.get('last_user_input', '').strip()
     curr_id = state.get('current_scene_id', '')
 
+    # [NEW] 엔딩 씬 체크: 엔딩이면 NPC 로직 스킵 (엔딩 연출 보존)
+    try:
+        scenario_id = state.get('scenario_id')
+        if scenario_id:
+            scenario_data = get_scenario_by_id(scenario_id)
+            endings_list = scenario_data.get('endings', [])
+            if isinstance(endings_list, list):
+                all_endings_ids = [e.get('ending_id') for e in endings_list if isinstance(e, dict)]
+                if curr_id and curr_id in all_endings_ids:
+                    logger.info(f"🚫 [NPC_NODE] Current scene '{curr_id}' is an ENDING. Skipping NPC logic.")
+                    return state
+    except Exception as e:
+        logger.error(f"⚠️ [NPC_NODE] Error in ending check: {e}")
+
     # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
     if 'stuck_count' not in state:
         state['stuck_count'] = 0

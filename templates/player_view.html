@@ -45,16 +45,54 @@
     <style>
         /* Pixel Art Base */
         body {
-            background: linear-gradient(180deg, #0B0B19 0%, #1A0B2E 50%, #0B0B19 100%) !important;
+            /* [FIX] 배경 이미지 스타일 개선: 블러 효과 + 중앙 정렬 */
+            background-color: #000000 !important;
+            background-size: contain !important;
+            /* 메인 이미지는 비율 유지하며 전체 표시 */
+            background-repeat: no-repeat !important;
+            background-position: center center !important;
+            background-attachment: fixed !important;
+
+            /* 가독성을 위한 기본 폰트 색상 */
             color: #e2e8f0 !important;
             font-family: 'DotGothic16', 'Noto Sans KR', sans-serif;
+
+            /* 픽셀 아트 렌더링 */
             image-rendering: pixelated;
             image-rendering: -moz-crisp-edges;
             image-rendering: crisp-edges;
+
+            /* 부드러운 전환 효과 */
+            transition: background-image 0.5s ease-in-out;
         }
 
-        /* CRT Effect - Scanlines */
+        /* [NEW] 배경 여백을 채워줄 블러 레이어 (가상 요소 활용) */
         body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            /* 내용 뒤로 보냄 */
+
+            /* 메인 배경과 동일한 이미지를 상속받아 확대 및 블러 처리 */
+            background: inherit;
+            background-size: cover !important;
+            /* 화면 꽉 채움 */
+            background-position: center center !important;
+
+            /* 흐림 효과 및 어둡게 처리 */
+            filter: blur(20px) brightness(0.4);
+            transform: scale(1.1);
+            /* 블러로 인한 테두리 번짐 방지 */
+
+            pointer-events: none;
+        }
+
+        /* [기존] CRT Scanlines Effect (z-index 수정) */
+        body::after {
             content: '';
             position: fixed;
             top: 0;
@@ -68,10 +106,20 @@
                     transparent 2px);
             pointer-events: none;
             z-index: 9999;
+            /* 최상단 유지 */
         }
 
+        /* [기존] CRT Noise Effect (별도 요소로 분리 필요하거나 기존 before를 after로 이동) */
+        /* 하지만 기존 코드 구조상 body::before와 body::after를 모두 쓰고 있었으므로, 
+           여기서는 새로운 div 요소를 추가하거나 구조를 변경해야 함. 
+           가장 간단한 방법은 html 태그에 블러 배경을 넣거나, 전용 div를 만드는 것임. */
+
+        /* 전략 변경: body에는 contain 배경을 넣고, html에 cover 블러 배경을 넣음 */
+
+
         /* CRT Effect - Noise */
-        body::after {
+        .noise-overlay {
+            /* Renamed from body::after to a class to avoid conflict */
             content: '';
             position: fixed;
             top: 0;
@@ -408,6 +456,9 @@
 
 <body class="min-h-screen overflow-hidden selection:bg-rpg-accent selection:text-black">
 
+    <!-- 노이즈 효과용 오버레이 -->
+    <div class="noise-overlay"></div>
+
     <!-- 상단 헤더 (픽셀 스타일) -->
     <header
         class="fixed top-0 left-0 w-full h-20 bg-rpg-800/80 backdrop-blur-md border-b-4 border-rpg-700 z-50 px-8 flex items-center justify-between shrink-0">
@@ -595,9 +646,58 @@
                 <div class="flex-1 overflow-y-auto p-4">
                     <div id="player-stats-area">
                         {% if vars %}
-                        <!-- 서버 사이드 렌더링 유지 -->
-                        <div class="bg-rpg-900 rounded-none p-4 pixel-border shadow-sm mb-4">
-                            <!-- ... stats content ... -->
+                        <!-- 서버 사이드 렌더링: Player Stats & Inventory -->
+                        <div class="bg-rpg-900 rounded-none p-4 pixel-border shadow-sm mb-4 space-y-4">
+                            <!-- HP / SANITY -->
+                            <div class="grid grid-cols-2 gap-3">
+                                <div
+                                    class="bg-rpg-800 p-2 border border-rpg-700 flex flex-col justify-center items-center">
+                                    <span class="text-[10px] text-gray-500 font-pixel mb-1">HP</span>
+                                    <span class="text-xl text-rpg-danger font-bold font-dot">{{ vars.hp }}<span
+                                            class="text-xs text-gray-600">/{{ vars.max_hp|default(100) }}</span></span>
+                                </div>
+                                <div
+                                    class="bg-rpg-800 p-2 border border-rpg-700 flex flex-col justify-center items-center">
+                                    <span class="text-[10px] text-gray-500 font-pixel mb-1">SANITY</span>
+                                    <span class="text-xl text-rpg-accent font-bold font-dot">{{ vars.sanity }}</span>
+                                </div>
+                            </div>
+                            <!-- Gold / Turn -->
+                            <div class="grid grid-cols-2 gap-3">
+                                <div
+                                    class="bg-rpg-800 p-2 border border-rpg-700 flex items-center justify-between px-3">
+                                    <span class="text-[10px] text-gray-500 font-pixel">GOLD</span>
+                                    <span class="text-sm text-yellow-500 font-bold font-dot">{{ vars.gold }} G</span>
+                                </div>
+                                <div
+                                    class="bg-rpg-800 p-2 border border-rpg-700 flex items-center justify-between px-3">
+                                    <span class="text-[10px] text-gray-500 font-pixel">TURN</span>
+                                    <span class="text-sm text-gray-300 font-bold font-dot">{{ vars.turn_count|default(1)
+                                        }}</span>
+                                </div>
+                            </div>
+
+                            <!-- [FIX] 인벤토리 UI 복구 -->
+                            <div class="border-t border-rpg-700 pt-3">
+                                <h4 class="text-xs text-gray-400 font-bold mb-2 font-pixel flex items-center gap-1">
+                                    <i data-lucide="backpack" class="w-3 h-3"></i> INVENTORY
+                                </h4>
+                                <div class="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto no-scrollbar">
+                                    {% if vars.inventory %}
+                                    {% for item in vars.inventory %}
+                                    <div
+                                        class="bg-black/30 px-3 py-2 text-xs text-gray-300 border border-rpg-700/50 flex items-center gap-2 font-dot hover:border-rpg-accent/50 transition-colors">
+                                        <i data-lucide="box" class="w-3 h-3 text-yellow-600"></i>
+                                        {{ item }}
+                                    </div>
+                                    {% endfor %}
+                                    {% else %}
+                                    <div class="text-gray-600 text-[10px] text-center italic py-2 font-dot">
+                                        - 비어있음 -
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
                         </div>
                         {% else %}
                         <div
