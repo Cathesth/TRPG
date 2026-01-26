@@ -135,11 +135,11 @@ def enrich_inventory(player_vars: dict, scenario: dict) -> dict:
 
         # [MOVED] 이미지 필드가 명시적으로 있는 경우에만 경로 해결 (자동 생성 제거로 404 방지)
         if 'image' in item_data and item_data['image']:
-            # 이미지가 경로 형태가 아니라 파일명만 있는 경우 변환 필요
+            # [FIX] 모든 이미지를 get_minio_url로 통과시켜 내부망 URL(internal/localhost) 등을 프록시 경로로 변환
+            # (이미 유효한 외부 URL은 그대로 반환됨)
             original_image = item_data['image']
-            if not original_image.startswith('http') and not original_image.startswith('https') and not original_image.startswith('/'):
-                item_data['image'] = game_engine.get_minio_url('ai-images/item', original_image)
-                logger.info(f"🖼️ [INVENTORY] Resolved scenario image URL for '{item_name}': {item_data['image']}")
+            item_data['image'] = game_engine.get_minio_url('ai-images/item', original_image)
+            logger.info(f"🖼️ [INVENTORY] Resolved scenario image URL for '{item_name}': {item_data['image']}")
         
         enriched_inventory.append(item_data)
         
@@ -925,7 +925,9 @@ async def game_act_stream(
 
             # 현재 씬의 NPC 위치 정보 업데이트
             # [FIX] unhashable type: 'dict' 에러 수정 및 이미지 연동
-            all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
+            # [FIX] unhashable type: 'dict' 에러 수정 및 이미지 연동
+            # [FIX] KeyError: 'scene_id' 방지 (scene_id가 없는 항목 필터링)
+            all_scenes = {s.get('scene_id'): s for s in scenario.get('scenes', []) if s.get('scene_id')}
             for scene_id, scene in all_scenes.items():
                 scene_title = scene.get('title', scene_id)
                 # npcs와 enemies 리스트 합치기
