@@ -583,10 +583,11 @@ async def game_act_stream(
 
             # ✅ [MOVED] 전투 묘사 트리거 처리 (API 레벨에서 비동기 LLM 호출 - DB 저장 전 처리)
             # [DEBUG] Processed State 검사
-            has_trigger = 'combat_desc_trigger' in processed_state
-            logger.info(f"🕵️ [DEBUG] processed_state keys: {list(processed_state.keys())}, Has Trigger: {has_trigger}")
+            internal_flags = processed_state.get('_internal_flags', {})
+            has_trigger = 'combat_desc_trigger' in internal_flags
+            logger.info(f"🕵️ [DEBUG] processed_state keys: {list(processed_state.keys())}, Internal Flags keys: {list(internal_flags.keys())}, Has Trigger: {has_trigger}")
 
-            combat_trigger = processed_state.get('combat_desc_trigger')
+            combat_trigger = internal_flags.get('combat_desc_trigger')
             if combat_trigger:
                 logger.info(f"✨ [API] Trigger Found! Threshold: {combat_trigger.get('threshold')}")
                 try:

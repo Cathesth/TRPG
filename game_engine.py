@@ -1652,7 +1652,9 @@ def npc_node(state: PlayerState):
                 npc_type = npc_static_data.get('type', '적')
                 npc_desc = npc_static_data.get('description', '')
                 
-                state['combat_desc_trigger'] = {
+                if '_internal_flags' not in state:
+                    state['_internal_flags'] = {}
+                state['_internal_flags']['combat_desc_trigger'] = {
                     "npc_name": target_npc,
                     "npc_type": npc_type,
                     "npc_desc": npc_desc,
