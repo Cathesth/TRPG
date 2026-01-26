@@ -159,13 +159,27 @@ class VectorDBClient:
             if npc_id: must_conditions.append({"key": "npc_id", "match": {"value": npc_id}})
             if scenario_id: must_conditions.append({"key": "scenario_id", "match": {"value": scenario_id}})
 
-            # [수정] 안정적인 search 메서드 사용
-            results = await self.client.search(
-                collection_name=self.collection_name,
-                query_vector=query_vector,
-                query_filter={"must": must_conditions} if must_conditions else None,
-                limit=limit
-            )
+            query_filter = {"must": must_conditions} if must_conditions else None
+
+            # ✅ [수정 코드] 버전 호환성을 위한 분기 처리 (search -> query_points)
+            try:
+                # 1. search 메서드 시도 (v1.7 ~ v1.9)
+                results = await self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_vector,
+                    query_filter=query_filter,
+                    limit=limit
+                )
+            except (AttributeError, TypeError):
+                # 2. search 실패 시 query_points 시도 (v1.10+)
+                # 인자 이름이 filter일 수도, query_filter일 수도 있음 -> 안전하게 kwargs 사용 권장하나 여기선 filter로 시도
+                response = await self.client.query_points(
+                    collection_name=self.collection_name,
+                    query=query_vector,
+                    filter=query_filter,  # 최신 버전은 'filter' 사용
+                    limit=limit
+                )
+                results = response.points
 
             formatted_results = []
             for result in results:
@@ -179,6 +193,7 @@ class VectorDBClient:
             logger.error(f"❌ [Qdrant] 검색 실패: {e}")
             return []
 
+    # ▼▼▼ [수정 전 코드 위치: search 메서드] ▼▼▼
     # [중요] chatbot_service.py 호환을 위한 search 메서드
     async def search(self, query: str, k: int = 3) -> List[Dict[str, Any]]:
         """
@@ -191,12 +206,22 @@ class VectorDBClient:
             if not query_vector:
                 return []
 
-            # [수정] query_points 대신 search 사용 (인자 호환성 문제 해결)
-            search_result = await self.client.search(
-                collection_name=self.collection_name,
-                query_vector=query_vector,
-                limit=k
-            )
+            # ✅ [수정 코드] 버전 호환성을 위한 분기 처리
+            try:
+                # 1. search 메서드 시도
+                search_result = await self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_vector,
+                    limit=k
+                )
+            except (AttributeError, TypeError):
+                # 2. query_points 메서드 시도
+                response = await self.client.query_points(
+                    collection_name=self.collection_name,
+                    query=query_vector,
+                    limit=k
+                )
+                search_result = response.points
 
             results = []
             for hit in search_result:
