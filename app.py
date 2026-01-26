@@ -25,6 +25,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ▼▼▼ [추가] 불필요한 통신 성공 로그 숨기기 (httpx 로그 레벨을 WARNING으로 높임) ▼▼▼
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 # 점검 페이지 HTML (위트 있는 TRPG 컨셉)
 MAINTENANCE_HTML = """
 <html>
