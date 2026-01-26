@@ -49,6 +49,9 @@ from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
 
+# 기존 임포트 아래에 추가
+from services.chatbot_service import ChatbotService  # <--- 경로 변경됨
+
 print("=========================================")
 print(f"👉 DEBUG: KAKAO_CLIENT_ID = [{os.getenv('KAKAO_CLIENT_ID')}]")
 print(f"👉 DEBUG: KAKAO_CLIENT_SECRET = [{os.getenv('KAKAO_CLIENT_SECRET')}]")
@@ -162,12 +165,22 @@ class ImageGenerateRequest(BaseModel):
     scenario_id: Optional[int] = None
     target_id: Optional[str] = None
 
+# [추가] 챗봇 요청 모델
+class ChatRequest(BaseModel):
+    message: str
+    history: Optional[List[Dict]] = []
 
-# [추가] 빌더에서 그래프 데이터(Nodes/Edges)를 직접 보내 검수 요청할 때 사용하는 모델
+
+# 빌더에서 그래프 데이터(Nodes/Edges)를 직접 보내 검수 요청할 때 사용하는 모델
 class BuilderAuditRequest(BaseModel):
     scenario: Dict[str, Any]
     scene_id: Optional[str] = None  # None이면 전체 검수
     model: Optional[str] = None
+
+# --- Pydantic 모델 정의 부분에 추가 ---
+class ChatRequest(BaseModel):
+    message: str
+    history: Optional[List[Dict]] = []
 
 
 # ==========================================
@@ -1564,6 +1577,15 @@ async def generate_image_api(data: ImageGenerateRequest, user: CurrentUser = Dep
     except Exception as e:
         logger.error(f"Image Generation Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+# [추가] 챗봇 대화 API 엔드포인트
+@api_router.post('/chat')
+async def chat_api(request: ChatRequest):
+    """
+    챗봇 대화 API (RAG + LLM)
+    """
+    response_data = await ChatbotService.generate_response(request.message, request.history)
+    return response_data
 
 
 @api_router.post('/npc/save')
