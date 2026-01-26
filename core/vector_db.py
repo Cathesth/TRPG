@@ -73,6 +73,23 @@ class VectorDBClient:
                 self.client = None
                 self._is_configured = False
 
+        # ▼▼▼ [추가해야 할 부분] ▼▼▼
+        # ✅ [작업 1] Google GenAI 클라이언트 초기화 (신버전 SDK)
+        self.google_api_key = os.getenv("GOOGLE_API_KEY")
+        self.genai_client = None
+        self.genai_initialized = False  # 호환성을 위한 플래그 (선택)
+
+        if self.google_api_key:
+            try:
+                # genai.Client 인스턴스 생성
+                self.genai_client = genai.Client(api_key=self.google_api_key)
+                self.genai_initialized = True
+                logger.info("✅ [Qdrant] Google GenAI 클라이언트 초기화 완료 (text-embedding-004)")
+            except Exception as e:
+                logger.error(f"❌ [Qdrant] Google GenAI 초기화 실패: {e}")
+                self.genai_client = None
+        else:
+            logger.warning("⚠️ [Qdrant] GOOGLE_API_KEY가 없어 임베딩 생성이 제한됩니다.")
 
         self._initialized = False
 
@@ -262,6 +279,13 @@ class VectorDBClient:
         except Exception as e:
             logger.error(f"❌ [Qdrant] 삭제 실패: {e}")
             return False
+
+    # ▼▼▼ [여기] close 메서드 추가 ▼▼▼
+    async def close(self):
+        """Qdrant 클라이언트 연결 종료"""
+        if self.client:
+            await self.client.close()
+            logger.info("✅ [Qdrant] Client closed successfully")
 
 # 싱글톤 인스턴스
 _vector_db_client: Optional[VectorDBClient] = None
