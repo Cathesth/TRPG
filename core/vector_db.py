@@ -8,7 +8,11 @@ import asyncio
 from typing import Optional, List, Dict, Any
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
-import google.generativeai as genai
+
+# [수정] 신버전 SDK 임포트 방식 (google-genai 패키지 사용 시)
+from google import genai
+from google.genai import types
+
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -46,21 +50,9 @@ class VectorDBClient:
 
         # ✅ [수정] Google GenAI 설정 (Legacy 호환성 확보)
         self.google_api_key = os.getenv("GOOGLE_API_KEY")
-        self.genai_initialized = False  # 플래그 추가
+        self.genai_client = None
 
-        if self.google_api_key:
-            try:
-                # [수정] configure 메서드로 전역 설정
-                genai.configure(api_key=self.google_api_key)
-                self.genai_initialized = True
-                logger.info("✅ [Qdrant] Google GenAI 초기화 완료 (text-embedding-004)")
-            except Exception as e:
-                logger.error(f"❌ [Qdrant] Google GenAI 초기화 실패: {e}")
-        else:
-            logger.warning("⚠️ [Qdrant] GOOGLE_API_KEY가 없어 임베딩 생성이 제한됩니다.")
-
-        self._initialized = False
-
+        # [수정] 로컬 환경 배려: Qdrant URL 확인 로직 위치 조정
         # 로컬 환경 배려: Qdrant URL이 없으면 비활성화
         self._is_configured = bool(self.qdrant_url)
 
@@ -87,6 +79,7 @@ class VectorDBClient:
         # ✅ [작업 1] Google GenAI 클라이언트 초기화
         if self.google_api_key:
             try:
+                # 신버전은 genai.Client()를 사용하여 인스턴스를 생성합니다.
                 self.genai_client = genai.Client(api_key=self.google_api_key)
                 logger.info("✅ [Qdrant] Google GenAI 클라이언트 초기화 완료 (text-embedding-004)")
             except Exception as e:
@@ -148,32 +141,23 @@ class VectorDBClient:
 
     async def get_gemini_embedding(self, text: str) -> Optional[List[float]]:
         """
-        ✅ [작업 1] Google GenAI 최신 SDK를 사용하여 텍스트를 벡터로 변환 (비동기)
-
-        Args:
-            text: 임베딩할 텍스트
-
-        Returns:
-            임베딩 벡터 (768차원) 또는 None
+        ✅ [수정] Google GenAI 신버전 SDK 사용 (models.embed_content)
         """
-        # [수정 후] 초기화 플래그 확인
-        if not self.genai_initialized:
+        if not self.genai_client:
             logger.warning("⚠️ [Qdrant] Google GenAI 클라이언트가 초기화되지 않았습니다.")
             return None
 
-        # ✅ [작업 4] 예외 처리로 시스템 중단 방지
         try:
-            # [수정] 동기 함수 래핑 (genai.embed_content 사용)
+            # [수정] 동기 함수 래핑 (신버전 SDK 문법 적용)
             def _sync_embed():
-                # 최신 라이브러리 메서드 호출
-                result = genai.embed_content(
-                    model="models/text-embedding-004",
-                    content=text,
-                    task_type="retrieval_query"
+                response = self.genai_client.models.embed_content(
+                    model="text-embedding-004",
+                    contents=text,
+                    config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")
                 )
-                return result['embedding']
+                # 신버전 응답 구조에서 임베딩 추출
+                return response.embeddings[0].values
 
-            # asyncio.to_thread로 블로킹 없이 실행
             embedding = await asyncio.to_thread(_sync_embed)
             return embedding
 
@@ -182,49 +166,22 @@ class VectorDBClient:
             return None
 
     async def get_embedding(self, text: str) -> Optional[List[float]]:
-        """텍스트를 벡터로 변환 (Gemini 사용)"""
         return await self.get_gemini_embedding(text)
 
-    async def upsert_memory(
-        self,
-        npc_id: int,
-        scenario_id: int,
-        text: str,
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> bool:
-        """
-        NPC 기억/대화 기록을 Vector DB에 저장
-
-        Args:
-            npc_id: NPC ID
-            scenario_id: 시나리오 ID
-            text: 저장할 텍스트 (대화 내용, 설정 등)
-            metadata: 추가 메타데이터 (timestamp, event_type 등)
-
-        Returns:
-            성공 여부
-        """
+    async def upsert_memory(self, npc_id: int, scenario_id: int, text: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         if not self.is_available:
-            logger.warning("⚠️ [Qdrant] Vector DB를 사용할 수 없어 기억 저장을 건너뜁니다.")
             return False
-
-        # ✅ [작업 4] 임베딩 생성 실패 시 시스템이 뻗지 않도록 예외 처리
         try:
-            # 텍스트를 벡터로 변환 (Gemini 사용)
             vector = await self.get_gemini_embedding(text)
             if not vector:
-                logger.warning("⚠️ [Qdrant] 임베딩 생성 실패 - 기억 저장을 건너뜁니다.")
                 return False
 
-            # 메타데이터 준비
             payload = {
                 "npc_id": npc_id,
                 "scenario_id": scenario_id,
                 "text": text,
                 **(metadata or {})
             }
-
-            # Qdrant에 삽입
             point_id = str(uuid.uuid4())
             await self.client.upsert(
                 collection_name=self.collection_name,
@@ -236,64 +193,29 @@ class VectorDBClient:
                     )
                 ]
             )
-
-            logger.info(f"💾 [Qdrant] 기억 저장 완료: NPC={npc_id}, Scenario={scenario_id}")
+            logger.info(f"💾 [Qdrant] 기억 저장 완료: NPC={npc_id}")
             return True
-
         except Exception as e:
             logger.error(f"❌ [Qdrant] 기억 저장 실패: {e}")
             return False
 
-    async def search_memory(
-        self,
-        query: str,
-        npc_id: Optional[int] = None,
-        scenario_id: Optional[int] = None,
-        limit: int = 5
-    ) -> List[Dict[str, Any]]:
-        """
-        유사한 기억/대화 검색
-
-        Args:
-            query: 검색 쿼리 (자연어)
-            npc_id: 특정 NPC의 기억만 검색 (선택)
-            scenario_id: 특정 시나리오의 기억만 검색 (선택)
-            limit: 반환할 최대 결과 수
-
-        Returns:
-            검색 결과 리스트 (score, text, metadata 포함)
-        """
+    async def search_memory(self, query: str, npc_id: Optional[int] = None, scenario_id: Optional[int] = None, limit: int = 5) -> List[Dict[str, Any]]:
         if not self.is_available:
-            logger.warning("⚠️ [Qdrant] Vector DB를 사용할 수 없어 기억 검색을 건너뜁니다.")
             return []
-
-        # ✅ [작업 4] 임베딩 생성 실패 시 빈 리스트 반환
         try:
-            # 쿼리를 벡터로 변환 (Gemini 사용)
             query_vector = await self.get_gemini_embedding(query)
-
             if not query_vector:
-                logger.warning("⚠️ [Qdrant] 쿼리 임베딩 생성 실패 - 빈 결과 반환")
                 return []
 
-            # 필터 조건 구성
             query_filter = None
             if npc_id or scenario_id:
                 must_conditions = []
                 if npc_id:
-                    must_conditions.append({
-                        "key": "npc_id",
-                        "match": {"value": npc_id}
-                    })
+                    must_conditions.append({"key": "npc_id", "match": {"value": npc_id}})
                 if scenario_id:
-                    must_conditions.append({
-                        "key": "scenario_id",
-                        "match": {"value": scenario_id}
-                    })
-
+                    must_conditions.append({"key": "scenario_id", "match": {"value": scenario_id}})
                 query_filter = {"must": must_conditions}
 
-            # 검색 실행
             results = await self.client.search(
                 collection_name=self.collection_name,
                 query_vector=query_vector,
@@ -301,102 +223,59 @@ class VectorDBClient:
                 limit=limit
             )
 
-            # 결과 포맷팅
             formatted_results = []
             for result in results:
                 formatted_results.append({
                     "score": result.score,
                     "text": result.payload.get("text", ""),
-                    "npc_id": result.payload.get("npc_id"),
-                    "scenario_id": result.payload.get("scenario_id"),
-                    "metadata": {k: v for k, v in result.payload.items()
-                               if k not in ["text", "npc_id", "scenario_id"]}
+                    "metadata": result.payload
                 })
-
-            logger.info(f"🔍 [Qdrant] 검색 완료: {len(formatted_results)}개 결과")
             return formatted_results
-
         except Exception as e:
             logger.error(f"❌ [Qdrant] 검색 실패: {e}")
             return []
 
-    # ▼▼▼ [여기] search 메서드 추가 ▼▼▼
+    # [중요] chatbot_service.py 호환을 위한 search 메서드
     async def search(self, query: str, k: int = 3) -> List[Dict[str, Any]]:
-        """
-        Qdrant에서 유사한 문서 검색 (RAG용) - 챗봇에서 호출
-        """
         if not self.is_available:
-            logger.warning("⚠️ [Qdrant] 클라이언트가 연결되지 않아 검색을 수행할 수 없습니다.")
             return []
-
-        # 1. 쿼리 임베딩 생성
-        query_vector = await self.get_gemini_embedding(query)
-        if not query_vector:
-            logger.warning("⚠️ [Qdrant] 검색어 임베딩 생성 실패로 검색 중단.")
-            return []
-
         try:
-            # 2. 검색 수행
+            query_vector = await self.get_gemini_embedding(query)
+            if not query_vector:
+                return []
+
             search_result = await self.client.search(
                 collection_name=self.collection_name,
                 query_vector=query_vector,
                 limit=k
             )
 
-            # 3. 결과 포맷팅
             results = []
             for hit in search_result:
                 payload = hit.payload or {}
                 content = payload.get("text") or payload.get("content") or str(payload)
-
                 results.append({
                     "page_content": content,
                     "metadata": payload,
                     "score": hit.score
                 })
-
-            logger.info(f"✅ [Qdrant] 검색 성공: {len(results)}건 발견")
             return results
-
         except Exception as e:
             logger.error(f"❌ [Qdrant] Search Error: {e}")
             return []
 
     async def delete_npc_memories(self, npc_id: int) -> bool:
-        """
-        특정 NPC의 모든 기억 삭제
-
-        Args:
-            npc_id: NPC ID
-
-        Returns:
-            성공 여부
-        """
         if not self.is_available:
             return False
-
         try:
             await self.client.delete(
                 collection_name=self.collection_name,
-                points_selector={
-                    "filter": {
-                        "must": [
-                            {
-                                "key": "npc_id",
-                                "match": {"value": npc_id}
-                            }
-                        ]
-                    }
-                }
+                points_selector={"filter": {"must": [{"key": "npc_id", "match": {"value": npc_id}}]}}
             )
-
-            logger.info(f"🗑️ [Qdrant] NPC {npc_id}의 기억 삭제 완료")
             return True
-
         except Exception as e:
-            logger.error(f"❌ [Qdrant] NPC 기억 삭제 실패: {e}")
+            logger.error(f"❌ [Qdrant] 삭제 실패: {e}")
             return False
-
 
 # 싱글톤 인스턴스
 _vector_db_client: Optional[VectorDBClient] = None
