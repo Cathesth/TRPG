@@ -1,10 +1,11 @@
 // ui_manager.js - 화면 렌더링 및 UI 제어
 
 // [헬퍼] 이미지 URL 변환 (백엔드 프록시 사용)
+// [헬퍼] 이미지 URL 변환 (백엔드 프록시 사용)
 function getImageUrl(url) {
     if (!url) return '';
-    // 이미 base64 데이터이거나, 이미 프록시 경로이거나, 정적 파일 경로인 경우 그대로 사용
-    if (url.startsWith('data:') || url.startsWith('/image/serve/') || url.startsWith('/static/')) {
+    // [FIX] http/https로 시작하면 전체 URL이므로 그대로 반환 (중복 프록시 방지)
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('/image/serve/') || url.startsWith('/static/')) {
         return url;
     }
     return `/image/serve/${encodeURIComponent(url)}`;
@@ -23,7 +24,7 @@ function updateBackgroundImage(url) {
     img.onload = () => {
         document.body.style.backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('${proxyUrl}')`;
         document.body.style.backgroundSize = 'cover';
-        document.body.style.backgroundPosition = 'center';
+        document.body.style.backgroundPosition = 'center top'; // [FIX] 상단 고정 (잘림 방지)
         document.body.style.backgroundAttachment = 'fixed';
         document.body.style.transition = 'background-image 0.5s ease-in-out'; // 부드러운 전환 효과
     };
