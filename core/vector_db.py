@@ -48,9 +48,6 @@ class VectorDBClient:
         self.collection_name = os.getenv("QDRANT_COLLECTION", "npc_memories")
         self.vector_size = 768  # Google Gemini text-embedding-004 차원
 
-        # ✅ [수정] Google GenAI 설정 (Legacy 호환성 확보)
-        self.google_api_key = os.getenv("GOOGLE_API_KEY")
-        self.genai_client = None
 
         # [수정] 로컬 환경 배려: Qdrant URL 확인 로직 위치 조정
         # 로컬 환경 배려: Qdrant URL이 없으면 비활성화
@@ -76,17 +73,6 @@ class VectorDBClient:
                 self.client = None
                 self._is_configured = False
 
-        # ✅ [작업 1] Google GenAI 클라이언트 초기화
-        if self.google_api_key:
-            try:
-                # 신버전은 genai.Client()를 사용하여 인스턴스를 생성합니다.
-                self.genai_client = genai.Client(api_key=self.google_api_key)
-                logger.info("✅ [Qdrant] Google GenAI 클라이언트 초기화 완료 (text-embedding-004)")
-            except Exception as e:
-                logger.error(f"❌ [Qdrant] Google GenAI 초기화 실패: {e}")
-                self.genai_client = None
-        else:
-            logger.warning("⚠️ [Qdrant] GOOGLE_API_KEY가 없어 임베딩 생성이 제한됩니다.")
 
         self._initialized = False
 
