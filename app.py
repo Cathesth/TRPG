@@ -288,6 +288,16 @@ async def serve_image(file_path: str):
             # S3/MinIO 키는 보통 유니코드로 저장됨
             real_key = urllib.parse.unquote(real_key)
         
+        # [FIX] 일반 경로(비-URL)인 경우에도 앞쪽의 슬래시나 버킷명 제거 로직 적용
+        # 예: /trpg-assets/ai-images/item/... -> ai-images/item/...
+        else:
+            # 1. 앞쪽 슬래시 제거
+            real_key = real_key.lstrip('/')
+            
+            # 2. 버킷명으로 시작하면 제거
+            if real_key.startswith(f"{bucket_name}/"):
+                 real_key = real_key.replace(f"{bucket_name}/", "", 1)
+        
         # 디버그 로그
         # logger.info(f"🔍 [Image Serve] Request: {file_path} -> Decoded: {decoded_path} -> Key: {real_key}")
 
