@@ -52,6 +52,12 @@ from starlette.middleware.sessions import SessionMiddleware
 # 기존 임포트 아래에 추가
 from services.chatbot_service import ChatbotService  # <--- 경로 변경됨
 
+# [routes/api.py 상단 임포트 부분에 추가]
+from config import TokenConfig
+
+# [수정] 로컬 파일 저장이 아닌 S3 업로드로 변경하여 배포 후에도 이미지 유지
+from core.s3_client import get_s3_client  # 필요한 시점에 임포트
+
 print("=========================================")
 print(f"👉 DEBUG: KAKAO_CLIENT_ID = [{os.getenv('KAKAO_CLIENT_ID')}]")
 print(f"👉 DEBUG: KAKAO_CLIENT_SECRET = [{os.getenv('KAKAO_CLIENT_SECRET')}]")
@@ -177,10 +183,6 @@ class BuilderAuditRequest(BaseModel):
     scene_id: Optional[str] = None  # None이면 전체 검수
     model: Optional[str] = None
 
-# --- Pydantic 모델 정의 부분에 추가 ---
-class ChatRequest(BaseModel):
-    message: str
-    history: Optional[List[Dict]] = []
 
 
 # ==========================================
@@ -402,8 +404,6 @@ async def update_profile(
     # 3. 프로필 사진 업로드 처리 (S3 저장 방식으로 변경)
     if avatar and avatar.filename:
         try:
-            # [수정] 로컬 파일 저장이 아닌 S3 업로드로 변경하여 배포 후에도 이미지 유지
-            from core.s3_client import get_s3_client  # 필요한 시점에 임포트
 
             s3 = get_s3_client()
             # S3 세션이 초기화되지 않았을 경우 안전장치
@@ -448,6 +448,34 @@ async def update_profile(
         db.rollback()
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
+
+
+@api_router.get("/image/serve/{file_path:path}")
+async def serve_image(file_path: str):
+    """
+    S3에 저장된 이미지를 프록시하여 클라이언트에 제공합니다.
+    DB에는 '/image/serve/avatars/filename.png' 형태로 저장됩니다.
+    """
+    s3 = get_s3_client()
+
+    # S3 초기화 확인
+    if not s3._session:
+        await s3.initialize()
+
+    try:
+        # S3에서 파일 객체 가져오기
+        response = await s3.get_file(file_path)
+        if not response:
+            return HTMLResponse("Image not found in S3", status_code=404)
+
+        # 스트리밍 응답 반환
+        return StreamingResponse(
+            response['Body'],
+            media_type=response.get('ContentType', 'image/png')
+        )
+    except Exception as e:
+        logger.error(f"Image Serve Error: {e}")
+        return HTMLResponse("Image load failed", status_code=404)
 
 @api_router.get('/views/mypage/billing', response_class=HTMLResponse)
 def get_billing_view():
@@ -1578,14 +1606,18 @@ async def generate_image_api(data: ImageGenerateRequest, user: CurrentUser = Dep
         logger.error(f"Image Generation Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
-# [추가] 챗봇 대화 API 엔드포인트
+# [수정 2] 올바른 챗봇 API 유지 및 에러 코드 삭제
+# ---------------------------------------------------------
 @api_router.post('/chat')
 async def chat_api(request: ChatRequest):
     """
     챗봇 대화 API (RAG + LLM)
+    설명: FastAPI 방식의 올바른 구현입니다. 이 부분은 유지하세요.
     """
+    # chatbot_service.py의 generate_response 호출
     response_data = await ChatbotService.generate_response(request.message, request.history)
     return response_data
+
 
 
 @api_router.post('/npc/save')
