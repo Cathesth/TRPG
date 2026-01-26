@@ -8,7 +8,7 @@ import asyncio
 from typing import Optional, List, Dict, Any
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
-from google import genai
+import google.generativeai as genai
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -44,29 +44,41 @@ class VectorDBClient:
         self.collection_name = os.getenv("QDRANT_COLLECTION", "npc_memories")
         self.vector_size = 768  # Google Gemini text-embedding-004 차원
 
-        # ✅ [작업 1] Google GenAI 최신 라이브러리 클라이언트
+        # ✅ [수정] Google GenAI 설정 (Legacy 호환성 확보)
         self.google_api_key = os.getenv("GOOGLE_API_KEY")
-        self.genai_client = None
+        self.genai_initialized = False  # 플래그 추가
+
+        if self.google_api_key:
+            try:
+                # [수정] configure 메서드로 전역 설정
+                genai.configure(api_key=self.google_api_key)
+                self.genai_initialized = True
+                logger.info("✅ [Qdrant] Google GenAI 초기화 완료 (text-embedding-004)")
+            except Exception as e:
+                logger.error(f"❌ [Qdrant] Google GenAI 초기화 실패: {e}")
+        else:
+            logger.warning("⚠️ [Qdrant] GOOGLE_API_KEY가 없어 임베딩 생성이 제한됩니다.")
+
+        self._initialized = False
 
         # 로컬 환경 배려: Qdrant URL이 없으면 비활성화
         self._is_configured = bool(self.qdrant_url)
 
+        # [수정 후] 비동기(Async) 클라이언트 및 옵션 적용
         if not self._is_configured:
             logger.warning("⚠️ [Qdrant] QDRANT_URL이 설정되지 않았습니다. Vector DB 기능이 비활성화됩니다.")
-            logger.warning("   필요한 환경변수: QDRANT_URL, QDRANT_API_KEY (선택)")
             self.client = None
         else:
             try:
-                # ✅ [작업 2] prefer_grpc=False 설정 추가 (REST 통신 안정성)
-                # ✅ [작업 3] https=False 명시적 추가 (SSL 에러 방지)
+                # ✅ [핵심 변경] AsyncQdrantClient 사용, https=False, prefer_grpc=False 설정
                 self.client = AsyncQdrantClient(
                     url=self.qdrant_url,
                     api_key=self.qdrant_api_key,
                     timeout=30,
-                    https=False,  # SSL 비활성화
-                    prefer_grpc=False  # REST API 사용 강제
+                    https=False,  # SSL 비활성화 (내부망 통신 등 문제 해결)
+                    prefer_grpc=False  # REST API 강제 사용
                 )
-                logger.info(f"✅ [Qdrant] Vector DB 클라이언트 초기화 완료: {self.qdrant_url} (https=False, prefer_grpc=False)")
+                logger.info(f"✅ [Qdrant] Vector DB 클라이언트 초기화 완료: {self.qdrant_url}")
             except Exception as e:
                 logger.error(f"❌ [Qdrant] 초기화 실패: {e}")
                 self.client = None
@@ -144,19 +156,22 @@ class VectorDBClient:
         Returns:
             임베딩 벡터 (768차원) 또는 None
         """
-        if not self.genai_client:
-            logger.warning("⚠️ [Qdrant] Google GenAI 클라이언트가 초기화되지 않았습니다. 임베딩 생성을 건너뜁니다.")
+        # [수정 후] 초기화 플래그 확인
+        if not self.genai_initialized:
+            logger.warning("⚠️ [Qdrant] Google GenAI 클라이언트가 초기화되지 않았습니다.")
             return None
 
         # ✅ [작업 4] 예외 처리로 시스템 중단 방지
         try:
-            # 동기 함수를 비동기로 래핑 (FastAPI 이벤트 루프 블로킹 방지)
+            # [수정] 동기 함수 래핑 (genai.embed_content 사용)
             def _sync_embed():
-                response = self.genai_client.models.embed_content(
-                    model='text-embedding-004',
-                    contents=text
+                # 최신 라이브러리 메서드 호출
+                result = genai.embed_content(
+                    model="models/text-embedding-004",
+                    content=text,
+                    task_type="retrieval_query"
                 )
-                return response.embeddings[0].values
+                return result['embedding']
 
             # asyncio.to_thread로 블로킹 없이 실행
             embedding = await asyncio.to_thread(_sync_embed)
@@ -303,6 +318,48 @@ class VectorDBClient:
 
         except Exception as e:
             logger.error(f"❌ [Qdrant] 검색 실패: {e}")
+            return []
+
+    # ▼▼▼ [여기] search 메서드 추가 ▼▼▼
+    async def search(self, query: str, k: int = 3) -> List[Dict[str, Any]]:
+        """
+        Qdrant에서 유사한 문서 검색 (RAG용) - 챗봇에서 호출
+        """
+        if not self.is_available:
+            logger.warning("⚠️ [Qdrant] 클라이언트가 연결되지 않아 검색을 수행할 수 없습니다.")
+            return []
+
+        # 1. 쿼리 임베딩 생성
+        query_vector = await self.get_gemini_embedding(query)
+        if not query_vector:
+            logger.warning("⚠️ [Qdrant] 검색어 임베딩 생성 실패로 검색 중단.")
+            return []
+
+        try:
+            # 2. 검색 수행
+            search_result = await self.client.search(
+                collection_name=self.collection_name,
+                query_vector=query_vector,
+                limit=k
+            )
+
+            # 3. 결과 포맷팅
+            results = []
+            for hit in search_result:
+                payload = hit.payload or {}
+                content = payload.get("text") or payload.get("content") or str(payload)
+
+                results.append({
+                    "page_content": content,
+                    "metadata": payload,
+                    "score": hit.score
+                })
+
+            logger.info(f"✅ [Qdrant] 검색 성공: {len(results)}건 발견")
+            return results
+
+        except Exception as e:
+            logger.error(f"❌ [Qdrant] Search Error: {e}")
             return []
 
     async def delete_npc_memories(self, npc_id: int) -> bool:

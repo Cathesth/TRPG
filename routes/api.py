@@ -55,6 +55,9 @@ from services.chatbot_service import ChatbotService  # <--- 경로 변경됨
 # [routes/api.py 상단 임포트 부분에 추가]
 from config import TokenConfig
 
+# [수정] 로컬 파일 저장이 아닌 S3 업로드로 변경하여 배포 후에도 이미지 유지
+from core.s3_client import get_s3_client  # 필요한 시점에 임포트
+
 print("=========================================")
 print(f"👉 DEBUG: KAKAO_CLIENT_ID = [{os.getenv('KAKAO_CLIENT_ID')}]")
 print(f"👉 DEBUG: KAKAO_CLIENT_SECRET = [{os.getenv('KAKAO_CLIENT_SECRET')}]")
@@ -401,8 +404,6 @@ async def update_profile(
     # 3. 프로필 사진 업로드 처리 (S3 저장 방식으로 변경)
     if avatar and avatar.filename:
         try:
-            # [수정] 로컬 파일 저장이 아닌 S3 업로드로 변경하여 배포 후에도 이미지 유지
-            from core.s3_client import get_s3_client  # 필요한 시점에 임포트
 
             s3 = get_s3_client()
             # S3 세션이 초기화되지 않았을 경우 안전장치
@@ -447,6 +448,34 @@ async def update_profile(
         db.rollback()
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
+
+
+@api_router.get("/image/serve/{file_path:path}")
+async def serve_image(file_path: str):
+    """
+    S3에 저장된 이미지를 프록시하여 클라이언트에 제공합니다.
+    DB에는 '/image/serve/avatars/filename.png' 형태로 저장됩니다.
+    """
+    s3 = get_s3_client()
+
+    # S3 초기화 확인
+    if not s3._session:
+        await s3.initialize()
+
+    try:
+        # S3에서 파일 객체 가져오기
+        response = await s3.get_file(file_path)
+        if not response:
+            return HTMLResponse("Image not found in S3", status_code=404)
+
+        # 스트리밍 응답 반환
+        return StreamingResponse(
+            response['Body'],
+            media_type=response.get('ContentType', 'image/png')
+        )
+    except Exception as e:
+        logger.error(f"Image Serve Error: {e}")
+        return HTMLResponse("Image load failed", status_code=404)
 
 @api_router.get('/views/mypage/billing', response_class=HTMLResponse)
 def get_billing_view():
