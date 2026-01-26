@@ -44,33 +44,38 @@ class ChatbotService:
         # 2. [RAG] Vector DB에서 관련 정보 검색
         rag_context = ""
         try:
-            # get_vector_db_client가 존재하는지 확인
             if 'get_vector_db_client' in globals():
                 vector_db = get_vector_db_client()
 
-                # [수정 1] 메서드 이름 변경 check: 'search' -> 'search_memory'
-                if vector_db and hasattr(vector_db, 'search_memory'):
-                    # [수정 2] 올바른 메서드 호출 (search -> search_memory, k -> limit)
-                    # VectorDBClient.search_memory(self, query, npc_id, scenario_id, limit)
-                    search_results = await vector_db.search_memory(user_query, limit=3)
+                # ▼▼▼ [수정 시작] 메서드 존재 여부 확인 및 호출 로직 강화 ▼▼▼
+                if vector_db:
+                    search_func = getattr(vector_db, 'search', None)
 
-                    if search_results:
-                        retrieved_texts = []
-                        for doc in search_results:
-                            # [수정 3] 반환값 처리 방식 변경
-                            # vector_db.py의 search_memory는 딕셔너리 리스트를 반환하며, 텍스트 키는 'text'입니다.
-                            if isinstance(doc, dict) and 'text' in doc:
-                                retrieved_texts.append(doc['text'])
-                            elif hasattr(doc, 'page_content'):
-                                retrieved_texts.append(doc.page_content)
-                            else:
-                                retrieved_texts.append(str(doc))
+                    if search_func:
+                        # 비동기 함수인지 확인하고 호출
+                        import inspect
+                        if inspect.iscoroutinefunction(search_func):
+                            search_results = await search_func(user_query, k=3)
+                        else:
+                            search_results = search_func(user_query, k=3)
 
-                        rag_context = "\n".join(retrieved_texts)
-                        logger.info(f"RAG Retrieval Success: Found {len(search_results)} docs")
-                else:
-                    # search_memory 메서드가 없는 경우 (VectorDB 초기화 실패 등)
-                    logger.warning("VectorDB client invalid or has no 'search_memory' method.")
+                        if search_results:
+                            retrieved_texts = []
+                            for doc in search_results:
+                                # 결과 처리 (딕셔너리 or 객체)
+                                if isinstance(doc, dict):
+                                    # vector_db.py의 search는 dict 리스트를 반환하며, 텍스트 키는 'page_content'입니다.
+                                    content = doc.get('page_content') or doc.get('text') or str(doc)
+                                    retrieved_texts.append(content)
+                                elif hasattr(doc, 'page_content'):
+                                    retrieved_texts.append(doc.page_content)
+                                else:
+                                    retrieved_texts.append(str(doc))
+
+                            rag_context = "\n".join(retrieved_texts)
+                            logger.info(f"RAG Retrieval Success: Found {len(search_results)} docs")
+                    else:
+                        logger.warning("VectorDB Client has no 'search' method.")
 
         except Exception as e:
             logger.warning(f"RAG Retrieval Failed (Using base context only): {e}")
