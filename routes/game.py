@@ -582,13 +582,23 @@ async def game_act_stream(
                 logger.error(f"❌ [WORLD STATE] Missing or invalid world_state in processed_state!")
 
             # ✅ [MOVED] 전투 묘사 트리거 처리 (API 레벨에서 비동기 LLM 호출 - DB 저장 전 처리)
+            # [DEBUG] Processed State 검사
+            has_trigger = 'combat_desc_trigger' in processed_state
+            logger.info(f"🕵️ [DEBUG] processed_state keys: {list(processed_state.keys())}, Has Trigger: {has_trigger}")
+
             combat_trigger = processed_state.get('combat_desc_trigger')
             if combat_trigger:
+                logger.info(f"✨ [API] Trigger Found! Threshold: {combat_trigger.get('threshold')}")
                 try:
                     from llm_factory import LLMFactory
-                    logger.info(f"✨ [API] Detecting combat trigger: {combat_trigger.get('threshold')}")
+                    logger.info("🛠️ [API] Importing LLMFactory success")
                     
-                    llm = LLMFactory.create_llm("google/gemini-2.0-flash-001") # [USER CONFIG] Gemini 2.0 Flash 사용
+                    # [DEBUG] LLM 생성 로그
+                    model_name = "google/gemini-2.0-flash-001"
+                    logger.info(f"🛠️ [API] Creating LLM: {model_name}")
+                    
+                    llm = LLMFactory.create_llm(model_name) 
+                    logger.info(f"✅ [API] LLM Created: {type(llm)}")
                     desc_prompt = f"""
                     [TRPG 전투 상황]
                     적: {combat_trigger.get('npc_name')} ({combat_trigger.get('npc_type')})
