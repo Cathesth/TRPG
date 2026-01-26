@@ -663,7 +663,9 @@ async def game_act_stream(
             npc_say = processed_state.get('npc_output', '')
             sys_msg = processed_state.get('system_message', '')
             intent = processed_state.get('parsed_intent')
-            is_ending = (intent == 'ending')
+            # [FIX] 엔딩 조건 보강 (씬 ID가 Ending으로 시작하면 엔딩으로 간주)
+            current_scene_id = processed_state.get('current_scene_id', '')
+            is_ending = (intent == 'ending') or (current_scene_id and (current_scene_id.startswith('Ending') or current_scene_id.startswith('ending')))
 
             # --- [스트리밍 응답 전송] ---
 
