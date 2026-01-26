@@ -605,7 +605,13 @@ def intent_parser_node(state: PlayerState):
             for idx, trans in enumerate(transitions):
                 trigger = trans.get('trigger', '').strip()
                 target = trans.get('target_scene_id', '')
-                transitions_list += f"  {idx}. 트리거: \"{trigger}\" → {target}\n"
+                
+                # [FIX] 엔딩/승리 트리거 명시적 강조 (LLM 인식률 향상)
+                label = ""
+                if target.startswith('ending') or target in endings or 'win' in target.lower() or 'victory' in target.lower():
+                     label = " 🏁 [엔딩/승리 조건]"
+                
+                transitions_list += f"  {idx}. 트리거: \"{trigger}\" → {target}{label}\n"
             transitions_list += "\n⚠️ 유저 입력이 위 트리거와 70% 이상 의미적으로 유사하면 transition으로 분류하세요."
         else:
             transitions_list = "없음 (이동 불가)"
