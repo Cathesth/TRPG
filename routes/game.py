@@ -588,7 +588,7 @@ async def game_act_stream(
                     from llm_factory import LLMFactory
                     logger.info(f"✨ [API] Detecting combat trigger: {combat_trigger.get('threshold')}")
                     
-                    llm = LLMFactory.create_llm("gpt-4o-mini") # 속도/비용 최적화 모델 사용
+                    llm = LLMFactory.create_llm("google/gemini-2.0-flash-001") # [USER CONFIG] Gemini 2.0 Flash 사용
                     desc_prompt = f"""
                     [TRPG 전투 상황]
                     적: {combat_trigger.get('npc_name')} ({combat_trigger.get('npc_type')})
