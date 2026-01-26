@@ -103,6 +103,21 @@ def enrich_inventory(player_vars: dict, scenario: dict) -> dict:
                     if 'image' not in scenario_items[item_name] and 'image' in item:
                         scenario_items[item_name]['image'] = item['image']
 
+    # [FIX] raw_graph 내의 nodes(씬/엔딩 등)에 정의된 items도 검색 (이미지가 여기에만 숨어있는 경우 대응)
+    if scenario and 'raw_graph' in scenario and 'nodes' in scenario['raw_graph']:
+        for node in scenario['raw_graph']['nodes']:
+            if 'data' in node and 'items' in node['data']:
+                for item in node['data']['items']:
+                    if isinstance(item, dict) and 'name' in item:
+                        item_name = item['name'].strip()
+                        # 이미지 정보가 있는 경우에만 업데이트 시도
+                        if 'image' in item and item['image']:
+                            if item_name not in scenario_items:
+                                scenario_items[item_name] = item
+                            elif 'image' not in scenario_items[item_name]:
+                                # 기존에 항목은 있지만 이미지가 없는 경우 업데이트
+                                scenario_items[item_name]['image'] = item['image']
+
     enriched_inventory = []
     for item in inventory:
         # 이미 객체라면 스킵
@@ -118,16 +133,11 @@ def enrich_inventory(player_vars: dict, scenario: dict) -> dict:
             # 설명 등 기본 정보 복사 (image 필드가 있으면 덮어씌워짐)
             item_data.update(scenario_items[item_name])
 
-        # [FIX] 이미지 필드가 없거나 비어있으면 자동 생성 URL 시도
-        if 'image' not in item_data or not item_data['image']:
-            # 시나리오에 정의된 이미지가 없으면 MinIO 경로 규칙에 따라 자동 생성
-            # 예: '데이터 칩' -> '.../ai-images/item/데이터_칩.png'
-            item_data['image'] = game_engine.get_minio_url('ai-images/item', item_name)
-            logger.info(f"🖼️ [INVENTORY] Generated fallback image URL for '{item_name}': {item_data['image']}")
-        else:
+        # [MOVED] 이미지 필드가 명시적으로 있는 경우에만 경로 해결 (자동 생성 제거로 404 방지)
+        if 'image' in item_data and item_data['image']:
             # 이미지가 경로 형태가 아니라 파일명만 있는 경우 변환 필요
             original_image = item_data['image']
-            if not original_image.startswith('http') and not original_image.startswith('/'):
+            if not original_image.startswith('http') and not original_image.startswith('https') and not original_image.startswith('/'):
                 item_data['image'] = game_engine.get_minio_url('ai-images/item', original_image)
                 logger.info(f"🖼️ [INVENTORY] Resolved scenario image URL for '{item_name}': {item_data['image']}")
         
@@ -769,13 +779,36 @@ async def game_act_stream(
             current_loc = processed_state.get('current_scene_id')
             if current_loc:
                 bg_image_url = ""
-                scene_found = False
-                # 시나리오에서 현재 씬의 background_image 또는 image_prompt 찾기
-                for scene in scenario.get('scenes', []):
-                    if scene.get('scene_id') == current_loc:
-                        # background_image가 우선, 없으면 image_prompt 사용
-                        bg_image_url = scene.get('background_image', '') or scene.get('image_prompt', '')
+                
+                # A. 시나리오 scenes/endings에서 검색
+                search_list = scenario.get('scenes', [])
+                if current_loc.startswith('Ending') or current_loc.startswith('ending'):
+                     search_list += scenario.get('endings', [])
+                
+                for item in search_list:
+                    # scene_id 또는 ending_id 매칭
+                    if item.get('scene_id') == current_loc or item.get('ending_id') == current_loc:
+                        bg_image_url = item.get('background_image', '') or item.get('image_prompt', '')
                         break
+                
+                # B. [FIX] raw_graph 내의 nodes에서도 검색 (누락 방지)
+                if not bg_image_url and scenario and 'raw_graph' in scenario and 'nodes' in scenario['raw_graph']:
+                    for node in scenario['raw_graph']['nodes']:
+                         # Node ID가 current_loc와 일치(대소문자 무시)하거나, scene-id 매칭
+                         node_id = node.get('id', '').lower()
+                         target_id = current_loc.lower()
+                         
+                         # 매칭 조건: ID 일치 또는 data.scene_id/ending_id 일치
+                         is_match = (node_id == target_id)
+                         if not is_match and 'data' in node:
+                             data_id = node['data'].get('scene_id') or node['data'].get('ending_id')
+                             if data_id and data_id.lower() == target_id:
+                                 is_match = True
+                                 
+                         if is_match and 'data' in node:
+                             bg_image_url = node['data'].get('background_image', '')
+                             if bg_image_url:
+                                 break
 
                 # 배경 이미지가 있으면 클라이언트로 전송
                 if bg_image_url:
@@ -797,10 +830,15 @@ async def game_act_stream(
 
                 # 시나리오에서 해당 씬의 title 또는 name 찾기
                 if location_scene_id:
-                    for scene in scenario.get('scenes', []):
-                        if scene.get('scene_id') == location_scene_id:
+                    # Scenes + Endings 모두 검색
+                    all_locations = scenario.get('scenes', []) + scenario.get('endings', [])
+                    
+                    for loc in all_locations:
+                        # scene_id 또는 ending_id 매칭
+                        current_id = loc.get('scene_id') or loc.get('ending_id')
+                        if current_id == location_scene_id:
                             # title 필드가 있으면 사용, 없으면 name 필드 사용
-                            location_scene_title = scene.get('title') or scene.get('name', '')
+                            location_scene_title = loc.get('title') or loc.get('name', '')
                             logger.info(
                                 f"🗺️ [WORLD STATE] Found title/name for {location_scene_id}: {location_scene_title}")
                             break
