@@ -27,7 +27,38 @@ def get_minio_url(category: str, filename: str) -> str:
     """
     if not filename:
         return ""
+        
+    filename = str(filename)
 
+    # [FIX] 이미 URL 형식이면 프록시 처리 또는 도메인 치환
+    if filename.startswith("http://") or filename.startswith("https://"):
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(filename)
+            
+            # 내부망 도메인의 경우 (bucket.railway.internal 등) - 브라우저에서 접근 불가하므로 프록시 경로로 변경
+            if "internal" in parsed.netloc or "localhost" in parsed.netloc:
+                path = parsed.path
+                
+                # 경로가 이미 /trpg-assets/를 포함하고 있다면
+                if path.startswith("/trpg-assets/"):
+                     return path
+                
+                # 만약 /ai-images/로 시작한다면 (일부 데이터 구형)
+                if path.startswith("/ai-images/"):
+                    return f"/trpg-assets{path}"
+                    
+                # 버킷명이 경로에도 없고 ai-images도 아니면, 안전하게 /trpg-assets/를 붙임
+                # (단, path가 /로 시작한다고 가정)
+                return f"/trpg-assets{path}"
+
+            # 외부 도메인은 그대로 사용
+            return filename
+        except:
+            return filename
+
+    
+    # URL이 아닌 경우, MinIO 설정 로드
     minio_endpoint = os.getenv("MINIO_ENDPOINT")
     minio_bucket = os.getenv("MINIO_BUCKET", "trpg-assets")
     minio_use_ssl = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
@@ -46,35 +77,6 @@ def get_minio_url(category: str, filename: str) -> str:
         minio_endpoint = "localhost:9000"
 
     protocol = "https" if minio_use_ssl else "http"
-
-    # [FIX] 이미 URL 형식이면 프록시 처리 또는 도메인 치환
-    if str(filename).startswith("http://") or str(filename).startswith("https://"):
-        try:
-            from urllib.parse import urlparse
-            parsed = urlparse(filename)
-            
-            # 내부망 도메인의 경우 (bucket.railway.internal 등)
-            if "internal" in parsed.netloc or "localhost" in parsed.netloc:
-                # 시나리오 JSON의 URL이 이미 완전한 경로를 가지고 있다면
-                # app.py의 프록시 라우트(/trpg-assets/)를 타도록 경로만 추출해서 반환
-                # 예: http://internal:9000/trpg-assets/ai-images/... -> /trpg-assets/ai-images/...
-                
-                # 경로가 이미 /trpg-assets/를 포함하고 있다면 해당 경로를 그대로 사용 (상대 경로)
-                # 브라우저가 현재 도메인 + 이 경로로 요청 -> app.py가 받음 -> MinIO 프록시
-                if parsed.path.startswith("/trpg-assets"):
-                    return parsed.path
-                
-                # 만약 /ai-images/로 시작한다면 /trpg-assets/를 붙여줌 (시나리오 데이터별 상이함 대응)
-                if parsed.path.startswith("/ai-images"):
-                    return f"/trpg-assets{parsed.path}"
-                
-                # 그 외의 경우 (bucket 이름이 경로에 포함된 경우 등)
-                return f"/trpg-assets{parsed.path}"
-
-            # 외부 도메인은 그대로 사용
-            return filename
-        except:
-            return filename
 
     # [FIX] 파일명 공백 처리 (언더바 치환) & 소문자 변환 (S3/MinIO 호환성)
     filename = str(filename).strip().replace(" ", "_")
