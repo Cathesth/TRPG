@@ -12,7 +12,7 @@ function getImageUrl(url) {
 }
 
 // [수정] 배경 이미지 변경 함수 (프리로딩 적용으로 깜빡임 방지)
-function updateBackgroundImage(url) {
+function updateBackgroundImage(url, isEnding = false) {
     if (!url) return;
 
     const proxyUrl = getImageUrl(url);
@@ -23,8 +23,11 @@ function updateBackgroundImage(url) {
 
     img.onload = () => {
         document.body.style.backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('${proxyUrl}')`;
-        document.body.style.backgroundSize = 'cover';
-        document.body.style.backgroundPosition = 'center center'; // [FIX] 중앙 정렬로 변경 (상단 잘림 문제 대응)
+        // [FIX] 모든 씬에서 이미지가 잘리지 않도록 contain 적용
+        document.body.style.backgroundSize = 'contain';
+        document.body.style.backgroundRepeat = 'no-repeat';
+        document.body.style.backgroundColor = '#000'; // 여백 검은색
+        document.body.style.backgroundPosition = 'center center'; // 중앙 정렬
         document.body.style.backgroundAttachment = 'fixed'; // [FIX] 다시 fixed로 복귀 (스크롤 시 배경 고정)
         document.body.style.minHeight = '100vh'; // 모바일 대응
         document.body.style.transition = 'background-image 0.5s ease-in-out'; // 부드러운 전환 효과

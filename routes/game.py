@@ -583,14 +583,25 @@ async def game_act_stream(
             else:
                 logger.error(f"❌ [WORLD STATE] Missing or invalid world_state in processed_state!")
 
+            # A. 시스템 메시지
+            sys_msg = processed_state.get('system_message', '')
+            intent = processed_state.get('parsed_intent')
+            # [FIX] 엔딩 조건 보강 (씬 ID가 Ending으로 시작하면 엔딩으로 간주)
+            current_scene_id = processed_state.get('current_scene_id', '')
+            is_ending = (intent == 'ending') or (current_scene_id and (current_scene_id.startswith('Ending') or current_scene_id.startswith('ending')))
+
             # ✅ [MOVED] 전투 묘사 트리거 처리 (API 레벨에서 비동기 LLM 호출 - DB 저장 전 처리)
             # [DEBUG] Processed State 검사
             internal_flags = processed_state.get('_internal_flags', {})
             has_trigger = 'combat_desc_trigger' in internal_flags
+            
+            combat_desc_generated = False # Flag to track if we generated a combat description
+
             logger.info(f"🕵️ [DEBUG] processed_state keys: {list(processed_state.keys())}, Internal Flags keys: {list(internal_flags.keys())}, Has Trigger: {has_trigger}")
 
+            # [FIX] 엔딩에서는 전투 묘사 제외
             combat_trigger = internal_flags.get('combat_desc_trigger')
-            if combat_trigger:
+            if combat_trigger and not is_ending:
                 logger.info(f"✨ [API] Trigger Found! Threshold: {combat_trigger.get('threshold')}")
                 try:
                     from llm_factory import LLMFactory
@@ -627,6 +638,7 @@ async def game_act_stream(
                          # 묘사를 별도 메시지로 전송 (강조 스타일 적용)
                         desc_html = f"<div class='text-gray-300 italic mb-4 p-3 border-l-4 border-red-800 bg-red-900/20 font-serif leading-relaxed'>{llm_desc.strip()}</div>"
                         yield f"data: {json.dumps({'type': 'prefix', 'content': desc_html})}\n\n"
+                        combat_desc_generated = True # ✅ Mark as generated causing standard narrator to be skipped
                         
                         # ✅ [PERSISTENCE] DB 저장을 위해 narrator_output에 추가
                         current_narrative = processed_state.get('narrator_output', '')
@@ -782,8 +794,12 @@ async def game_act_stream(
 
             # E. 일반 씬 진행 (나레이션) - 재시도 로직 포함
             else:
-                for result in stream_scene_with_retry(processed_state):
-                    yield result
+                # [FIX] 전투 묘사가 생성되었으면 기본 내레이션 생략 (User Request)
+                if not combat_desc_generated:
+                    for result in stream_scene_with_retry(processed_state):
+                        yield result
+                else:
+                    logger.info("🚫 [NARRATOR] Skipped standard narration due to Combat Description")
 
             # F. 스탯 업데이트 및 세션 키 전송
             player_vars = processed_state.get('player_vars', {})
@@ -799,14 +815,14 @@ async def game_act_stream(
             if current_loc:
                 bg_image_url = ""
                 
-                # A. 시나리오 scenes/endings에서 검색
-                search_list = scenario.get('scenes', [])
-                if current_loc.startswith('Ending') or current_loc.startswith('ending'):
-                     search_list += scenario.get('endings', [])
+                # A. 시나리오 scenes/endings 모두 검색 (ID 매칭을 위해 통합)
+                search_list = scenario.get('scenes', []) + scenario.get('endings', [])
                 
                 for item in search_list:
-                    # scene_id 또는 ending_id 매칭
-                    if item.get('scene_id') == current_loc or item.get('ending_id') == current_loc:
+                    # scene_id 또는 ending_id 매칭 (대소문자 무시하지 않음 - ID는 고유해야 함. 필요시 lower() 적용)
+                    item_id = item.get('scene_id') or item.get('ending_id')
+                    
+                    if item_id == current_loc:
                         # [FIX] Endings often use 'image' instead of 'background_image'
                         bg_image_url = item.get('background_image', '') or item.get('image', '') or item.get('image_prompt', '')
                         if bg_image_url:
@@ -836,6 +852,7 @@ async def game_act_stream(
 
                 # 배경 이미지가 있으면 클라이언트로 전송
                 if bg_image_url:
+                    # [FIX] 프론트엔드에서 일괄 contain 적용하므로 단일 이벤트 타입 사용
                     yield f"data: {json.dumps({'type': 'bg_update', 'content': bg_image_url})}\n\n"
 
             if world_state_data:
