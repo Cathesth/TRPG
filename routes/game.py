@@ -2,6 +2,8 @@ import logging
 import json
 import traceback
 from datetime import datetime
+import asyncio
+from langchain_core.messages import SystemMessage, HumanMessage
 from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -598,7 +600,7 @@ async def game_act_stream(
                     model_name = "google/gemini-2.0-flash-001"
                     logger.info(f"🛠️ [API] Creating LLM: {model_name}")
                     
-                    llm = LLMFactory.create_llm(model_name) 
+                    llm = LLMFactory.get_llm(model_name)
                     logger.info(f"✅ [API] LLM Created: {type(llm)}")
                     desc_prompt = f"""
                     [TRPG 전투 상황]
@@ -611,11 +613,12 @@ async def game_act_stream(
                     """
                     
                     # Async generation
-                    llm_desc = await llm.chat_completion(
-                        system_prompt="당신은 TRPG 전투 내레이터입니다.",
-                        user_input=desc_prompt,
-                        max_tokens=100
-                    )
+                    messages = [
+                        SystemMessage(content="당신은 TRPG 전투 내레이터입니다."),
+                        HumanMessage(content=desc_prompt)
+                    ]
+                    response = await llm.ainvoke(messages)
+                    llm_desc = response.content
 
                     # [LOGGING] 전투 묘사 로그 출력 (User Request)
                     logger.info(f"⚔️ [COMBAT DESC] Generated: {llm_desc}")
