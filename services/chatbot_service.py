@@ -18,6 +18,7 @@ class ChatbotService:
     # [설정] 사용할 LLM 모델 지정
     # =========================================================================
     TARGET_MODEL_NAME = "gemini-2.0-flash-001"
+
     # =========================================================================
 
     @staticmethod
@@ -43,15 +44,34 @@ class ChatbotService:
         # 2. [RAG] Vector DB에서 관련 정보 검색
         rag_context = ""
         try:
+            # get_vector_db_client가 존재하는지 확인
             if 'get_vector_db_client' in globals():
                 vector_db = get_vector_db_client()
-                # Qdrant 등에서 유사도 검색 (상위 3개 청크)
-                search_results = await vector_db.search(user_query, k=3)
 
-                if search_results:
-                    retrieved_texts = [doc.page_content for doc in search_results]
-                    rag_context = "\n".join(retrieved_texts)
-                    logger.info(f"RAG Retrieval Success: Found {len(search_results)} docs")
+                # [수정 1] 메서드 이름 변경 check: 'search' -> 'search_memory'
+                if vector_db and hasattr(vector_db, 'search_memory'):
+                    # [수정 2] 올바른 메서드 호출 (search -> search_memory, k -> limit)
+                    # VectorDBClient.search_memory(self, query, npc_id, scenario_id, limit)
+                    search_results = await vector_db.search_memory(user_query, limit=3)
+
+                    if search_results:
+                        retrieved_texts = []
+                        for doc in search_results:
+                            # [수정 3] 반환값 처리 방식 변경
+                            # vector_db.py의 search_memory는 딕셔너리 리스트를 반환하며, 텍스트 키는 'text'입니다.
+                            if isinstance(doc, dict) and 'text' in doc:
+                                retrieved_texts.append(doc['text'])
+                            elif hasattr(doc, 'page_content'):
+                                retrieved_texts.append(doc.page_content)
+                            else:
+                                retrieved_texts.append(str(doc))
+
+                        rag_context = "\n".join(retrieved_texts)
+                        logger.info(f"RAG Retrieval Success: Found {len(search_results)} docs")
+                else:
+                    # search_memory 메서드가 없는 경우 (VectorDB 초기화 실패 등)
+                    logger.warning("VectorDB client invalid or has no 'search_memory' method.")
+
         except Exception as e:
             logger.warning(f"RAG Retrieval Failed (Using base context only): {e}")
 
@@ -125,6 +145,17 @@ class ChatbotService:
 
         # 답변 템플릿 리스트
         responses = [
+            # ... (기존 키워드 응답 리스트 그대로 유지) ...
+            # 기존 코드가 너무 길어 생략합니다. 원본의 responses 리스트 내용을 그대로 두시면 됩니다.
+            # -----------------------------------------------------------
+            # [우선순위 높음] 이미지 생성 오류/문제 해결
+            # -----------------------------------------------------------
+            {
+                "keywords": ['엑박', '깨짐', '안나와', '안보여', '로딩', '실패', 'error', '이미지', '오류', '버그', '안돼', '안됨', '해결', '문제'],
+                "required": ['이미지'],
+                "answer": "⚠️ **이미지 생성 문제 해결**\n\n이미지가 제대로 나오지 않나요?\n\n1. **새로고침(F5)**: 일시적인 네트워크 오류일 수 있습니다.\n2. **토큰 확인**: 토큰이 부족하면 생성이 중단될 수 있습니다. 마이페이지를 확인해 주세요.\n3. **잠시 후 시도**: 서버 트래픽이 많을 경우 지연될 수 있습니다.",
+                "choices": ["이미지 생성 방법", "문의하기", "처음으로"]
+            },
             # 1. 시나리오/프리셋 관리
             {
                 "keywords": ['시나리오', 'scenario', '로드', 'load', '불러오기', '열기', '가져오기'],
@@ -194,18 +225,15 @@ class ChatbotService:
                 "answer": "✨ **내용 AI 작성 (Magic Write)**\n\n글쓰기가 막막할 때 사용하세요!\n\n1. 씬 에디터의 텍스트 입력창 우측에 있는 **마법봉 아이콘(🪄)**을 클릭합니다.\n2. '어두운 숲, 긴장감' 같은 **키워드**나 **상황**을 짧게 입력합니다.\n3. AI가 그에 맞는 멋진 묘사를 자동으로 작성해 줍니다.",
                 "choices": ["이미지 생성 방법", "AI 도구 소개", "빌더 모드 이동"]
             },
+
+            # [이미지 생성 방법] (우선순위를 '오류'보다 낮게 설정)
             {
                 "keywords": ['이미지', '그림', '삽화', 'image', 'picture', '생성', '만들', 'gen', '그려', '방법'],
                 "required": ['이미지', '그림', '삽화'],
                 "answer": "🎨 **AI 이미지 생성 가이드**\n\n**생성 가능한 종류:** 씬 배경, NPC 초상화, 적(Enemy) 초상화, 아이템 아이콘\n\n**💡 팁:**\n• **구체적인 묘사:** \"숲\"보다는 \"안개 낀 어두운 숲, 신비로운 분위기\"처럼 자세히 적어주세요.\n• **토큰 소모:** 이미지 1장 생성 시 약 **2~4 토큰**이 소모됩니다.\n\n**사용법:** 에디터 하단의 **'Generate Image'** 버튼을 누르고 원하는 타입과 설명을 입력하세요!",
                 "choices": ["이미지 생성 오류 해결", "엔딩 추가 방법", "요금제 안내"]
             },
-            {
-                "keywords": ['엑박', '깨짐', '안나와', '안보여', '로딩', '실패', 'error', '이미지'],
-                "required": ['이미지', '엑박', '깨짐', '안나와', '실패'],
-                "answer": "⚠️ **이미지 생성 문제 해결**\n\n이미지가 제대로 나오지 않나요?\n\n1. **새로고침(F5)**: 일시적인 네트워크 오류일 수 있습니다.\n2. **토큰 확인**: 토큰이 부족하면 생성이 중단될 수 있습니다. 마이페이지를 확인해 주세요.\n3. **잠시 후 시도**: 서버 트래픽이 많을 경우 지연될 수 있습니다.",
-                "choices": ["이미지 생성 방법", "문의하기", "처음으로"]
-            },
+
             {
                 "keywords": ['엔딩', 'ending', '결말', '끝', 'finish', '만들', '추가', '방법'],
                 "required": ['엔딩', '결말', '끝'],

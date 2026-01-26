@@ -52,6 +52,9 @@ from starlette.middleware.sessions import SessionMiddleware
 # 기존 임포트 아래에 추가
 from services.chatbot_service import ChatbotService  # <--- 경로 변경됨
 
+# [routes/api.py 상단 임포트 부분에 추가]
+from config import TokenConfig
+
 print("=========================================")
 print(f"👉 DEBUG: KAKAO_CLIENT_ID = [{os.getenv('KAKAO_CLIENT_ID')}]")
 print(f"👉 DEBUG: KAKAO_CLIENT_SECRET = [{os.getenv('KAKAO_CLIENT_SECRET')}]")
@@ -177,10 +180,6 @@ class BuilderAuditRequest(BaseModel):
     scene_id: Optional[str] = None  # None이면 전체 검수
     model: Optional[str] = None
 
-# --- Pydantic 모델 정의 부분에 추가 ---
-class ChatRequest(BaseModel):
-    message: str
-    history: Optional[List[Dict]] = []
 
 
 # ==========================================
@@ -1578,14 +1577,18 @@ async def generate_image_api(data: ImageGenerateRequest, user: CurrentUser = Dep
         logger.error(f"Image Generation Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
-# [추가] 챗봇 대화 API 엔드포인트
+# [수정 2] 올바른 챗봇 API 유지 및 에러 코드 삭제
+# ---------------------------------------------------------
 @api_router.post('/chat')
 async def chat_api(request: ChatRequest):
     """
     챗봇 대화 API (RAG + LLM)
+    설명: FastAPI 방식의 올바른 구현입니다. 이 부분은 유지하세요.
     """
+    # chatbot_service.py의 generate_response 호출
     response_data = await ChatbotService.generate_response(request.message, request.history)
     return response_data
+
 
 
 @api_router.post('/npc/save')
