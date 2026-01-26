@@ -50,7 +50,7 @@ from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
 
 # 기존 임포트 아래에 추가
-from chatbot_service import ChatbotService
+from services.chatbot_service import ChatbotService  # <--- 경로 변경됨
 
 print("=========================================")
 print(f"👉 DEBUG: KAKAO_CLIENT_ID = [{os.getenv('KAKAO_CLIENT_ID')}]")

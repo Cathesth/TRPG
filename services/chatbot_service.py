@@ -15,10 +15,9 @@ logger = logging.getLogger(__name__)
 
 class ChatbotService:
     # =========================================================================
-    # [설정] 사용할 LLM 모델 지정 (추후 변경 시 이 변수만 수정하세요)
+    # [설정] 사용할 LLM 모델 지정
     # =========================================================================
-    TARGET_MODEL_NAME = "gemini-2.0-flash-001"  # <<<<<< 이곳을 변경하세요
-
+    TARGET_MODEL_NAME = "gemini-2.0-flash-001"
     # =========================================================================
 
     @staticmethod
@@ -47,7 +46,6 @@ class ChatbotService:
             if 'get_vector_db_client' in globals():
                 vector_db = get_vector_db_client()
                 # Qdrant 등에서 유사도 검색 (상위 3개 청크)
-                # 실제 구현된 search 메서드명에 맞춰 조정 필요 (예: similarity_search, search 등)
                 search_results = await vector_db.search(user_query, k=3)
 
                 if search_results:
