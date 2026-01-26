@@ -57,14 +57,14 @@ async def lifespan(app: FastAPI):
 
         # [핵심 수정] 함수 내부에서 Import하여 순환 참조 완벽 차단
         from models import create_tables
-        from migrate_db import run_migrations
+        from migrate_db import run_migration
 
         create_tables()
         logger.info("DB Tables created successfully.")
 
         # [추가] 초기 데이터 마이그레이션 실행
         logger.info("🔄 Running DB migrations...")
-        run_migrations()
+        run_migration()
         logger.info("✅ DB Migrations completed.")
 
     except Exception as e:
