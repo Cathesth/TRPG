@@ -219,12 +219,13 @@ class VectorDBClient:
                     must_conditions.append({"key": "scenario_id", "match": {"value": scenario_id}})
                 query_filter = {"must": must_conditions}
 
-            results = await self.client.search(
+            response = await self.client.query_points(
                 collection_name=self.collection_name,
-                query_vector=query_vector,
-                query_filter=query_filter,
+                query=query_vector,  # 매개변수명: query_vector -> query
+                filter=query_filter,  # 매개변수명: query_filter -> filter
                 limit=limit
             )
+            results = response.points  # 결과 객체에서 points 리스트 추출
 
             formatted_results = []
             for result in results:
@@ -247,11 +248,12 @@ class VectorDBClient:
             if not query_vector:
                 return []
 
-            search_result = await self.client.search(
+            response = await self.client.query_points(
                 collection_name=self.collection_name,
-                query_vector=query_vector,
+                query=query_vector,  # query_vector -> query
                 limit=k
             )
+            search_result = response.points  # 결과 추출
 
             results = []
             for hit in search_result:
