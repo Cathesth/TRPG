@@ -2,6 +2,8 @@ import logging
 import json
 import traceback
 from datetime import datetime
+import asyncio
+from langchain_core.messages import SystemMessage, HumanMessage
 from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -76,6 +78,77 @@ def enrich_world_state(world_state: dict, player_state: dict, scenario: dict = N
     return enriched
 
 
+def enrich_inventory(player_vars: dict, scenario: dict) -> dict:
+    """
+    인벤토리 아이템을 상세 정보(이미지 포함)로 변환
+    """
+    enriched = player_vars.copy() if player_vars else {}
+    inventory = enriched.get('inventory', [])
+    
+    if not inventory:
+        return enriched
+
+    # 시나리오 아이템 데이터 매핑 (name -> data)
+    scenario_items = {}
+    
+    # [FIX] raw_graph 내의 items도 검색 (시나리오 구조에 따라 items 위치가 다를 수 있음)
+    if scenario and 'raw_graph' in scenario and 'items' in scenario['raw_graph']:
+        for item in scenario['raw_graph']['items']:
+            if isinstance(item, dict) and 'name' in item:
+                item_name = item['name'].strip()
+                # 이미 있으면(최상위 items 우선), raw_graph 것은 덮어쓰지 않거나 병합
+                # 여기서는 raw_graph에만 이미지 정보가 있을 수도 있으므로, 없는 필드만 보강하도록 처리
+                if item_name not in scenario_items:
+                    scenario_items[item_name] = item
+                else:
+                    # 기존 정보에 이미지가 없으면 raw_graph 정보 사용
+                    if 'image' not in scenario_items[item_name] and 'image' in item:
+                        scenario_items[item_name]['image'] = item['image']
+
+    # [FIX] raw_graph 내의 nodes(씬/엔딩 등)에 정의된 items도 검색 (이미지가 여기에만 숨어있는 경우 대응)
+    if scenario and 'raw_graph' in scenario and 'nodes' in scenario['raw_graph']:
+        for node in scenario['raw_graph']['nodes']:
+            if 'data' in node and 'items' in node['data']:
+                for item in node['data']['items']:
+                    if isinstance(item, dict) and 'name' in item:
+                        item_name = item['name'].strip()
+                        # 이미지 정보가 있는 경우에만 업데이트 시도
+                        if 'image' in item and item['image']:
+                            if item_name not in scenario_items:
+                                scenario_items[item_name] = item
+                            elif 'image' not in scenario_items[item_name]:
+                                # 기존에 항목은 있지만 이미지가 없는 경우 업데이트
+                                scenario_items[item_name]['image'] = item['image']
+
+    enriched_inventory = []
+    for item in inventory:
+        # 이미 객체라면 스킵
+        if isinstance(item, dict):
+            enriched_inventory.append(item)
+            continue
+            
+        item_name = str(item)
+        item_data = {'name': item_name}
+        
+        # 상세 정보 병합
+        if item_name in scenario_items:
+            # 설명 등 기본 정보 복사 (image 필드가 있으면 덮어씌워짐)
+            item_data.update(scenario_items[item_name])
+
+        # [MOVED] 이미지 필드가 명시적으로 있는 경우에만 경로 해결 (자동 생성 제거로 404 방지)
+        if 'image' in item_data and item_data['image']:
+            # [FIX] 모든 이미지를 get_minio_url로 통과시켜 내부망 URL(internal/localhost) 등을 프록시 경로로 변환
+            # (이미 유효한 외부 URL은 그대로 반환됨)
+            original_image = item_data['image']
+            item_data['image'] = game_engine.get_minio_url('ai-images/item', original_image)
+            logger.info(f"🖼️ [INVENTORY] Resolved scenario image URL for '{item_name}': {item_data['image']}")
+        
+        enriched_inventory.append(item_data)
+        
+    enriched['inventory'] = enriched_inventory
+    return enriched
+
+
 @game_router.get('/session_state')
 async def get_session_state(
         session_id: str = Query(..., description="세션 ID"),
@@ -112,12 +185,17 @@ async def get_session_state(
             db_session=game_session
         )
 
+        # [FIX] inventory Enrich (이미지 처리)
+        player_state = game_session.player_state.copy() if game_session.player_state else {}
+        if 'player_vars' in player_state:
+             player_state['player_vars'] = enrich_inventory(player_state['player_vars'], scenario)
+
         # player_state와 world_state를 함께 반환
         return JSONResponse(content={
             "success": True,
             "session_id": game_session.session_key,
             "scenario_id": game_session.scenario_id,
-            "player_state": game_session.player_state,
+            "player_state": player_state,
             "world_state": enriched_world_state,  # ✅ 보강된 world_state
             "turn_count": game_session.turn_count,
             "current_scene_id": game_session.current_scene_id,
@@ -422,7 +500,7 @@ async def game_act_stream(
             current_state.get('system_message') in ['Loaded', 'Init']
     )
 
-    def generate():
+    async def generate():
         nonlocal session_id
 
         try:
@@ -505,6 +583,78 @@ async def game_act_stream(
             else:
                 logger.error(f"❌ [WORLD STATE] Missing or invalid world_state in processed_state!")
 
+            # A. 시스템 메시지
+            sys_msg = processed_state.get('system_message', '')
+            intent = processed_state.get('parsed_intent')
+            # [FIX] 엔딩 조건 보강 (씬 ID가 Ending으로 시작하면 엔딩으로 간주)
+            current_scene_id = processed_state.get('current_scene_id', '')
+            is_ending = (intent == 'ending') or (current_scene_id and (current_scene_id.startswith('Ending') or current_scene_id.startswith('ending')))
+
+            # ✅ [MOVED] 전투 묘사 트리거 처리 (API 레벨에서 비동기 LLM 호출 - DB 저장 전 처리)
+            # [DEBUG] Processed State 검사
+            internal_flags = processed_state.get('_internal_flags', {})
+            has_trigger = 'combat_desc_trigger' in internal_flags
+            
+            combat_desc_generated = False # Flag to track if we generated a combat description
+
+            logger.info(f"🕵️ [DEBUG] processed_state keys: {list(processed_state.keys())}, Internal Flags keys: {list(internal_flags.keys())}, Has Trigger: {has_trigger}")
+
+            # [FIX] 엔딩에서는 전투 묘사 제외
+            combat_trigger = internal_flags.get('combat_desc_trigger')
+            if combat_trigger and not is_ending:
+                logger.info(f"✨ [API] Trigger Found! Threshold: {combat_trigger.get('threshold')}")
+                try:
+                    from llm_factory import LLMFactory
+                    logger.info("🛠️ [API] Importing LLMFactory success")
+                    
+                    # [DEBUG] LLM 생성 로그
+                    model_name = "google/gemini-2.0-flash-001"
+                    logger.info(f"🛠️ [API] Creating LLM: {model_name}")
+                    
+                    llm = LLMFactory.get_llm(model_name)
+                    logger.info(f"✅ [API] LLM Created: {type(llm)}")
+                    desc_prompt = f"""
+                    [TRPG 전투 상황]
+                    적: {combat_trigger.get('npc_name')} ({combat_trigger.get('npc_type')})
+                    특징: {combat_trigger.get('npc_desc')}
+                    플레이어 행동: {combat_trigger.get('user_input')}
+                    상황: 체력이 {int(combat_trigger.get('threshold', 0) * 100)}% 이하로 떨어졌습니다!
+                    
+                    이 긴박한 순간의 적의 반응이나 파손 상태를 1문장으로 생동감 있게 묘사하세요. (문학적 표현 사용)
+                    """
+                    
+                    # Async generation
+                    messages = [
+                        SystemMessage(content="당신은 TRPG 전투 내레이터입니다."),
+                        HumanMessage(content=desc_prompt)
+                    ]
+                    response = await llm.ainvoke(messages)
+                    llm_desc = response.content
+
+                    # [LOGGING] 전투 묘사 로그 출력 (User Request)
+                    logger.info(f"⚔️ [COMBAT DESC] Generated: {llm_desc}")
+                    
+                    if llm_desc:
+                         # 묘사를 별도 메시지로 전송 (강조 스타일 적용)
+                        desc_html = f"<div class='text-gray-300 italic mb-4 p-3 border-l-4 border-red-800 bg-red-900/20 font-serif leading-relaxed'>{llm_desc.strip()}</div>"
+                        yield f"data: {json.dumps({'type': 'prefix', 'content': desc_html})}\n\n"
+                        combat_desc_generated = True # ✅ Mark as generated causing standard narrator to be skipped
+                        
+                        # ✅ [PERSISTENCE] DB 저장을 위해 narrator_output에 추가
+                        current_narrative = processed_state.get('narrator_output', '')
+                        processed_state['narrator_output'] = current_narrative + f"\n\n[전투 묘사] {llm_desc.strip()}"
+                        
+                        # ✅ [PERSISTENCE] WorldState History에도 추가
+                        if 'world_state' in processed_state:
+                            ws_dict = processed_state['world_state']
+                            if 'narrative_history' in ws_dict:
+                                ws_dict['narrative_history'].append(f"전투 묘사: {llm_desc.strip()}")
+                        
+                        # Trigger 소비
+                        processed_state.pop('combat_desc_trigger', None)
+                except Exception as e:
+                    logger.error(f"❌ [API] Combat Desc Generation Failed: {e}")
+
             # 🛠️ WorldState DB 저장
             user_id = user.id if user else None
 
@@ -542,9 +692,13 @@ async def game_act_stream(
             npc_say = processed_state.get('npc_output', '')
             sys_msg = processed_state.get('system_message', '')
             intent = processed_state.get('parsed_intent')
-            is_ending = (intent == 'ending')
+            # [FIX] 엔딩 조건 보강 (씬 ID가 Ending으로 시작하면 엔딩으로 간주)
+            current_scene_id = processed_state.get('current_scene_id', '')
+            is_ending = (intent == 'ending') or (current_scene_id and (current_scene_id.startswith('Ending') or current_scene_id.startswith('ending')))
 
             # --- [스트리밍 응답 전송] ---
+
+
 
             # ✅ [중요] 세션 ID 전송 (프론트엔드에서 저장)
             if session_id:
@@ -640,11 +794,17 @@ async def game_act_stream(
 
             # E. 일반 씬 진행 (나레이션) - 재시도 로직 포함
             else:
-                for result in stream_scene_with_retry(processed_state):
-                    yield result
+                # [FIX] 전투 묘사가 생성되었으면 기본 내레이션 생략 (User Request)
+                if not combat_desc_generated:
+                    for result in stream_scene_with_retry(processed_state):
+                        yield result
+                else:
+                    logger.info("🚫 [NARRATOR] Skipped standard narration due to Combat Description")
 
             # F. 스탯 업데이트 및 세션 키 전송
-            stats_data = processed_state.get('player_vars', {})
+            player_vars = processed_state.get('player_vars', {})
+            # [FIX] inventory Enrich (이미지 처리)
+            stats_data = enrich_inventory(player_vars, scenario)
             yield f"data: {json.dumps({'type': 'stats', 'content': stats_data})}\n\n"
 
             # ✅ [수정 3] World State 전송 시 processed_state의 world_state를 그대로 사용
@@ -654,15 +814,45 @@ async def game_act_stream(
             current_loc = processed_state.get('current_scene_id')
             if current_loc:
                 bg_image_url = ""
-                # 시나리오에서 현재 씬의 background_image 또는 image_prompt 찾기
-                for scene in scenario.get('scenes', []):
-                    if scene.get('scene_id') == current_loc:
-                        # background_image가 우선, 없으면 image_prompt 사용
-                        bg_image_url = scene.get('background_image', '') or scene.get('image_prompt', '')
+                
+                # A. 시나리오 scenes/endings 모두 검색 (ID 매칭을 위해 통합)
+                search_list = scenario.get('scenes', []) + scenario.get('endings', [])
+                
+                for item in search_list:
+                    # scene_id 또는 ending_id 매칭 (대소문자 무시하지 않음 - ID는 고유해야 함. 필요시 lower() 적용)
+                    item_id = item.get('scene_id') or item.get('ending_id')
+                    
+                    if item_id == current_loc:
+                        # [FIX] Endings often use 'image' instead of 'background_image'
+                        bg_image_url = item.get('background_image', '') or item.get('image', '') or item.get('image_prompt', '')
+                        if bg_image_url:
+                            # [FIX] URL resolution for internal/external paths
+                            bg_image_url = game_engine.get_minio_url('bg', bg_image_url)
                         break
+                
+                # B. [FIX] raw_graph 내의 nodes에서도 검색 (누락 방지)
+                if not bg_image_url and scenario and 'raw_graph' in scenario and 'nodes' in scenario['raw_graph']:
+                    for node in scenario['raw_graph']['nodes']:
+                         # Node ID가 current_loc와 일치(대소문자 무시)하거나, scene-id 매칭
+                         node_id = node.get('id', '').lower()
+                         target_id = current_loc.lower()
+                         
+                         # 매칭 조건: ID 일치 또는 data.scene_id/ending_id 일치
+                         is_match = (node_id == target_id)
+                         if not is_match and 'data' in node:
+                             data_id = node['data'].get('scene_id') or node['data'].get('ending_id')
+                             if data_id and data_id.lower() == target_id:
+                                 is_match = True
+                                 
+                         if is_match and 'data' in node:
+                             bg_image_url = node['data'].get('background_image', '') or node['data'].get('image', '')
+                             if bg_image_url:
+                                 bg_image_url = game_engine.get_minio_url('bg', bg_image_url)
+                                 break
 
                 # 배경 이미지가 있으면 클라이언트로 전송
                 if bg_image_url:
+                    # [FIX] 프론트엔드에서 일괄 contain 적용하므로 단일 이벤트 타입 사용
                     yield f"data: {json.dumps({'type': 'bg_update', 'content': bg_image_url})}\n\n"
 
             if world_state_data:
@@ -681,10 +871,15 @@ async def game_act_stream(
 
                 # 시나리오에서 해당 씬의 title 또는 name 찾기
                 if location_scene_id:
-                    for scene in scenario.get('scenes', []):
-                        if scene.get('scene_id') == location_scene_id:
+                    # Scenes + Endings 모두 검색
+                    all_locations = scenario.get('scenes', []) + scenario.get('endings', [])
+                    
+                    for loc in all_locations:
+                        # scene_id 또는 ending_id 매칭
+                        current_id = loc.get('scene_id') or loc.get('ending_id')
+                        if current_id == location_scene_id:
                             # title 필드가 있으면 사용, 없으면 name 필드 사용
-                            location_scene_title = scene.get('title') or scene.get('name', '')
+                            location_scene_title = loc.get('title') or loc.get('name', '')
                             logger.info(
                                 f"🗺️ [WORLD STATE] Found title/name for {location_scene_id}: {location_scene_title}")
                             break
@@ -771,7 +966,9 @@ async def game_act_stream(
 
             # 현재 씬의 NPC 위치 정보 업데이트
             # [FIX] unhashable type: 'dict' 에러 수정 및 이미지 연동
-            all_scenes = {s['scene_id']: s for s in scenario.get('scenes', [])}
+            # [FIX] unhashable type: 'dict' 에러 수정 및 이미지 연동
+            # [FIX] KeyError: 'scene_id' 방지 (scene_id가 없는 항목 필터링)
+            all_scenes = {s.get('scene_id'): s for s in scenario.get('scenes', []) if s.get('scene_id')}
             for scene_id, scene in all_scenes.items():
                 scene_title = scene.get('title', scene_id)
                 # npcs와 enemies 리스트 합치기
@@ -823,6 +1020,13 @@ def stream_scene_with_retry(state):
             if "__RETRY_SIGNAL__" in chunk:
                 need_retry = True
                 break
+            
+            # [FIX] 프리픽스 마커 처리 (이미지 플리커링 방지)
+            if "__PREFIX_START__" in chunk:
+                content = chunk.replace("__PREFIX_START__", "").replace("__PREFIX_END__", "")
+                if content.strip():
+                    yield f"data: {json.dumps({'type': 'prefix', 'content': content})}\n\n"
+                continue
 
             buffer += chunk
             yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"

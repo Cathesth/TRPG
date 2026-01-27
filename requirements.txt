@@ -24,5 +24,3 @@ google-genai
 
 Authlib
 httpx
-Flask
-Flask-Login

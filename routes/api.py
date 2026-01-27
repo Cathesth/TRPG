@@ -19,6 +19,8 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from sqlalchemy import func, or_, desc
+
 from starlette.concurrency import run_in_threadpool
 
 # 빌더 에이전트 및 코어 유틸리티
@@ -40,12 +42,21 @@ from services.preset_service import PresetService  # 누락된 임포트 추가
 
 # 인증 및 모델
 from routes.auth import get_current_user, get_current_user_optional, login_user, logout_user, CurrentUser
-from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike, User
+from models import get_db, Preset, CustomNPC, Scenario, ScenarioLike, User, GameSession, TempScenario
 
 # [api.py 상단 임포트 추가]
 from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
+
+# 기존 임포트 아래에 추가
+from services.chatbot_service import ChatbotService  # <--- 경로 변경됨
+
+# [routes/api.py 상단 임포트 부분에 추가]
+from config import TokenConfig
+
+# [수정] 로컬 파일 저장이 아닌 S3 업로드로 변경하여 배포 후에도 이미지 유지
+from core.s3_client import get_s3_client  # 필요한 시점에 임포트
 
 print("=========================================")
 print(f"👉 DEBUG: KAKAO_CLIENT_ID = [{os.getenv('KAKAO_CLIENT_ID')}]")
@@ -160,12 +171,18 @@ class ImageGenerateRequest(BaseModel):
     scenario_id: Optional[int] = None
     target_id: Optional[str] = None
 
+# [추가] 챗봇 요청 모델
+class ChatRequest(BaseModel):
+    message: str
+    history: Optional[List[Dict]] = []
 
-# [추가] 빌더에서 그래프 데이터(Nodes/Edges)를 직접 보내 검수 요청할 때 사용하는 모델
+
+# 빌더에서 그래프 데이터(Nodes/Edges)를 직접 보내 검수 요청할 때 사용하는 모델
 class BuilderAuditRequest(BaseModel):
     scenario: Dict[str, Any]
     scene_id: Optional[str] = None  # None이면 전체 검수
     model: Optional[str] = None
+
 
 
 # ==========================================
@@ -210,7 +227,7 @@ def header_profile_view(
             inner_html = '<i data-lucide="user" class="w-6 h-6"></i>'
 
         return f"""
-        <div class="flex items-center gap-3 cursor-pointer group" onclick="location.href='/views/mypage'" title="마이페이지">
+        <div id="header-mypage-btn" class="flex items-center gap-3 cursor-pointer group" onclick="location.href='/views/mypage'" title="마이페이지">
             <button class="text-gray-400 group-hover:text-white transition-colors p-0.5 rounded-full bg-rpg-800 border border-rpg-700 group-hover:border-rpg-accent shadow-md overflow-hidden w-10 h-10 flex items-center justify-center">
                 {inner_html}
             </button>
@@ -387,8 +404,6 @@ async def update_profile(
     # 3. 프로필 사진 업로드 처리 (S3 저장 방식으로 변경)
     if avatar and avatar.filename:
         try:
-            # [수정] 로컬 파일 저장이 아닌 S3 업로드로 변경하여 배포 후에도 이미지 유지
-            from core.s3_client import get_s3_client  # 필요한 시점에 임포트
 
             s3 = get_s3_client()
             # S3 세션이 초기화되지 않았을 경우 안전장치
@@ -433,6 +448,34 @@ async def update_profile(
         db.rollback()
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
+
+
+@api_router.get("/image/serve/{file_path:path}")
+async def serve_image(file_path: str):
+    """
+    S3에 저장된 이미지를 프록시하여 클라이언트에 제공합니다.
+    DB에는 '/image/serve/avatars/filename.png' 형태로 저장됩니다.
+    """
+    s3 = get_s3_client()
+
+    # S3 초기화 확인
+    if not s3._session:
+        await s3.initialize()
+
+    try:
+        # S3에서 파일 객체 가져오기
+        response = await s3.get_file(file_path)
+        if not response:
+            return HTMLResponse("Image not found in S3", status_code=404)
+
+        # 스트리밍 응답 반환
+        return StreamingResponse(
+            response['Body'],
+            media_type=response.get('ContentType', 'image/png')
+        )
+    except Exception as e:
+        logger.error(f"Image Serve Error: {e}")
+        return HTMLResponse("Image load failed", status_code=404)
 
 @api_router.get('/views/mypage/billing', response_class=HTMLResponse)
 def get_billing_view():
@@ -592,16 +635,76 @@ async def get_current_user_info(user: CurrentUser = Depends(get_current_user_opt
 
 # [추가] 유저 잔액 조회 API
 @api_router.get('/user/status')
-async def get_user_status(user: CurrentUser = Depends(get_current_user)):
+async def get_user_status(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     if not user.is_authenticated:
         return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
 
-    balance = UserService.get_user_balance(user.id)
+    db_user = db.query(User).filter(User.id == user.id).first()
+    if not db_user:
+         return JSONResponse({"success": False, "error": "User not found"}, status_code=404)
+
     return {
         "success": True,
-        "username": user.id,
-        "balance": balance
+        "username": db_user.id,
+        "balance": db_user.token_balance,
+        "tutorial_completed": getattr(db_user, 'tutorial_completed', False),
+        "avatar_url": getattr(db_user, 'avatar_url', None)
     }
+
+
+@api_router.post('/user/tutorial/complete')
+async def complete_tutorial(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
+
+    db_user = db.query(User).filter(User.id == user.id).first()
+    if db_user:
+        if not getattr(db_user, 'tutorial_completed', False):
+            db_user.tutorial_completed = True
+            db.commit()
+            logger.info(f"User {user.id} completed tutorial.")
+        return {"success": True, "message": "Tutorial completed"}
+    
+    return JSONResponse({"success": False, "error": "User not found"}, status_code=404)
+
+
+@api_router.post('/user/delete')
+async def delete_user_account(request: Request, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not user.is_authenticated:
+        return JSONResponse({"success": False, "error": "Login required"}, status_code=401)
+    
+    try:
+        # 삭제 대상 유저 조회
+        db_user = db.query(User).filter(User.id == user.id).first()
+        if not db_user:
+            return JSONResponse({"success": False, "error": "User not found"}, status_code=404)
+        
+        # 11번 관리자 계정은 삭제 불가 (안전장치)
+        if db_user.id == '11':
+            return JSONResponse({"success": False, "error": "관리자 계정은 삭제할 수 없습니다."}, status_code=403)
+
+        # 연관 데이터 삭제 (CASCADE 설정이 되어 있다면 자동이지만, 명시적으로 처리)
+        # 1. 시나리오 삭제
+        db.query(Scenario).filter(Scenario.author_id == user.id).delete()
+        # 2. 게임 세션 삭제
+        db.query(GameSession).filter(GameSession.user_id == user.id).delete()
+        # 3. 프리셋 삭제
+        db.query(Preset).filter(Preset.author_id == user.id).delete()
+        
+        # 유저 삭제
+        db.delete(db_user)
+        db.commit()
+        
+        # 로그아웃 처리
+        request.session.clear()
+        
+        logger.info(f"User {user.id} account deleted.")
+        return {"success": True, "message": "Account deleted successfully"}
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Account Deletion Error: {e}")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 # ---------------------------------------------------------
@@ -955,6 +1058,34 @@ def list_scenarios(
         # 이 코드가 없어서 메인화면에 비공개 시나리오가 노출되었습니다.
         query = query.filter(Scenario.is_public == True)
 
+    from datetime import datetime, timedelta
+
+    if sort == 'popular':
+        # [수정] 인기순: (좋아요 수 * 10) + (조회수 * 1) 점수 계산하여 정렬
+        # desc(...) 함수 대신 .desc() 메서드를 사용하여 오류 해결
+        query = query.outerjoin(ScenarioLike, Scenario.id == ScenarioLike.scenario_id) \
+            .group_by(Scenario.id) \
+            .order_by(
+            (
+                    (func.count(ScenarioLike.user_id) * 10) +
+                    func.coalesce(Scenario.view_count, 0)
+            ).desc(),  # <--- 이렇게 끝에 .desc()를 붙입니다.
+            Scenario.created_at.desc()
+        )
+
+    elif sort == 'steady':
+        # [수정] 스테디셀러: 출시 2주 이상 + (좋아요*10 + 조회수) 점수순
+        two_weeks_ago = datetime.now() - timedelta(days=14)
+        query = query.filter(Scenario.created_at <= two_weeks_ago) \
+            .outerjoin(ScenarioLike, Scenario.id == ScenarioLike.scenario_id) \
+            .group_by(Scenario.id) \
+            .order_by(
+            (
+                    (func.count(ScenarioLike.user_id) * 10) +
+                    func.coalesce(Scenario.view_count, 0)
+            ).desc()  # <--- 여기도 마찬가지로 .desc() 사용
+        )
+
     # 3. 정렬
     if sort == 'oldest':
         query = query.order_by(Scenario.created_at.asc())
@@ -994,7 +1125,6 @@ def list_scenarios(
             f'<div class="col-span-full text-center text-gray-500 py-12 w-full flex flex-col items-center"><i data-lucide="inbox" class="w-10 h-10 mb-2 opacity-50"></i><p>{msg}</p></div>')
 
     # HTML 생성
-    from datetime import datetime
     import time as time_module
     current_ts = time_module.time()
     NEW_THRESHOLD = 30 * 60
@@ -1012,7 +1142,6 @@ def list_scenarios(
         fid = str(s.id)
         title = s.title or "제목 없음"
         desc = s_data.get('prologue', s_data.get('desc', '설명이 없습니다.'))
-        if len(desc) > 60: desc = desc[:60] + "..."
 
         author = s.author_id or "System"
         is_owner = (user.is_authenticated and s.author_id == user.id)
@@ -1024,6 +1153,29 @@ def list_scenarios(
 
         is_new = (current_ts - created_ts) < NEW_THRESHOLD
         new_badge = '<span class="ml-2 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold animate-pulse">NEW</span>' if is_new else ''
+
+        # ▼▼▼ [수정 코드] 좋아요/조회수 계산 로직 추가 ▼▼▼
+        # [수정 완료] ScenarioLike.scenario_id 컬럼을 기준으로 개수를 셉니다.
+        like_count = db.query(func.count(ScenarioLike.scenario_id)).filter(ScenarioLike.scenario_id == s.id).scalar()
+
+
+        # [수정] view_count 속성이 DB 모델에 없으면 기본값 0을 사용 (에러 방지)
+        # 기존: view_count = s.view_count if s.view_count else 0
+        view_count = getattr(s, 'view_count', 0)
+        if view_count is None: view_count = 0
+
+        # 숫자 포맷팅 (예: 1000 -> 1k) - 필요시 사용, 여기선 간단히 처리
+        stats_badge_html = f"""
+                <div class="flex items-center gap-2 mb-2 text-[10px] font-bold text-gray-400">
+                    <span class="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/5">
+                        <i data-lucide="heart" class="w-3 h-3 text-red-500 fill-current"></i> 
+                        <span class="like-count-{s.id}">{like_count}</span>
+                    </span>
+                    <span class="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/5">
+                        <i data-lucide="eye" class="w-3 h-3 text-rpg-accent"></i> {view_count}
+                    </span>
+                </div>
+                """
 
         # [수정 포인트 1] 잠금 버튼 HTML 생성 (마이페이지에서만 보임)
         lock_btn_html = ""
@@ -1044,12 +1196,12 @@ def list_scenarios(
         is_liked = s.id in liked_scenario_ids
         heart_class = "fill-red-500 text-red-500" if is_liked else "text-white/70 hover:text-red-500"
 
+
         like_btn = f"""
-        <button onclick="toggleLike({s.id}, this); event.stopPropagation();" 
-                class="absolute top-2 right-2 p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all z-10">
-             <i data-lucide="heart" class="w-5 h-5 transition-transform active:scale-90 {heart_class}"></i>
-        </button>
-        """
+            <button onclick="toggleLike({s.id}, this); event.stopPropagation();" 
+                    class="absolute top-2 right-2 p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all z-10 like-btn-{s.id}"> <i data-lucide="heart" class="w-5 h-5 transition-transform active:scale-90 {heart_class}"></i>
+            </button>
+            """
 
         if is_owner:
             buttons_html = f"""          
@@ -1075,6 +1227,9 @@ def list_scenarios(
                     </div>
                     """
 
+        # [수정] 카드 HTML 구조 개선
+        # 1. 텍스트 영역을 감싸는 div에 'flex-1 min-h-0' 추가 (공간 확보 및 넘침 방지)
+        # 2. 제목, 작성자 등 고정되어야 할 요소에 'shrink-0' 추가
         card_html = f"""
         <div class="scenario-card-base group bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#38bdf8] transition-all flex flex-col shadow-lg relative {card_style}">
             <div class="relative {img_height} overflow-hidden bg-black shrink-0">
@@ -1087,21 +1242,31 @@ def list_scenarios(
                     Fantasy
                 </div>
             </div>
+            
             <div class="{content_padding} flex-1 flex flex-col justify-between">
-                <div>
-                    <div class="flex justify-between items-start mb-1">
+                
+                <div class="flex-1 min-h-0 flex flex-col">
+                
+                    {stats_badge_html}
+                    
+                    <div class="flex justify-between items-start mb-1 shrink-0">
                         <h3 class="text-base font-bold text-white tracking-wide truncate w-full group-hover:text-[#38bdf8] transition-colors">{title} {new_badge}</h3>
                     </div>
-                    <div class="flex justify-between items-center text-xs text-gray-400 mb-2">
+                    <div class="flex justify-between items-center text-xs text-gray-400 mb-2 shrink-0">
                         <span>{author}</span>
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>{time_str}</span>
                     </div>
-                    <p class="text-sm text-gray-400 line-clamp-2 leading-relaxed min-h-[3em]">{desc}</p>
+                    
+                    <p class="text-sm text-gray-400 line-clamp-2 leading-relaxed min-h-[3rem]">
+                        {desc}
+                    </p>
                 </div>
+                
                 {buttons_html}
             </div>
         </div>
         """
+        
         html += card_html
 
     html += '<script>lucide.createIcons();</script>'
@@ -1131,7 +1296,11 @@ def toggle_like(
         liked = True
 
     db.commit()
-    return {"success": True, "liked": liked}
+    # ▼▼▼ [추가] 최신 좋아요 개수 집계 ▼▼▼
+    new_count = db.query(func.count(ScenarioLike.scenario_id)).filter(ScenarioLike.scenario_id == scenario_id).scalar()
+
+    # 응답에 count 포함
+    return {"success": True, "liked": liked, "count": new_count}
 
 
 @api_router.get('/scenarios/data')
@@ -1161,6 +1330,21 @@ async def load_scenario(
         return JSONResponse({"error": error}, status_code=400)
 
     scenario = result['scenario']
+
+    # [수정] 안전한 조회수 증가 로직 (컬럼이 없으면 pass)
+    try:
+        # DB 세션 내의 객체를 확실하게 가져옴
+        db_scenario = db.query(Scenario).filter(Scenario.id == scenario.get('id')).first()
+
+        if db_scenario:
+            # hasattr로 컬럼 존재 여부 확인 후 증가
+            if hasattr(db_scenario, 'view_count'):
+                current_views = db_scenario.view_count if db_scenario.view_count else 0
+                db_scenario.view_count = current_views + 1
+                db.commit()
+    except Exception as e:
+        logger.error(f"View count update failed: {e}")
+
     start_id = pick_start_scene_id(scenario)
 
     new_session_key = str(uuid.uuid4())
@@ -1421,6 +1605,19 @@ async def generate_image_api(data: ImageGenerateRequest, user: CurrentUser = Dep
     except Exception as e:
         logger.error(f"Image Generation Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+# [수정 2] 올바른 챗봇 API 유지 및 에러 코드 삭제
+# ---------------------------------------------------------
+@api_router.post('/chat')
+async def chat_api(request: ChatRequest):
+    """
+    챗봇 대화 API (RAG + LLM)
+    설명: FastAPI 방식의 올바른 구현입니다. 이 부분은 유지하세요.
+    """
+    # chatbot_service.py의 generate_response 호출
+    response_data = await ChatbotService.generate_response(request.message, request.history)
+    return response_data
+
 
 
 @api_router.post('/npc/save')
@@ -1890,3 +2087,123 @@ async def get_item_list(user: CurrentUser = Depends(get_current_user), db: Sessi
     except Exception as e:
         logger.error(f"Item List Error: {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+# ==========================================
+# [API 라우트] 관리자 기능 (시나리오 선택권 양도)
+# ==========================================
+
+import json
+
+RIGHTS_FILE = "scenario_rights.json"
+
+def get_rights_holder():
+    if os.path.exists(RIGHTS_FILE):
+        try:
+            with open(RIGHTS_FILE, 'r') as f:
+                data = json.load(f)
+                return data.get('holder', '11')
+        except:
+            return '11'
+    return '11'
+
+def set_rights_holder(user_id):
+    with open(RIGHTS_FILE, 'w') as f:
+        json.dump({'holder': user_id}, f)
+
+
+@api_router.get('/admin/transfer_view', response_class=HTMLResponse)
+async def admin_transfer_view(request: Request, user: CurrentUser = Depends(get_current_user)):
+    # 관리자 '11'인지 확인
+    if user.id != '11':
+         return HTMLResponse("<div class='p-4 text-red-500'>접근 권한이 없습니다. (Only for 11)</div>")
+    
+    current_holder = get_rights_holder()
+    
+    html = f"""
+    <div class="fade-in">
+        <h2 class="text-xl font-bold text-yellow-400 mb-6 flex items-center gap-2">
+            <i data-lucide="crown" class="w-6 h-6"></i> Scenario Selection Rights
+        </h2>
+        
+        <div class="bg-rpg-800/80 p-6 rounded-2xl border border-yellow-500/30 mb-8">
+            <div class="text-gray-400 text-sm mb-2">현재 권한 보유자</div>
+            <div class="text-2xl font-bold text-white flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-500">
+                    <i data-lucide="user" class="w-6 h-6"></i>
+                </div>
+                {current_holder}
+            </div>
+            <p class="mt-4 text-sm text-gray-400">
+                시나리오 선택권을 가진 사용자는 메인 화면의 추천 시나리오를 설정할 수 있습니다. (예정)
+            </p>
+        </div>
+
+        <div class="space-y-4">
+            <h3 class="text-lg font-bold text-white">권한 양도</h3>
+            <p class="text-xs text-gray-400">아이디를 검색하여 권한을 넘길 사용자를 선택하세요.</p>
+            <div class="flex gap-2">
+                <input type="text" name="search" id="user-search" 
+                       placeholder="유저 ID 검색.." 
+                       class="flex-1 bg-rpg-900 border border-rpg-700 rounded-lg px-4 py-3 text-white focus:border-yellow-500 outline-none font-sans"
+                       hx-post="/api/admin/search_users" 
+                       hx-trigger="keyup changed delay:500ms" 
+                       hx-target="#user-search-results">
+            </div>
+            
+            <div id="user-search-results" class="space-y-2 mt-4 max-h-60 overflow-y-auto custom-scrollbar">
+                </div>
+        </div>
+    </div>
+    <script>lucide.createIcons();</script>
+    """
+    return HTMLResponse(html)
+
+
+@api_router.post("/admin/search_users", response_class=HTMLResponse)
+async def search_users(request: Request, search: str = Form(None), db: Session = Depends(get_db)):
+    if not search:
+        return HTMLResponse('')
+    
+    # 본인 제외, 관리자(11) 제외 검색
+    users = db.query(User).filter(
+        User.id.ilike(f"%{search}%"),
+        User.id != '11'
+    ).limit(5).all()
+    
+    if not users:
+        return HTMLResponse('<div class="text-gray-500 text-sm p-4 text-center">검색 결과가 없습니다.</div>')
+        
+    html = ""
+    for u in users:
+        html += f"""
+        <div class="flex items-center justify-between p-3 bg-rpg-900 rounded-lg border border-rpg-700 animate-fade-in">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs overflow-hidden">
+                    {f'<img src="{u.avatar_url}" class="w-full h-full object-cover">' if u.avatar_url else u.id[:2]}
+                </div>
+                <span class="font-bold">{u.id}</span>
+            </div>
+            <button class="px-3 py-1 bg-yellow-600 hover:bg-yellow-500 text-white text-xs font-bold rounded transition-colors"
+                    hx-post="/api/admin/transfer_rights"
+                    hx-vals='{{"target_user_id": "{u.id}"}}'
+                    hx-confirm="{u.id}님에게 시나리오 선택권을 양도하시겠습니까?">
+                양도하기
+            </button>
+        </div>
+        """
+    return HTMLResponse(html)
+
+
+@api_router.post("/admin/transfer_rights")
+async def transfer_rights(target_user_id: str = Form(...), user: CurrentUser = Depends(get_current_user)):
+    # 11번 전용 기능
+    if user.id != '11':
+        return JSONResponse({"success": False, "error": "권한이 없습니다."}, status_code=403)
+        
+    set_rights_holder(target_user_id)
+    
+    return HTMLResponse(f"""
+        <script>
+            alert('{target_user_id}님에게 권한이 성공적으로 양도되었습니다.');
+            htmx.ajax('GET', '/api/admin/transfer_view', '#main-content-area');
+        </script>
+    """)

@@ -474,7 +474,13 @@ async function submitWithStreaming(actionText) {
                             case 'bg_update':
                                 // 배경 이미지 전체 화면으로 표시
                                 if (data.content) {
-                                    updateBackgroundImage(data.content);
+                                    updateBackgroundImage(data.content, false);
+                                }
+                                break;
+                            case 'bg_update_ending':
+                                // [FIX] 엔딩 배경 이미지는 contain으로 표시
+                                if (data.content) {
+                                    updateBackgroundImage(data.content, true);
                                 }
                                 break;
                             case 'session_id':

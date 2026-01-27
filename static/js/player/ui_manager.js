@@ -1,13 +1,18 @@
 // ui_manager.js - 화면 렌더링 및 UI 제어
 
 // [헬퍼] 이미지 URL 변환 (백엔드 프록시 사용)
+// [헬퍼] 이미지 URL 변환 (백엔드 프록시 사용)
 function getImageUrl(url) {
     if (!url) return '';
+    // [FIX] http/https로 시작하면 전체 URL이므로 그대로 반환 (중복 프록시 방지)
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('/image/serve/') || url.startsWith('/static/')) {
+        return url;
+    }
     return `/image/serve/${encodeURIComponent(url)}`;
 }
 
 // [수정] 배경 이미지 변경 함수 (프리로딩 적용으로 깜빡임 방지)
-function updateBackgroundImage(url) {
+function updateBackgroundImage(url, isEnding = false) {
     if (!url) return;
 
     const proxyUrl = getImageUrl(url);
@@ -18,9 +23,13 @@ function updateBackgroundImage(url) {
 
     img.onload = () => {
         document.body.style.backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('${proxyUrl}')`;
-        document.body.style.backgroundSize = 'cover';
-        document.body.style.backgroundPosition = 'center';
-        document.body.style.backgroundAttachment = 'fixed';
+        // [FIX] 모든 씬에서 이미지가 잘리지 않도록 contain 적용
+        document.body.style.backgroundSize = 'contain';
+        document.body.style.backgroundRepeat = 'no-repeat';
+        document.body.style.backgroundColor = '#000'; // 여백 검은색
+        document.body.style.backgroundPosition = 'center center'; // 중앙 정렬
+        document.body.style.backgroundAttachment = 'fixed'; // [FIX] 다시 fixed로 복귀 (스크롤 시 배경 고정)
+        document.body.style.minHeight = '100vh'; // 모바일 대응
         document.body.style.transition = 'background-image 0.5s ease-in-out'; // 부드러운 전환 효과
     };
 }
@@ -327,26 +336,33 @@ function updateStats(statsData) {
 
     html += '</div>'; // End space-y-3
 
-    // 2. 인벤토리 렌더링 (이미지 지원 + 에러 핸들링)
-    if (statsData.inventory && statsData.inventory.length > 0) {
-        html += `
-        <div class="border-t-4 border-rpg-700 pt-3 mt-3">
-            <div class="text-[10px] text-gray-500 mb-2 flex items-center gap-1 font-pixel">
-                <i data-lucide="backpack" class="w-3 h-3"></i>INVENTORY
-            </div>
-            <div class="flex flex-wrap gap-1">`;
+    // 2. 인벤토리 렌더링 (항상 표시 + 에러 핸들링)
+    const inventory = statsData.inventory || [];
 
-        for (const item of statsData.inventory) {
+    html += `
+    <div class="border-t-4 border-rpg-700 pt-3 mt-3">
+        <div class="text-[10px] text-gray-500 mb-2 flex items-center gap-1 font-pixel">
+            <i data-lucide="backpack" class="w-3 h-3"></i>INVENTORY
+        </div>
+        <div class="flex flex-wrap gap-1">`;
+
+    if (inventory.length > 0) {
+        for (const item of inventory) {
+            // [DEBUG] 아이템 데이터 로깅
+            console.log(`🎒 [INVENTORY] Rendering item:`, item);
+
             // item이 객체이고 image가 있으면 이미지 아이콘 표시
             if (typeof item === 'object' && item.image) {
+                console.log(`🖼️ [INVENTORY] Image URL found for ${item.name}:`, getImageUrl(item.image));
+
                 html += `
                 <div class="group relative bg-rpg-800 border-2 border-gray-600 w-10 h-10 flex items-center justify-center cursor-help hover:border-yellow-400 transition-colors">
                     <img src="${getImageUrl(item.image)}"
                          class="w-full h-full object-cover pixel-avatar"
                          alt="${item.name}"
-                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                    <div class="hidden w-full h-full items-center justify-center bg-rpg-800">
-                        <i data-lucide="box" class="w-4 h-4 text-gray-400"></i>
+                         onerror="console.error('❌ [INVENTORY] Image failed to load:', this.src); this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div class="hidden w-full h-full items-center justify-center bg-rpg-800 text-gray-300">
+                        <i data-lucide="box" class="w-5 h-5"></i>
                     </div>
                     <span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black border border-white text-[10px] whitespace-nowrap hidden group-hover:block z-20 font-dot">
                         ${item.name}
@@ -360,8 +376,10 @@ function updateStats(statsData) {
                 </span>`;
             }
         }
-        html += '</div></div>';
+    } else {
+        html += `<div class="text-gray-600 text-[10px] text-center italic py-2 font-dot w-full">- 비어있음 -</div>`;
     }
+    html += '</div></div>';
     html += '</div>';
 
     statsArea.innerHTML = html;
@@ -381,15 +399,15 @@ function updateStats(statsData) {
             <div class="flex flex-col items-center group relative">
                 <div class="w-12 h-12 bg-rpg-900 border-2 ${borderClass} overflow-hidden mb-1 relative transition-transform hover:scale-110 cursor-help">
                     ${hasImage
-                        ? `<img src="${getImageUrl(npc.image)}"
+                    ? `<img src="${getImageUrl(npc.image)}"
                                 class="w-full h-full object-cover pixel-avatar"
                                 alt="${npc.name}"
                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                            <div class="hidden w-full h-full items-center justify-center text-gray-600 bg-rpg-900 absolute top-0 left-0">
                                 <i data-lucide="${iconType}" class="w-6 h-6"></i>
                            </div>`
-                        : `<div class="w-full h-full flex items-center justify-center text-gray-600"><i data-lucide="${iconType}" class="w-6 h-6"></i></div>`
-                    }
+                    : `<div class="w-full h-full flex items-center justify-center text-gray-600"><i data-lucide="${iconType}" class="w-6 h-6"></i></div>`
+                }
                 </div>
                 <span class="text-[9px] text-gray-400 truncate w-full text-center font-dot bg-black/50 px-1 rounded">${npc.name}</span>
 
@@ -402,7 +420,7 @@ function updateStats(statsData) {
         });
         npcHtml += '</div>';
 
-        if(statsData.npcs.length === 0) {
+        if (statsData.npcs.length === 0) {
             npcArea.innerHTML = '<div class="text-gray-500 text-xs text-center py-2 font-dot">주변에 아무도 없습니다.</div>';
         } else {
             npcArea.innerHTML = npcHtml;
@@ -445,7 +463,7 @@ function openLoadModal() {
         modal.style.display = 'flex';
         const sortSelect = document.getElementById('scenario-sort');
         const sortValue = sortSelect ? sortSelect.value : 'newest';
-        htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, {target: '#scenario-list-container', swap: 'innerHTML'});
+        htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, { target: '#scenario-list-container', swap: 'innerHTML' });
     }
 }
 
@@ -460,16 +478,16 @@ function closeLoadModal() {
 function reloadScenarioList() {
     const sortSelect = document.getElementById('scenario-sort');
     const sortValue = sortSelect ? sortSelect.value : 'newest';
-    htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, {target: '#scenario-list-container', swap: 'innerHTML'});
+    htmx.ajax('GET', `/api/scenarios?sort=${sortValue}&filter=all`, { target: '#scenario-list-container', swap: 'innerHTML' });
 }
 
 function showToast(message, type = 'info') {
     const bgColor = type === 'success' ? 'bg-green-900/90 border-green-500/30 text-green-100' :
-                   type === 'error' ? 'bg-red-900/90 border-red-500/30 text-red-100' :
-                   'bg-blue-900/90 border-blue-500/30 text-blue-100';
+        type === 'error' ? 'bg-red-900/90 border-red-500/30 text-red-100' :
+            'bg-blue-900/90 border-blue-500/30 text-blue-100';
 
     const icon = type === 'success' ? 'check-circle' :
-                type === 'error' ? 'alert-circle' : 'info';
+        type === 'error' ? 'alert-circle' : 'info';
 
     const toast = document.createElement('div');
     toast.className = `fixed bottom-4 right-4 z-[100] ${bgColor} border px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3`;

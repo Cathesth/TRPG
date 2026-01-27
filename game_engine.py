@@ -5,6 +5,7 @@ import os
 import re
 import difflib
 import yaml
+import urllib.parse
 from typing import TypedDict, List, Dict, Any, Optional, Generator
 from langgraph.graph import StateGraph, END
 from llm_factory import LLMFactory
@@ -14,6 +15,88 @@ from core.state import WorldState
 # [NEW] 토큰 추적 및 과금 처리를 위한 임포트
 from langchain_community.callbacks import get_openai_callback
 from services.user_service import UserService
+
+# =============================================================================
+# [NEW] MinIO 이미지 URL 생성 유틸리티
+# =============================================================================
+def get_minio_url(category: str, filename: str) -> str:
+    """
+    MinIO 이미지 URL 생성
+    category: backgrounds, npcs, enemies, items
+    filename: 이미지 파일명 (확장자 제외 시 .png 자동 추가)
+    """
+    if not filename:
+        return ""
+        
+    filename = str(filename)
+
+    # [FIX] 이미 URL 형식이면 프록시 처리 또는 도메인 치환
+    if filename.startswith("http://") or filename.startswith("https://") or filename.startswith("/"):
+        # [NEW] 절대 경로인 경우 (/로 시작), 그대로 반환 (프론트엔드용 상대 경로)
+        if filename.startswith("/"):
+            return filename
+
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(filename)
+            
+            # 내부망 도메인의 경우 (bucket.railway.internal 등) - 브라우저에서 접근 불가하므로 프록시 경로로 변경
+            if "internal" in parsed.netloc or "localhost" in parsed.netloc:
+                path = parsed.path
+                
+                # 경로가 이미 /trpg-assets/를 포함하고 있다면
+                if path.startswith("/trpg-assets/"):
+                     return path
+                
+                # 만약 /ai-images/로 시작한다면 (일부 데이터 구형)
+                if path.startswith("/ai-images/"):
+                    return f"/trpg-assets{path}"
+                    
+                # 버킷명이 경로에도 없고 ai-images도 아니면, 안전하게 /trpg-assets/를 붙임
+                # (단, path가 /로 시작한다고 가정)
+                return f"/trpg-assets{path}"
+
+            # 외부 도메인은 그대로 사용
+            return filename
+        except:
+            return filename
+
+    
+    # URL이 아닌 경우, MinIO 설정 로드
+    minio_endpoint = os.getenv("MINIO_ENDPOINT")
+    minio_bucket = os.getenv("MINIO_BUCKET", "trpg-assets")
+    minio_use_ssl = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
+
+    # [SAFETY] MINIO_ENDPOINT가 없거나 내부용(internal/localhost)인 경우 Railway Public Domain 확인
+    if not minio_endpoint or "internal" in minio_endpoint or "localhost" in minio_endpoint:
+        railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        if railway_domain:
+            minio_endpoint = railway_domain
+            # Railway Public Domain은 HTTPS 기본
+            minio_use_ssl = True
+            logger.info(f"🔧 [MINIO] Used RAILWAY_PUBLIC_DOMAIN fallback: {minio_endpoint}")
+
+    # 여전히 없으면 기본값
+    if not minio_endpoint:
+        minio_endpoint = "localhost:9000"
+
+    protocol = "https" if minio_use_ssl else "http"
+
+    # [FIX] 파일명 공백 처리 (언더바 치환) & 소문자 변환 (S3/MinIO 호환성)
+    filename = str(filename).strip().replace(" ", "_")
+    # URL이 아닌 파일명의 경우 소문자로 변환하여 매칭 확률 높임
+    if '.' in filename:
+        filename = filename.lower()
+
+    # [FIX] 확장자 방어적 추가 (png, jpg, jpeg, webp, gif 지원)
+    if not any(filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif']):
+        filename = f"{filename.lower()}.png"
+
+    # 파일명 URL 인코딩 (한글 등 특수문자 처리)
+    from urllib.parse import quote
+    encoded_filename = quote(filename, safe='')
+
+    return f"{protocol}://{minio_endpoint}/{minio_bucket}/{category}/{encoded_filename}"
 
 load_dotenv()
 
@@ -193,8 +276,48 @@ def format_player_status(scenario: Dict[str, Any], player_vars: Dict[str, Any] =
 
     # 인벤토리는 마지막에 추가 (강조)
     if inventory and isinstance(inventory, list):
-        items_str = ', '.join([str(item) for item in inventory])
-        status_lines.append(f"- 🎒 소지품 (인벤토리): [{items_str}]")
+        # [NEW] 아이템 이미지를 HTML 태그로 포함
+        items_html_list = []
+        for item in inventory:
+            item_name = str(item)
+            item_img_url = ""
+
+            # 🛠️ [Improvement] 시나리오 데이터에서 아이템 이미지 검색 (우선순위 1)
+            # scenario 구조: items 리스트가 최상위에 있거나 raw_graph 안에 있을 수 있음
+            found_image = False
+            
+            # 1. raw_graph > items 검색
+            if 'raw_graph' in scenario and 'items' in scenario['raw_graph']:
+                for item_def in scenario['raw_graph']['items']:
+                    if item_def.get('name') == item_name and item_def.get('image'):
+                        # [FIX] 내부 URL 치환을 위해 get_minio_url 호출
+                        item_img_url = get_minio_url('items', item_def['image'])
+                        found_image = True
+                        break
+            
+            # 2. scenario > items 검색 (구조에 따라 다름)
+            if not found_image and 'items' in scenario:
+                for item_def in scenario['items']:
+                    if isinstance(item_def, dict) and item_def.get('name') == item_name and item_def.get('image'):
+                        # [FIX] 내부 URL 치환을 위해 get_minio_url 호출
+                        item_img_url = get_minio_url('items', item_def['image'])
+                        found_image = True
+                        break
+
+            # 3. MinIO URL 자동 생성 (폴백)
+            if not found_image:
+                item_img_url = get_minio_url('items', item_name)
+
+            # 아이템 아이콘 + 이름 형태로 구성
+            items_html_list.append(
+                f'<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-800/50 rounded border border-gray-600">'
+                f'<img src="{item_img_url}" class="w-5 h-5 rounded" onerror="this.style.display=\'none\'">'
+                f'<span class="text-sm">{item_name}</span>'
+                f'</span>'
+            )
+
+        items_html = ' '.join(items_html_list)
+        status_lines.append(f"- 🎒 소지품 (인벤토리): {items_html}")
     else:
         status_lines.append(f"- 🎒 소지품 (인벤토리): [비어 있음]")
 
@@ -401,9 +524,15 @@ def intent_parser_node(state: PlayerState):
         state['current_scene_id'] = curr_scene_id_from_state
         wsm.location = curr_scene_id_from_state
 
-    # previous_scene_id 설정
+    # previous_scene_id 설정 (현재 씬 ID를 이전 씬 ID로 스냅샷)
+    # [FIX] 턴 시작 시점의 current_scene_id가 '진실'이므로, 이것이 곧 이번 턴의 previous_scene_id가 됨
     if curr_scene_id_from_state:
         state['previous_scene_id'] = curr_scene_id_from_state
+        logger.info(f"📸 [SNAPSHOT] previous_scene_id set to: {curr_scene_id_from_state}")
+    else:
+        # 만약 여전히 비어있다면(prologue 등), world_state.location 사용
+        state['previous_scene_id'] = wsm.location
+        logger.info(f"📸 [SNAPSHOT] previous_scene_id set to world_state.location: {wsm.location}")
 
     user_input = state.get('last_user_input', '').strip()
 
@@ -488,7 +617,13 @@ def intent_parser_node(state: PlayerState):
             for idx, trans in enumerate(transitions):
                 trigger = trans.get('trigger', '').strip()
                 target = trans.get('target_scene_id', '')
-                transitions_list += f"  {idx}. 트리거: \"{trigger}\" → {target}\n"
+                
+                # [FIX] 엔딩/승리 트리거 명시적 강조 (LLM 인식률 향상)
+                label = ""
+                if target.startswith('ending') or target in endings or 'win' in target.lower() or 'victory' in target.lower():
+                     label = " 🏁 [엔딩/승리 조건]"
+                
+                transitions_list += f"  {idx}. 트리거: \"{trigger}\" → {target}{label}\n"
             transitions_list += "\n⚠️ 유저 입력이 위 트리거와 70% 이상 의미적으로 유사하면 transition으로 분류하세요."
         else:
             transitions_list = "없음 (이동 불가)"
@@ -505,12 +640,16 @@ def intent_parser_node(state: PlayerState):
         scenario = get_scenario_by_id(scenario_id)
         player_status = format_player_status(scenario, state.get('player_vars', {}))
 
+        # [FIX] npc_names와 enemy_names가 딕셔너리일 경우 안전하게 이름 추출
+        safe_npc_names = [n.get('name', str(n)) if isinstance(n, dict) else str(n) for n in npc_names]
+        safe_enemy_names = [e.get('name', str(e)) if isinstance(e, dict) else str(e) for e in enemy_names]
+
         intent_prompt = intent_classifier_template.format(
             player_status=player_status,
             scene_title=scene_title,
             scene_type=scene_type,
-            npc_list=', '.join(npc_names) if npc_names else '없음',
-            enemy_list=', '.join(enemy_names) if enemy_names else '없음',
+            npc_list=', '.join(safe_npc_names) if safe_npc_names else '없음',
+            enemy_list=', '.join(safe_enemy_names) if safe_enemy_names else '없음',
             transitions_list=transitions_list,
             user_input=user_input
         )
@@ -1296,6 +1435,20 @@ def npc_node(state: PlayerState):
     user_input = state.get('last_user_input', '').strip()
     curr_id = state.get('current_scene_id', '')
 
+    # [NEW] 엔딩 씬 체크: 엔딩이면 NPC 로직 스킵 (엔딩 연출 보존)
+    try:
+        scenario_id = state.get('scenario_id')
+        if scenario_id:
+            scenario_data = get_scenario_by_id(scenario_id)
+            endings_list = scenario_data.get('endings', [])
+            if isinstance(endings_list, list):
+                all_endings_ids = [e.get('ending_id') for e in endings_list if isinstance(e, dict)]
+                if curr_id and curr_id in all_endings_ids:
+                    logger.info(f"🚫 [NPC_NODE] Current scene '{curr_id}' is an ENDING. Skipping NPC logic.")
+                    return state
+    except Exception as e:
+        logger.error(f"⚠️ [NPC_NODE] Error in ending check: {e}")
+
     # [추가] stuck_count 초기화 (state에 없으면 0으로 설정)
     if 'stuck_count' not in state:
         state['stuck_count'] = 0
@@ -1389,10 +1542,17 @@ def npc_node(state: PlayerState):
                 npc_list = curr_scene.get('npcs', []) + curr_scene.get('enemies', [])
 
                 # user_input에서 NPC 이름 매칭 시도
-                for npc_name in npc_list:
+                for npc_item in npc_list:
+                    # [FIX] 딕셔너리인 경우 이름 추출
+                    if isinstance(npc_item, dict):
+                        npc_name = npc_item.get('name', '')
+                    else:
+                        npc_name = str(npc_item)
+                        
+                    if not npc_name: continue
+
                     # 부분 매칭 (예: "노인" -> "노인 J")
-                    if npc_name in user_input or npc_name.replace(' ', '').lower() in user_input.lower().replace(' ',
-                                                                                                                 ''):
+                    if npc_name in user_input or npc_name.replace(' ', '').lower() in user_input.lower().replace(' ', ''):
                         target_npc = npc_name
                         logger.info(f"🎯 [COMBAT] Target extracted from input: '{target_npc}'")
                         break
@@ -1406,6 +1566,19 @@ def npc_node(state: PlayerState):
                             target_npc = potential_target
                             logger.info(f"🎯 [COMBAT] Target found via find_npc_key: '{target_npc}'")
                             break
+                            
+                # [FIX] 여전히 타겟이 없으면 씬에 있는 적들 중 첫 번째를 자동 선택
+                if not target_npc and curr_scene:
+                    enemies = curr_scene.get('enemies', [])
+                    if enemies:
+                        # enemies 리스트의 첫 번째 항목 사용
+                        first_enemy = enemies[0]
+                        if isinstance(first_enemy, dict):
+                            target_npc = first_enemy.get('name')
+                        else:
+                            target_npc = str(first_enemy)
+                        
+                        logger.info(f"🎯 [COMBAT] Auto-targeting first enemy: '{target_npc}'")
 
         # (c) target_npc가 확정되지 않으면 에러 처리
         if not target_npc:
@@ -1419,19 +1592,91 @@ def npc_node(state: PlayerState):
 
             return state
 
-        # (d) 데미지 산정 (random 2~6, 재현성을 위해 seed 옵션)
+        # (d) 데미지 산정 (속도 향상을 위해 상향: 15~30) 및 약점 공략 체크
         import hashlib
 
-        # 재현 가능한 난수 생성 (session_id + turn_count 기반)
+        # 재현 가능한 난수 생성
         seed_string = f"{scenario_id}_{world_state.turn_count}_{target_npc}"
         seed_value = int(hashlib.md5(seed_string.encode()).hexdigest()[:8], 16)
         rng = random.Random(seed_value)
-        damage = rng.randint(2, 6)
+        
+        # [BALANCE] 기본 데미지 상향 (기존 2~6 -> 15~30) : 7턴 이내 종료 목표
+        base_damage = rng.randint(15, 30)
+        damage = base_damage
+        weakness_msg = ""
+
+        # [FIX] NPC 정적 데이터 미리 로드 (Weakness 및 Trigger에서 공유)
+        try:
+            scenario_data = get_scenario_by_id(scenario_id)
+            npc_static_data = next((n for n in scenario_data.get('npcs', []) + scenario_data.get('enemies', []) if n.get('name') == target_npc), {})
+        except Exception:
+            npc_static_data = {}
+
+        # 약점 체크 (Weakness System)
+        try:
+            weakness_text = npc_static_data.get('weakness', '')
+            
+            if weakness_text:
+                # 약점 키워드 추출 (콤마, 공백 구분)
+                import re
+                keywords = [k.strip() for k in re.split(r'[,\\s]+', weakness_text) if k.strip()]
+                
+                # 사용자 입력에 약점 키워드가 포함되었는지 확인
+                if any(k in user_input for k in keywords):
+                    damage = int(base_damage * 1.5)
+                    weakness_msg = f"\n⚡ [WEAKNESS] {weakness_text}을(를) 공략하여 치명적인 피해를 입혔습니다! (Damage x1.5)"
+                    logger.info(f"⚡ [COMBAT] Weakness hit! {user_input} matched {weakness_text}")
+        except Exception as e:
+            logger.error(f"⚠️ [COMBAT] Error check weakness: {e}")
 
         logger.info(f"🎲 [COMBAT] Damage roll: {damage} (seed: {seed_string})")
 
+        # [HP TRACKING] 공격 전 상태 저장
+        prev_npc_state = world_state.get_npc_state(target_npc)
+        prev_hp = prev_npc_state.get('hp', 100)
+        prev_max_hp = prev_npc_state.get('max_hp', 100)
+        prev_ratio = prev_hp / prev_max_hp if prev_max_hp > 0 else 0
+
         # (e) world_state.damage_npc 호출
         combat_result = world_state.damage_npc(target_npc, damage)
+        
+        # [HP TRACKING] 공격 후 상태 확인 및 Threshold 체크
+        curr_npc_state = world_state.get_npc_state(target_npc)
+        
+        if curr_npc_state and curr_npc_state.get('status') != 'dead':
+            curr_hp = curr_npc_state.get('hp', 0)
+            max_hp = curr_npc_state.get('max_hp', 100)
+            curr_ratio = curr_hp / max_hp if max_hp > 0 else 0
+            
+            # 5단계 묘사 구간: 80%, 60%, 40%, 20%, 0%(사망은 별도 처리됨)
+            thresholds = [0.8, 0.6, 0.4, 0.2]
+            crossed_threshold = None
+            
+            for th in thresholds:
+                if prev_ratio > th and curr_ratio <= th:
+                    crossed_threshold = th
+                    break
+            
+            # [LLM TRIGGER] 임계점을 넘었을 때만 묘사 생성 (API 레벨로 위임)
+            if crossed_threshold:
+                npc_type = npc_static_data.get('type', '적')
+                npc_desc = npc_static_data.get('description', '')
+                
+                if '_internal_flags' not in state:
+                    state['_internal_flags'] = {}
+                state['_internal_flags']['combat_desc_trigger'] = {
+                    "npc_name": target_npc,
+                    "npc_type": npc_type,
+                    "npc_desc": npc_desc,
+                    "user_input": user_input,
+                    "threshold": crossed_threshold,
+                    "curr_hp": curr_hp,
+                    "max_hp": max_hp
+                }
+                logger.info(f"✨ [COMBAT DESC] Trigger Set for threshold {crossed_threshold} (Delegated to API)")
+
+        if weakness_msg:
+            combat_result += weakness_msg
 
         logger.info(f"⚔️ [COMBAT] Result: {combat_result}")
 
@@ -1479,11 +1724,18 @@ def npc_node(state: PlayerState):
                 if npc_data.get('name') == target_npc:
                     drop_items = npc_data.get('drop_items', [])
 
+                    # [FIX] drop_items가 문자열인 경우 처리 (예: "데이터 칩, 고철 부품")
+                    if drop_items and isinstance(drop_items, str):
+                        drop_items = [item.strip() for item in drop_items.split(',')]
+                    
                     if drop_items and isinstance(drop_items, list):
                         # 아이템 드랍 처리
                         for item_name in drop_items:
                             world_state._add_item(item_name)
                             logger.info(f"💰 [LOOT] {target_npc} dropped item: '{item_name}'")
+
+                        # [FIX] 인벤토리 동기화 (프론트엔드 반영용)
+                        state['player_vars']['inventory'] = list(world_state.player["inventory"])
 
                         # system_message에 전리품 정보 추가
                         items_text = ', '.join(drop_items)
@@ -1497,6 +1749,53 @@ def npc_node(state: PlayerState):
                     else:
                         logger.info(f"💰 [LOOT] No items to drop from {target_npc}")
                     break
+
+        # (j) [FIX] 적 처치 시 승리 조건(Transitions) 즉시 확인 및 이동 트리거
+        if npc_state and npc_state.get('status') == 'dead':
+            # [DEBUG] 전투 승리 체크 진입
+            logger.info(f"💀 [COMBAT CHECK] NPC {target_npc} is dead. Checking transitions...")
+            
+            # 현재 씬의 transitions 확인
+            all_scenes = {s['scene_id']: s for s in get_scenario_by_id(scenario_id)['scenes']}
+            curr_scene = all_scenes.get(curr_id)
+            if curr_scene:
+                transitions = curr_scene.get('transitions', [])
+                logger.info(f"💀 [COMBAT CHECK] Scene {curr_id} has {len(transitions)} transitions: {transitions}")
+                
+                for idx, trans in enumerate(transitions):
+                    trigger = trans.get('trigger', '').lower()
+                    
+                    # 트리거에 적 이름이나 '처치', '파괴', '승리' 등의 키워드가 포함되어 있으면 이동
+                    # 예: "스크랩 스매셔 파괴", "전투 승리", "적 처치"
+                    keywords = ['처치', '파괴', '승리', 'kill', 'destroy', 'win', 'victory', 'defeat']
+                    
+                    is_match = target_npc.lower() in trigger or any(k in trigger for k in keywords)
+                    logger.info(f"❓ [COMBAT CHECK] Trigger: '{trigger}' vs Target: '{target_npc}' -> Match: {is_match}")
+                    
+                    # 적 이름이 트리거에 포함되거나, 일반적인 승리 키워드가 포함된 경우
+                    if is_match:
+                        # [SAFETY] 전투 후 추가 행동(조사, 획득 등)이 필요한 트리거라면 자동 이동 금지
+                        # 예: "적 처치 후 열쇠 획득", "승리하고 아이템 줍기"
+                        exclude_keywords = ['획득', '조사', '얻', '찾', '줍', 'get', 'take', 'loot', 'search', 'investigate', '후', 'then', 'and', '그리고']
+                        
+                        if any(ex_kw in trigger for ex_kw in exclude_keywords):
+                            logger.info(f"⚔️ [COMBAT] Victory condition met but requires extra action ('{trigger}'). Auto-transition skipped.")
+                            state['system_message'] += f"\n❓ 적이 쓰러졌습니다. 하지만 아직 끝난 것 같지 않습니다. ({trigger})"
+                        else:
+                            # 순수 전투 승리 조건인 경우 자동 이동
+                            logger.info(f"⚔️ [COMBAT] Victory condition met! Triggering auto-transition: '{trigger}' -> {trans.get('target_scene_id')}")
+                            state['parsed_intent'] = 'transition'
+                            state['last_user_choice_idx'] = idx
+                            
+                            # 시스템 메시지에 이동 알림 추가
+                            state['system_message'] += f"\n✨ [전투 승리] {trigger}... 다음 장면으로 이동합니다."
+                            
+                            # [CRITICAL] 즉시 씬 이동 처리 (npc_node는 rule_engine을 거치지 않으므로 직접 ID 변경)
+                            target_id = trans.get('target_scene_id')
+                            if target_id:
+                                state['current_scene_id'] = target_id
+                                logger.info(f"🚀 [COMBAT] Immediate scene switch: {curr_id} -> {target_id}")
+                        break
 
         logger.info(f"✅ [COMBAT] Attack processing complete. Damage: {damage}, Target: {target_npc}")
 
@@ -1755,7 +2054,9 @@ def check_npc_appearance(state: PlayerState) -> str:
     if not curr_scene: return ""
 
     # [FIX] NPC와 적을 모두 처리
+    # 🔴 [CRITICAL] 단순히 이름만 추출하면 이미지 정보를 잃게 됨 -> 원본 객체 유지
     npc_names = curr_scene.get('npcs', [])
+    # npc_names = [n.get('name') if isinstance(n, dict) else n for n in raw_npcs] # <-- 이 줄이 원인임 (삭제)
     enemy_names = curr_scene.get('enemies', [])
     scene_type = curr_scene.get('type', 'normal')
     scene_title = curr_scene.get('title', 'Untitled')
@@ -1801,41 +2102,66 @@ def check_npc_appearance(state: PlayerState) -> str:
     # NPC 등장 - LLM으로 생성
     if npc_names:
         npc_appearance_template = prompts.get('npc_appearance', '')
-        for npc_name in npc_names:
+        for npc_data in npc_names:
+            # 🔴 [CRITICAL] NPC 데이터 정규화 및 이미지 추출
+            if isinstance(npc_data, dict):
+                real_npc_name = npc_data.get('name', 'Unknown NPC')
+                if 'image' in npc_data and npc_data['image']:
+                    # [FIX] 내부 URL 치환을 위해 get_minio_url 호출
+                    minio_npc_url = get_minio_url('npcs', npc_data['image'])
+                else:
+                    minio_npc_url = get_minio_url('npcs', real_npc_name)
+            else:
+                real_npc_name = str(npc_data)
+                minio_npc_url = get_minio_url('npcs', real_npc_name)
+
             # NPC 역할 찾기
             npc_role = "Unknown"
             for npc in get_scenario_by_id(scenario_id).get('npcs', []):
-                if npc.get('name') == npc_name:
+                if npc.get('name') == real_npc_name:
                     npc_role = npc.get('role', 'Unknown')
                     break
 
             if npc_appearance_template:
                 npc_prompt = npc_appearance_template.format(
                     scene_title=scene_title,
-                    npc_name=npc_name,
+                    npc_name=real_npc_name,
                     npc_role=npc_role
                 )
                 try:
                     llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
                     npc_action = llm.invoke(npc_prompt).content.strip()
                     intro_html = f"""
-                    <div class='npc-intro text-green-300 italic my-2 p-2 bg-green-900/20 rounded border-l-2 border-green-500'>
-                        👀 {npc_action}
+                    <div class='npc-intro flex items-center gap-3 my-2 p-3 bg-green-900/20 rounded border-l-2 border-green-500'>
+                        <div class="relative w-12 h-12 flex-shrink-0">
+                            <img src="{minio_npc_url}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-green-500/50 object-cover block" alt="{real_npc_name}">
+                        </div>
+                        <span class="text-green-300 italic">👀 {npc_action}</span>
                     </div>
                     """
                     introductions.append(intro_html)
                 except Exception as e:
                     logger.error(f"NPC appearance generation error: {e}")
                     intro_html = f"""
-                    <div class='npc-intro text-green-300 italic my-2 p-2 bg-green-900/20 rounded border-l-2 border-green-500'>
-                        👀 <span class='font-bold'>{npc_name}</span>이(가) 당신을 바라봅니다.
+                    <div class='npc-intro flex items-center gap-3 my-2 p-3 bg-green-900/20 rounded border-l-2 border-green-500'>
+                        <div class="relative w-12 h-12 flex-shrink-0">
+                            <img src="{minio_npc_url}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-green-500/50 object-cover block" alt="{real_npc_name}">
+                        </div>
+                        <div class="text-green-300 italic">
+                            👀 <span class='font-bold'>{real_npc_name}</span>이(가) 당신을 바라봅니다.
+                        </div>
                     </div>
                     """
                     introductions.append(intro_html)
             else:
                 intro_html = f"""
-                <div class='npc-intro text-green-300 italic my-2 p-2 bg-green-900/20 rounded border-l-2 border-green-500'>
-                    👀 <span class='font-bold'>{npc_name}</span>이(가) 당신을 바라봅니다.
+                <div class='npc-intro flex items-center gap-3 my-2 p-3 bg-green-900/20 rounded border-l-2 border-green-500'>
+                    <div class="relative w-12 h-12 flex-shrink-0">
+                        <img src="{minio_npc_url}" class="w-12 h-12 rounded-full border-2 border-green-500 shadow-green-500/50 object-cover block" alt="{real_npc_name}">
+                    </div>
+                    <div class="text-green-300 italic">
+                        👀 <span class='font-bold'>{real_npc_name}</span>이(가) 당신을 바라봅니다.
+                    </div>
                 </div>
                 """
                 introductions.append(intro_html)
@@ -1843,33 +2169,59 @@ def check_npc_appearance(state: PlayerState) -> str:
     # [FIX] 적 등장 처리 - LLM으로 생성
     if enemy_names:
         enemy_appearance_template = prompts.get('enemy_appearance', '')
-        for enemy_name in enemy_names:
+        for enemy_data in enemy_names:
+            # 🔴 [CRITICAL] enemy_data가 딕셔너리인지 문자열인지 확인하여 정규화
+            if isinstance(enemy_data, dict):
+                real_enemy_name = enemy_data.get('name', 'Unknown Enemy')
+                # 딕셔너리에 image 필드가 있으면 우선 사용, 없으면 MinIO 생성
+                if 'image' in enemy_data and enemy_data['image']:
+                    # [FIX] 내부 URL 치환을 위해 get_minio_url 호출
+                    minio_enemy_url = get_minio_url('enemies', enemy_data['image'])
+                else:
+                    minio_enemy_url = get_minio_url('enemies', real_enemy_name)
+            else:
+                real_enemy_name = str(enemy_data)
+                minio_enemy_url = get_minio_url('enemies', real_enemy_name)
+
             if enemy_appearance_template:
                 enemy_prompt = enemy_appearance_template.format(
                     scene_title=scene_title,
-                    enemy_name=enemy_name
+                    enemy_name=real_enemy_name
                 )
                 try:
                     llm = get_cached_llm(api_key=api_key, model_name=model_name, streaming=False)
                     enemy_action = llm.invoke(enemy_prompt).content.strip()
                     intro_html = f"""
-                    <div class='enemy-intro text-red-400 font-bold my-2 p-2 bg-red-900/30 rounded border-l-2 border-red-500'>
-                        ⚔️ {enemy_action}
+                    <div class='enemy-intro flex items-center gap-3 my-2 p-3 bg-red-900/30 rounded border-l-2 border-red-500'>
+                        <div class="relative w-12 h-12 flex-shrink-0">
+                            <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover block" alt="{real_enemy_name}">
+                        </div>
+                        <span class="text-red-400 font-bold">⚔️ {enemy_action}</span>
                     </div>
                     """
                     introductions.append(intro_html)
                 except Exception as e:
                     logger.error(f"Enemy appearance generation error: {e}")
                     intro_html = f"""
-                    <div class='enemy-intro text-red-400 font-bold my-2 p-2 bg-red-900/30 rounded border-l-2 border-red-500'>
-                        ⚔️ <span class='font-bold'>{enemy_name}</span>이(가) 나타났습니다!
+                    <div class='enemy-intro flex items-center gap-3 my-2 p-3 bg-red-900/30 rounded border-l-2 border-red-500'>
+                        <div class="relative w-12 h-12 flex-shrink-0">
+                            <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover block" alt="{real_enemy_name}">
+                        </div>
+                        <div class="text-red-400 font-bold">
+                            ⚔️ <span class='font-bold'>{real_enemy_name}</span>이(가) 나타났습니다!
+                        </div>
                     </div>
                     """
                     introductions.append(intro_html)
             else:
                 intro_html = f"""
-                <div class='enemy-intro text-red-400 font-bold my-2 p-2 bg-red-900/30 rounded border-l-2 border-red-500'>
-                    ⚔️ <span class='font-bold'>{enemy_name}</span>이(가) 나타났습니다!
+                <div class='enemy-intro flex items-center gap-3 my-2 p-3 bg-red-900/30 rounded border-l-2 border-red-500'>
+                    <div class="relative w-12 h-12 flex-shrink-0">
+                        <img src="{minio_enemy_url}" class="w-12 h-12 rounded-full border-2 border-red-500 shadow-red-500/50 object-cover block" alt="{real_enemy_name}">
+                    </div>
+                    <div class="text-red-400 font-bold">
+                        ⚔️ <span class='font-bold'>{real_enemy_name}</span>이(가) 나타났습니다!
+                    </div>
                 </div>
                 """
                 introductions.append(intro_html)
@@ -1908,6 +2260,59 @@ def narrator_node(state: PlayerState):
         logger.info(f"⏱️ [TURN] Turn count increased to {world_state.turn_count} at narrator_node start")
     else:
         logger.info(f"⏱️ [TURN] Game start - turn count not increased (current: {world_state.turn_count})")
+
+    # ========================================
+    # 🎉 [FIX] 엔딩 씬 처리 (HTML 카드 출력)
+    # ========================================
+    curr_id = state.get('current_scene_id')
+    scenario = get_scenario_by_id(scenario_id)
+    all_endings = {e['ending_id']: e for e in scenario.get('endings', [])}
+    
+    if curr_id in all_endings:
+        ending = all_endings[curr_id]
+        logger.info(f"🏁 [NARRATOR] Ending scene detected: {curr_id}. Generating HTML card.")
+        
+        # 1. 엔딩 텍스트 (줄바꿈 처리)
+        desc_html = ending.get('description', '').replace('\n', '<br>')
+        
+        # 2. 엔딩 이미지 (있으면)
+        img_html = ""
+        bg_image_url = ending.get('background_image', ending.get('image'))
+        if bg_image_url:
+             # [FIX] 이미지 URL 프록시 처리 (get_minio_url 사용)
+            if bg_image_url.startswith("http") or bg_image_url.startswith("/"):
+                 # get_minio_url이 http/https나 내부 경로를 처리하도록 함
+                 # 단, get_minio_url은 bucket_key를 기대하므로, full url인 경우 처리가 필요할 수 있음
+                 # get_minio_url 내부 로직 상 http로 시작하면 내부 도메인 체크 후 변환함
+                 bg_image_url = get_minio_url('bg', bg_image_url)
+            
+            img_html = f"""
+            <div class="mb-6 rounded-lg overflow-hidden shadow-lg border-2 border-yellow-600/30">
+                <img src="{bg_image_url}" alt="Ending Image" class="w-full h-auto object-cover opacity-90 hover:opacity-100 transition-opacity duration-700">
+            </div>
+            """
+
+        # 3. 최종 HTML 조합
+        state['narrator_output'] = f"""
+        <div class="my-8 p-8 border-2 border-yellow-500/50 bg-gradient-to-b from-yellow-900/40 to-black rounded-xl text-center fade-in shadow-2xl relative overflow-hidden">
+            <h3 class="text-3xl font-black text-yellow-400 mb-4 tracking-[0.2em] uppercase drop-shadow-md">🎉 ENDING 🎉</h3>
+            <div class="w-16 h-1 bg-yellow-500 mx-auto mb-6 rounded-full"></div>
+            {img_html}
+            <div class="text-2xl font-bold text-white mb-4 drop-shadow-sm">"{ending.get('title')}"</div>
+            <p class="text-gray-200 leading-relaxed text-lg serif-font">
+                {desc_html}
+            </p>
+             <div class="mt-8">
+                <button onclick="window.location.reload()" class="px-6 py-2 bg-yellow-600 hover:bg-yellow-500 text-white font-bold rounded-full transition-colors duration-300 shadow-md">
+                    다시 시작하기
+                </button>
+            </div>
+        </div>
+        """
+        
+        # WorldState 저장 후 조기 리턴
+        state['world_state'] = world_state.to_dict()
+        return state
 
     # WorldState 스냅샷 저장
     state['world_state'] = world_state.to_dict()
@@ -2043,25 +2448,33 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
     # ========================================
     # 현재 씬 정보 추출 (scene_title, scene_type, npc_names, enemy_names)
     # ========================================
-    curr_scene = all_scenes.get(curr_id) if curr_id not in all_endings else None
+    
+    # [FIX] 엔딩 씬을 포함하여 현재 씬 정보 가져오기
+    if curr_id in all_endings:
+        curr_scene = all_endings[curr_id]
+        logger.info(f"🏁 [SCENE INFO] Ending Scene detected: {curr_id}")
+    else:
+        curr_scene = all_scenes.get(curr_id)
     scene_title = ""
     scene_type = "normal"
     npc_names = []
     enemy_names = []
 
     if curr_scene:
-        scene_title = curr_scene.get('title', curr_id)
+        # [FIX] title이 없으면 name 필드 사용 (시나리오 JSON 구조 대응)
+        scene_title = curr_scene.get('title', curr_scene.get('name', curr_id))
         scene_type = curr_scene.get('type', 'normal')
 
-        # 🔴 [CRITICAL] NPC 이름 정규화: 딕셔너리면 name 필드 추출
-        raw_npcs = curr_scene.get('npcs', [])
-        npc_names = [n.get('name') if isinstance(n, dict) else n for n in raw_npcs]
+        # 🔴 [CRITICAL] NPC/적 데이터 원본 유지 (이미지 URL 보존 위해)
+        # 단순히 이름만 추출하면 check_npc_appearance에서 이미지 정보를 잃게 됨
+        npc_names = curr_scene.get('npcs', [])
+        enemy_names = curr_scene.get('enemies', [])
+        
+        # 로깅용 이름 리스트 (디버깅 편의성)
+        npc_names_log = [n.get('name') if isinstance(n, dict) else n for n in npc_names]
+        enemy_names_log = [e.get('name') if isinstance(e, dict) else e for e in enemy_names]
 
-        # 🔴 [CRITICAL] 적 이름 정규화: 딕셔너리면 name 필드 추출
-        raw_enemies = curr_scene.get('enemies', [])
-        enemy_names = [e.get('name') if isinstance(e, dict) else e for e in raw_enemies]
-
-        logger.info(f"🎬 [SCENE INFO] NPCs: {npc_names}, Enemies: {enemy_names}")
+        logger.info(f"🎬 [SCENE INFO] NPCs: {npc_names_log}, Enemies: {enemy_names_log}")
 
     # ========================================
     # 💀 작업 2: 죽은 NPC 상태 정보 수집 (환각 방지)
@@ -2082,7 +2495,9 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                 dead_npcs.append(npc_name)
 
         if dead_npcs:
-            dead_list = ", ".join(dead_npcs)
+            # [FIX] dead_npcs 요소가 딕셔너리일 경우 안전하게 이름 추출
+            safe_dead_npcs = [d.get('name', str(d)) if isinstance(d, dict) else str(d) for d in dead_npcs]
+            dead_list = ", ".join(safe_dead_npcs)
             npc_status_context = f"""
 ⚠️ **[CRITICAL INSTRUCTION - NPC STATUS]**
 다음 NPC들은 현재 'dead' 상태입니다: {dead_list}
@@ -2334,15 +2749,79 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
                         yield "주변을 둘러보니 여러 가지 시도해볼 수 있을 것 같습니다."
                         return
         # =============================================================================
+
+
+
+
     # [MODE 2] 씬 변경됨 -> 장면 묘사
     # =============================================================================
+    
+    # [FLICKER FIX] 배경과 NPC 등장을 하나의 HTML 덩어리로 묶어서 전송
+    prefix_html_buffer = ""
+
+    # [NEW] 배경 이미지 출력 (MinIO)
+    # [NEW] 배경 이미지 출력 (MinIO)
+    if curr_scene:
+        background_image = curr_scene.get('background_image') or curr_scene.get('image', '')
+        
+        # [FALLBACK] curr_scene에 이미지가 없으면 raw_graph의 nodes에서 검색
+        if not background_image and 'raw_graph' in scenario and 'nodes' in scenario['raw_graph']:
+            for node in scenario['raw_graph']['nodes']:
+                # ID 매칭 (대소문자 무시) - scene-1 vs Scene-1
+                node_id = node.get('id', '').lower()
+                curr_id_lower = curr_id.lower() if curr_id else ''
+                
+                # 1. 완전 일치
+                if node_id == curr_id_lower:
+                    background_image = node.get('data', {}).get('background_image', '')
+                    if background_image:
+                        logger.info(f"🖼️ [BACKGROUND] Found image in raw_graph for {curr_id} (Exact Match): {background_image}")
+                        break
+                        
+                # 2. 접두어/접미어 불일치 케이스 (scene-1 vs 1, scene-1 vs Scene-1)
+                # curr_id가 'Scene-1'이고 node_id가 'scene-1'인 경우 위에서 잡힘
+                # 하지만 curr_id가 그냥 숫자 '1'이거나 node_id가 랜덤 생성 ID인 경우 등 고려
+                if node_id.endswith(f"-{curr_id_lower}") or curr_id_lower.endswith(f"-{node_id}"):
+                     background_image = node.get('data', {}).get('background_image', '')
+                     if background_image:
+                        logger.info(f"🖼️ [BACKGROUND] Found image in raw_graph for {curr_id} (Loose Match): {background_image}")
+                        break
+                
+                # 3. Scene title 매칭 (최후의 수단 - scenes의 name과 nodes의 title 비교)
+                node_title = node.get('data', {}).get('title', '').strip()
+                # [FIX] curr_scene에는 'title' 대신 'name'이 들어있는 경우가 많음
+                curr_title = curr_scene.get('title', curr_scene.get('name', '')).strip()
+                
+                if node_title and curr_title and node_title == curr_title:
+                     background_image = node.get('data', {}).get('background_image', '')
+                     if background_image:
+                        logger.info(f"🖼️ [BACKGROUND] Found image in raw_graph by Title ({curr_title}): {background_image}")
+                        break
+
+        
+        if background_image:
+            minio_bg_url = get_minio_url('backgrounds', background_image)
+            prefix_html_buffer += f"""
+            <div class="scene-background mb-4 rounded-lg overflow-hidden border border-gray-700 shadow-lg relative bg-gray-900" style="min-height: 12rem;">
+                <img src="{minio_bg_url}" alt="background" class="w-full h-48 object-cover object-center scale-in block" style="display: block;">
+            </div>
+            """
+
     scene_desc = curr_scene.get('description', '')  # <--- scene_desc 변수 선언 추가
 
     npc_intro = check_npc_appearance(state)
-    if npc_intro: yield npc_intro + "<br><br>"
+    if npc_intro: 
+        prefix_html_buffer += npc_intro
+
+    # 버퍼에 내용이 있으면 한 번에 전송
+    if prefix_html_buffer:
+        # [FLICKER FIX] 이미지 전송 (스팬 제거 - JS가 처리함)
+        yield f"__PREFIX_START__{prefix_html_buffer}__PREFIX_END__"
 
     # YAML에서 씬 묘사 프롬프트 로드
-    npc_list = ', '.join(npc_names) if npc_names else '없음'
+    # [FIX] npc_names가 딕셔너리 리스트일 수 있으므로 이름만 추출하여 문자열 변환
+    safe_npc_names = [n.get('name') if isinstance(n, dict) else n for n in npc_names]
+    npc_list = ', '.join(safe_npc_names) if safe_npc_names else '없음'
     prompts = load_player_prompts()
     scene_prompt_template = prompts.get('scene_description', '')
 
@@ -2358,9 +2837,9 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
             if filtered_transitions:
                 available_transitions = "\n".join([f"- {t.get('trigger', '')}" for t in filtered_transitions])
             else:
-                available_transitions = "현재 특별한 선택지가 없습니다."
+                available_transitions = ""
         else:
-            available_transitions = "현재 특별한 선택지가 없습니다."
+            available_transitions = ""
 
         # 씬 변경 시 유저 입력 컨텍스트 포함
         if user_input:
@@ -2460,6 +2939,10 @@ def scene_stream_generator(state: PlayerState, retry_count: int = 0, max_retries
 
 # --- Graph Construction ---
 
+def load_game_engine():
+    """게임 엔진 초기화 (필요 시)"""
+    pass
+
 def create_game_graph():
     """
     LangGraph 워크플로우 생성
@@ -2480,7 +2963,7 @@ def create_game_graph():
     def route_action(state):
         intent = state.get('parsed_intent')
         # ✅ item_action 의도를 rule_engine으로 라우팅 추가
-        if intent in ['transition', 'ending', 'investigate', 'attack', 'item_action']:
+        if intent in ['transition', 'ending']:
             return "rule_engine"
         else:
             return "npc_actor"

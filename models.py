@@ -67,11 +67,22 @@ class User(Base):
     # ▼ [추가] 사용자의 현재 보유 토큰 (기본값 1000)
     token_balance = Column(Integer, default=1000, nullable=False)
 
+    # ▼ [추가] 튜토리얼 완료 여부
+    tutorial_completed = Column(Boolean, default=False)
+
     created_at = Column(DateTime, default=datetime.now)
 
     # 관계 설정
     scenarios = relationship('Scenario', back_populates='owner')
     # Flask-Login 관련 속성 삭제됨 (auth.py가 대신 처리함)
+
+    @property
+    def is_debug_user(self) -> bool:
+        """
+        디버그 권한 체크: id가 '11' 또는 'cronos'인 경우에만 True 반환
+        - Railway Postgres 연동 시 users 테이블의 id 컬럼을 참조
+        """
+        return self.id in ('11', 'cronos')
 
 
 class TokenLog(Base):
@@ -100,11 +111,14 @@ class Scenario(Base):
     filename = Column(String(100), unique=True, index=True)  # UUID
     title = Column(String(100), nullable=False, index=True)
     author_id = Column(String(50), ForeignKey('users.id'), nullable=True)
+    # [추가] 조회수 컬럼 정의
+    view_count = Column(Integer, default=0)
 
     # 시나리오 전체 데이터 (scenes, endings, variables 등 구조화된 JSON)
     data = Column(JSON_TYPE, nullable=False)
 
     is_public = Column(Boolean, default=False)
+    is_recommended = Column(Boolean, default=False) # [NEW] 추천 시나리오 여부
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -121,6 +135,7 @@ class Scenario(Base):
             'author': self.author_id or 'Anonymous',
             'data': self.data,
             'is_public': self.is_public,
+            'is_recommended': self.is_recommended, # [NEW]
             'created_at': self.created_at.timestamp() if self.created_at else None,
             'updated_at': self.updated_at.timestamp() if self.updated_at else None
         }
@@ -317,6 +332,15 @@ def create_tables():
                 # [NEW] token_balance 추가
                 conn.execute(
                     text("ALTER TABLE users ADD COLUMN IF NOT EXISTS token_balance INTEGER DEFAULT 1000 NOT NULL"))
+                
+                # [NEW] tutorial_completed 추가
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS tutorial_completed BOOLEAN DEFAULT FALSE"))
+
+                # [NEW] scenarios 테이블에 is_recommended 추가
+                conn.execute(text("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS is_recommended BOOLEAN DEFAULT FALSE"))
+
+                # ▼▼▼ [추가] view_count 컬럼 자동 추가 (마이그레이션) ▼▼▼
+                conn.execute(text("ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0"))
 
                 conn.commit()
                 logger.info("✅ Checked/Added 'avatar_url', 'email', 'token_balance' columns to 'users' table.")
