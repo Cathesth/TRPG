@@ -24,16 +24,17 @@ class ChatbotService:
     @staticmethod
     async def generate_response(user_query: str, chat_history: List[Dict] = None) -> dict:
         """
-        [수정된 로직 순서]
-        1. Keyword Matching (설정된 답변 확인)
+        [로직 순서 변경됨]
+        1. Keyword Matching (설정된 답변 확인 - 우선순위 최상)
         2. RAG (Vector DB 검색)
         3. LLM (Gemini 호출)
         """
 
         # ---------------------------------------------------------------------
-        # 1. [Keyword First] 설정된 키워드 답변이 있는지 먼저 확인
+        # 1. [Keyword First] 설정된 키워드 답변이 있는지 먼저 확인 (우선순위 최상)
         # ---------------------------------------------------------------------
-        # check_only=True: 매칭되는 게 없으면 '죄송합니다' 대신 None을 반환하여 Gemini로 넘김
+        # check_only=True: 매칭되는 게 있으면 바로 반환, 없으면 None을 반환하여 아래 로직 진행
+        # 주의: get_keyword_response 메서드에 check_only 파라미터 처리가 되어 있어야 합니다.
         keyword_response = ChatbotService.get_keyword_response(user_query, check_only=True)
         if keyword_response:
             logger.info(f"✅ Keyword Response Matched: {user_query}")
@@ -42,28 +43,32 @@ class ChatbotService:
         # ---------------------------------------------------------------------
         # 2. [RAG] Vector DB에서 관련 정보 검색 (키워드 매칭 실패 시 진행)
         # ---------------------------------------------------------------------
+        # 기본 지식 (Fallback Context)
         base_context = """
-        [TRPG Studio 서비스 정보]
-        1. 서비스 개요: 여울(YEOUL)은 멀티 에이전트 AI 기반의 인터랙티브 TRPG 플랫폼입니다.
-        2. 시나리오 제작 (Builder Mode): 노드 기반 편집기, AI 보조 도구(NPC/지문 생성), 로직 검수 제공.
-        3. 요금제: Free(3개 생성), Pro(9,900원/무제한/GPT-4), Biz(29,900원/파인튜닝).
-        4. 플레이: 메인 화면 리스트 선택 -> 1:1 AI GM과 플레이.
+            [TRPG Studio 서비스 정보]
+            1. 서비스 개요: 여울(YEOUL)은 멀티 에이전트 AI 기반의 인터랙티브 TRPG 플랫폼입니다.
+            2. 시나리오 제작 (Builder Mode): 노드 기반 편집기, AI 보조 도구(NPC/지문 생성), 로직 검수 제공.
+            3. 요금제: Free(3개 생성), Pro(9,900원/무제한/GPT-4), Biz(29,900원/파인튜닝).
+            4. 플레이: 메인 화면 리스트 선택 -> 1:1 AI GM과 플레이.
 
-        [기본 가이드]
-        * 챗봇 이름: 여울 (친절하고 재치있는 가이드)
-        * 주요 기능: 시나리오 제작, 플레이, 이미지 생성, NPC 생성
-        """
+            [기본 가이드]
+            * 챗봇 이름: 여울 (친절하고 재치있는 가이드)
+            * 주요 기능: 시나리오 제작, 플레이, 이미지 생성, NPC 생성
+            """
 
         rag_context = ""
         try:
+            # get_vector_db_client가 전역 네임스페이스에 있는지 확인
             if 'get_vector_db_client' in globals():
                 vector_db = get_vector_db_client()
 
                 if vector_db:
+                    # search 메서드 존재 여부 확인
                     search_func = getattr(vector_db, 'search', None)
 
                     if search_func:
                         import inspect
+                        # 비동기/동기 구분 호출
                         if inspect.iscoroutinefunction(search_func):
                             search_results = await search_func(user_query, k=3)
                         else:
@@ -72,6 +77,7 @@ class ChatbotService:
                         if search_results:
                             retrieved_texts = []
                             for doc in search_results:
+                                # 결과 데이터 파싱 (Dict 또는 Object)
                                 if isinstance(doc, dict):
                                     content = doc.get('page_content') or doc.get('text') or str(doc)
                                     retrieved_texts.append(content)
@@ -101,48 +107,51 @@ class ChatbotService:
                         role = "User" if msg.get('role') == 'user' else "AI"
                         history_text += f"{role}: {msg.get('content')}\n"
 
+                # 시스템 프롬프트 조립
                 system_prompt = f"""
-                당신은 TRPG Studio의 친절하고 재치 있는 AI 가이드 '여울'입니다.
-                사용자는 TRPG 게임을 만들거나 플레이하는 유저입니다.
+                    당신은 TRPG Studio의 친절하고 재치 있는 AI 가이드 '여울'입니다.
+                    사용자는 TRPG 게임을 만들거나 플레이하는 유저입니다.
 
-                [지침]
-                1. 아래 제공된 '[검색된 지식]'과 '[기본 정보]'를 최우선으로 참고하여 답변하세요.
-                2. 정보가 부족하다면 솔직히 모르겠다고 하고, 메뉴 이용을 권장하세요.
-                3. 말투는 친절하고 격려하는 톤("~해요", "~해보세요!")을 사용하세요.
-                4. 답변 끝에는 항상 사용자가 이어서 할 법한 질문 2~3개를 'choices'에 담아 주세요.
+                    [지침]
+                    1. 아래 제공된 '[검색된 지식]'과 '[기본 정보]'를 최우선으로 참고하여 답변하세요.
+                    2. 정보가 부족하다면 솔직히 모르겠다고 하고, 메뉴 이용을 권장하세요.
+                    3. 말투는 친절하고 격려하는 톤("~해요", "~해보세요!")을 사용하세요.
+                    4. 답변 끝에는 항상 사용자가 이어서 할 법한 질문 2~3개를 'choices'에 담아 주세요.
 
-                [기본 정보]
-                {base_context}
+                    [기본 정보]
+                    {base_context}
 
-                [검색된 지식 (RAG)]
-                {rag_context if rag_context else "관련된 추가 지식이 없습니다."}
+                    [검색된 지식 (RAG)]
+                    {rag_context if rag_context else "관련된 추가 지식이 없습니다."}
 
-                [이전 대화]
-                {history_text}
+                    [이전 대화]
+                    {history_text}
 
-                반드시 아래 JSON 형식을 지켜서 응답하세요. (마크다운 없이 순수 JSON만)
-                {{
-                    "answer": "답변 내용... (줄바꿈은 \\n 사용)",
-                    "choices": ["선택지1", "선택지2"]
-                }}
-                """
+                    반드시 아래 JSON 형식을 지켜서 응답하세요. (마크다운 없이 순수 JSON만)
+                    {{
+                        "answer": "답변 내용... (줄바꿈은 \\n 사용)",
+                        "choices": ["선택지1", "선택지2"]
+                    }}
+                    """
 
+                # 모델 생성 및 호출
                 llm = LLMFactory.create_llm(ChatbotService.TARGET_MODEL_NAME)
                 response_text = await llm.chat_completion(
                     system_prompt=system_prompt,
                     user_input=f"Question: {user_query}"
                 )
 
+                # 응답 파싱
                 cleaned_text = response_text.replace("```json", "").replace("```", "").strip()
                 return json.loads(cleaned_text)
 
             else:
-                # LLM 모듈이 없을 경우 기본 답변(죄송합니다) 리턴
+                # LLM 모듈이 없을 경우 최후의 수단으로 키워드 응답(check_only=False로 강제 반환)
                 return ChatbotService.get_keyword_response(user_query, check_only=False)
 
         except Exception as e:
             logger.error(f"Chatbot LLM Error: {e}")
-            # Gemini 실패 시 기본 답변 리턴
+            # Gemini 실패 시 최후의 수단으로 키워드 응답 반환
             return ChatbotService.get_keyword_response(user_query, check_only=False)
 
     # ▼▼▼ 키워드 분석 로직 (수정됨) ▼▼▼
