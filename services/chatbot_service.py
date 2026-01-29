@@ -24,36 +24,51 @@ class ChatbotService:
     @staticmethod
     async def generate_response(user_query: str, chat_history: List[Dict] = None) -> dict:
         """
-        RAG(Vector DB) -> LLM(Gemini) 순서로 답변을 생성합니다.
-        실패 시 키워드 매칭으로 전환됩니다.
+        [로직 순서 변경됨]
+        1. Keyword Matching (설정된 답변 확인 - 우선순위 최상)
+        2. RAG (Vector DB 검색)
+        3. LLM (Gemini 호출)
         """
 
-        # 1. [기본 지식] AI에게 주입할 고정 프로젝트 정보
+        # ---------------------------------------------------------------------
+        # 1. [Keyword First] 설정된 키워드 답변이 있는지 먼저 확인 (우선순위 최상)
+        # ---------------------------------------------------------------------
+        # check_only=True: 매칭되는 게 있으면 바로 반환, 없으면 None을 반환하여 아래 로직 진행
+        # 주의: get_keyword_response 메서드에 check_only 파라미터 처리가 되어 있어야 합니다.
+        keyword_response = ChatbotService.get_keyword_response(user_query, check_only=True)
+        if keyword_response:
+            logger.info(f"✅ Keyword Response Matched: {user_query}")
+            return keyword_response
+
+        # ---------------------------------------------------------------------
+        # 2. [RAG] Vector DB에서 관련 정보 검색 (키워드 매칭 실패 시 진행)
+        # ---------------------------------------------------------------------
+        # 기본 지식 (Fallback Context)
         base_context = """
-        [TRPG Studio 서비스 정보]
-        1. 서비스 개요: 여울(YEOUL)은 멀티 에이전트 AI 기반의 인터랙티브 TRPG 플랫폼입니다.
-        2. 시나리오 제작 (Builder Mode): 노드 기반 편집기, AI 보조 도구(NPC/지문 생성), 로직 검수 제공.
-        3. 요금제: Free(3개 생성), Pro(9,900원/무제한/GPT-4), Biz(29,900원/파인튜닝).
-        4. 플레이: 메인 화면 리스트 선택 -> 1:1 AI GM과 플레이.
+            [TRPG Studio 서비스 정보]
+            1. 서비스 개요: 여울(YEOUL)은 멀티 에이전트 AI 기반의 인터랙티브 TRPG 플랫폼입니다.
+            2. 시나리오 제작 (Builder Mode): 노드 기반 편집기, AI 보조 도구(NPC/지문 생성), 로직 검수 제공.
+            3. 요금제: Free(3개 생성), Pro(9,900원/무제한/GPT-4), Biz(29,900원/파인튜닝).
+            4. 플레이: 메인 화면 리스트 선택 -> 1:1 AI GM과 플레이.
 
-        [기본 가이드]
-        * 챗봇 이름: 여울 (친절하고 재치있는 가이드)
-        * 주요 기능: 시나리오 제작, 플레이, 이미지 생성, NPC 생성
-        """
+            [기본 가이드]
+            * 챗봇 이름: 여울 (친절하고 재치있는 가이드)
+            * 주요 기능: 시나리오 제작, 플레이, 이미지 생성, NPC 생성
+            """
 
-        # 2. [RAG] Vector DB에서 관련 정보 검색
         rag_context = ""
         try:
+            # get_vector_db_client가 전역 네임스페이스에 있는지 확인
             if 'get_vector_db_client' in globals():
                 vector_db = get_vector_db_client()
 
-                # ▼▼▼ [수정 시작] 메서드 존재 여부 확인 및 호출 로직 강화 ▼▼▼
                 if vector_db:
+                    # search 메서드 존재 여부 확인
                     search_func = getattr(vector_db, 'search', None)
 
                     if search_func:
-                        # 비동기 함수인지 확인하고 호출
                         import inspect
+                        # 비동기/동기 구분 호출
                         if inspect.iscoroutinefunction(search_func):
                             search_results = await search_func(user_query, k=3)
                         else:
@@ -62,9 +77,8 @@ class ChatbotService:
                         if search_results:
                             retrieved_texts = []
                             for doc in search_results:
-                                # 결과 처리 (딕셔너리 or 객체)
+                                # 결과 데이터 파싱 (Dict 또는 Object)
                                 if isinstance(doc, dict):
-                                    # vector_db.py의 search는 dict 리스트를 반환하며, 텍스트 키는 'page_content'입니다.
                                     content = doc.get('page_content') or doc.get('text') or str(doc)
                                     retrieved_texts.append(content)
                                 elif hasattr(doc, 'page_content'):
@@ -80,10 +94,12 @@ class ChatbotService:
         except Exception as e:
             logger.warning(f"RAG Retrieval Failed (Using base context only): {e}")
 
-        # 3. [LLM] 프롬프트 구성 및 호출
+        # ---------------------------------------------------------------------
+        # 3. [LLM] 프롬프트 구성 및 Gemini 호출
+        # ---------------------------------------------------------------------
         try:
             if 'LLMFactory' in globals() and hasattr(LLMFactory, 'create_llm'):
-                # 대화 히스토리 포맷팅 (최근 3개)
+                # 대화 히스토리 포맷팅
                 history_text = ""
                 if chat_history:
                     recent_history = chat_history[-3:]
@@ -91,77 +107,71 @@ class ChatbotService:
                         role = "User" if msg.get('role') == 'user' else "AI"
                         history_text += f"{role}: {msg.get('content')}\n"
 
-                # 시스템 프롬프트 강화 (RAG 정보 반영)
+                # 시스템 프롬프트 조립
                 system_prompt = f"""
-                당신은 TRPG Studio의 친절하고 재치 있는 AI 가이드 '여울'입니다.
-                사용자는 TRPG 게임을 만들거나 플레이하는 유저입니다.
+                    당신은 TRPG Studio의 친절하고 재치 있는 AI 가이드 '여울'입니다.
+                    사용자는 TRPG 게임을 만들거나 플레이하는 유저입니다.
 
-                [지침]
-                1. 아래 제공된 '[검색된 지식]'과 '[기본 정보]'를 최우선으로 참고하여 답변하세요.
-                2. 정보가 부족하다면 솔직히 모르겠다고 하고, 메뉴 이용을 권장하세요.
-                3. 말투는 친절하고 격려하는 톤("~해요", "~해보세요!")을 사용하세요.
-                4. 답변 끝에는 항상 사용자가 이어서 할 법한 질문 2~3개를 'choices'에 담아 주세요.
+                    [지침]
+                    1. 아래 제공된 '[검색된 지식]'과 '[기본 정보]'를 최우선으로 참고하여 답변하세요.
+                    2. 정보가 부족하다면 솔직히 모르겠다고 하고, 메뉴 이용을 권장하세요.
+                    3. 말투는 친절하고 격려하는 톤("~해요", "~해보세요!")을 사용하세요.
+                    4. 답변 끝에는 항상 사용자가 이어서 할 법한 질문 2~3개를 'choices'에 담아 주세요.
 
-                [기본 정보]
-                {base_context}
+                    [기본 정보]
+                    {base_context}
 
-                [검색된 지식 (RAG)]
-                {rag_context if rag_context else "관련된 추가 지식이 없습니다."}
+                    [검색된 지식 (RAG)]
+                    {rag_context if rag_context else "관련된 추가 지식이 없습니다."}
 
-                [이전 대화]
-                {history_text}
+                    [이전 대화]
+                    {history_text}
 
-                반드시 아래 JSON 형식을 지켜서 응답하세요. (마크다운 없이 순수 JSON만)
-                {{
-                    "answer": "답변 내용... (줄바꿈은 \\n 사용)",
-                    "choices": ["선택지1", "선택지2"]
-                }}
-                """
+                    반드시 아래 JSON 형식을 지켜서 응답하세요. (마크다운 없이 순수 JSON만)
+                    {{
+                        "answer": "답변 내용... (줄바꿈은 \\n 사용)",
+                        "choices": ["선택지1", "선택지2"]
+                    }}
+                    """
 
-                # 모델 생성 (Gemini 2.0 Flash)
+                # 모델 생성 및 호출
                 llm = LLMFactory.create_llm(ChatbotService.TARGET_MODEL_NAME)
-
-                # LLM 호출
                 response_text = await llm.chat_completion(
                     system_prompt=system_prompt,
                     user_input=f"Question: {user_query}"
                 )
 
-                # 결과 파싱
+                # 응답 파싱
                 cleaned_text = response_text.replace("```json", "").replace("```", "").strip()
                 return json.loads(cleaned_text)
 
             else:
-                # LLM 모듈이 없을 경우
-                return ChatbotService.get_keyword_response(user_query)
+                # LLM 모듈이 없을 경우 최후의 수단으로 키워드 응답(check_only=False로 강제 반환)
+                return ChatbotService.get_keyword_response(user_query, check_only=False)
 
         except Exception as e:
             logger.error(f"Chatbot LLM Error: {e}")
-            # LLM 실패 시 키워드 로직으로 Fallback
-            return ChatbotService.get_keyword_response(user_query)
+            # Gemini 실패 시 최후의 수단으로 키워드 응답 반환
+            return ChatbotService.get_keyword_response(user_query, check_only=False)
 
-    # ▼▼▼ 키워드 분석 로직 (Fallback) ▼▼▼
+    # ▼▼▼ 키워드 분석 로직 (수정됨) ▼▼▼
     @staticmethod
-    def get_keyword_response(query: str) -> dict:
+    def get_keyword_response(query: str, check_only: bool = False) -> Optional[dict]:
         """
-        AI 모델 연결 불가 시, 키워드 점수(Score) 기반으로 가장 적합한 답변을 찾습니다.
+        키워드 매칭 로직
+        :param check_only: True일 경우, 매칭 실패 시 None 반환 (LLM 기회 제공)
         """
         query = query.lower().strip()
 
         # 답변 템플릿 리스트
         responses = [
-            # ... (기존 키워드 응답 리스트 그대로 유지) ...
-            # 기존 코드가 너무 길어 생략합니다. 원본의 responses 리스트 내용을 그대로 두시면 됩니다.
-            # -----------------------------------------------------------
-            # [우선순위 높음] 이미지 생성 오류/문제 해결
-            # -----------------------------------------------------------
+            # ... (기존 설정해두신 답변 리스트는 그대로 유지됩니다) ...
             {
                 "keywords": ['엑박', '깨짐', '안나와', '안보여', '로딩', '실패', 'error', '이미지', '오류', '버그', '안돼', '안됨', '해결', '문제'],
                 "required": ['이미지'],
                 "answer": "⚠️ **이미지 생성 문제 해결**\n\n이미지가 제대로 나오지 않나요?\n\n1. **새로고침(F5)**: 일시적인 네트워크 오류일 수 있습니다.\n2. **토큰 확인**: 토큰이 부족하면 생성이 중단될 수 있습니다. 마이페이지를 확인해 주세요.\n3. **잠시 후 시도**: 서버 트래픽이 많을 경우 지연될 수 있습니다.",
                 "choices": ["이미지 생성 방법", "문의하기", "처음으로"]
             },
-            # 1. 시나리오/프리셋 관리
             {
                 "keywords": ['시나리오', 'scenario', '로드', 'load', '불러오기', '열기', '가져오기'],
                 "required": ['로드', 'load', '불러오기', '열기', '가져오기'],
@@ -178,13 +188,13 @@ class ChatbotService:
                 "keywords": ['프리셋', 'preset', '저장', 'save', '다운로드', '백업'],
                 "required": ['프리셋', 'preset'],
                 "answer": "💾 **프리셋(Preset) 저장**\n\n현재 캔버스에 그려진 **노드와 연결 구조**를 내 컴퓨터에 **JSON 파일**로 다운로드하는 기능입니다.\n\n작업 중인 배치를 백업하거나, 다른 사람에게 시나리오 구조를 공유할 때 유용합니다.",
-                "choices": ["프리셋 로드가 뭔가요?", "시나리오 저장과 차이점", "빌더 모드 이동"]
+                "choices": ["프리셋 로드가 뭔가요?", "시나리오 로드란?", "빌더 모드 이동"]
             },
             {
                 "keywords": ['프리셋', 'preset', '로드', 'load', '불러오기', '열기'],
                 "required": ['프리셋', 'preset'],
                 "answer": "📂 **프리셋(Preset) 로드**\n\n컴퓨터에 가지고 있는 **프리셋 파일(.json)**을 캔버스에 적용하는 기능입니다.\n\n⚠️ **주의:** 프리셋을 로드하면 현재 캔버스의 내용은 사라지고 프리셋의 구조로 덮어씌워집니다.",
-                "choices": ["프리셋 저장이 뭔가요?", "시나리오 로드란?", "빌더 모드 이동"]
+                "choices": ["프리셋 저장이 뭔가요?", "시나리오 로드와 차이점", "빌더 모드 이동"]
             },
             {
                 "keywords": ['프리셋', '시나리오', '차이', 'vs', '비교', '다른'],
@@ -192,8 +202,6 @@ class ChatbotService:
                 "answer": "⚖️ **프리셋 로드 vs 시나리오 로드 차이점**\n\n두 기능은 **'어디서'** 데이터를 가져오느냐가 다릅니다.\n\n• **프리셋 로드**: 내 컴퓨터에 저장된 **JSON 파일(구조)**을 캔버스로 불러옵니다. (로컬 파일)\n• **시나리오 로드**: 서버에 저장된 **내 프로젝트**를 편집기로 불러옵니다. (클라우드 DB)\n\n즉, 프리셋은 '단순 도면 백업', 시나리오는 '진행 중인 프로젝트 전체'라고 이해하시면 됩니다!",
                 "choices": ["프리셋 저장이 뭔가요?", "시나리오 제작 방법", "빌더 모드 이동"]
             },
-
-            # 2. 빌더(제작) 상세 기능
             {
                 "keywords": ['npc', '등장인물', '캐릭터', '인물', '만들', '생성', '추가', '방법'],
                 "required": ['npc'],
@@ -230,15 +238,12 @@ class ChatbotService:
                 "answer": "✨ **내용 AI 작성 (Magic Write)**\n\n글쓰기가 막막할 때 사용하세요!\n\n1. 씬 에디터의 텍스트 입력창 우측에 있는 **마법봉 아이콘(🪄)**을 클릭합니다.\n2. '어두운 숲, 긴장감' 같은 **키워드**나 **상황**을 짧게 입력합니다.\n3. AI가 그에 맞는 멋진 묘사를 자동으로 작성해 줍니다.",
                 "choices": ["이미지 생성 방법", "AI 도구 소개", "빌더 모드 이동"]
             },
-
-            # [이미지 생성 방법] (우선순위를 '오류'보다 낮게 설정)
             {
                 "keywords": ['이미지', '그림', '삽화', 'image', 'picture', '생성', '만들', 'gen', '그려', '방법'],
                 "required": ['이미지', '그림', '삽화'],
                 "answer": "🎨 **AI 이미지 생성 가이드**\n\n**생성 가능한 종류:** 씬 배경, NPC 초상화, 적(Enemy) 초상화, 아이템 아이콘\n\n**💡 팁:**\n• **구체적인 묘사:** \"숲\"보다는 \"안개 낀 어두운 숲, 신비로운 분위기\"처럼 자세히 적어주세요.\n• **토큰 소모:** 이미지 1장 생성 시 약 **2~4 토큰**이 소모됩니다.\n\n**사용법:** 에디터 하단의 **'Generate Image'** 버튼을 누르고 원하는 타입과 설명을 입력하세요!",
                 "choices": ["이미지 생성 오류 해결", "엔딩 추가 방법", "요금제 안내"]
             },
-
             {
                 "keywords": ['엔딩', 'ending', '결말', '끝', 'finish', '만들', '추가', '방법'],
                 "required": ['엔딩', '결말', '끝'],
@@ -317,10 +322,7 @@ class ChatbotService:
                 "answer": "🎮 **동시 게임 진행 안내**\n\n현재 하나의 계정으로는 **한 번에 하나의 게임**만 진행할 수 있습니다.\n\n다른 시나리오를 플레이하려면 현재 진행 중인 게임을 종료하거나 저장해야 합니다.",
                 "choices": ["게임 저장 방법", "게임 플레이 방법", "처음으로"]
             },
-
-            # 3. 요금제, 계정, 문의
             {
-                # '로그' 키워드 추가 -> "로그인" 질문 시 '로그인'(1점)+'로그'(1점) = 2점으로 '플레이 로그'(1점)를 이김
                 "keywords": ['가입', '로그인', 'register', 'sign', '시작', '처음', 'start', '로그'],
                 "required": ['가입', '로그인', '시작', '처음'],
                 "answer": "👋 **TRPG Studio 시작하기**\n\n환영합니다! 우측 상단의 **'LOGIN'** 버튼을 눌러보세요.\n\n구글, 카카오, 네이버 계정으로 **간편하게 회원가입 및 로그인**하여 바로 모험을 시작할 수 있습니다.",
@@ -333,8 +335,7 @@ class ChatbotService:
                 "choices": ["마이페이지로 이동", "로그인 방법", "처음으로"]
             },
             {
-                # '회원' 키워드 추가 -> "회원 탈퇴" 질문 시 점수 2점 확보
-                "keywords": ['탈퇴', '삭제', 'delete', 'withdraw', '그만', '회원'],
+                "keywords": ['탈퇴', '삭제', 'delete', 'withdraw', '그만', '회원', '어디'],
                 "required": ['탈퇴', '삭제', '그만'],
                 "answer": "😢 **회원 탈퇴 안내**\n\n떠나신다니 아쉽습니다.\n\n회원 탈퇴는 **마이페이지 > 프로필 수정** 메뉴 하단의 **'회원 탈퇴'** 버튼을 통해 진행하실 수 있습니다.\n탈퇴 시 모든 시나리오와 데이터가 삭제되니 신중하게 결정해 주세요.",
                 "choices": ["마이페이지로 이동", "문의하기", "처음으로"]
@@ -357,8 +358,6 @@ class ChatbotService:
                 "answer": "📬 **문의하기 및 버그 신고**\n\n서비스 이용 중 불편한 점이나 버그를 발견하셨나요?\n\n현재는 베타 테스트 기간으로, **커뮤니티(디스코드/게시판)**를 통해 개발자에게 직접 문의하실 수 있습니다.\n빠른 시일 내에 1:1 문의 기능을 제공해 드리겠습니다!",
                 "choices": ["플레이 방법", "시나리오 제작 방법", "처음으로"]
             },
-
-            # 4. 플레이 / 인게임 (힌트 등)
             {
                 "keywords": ['게임', '플레이', '시작', '방법', 'play', 'game', 'how'],
                 "required": ['게임', '플레이'],
@@ -425,10 +424,7 @@ class ChatbotService:
                 "answer": "🗺️ **전체 씬(구조) 보기 및 디버그**\n\n화면 우측 하단의 **벌레 아이콘(🐛)**은 **디버그 모드(Scene Visualizer)**입니다.\n\n클릭하면 현재 시나리오의 전체 노드 구조와 진행 상황을 한눈에 확인할 수 있습니다. (PC 환경 권장)",
                 "choices": ["플레이 방법", "문의하기", "힌트가 필요해요"]
             },
-
-            # 5. 일반 / 기타 (우선순위 낮음)
             {
-                # [수정] '어떻게', '만드' 키워드 추가 (질문 의도 파악 강화)
                 "keywords": ['시나리오', '제작', '만들', '생성', '빌더', 'create', '노드', '방법', '어떻게', '만드'],
                 "required": ['시나리오', '빌더', '노드'],
                 "answer": "🛠️ **시나리오 제작 (Builder Mode)**\n\nTRPG Studio는 **노드(Node) 기반 편집기**를 제공합니다.\n코딩 없이 이야기의 흐름을 시각적으로 연결하여 나만의 모험을 만들 수 있습니다.\n\n상단의 **'Start Creation'** 버튼을 눌러 캔버스를 열어보세요!",
@@ -468,10 +464,10 @@ class ChatbotService:
                 max_score = score
                 best_match = item
 
+        # 1. 매칭 성공 시
         if best_match:
-            # [DB 연동 룰 처리] (인기 시나리오 등)
+            # [DB 연동 룰 처리] (인기 시나리오 등) - 필요 시 로직 유지
             if best_match.get("type") == "db_popular":
-                # ... (DB 로직 유지) ...
                 pass
 
             return {
@@ -479,7 +475,12 @@ class ChatbotService:
                 "choices": best_match["choices"]
             }
 
-        # 기본 응답
+        # 2. 매칭 실패 시
+        if check_only:
+            # check_only=True면 None을 반환하여 LLM으로 넘김
+            return None
+
+        # 3. 기본 응답 (Fallback)
         return {
             "answer": f"죄송합니다. 말씀하신 '{query}'에 대한 정확한 정보를 찾지 못했습니다.\n하지만 아래 메뉴를 통해 도움을 드릴 수 있습니다.",
             "choices": ["시나리오 제작 방법", "요금제 안내", "문의하기"]
